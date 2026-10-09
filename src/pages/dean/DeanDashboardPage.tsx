@@ -43,7 +43,7 @@ import { basicLoadOf } from '../../lib/facultyLoad';
 import TruncatedDataNotice from '../../components/ui/TruncatedDataNotice';
 import { buildRoomUsage, physicalRooms, roomsInUse } from '../../lib/roomUsage';
 
-interface Faculty { id:number; first_name:string; last_name:string; employment_type?:'full-time'|'part-time'; max_units:number; assigned_units?:number; deload_units?:number; probono_units?:number|null; profile_picture?:string|null; department_id:number; status?:string }
+interface Faculty { id:number; first_name:string; last_name:string; employment_type?:'full-time'|'part-time'; max_units:number; assigned_units?:number; deload_units?:number; profile_picture?:string|null; department_id:number; status?:string }
 interface Room { id:number; room_code:string; room_type:string; building?:string|null; status?:string|null; department_id?:number|null }
 interface Section { id:number; section_name:string; year_level?:string|number|null; department_id:number }
 interface Subject { id:number; subject_code:string; subject_name:string; department_id?:number|null }

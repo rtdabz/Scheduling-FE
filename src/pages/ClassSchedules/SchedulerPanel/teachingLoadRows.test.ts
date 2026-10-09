@@ -89,18 +89,18 @@ describe("classifyLoad", () => {
   );
   const bandsOf = (lines: { band?: string }[]) => lines.map((line) => line.band);
 
-  it("fills Basic up to the Basic Load, then Overload, then Pro Bono inside the Overload table", () => {
-    const faculty = { id: "f1", name: "A Cruz", employmentType: "full-time", requiredUnits: 9, overloadUnits: 6, probonoUnits: 3 } as Faculty;
+  it("fills Basic up to the Basic Load, then Overload, then over-limit lines inside the Overload table", () => {
+    const faculty = { id: "f1", name: "A Cruz", employmentType: "full-time", requiredUnits: 9, overloadUnits: 6 } as Faculty;
     const load = classifyLoad(faculty, subjects);
 
     expect(bandsOf(load.basic)).toEqual(["basic", "basic", "basic"]);
-    expect(bandsOf(load.overload)).toEqual(["overload", "overload", "probono"]);
+    expect(bandsOf(load.overload)).toEqual(["overload", "overload", "over_limit"]);
     expect(load.basicTotals.units).toBe(9);
     expect(load.overloadTotals.units).toBe(9);
   });
 
   it("lists everything under Overload for an overload-only instructor, part-time or not", () => {
-    const overloadOnly = { id: "f2", name: "R Del Rosario", maxUnits: 0, deloadUnits: 0, overloadUnits: 15, probonoUnits: 0 };
+    const overloadOnly = { id: "f2", name: "R Del Rosario", maxUnits: 0, deloadUnits: 0, overloadUnits: 15 };
     for (const employmentType of ["part-time", "full-time"] as const) {
       const load = classifyLoad({ ...overloadOnly, employmentType } as Faculty, subjects.slice(0, 2));
       expect(load.basic).toHaveLength(0);
@@ -116,10 +116,10 @@ describe("classifyLoad", () => {
     expect(bandsOf(load.overload)).toEqual(["overload"]);
   });
 
-  it("lists anything past the overload allowance as pro bono, even with no pro bono granted", () => {
-    const faculty = { id: "f4", name: "J Pada", employmentType: "full-time", requiredUnits: 3, overloadUnits: 3, probonoUnits: 0 } as Faculty;
+  it("lists anything past the overload allowance as over the limit", () => {
+    const faculty = { id: "f4", name: "J Pada", employmentType: "full-time", requiredUnits: 3, overloadUnits: 3 } as Faculty;
     const load = classifyLoad(faculty, subjects.slice(0, 4));
 
-    expect(bandsOf(load.overload)).toEqual(["overload", "probono", "probono"]);
+    expect(bandsOf(load.overload)).toEqual(["overload", "over_limit", "over_limit"]);
   });
 });

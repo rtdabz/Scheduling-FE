@@ -592,12 +592,11 @@ export default function CourseTeachingAssignments() {
                 </label>
               </div>
 
-              <div className="overflow-x-auto">
+              <div>
                 <DataTable
                   table={courseTable}
                   variant="embedded"
                   isLoading={loading}
-                  tableClassName="min-w-[900px]"
                   ariaLabel={`${YEAR_LABELS[activeYear]} courses`}
                   onRowClick={toggleCourse}
                   rowClassName={(course) => {

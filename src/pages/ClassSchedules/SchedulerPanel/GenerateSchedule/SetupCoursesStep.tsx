@@ -968,9 +968,8 @@ export default function SetupCoursesStep({
       <DataTable
         table={courseTable}
         variant="embedded"
-        className="flex min-h-0 max-h-[62vh] w-full flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 shadow-2xs"
-        scrollClassName="min-h-0 flex-1 overflow-auto"
-        tableClassName="min-w-[640px]"
+        className="flex min-h-0 w-full flex-col overflow-hidden rounded-xl border border-slate-200 shadow-2xs"
+        scrollClassName="min-h-0 overflow-auto"
         headerId="generator-setup-head"
         ariaLabel="Course setup"
         emptyState={

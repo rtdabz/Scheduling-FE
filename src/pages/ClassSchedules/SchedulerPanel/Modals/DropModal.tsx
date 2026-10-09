@@ -2,12 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CalendarPlus, CheckCircle2, Clock, Info, Lightbulb, MapPin, Sparkles, X } from "lucide-react";
 import { DAYS, getCategoryStyles, slotToTimeStr } from "../constants";
 import api from "../../../../lib/api";
-import { requiredRoomTypeForMeeting } from "../hooks/useConflict";
-import { FIXED_SPLIT_PATTERNS, FULL_DAY_NAMES, parsePreferredPattern, slotCount, slotToTime24h } from "../../../../lib/timeGrid";
+import { laboratoryServesLecture, requiredRoomTypeForMeeting } from "../hooks/useConflict";
+import { FIXED_SPLIT_PATTERNS, FULL_DAY_NAMES, parsePreferredPattern, slotCount, slotToTime24h, timeToSlotUnclamped } from "../../../../lib/timeGrid";
 import { isLabMeetingRoomType } from "../../../../lib/labRoomPolicy";
-import type { DeliveryMode, DropContext, ScheduleItem, Section, Subject, Room, Semester } from "../types";
+import type { DeliveryMode, DropContext, ScheduleItem, Section, Subject, Room } from "../types";
 import { getSubjectTotalSlots } from "../types";
-import { getCourseSlotPlan, laboratoryComponentSlots, slotsToHours, type LaboratoryDurationSettings } from "../courseSlotPlan";
+import { getCourseSlotPlan, laboratoryComponentSlots, sortSplitMeetingsForEdit, slotsToHours, type LaboratoryDurationSettings } from "../courseSlotPlan";
 import { evaluatePlacementQuality, type PlannedMeeting } from "../placementQuality";
 import {
   isFieldSchedulingEligible,
@@ -30,11 +30,11 @@ import {
 } from "../GenerateSchedule/courseClassConfig";
 import PlacementAlternatives from "./PlacementAlternatives";
 import MeetingCard from "./MeetingCard";
+import SessionAlternatives from "./SessionAlternatives";
 import {
   ALL_ROOMS,
   ROOM_TBA,
   type ClassMode,
-  rankBestMatches,
   slotRoomKey,
   type AvailableSlot,
   type AvailableSlotRoom,
@@ -45,6 +45,11 @@ interface AvailableSlotsResponse {
   rooms: AvailableSlotRoom[];
   total: number;
   truncated: boolean;
+  placements: AvailableSlot[];
+  placement_rooms: AvailableSlotRoom[];
+  placement_truncated: boolean;
+  best_matches: AvailableSlot[];
+  same_time_starts: AvailableSlot[] | null;
 }
 
 interface DropModalProps {
@@ -52,7 +57,6 @@ interface DropModalProps {
   sections: Section[];
   schedules: ScheduleItem[];
   selectedSectionId: string;
-  activeSemester: Semester | null;
   dropContext: DropContext | null;
   dropSubject: Subject | null;
   dropSubjectIsField: boolean;
@@ -135,7 +139,6 @@ export default function DropModal({
   sections,
   schedules,
   selectedSectionId,
-  activeSemester,
   dropContext,
   dropSubject,
   dropSubjectIsField,
@@ -182,24 +185,32 @@ export default function DropModal({
   modalRun = null,
   setModalConsecutiveDays,
 }: DropModalProps) {
-  const isSummerSemester = activeSemester?.semester === "summer";
-  const availableDays = isSummerSemester ? DAYS.slice(0, 5) : DAYS;
+  const availableDays = DAYS;
   const hasBoth = dropSubject && Number(dropSubject.lectureHours ?? 0) > 0 && Number(dropSubject.labHours ?? 0) > 0;
   const hasLaboratoryUnits = Number(dropSubject?.labHours ?? 0) > 0;
   const [areRecommendationsRequested, setAreRecommendationsRequested] = useState(false);
   const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
+  const [bestMatches, setBestMatches] = useState<AvailableSlot[]>([]);
+  const [pairSlots, setPairSlots] = useState<AvailableSlot[] | null>(null);
   const [availableSlotRooms, setAvailableSlotRooms] = useState<AvailableSlotRoom[]>([]);
   const [areSlotsTruncated, setAreSlotsTruncated] = useState(false);
   const [isSlotsLoading, setIsSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState<string | null>(null);
   const [roomFilter, setRoomFilter] = useState<string>(ALL_ROOMS);
   const [slotMeeting, setSlotMeeting] = useState<"first" | "second">("first");
+  const [slotRequestKey, setSlotRequestKey] = useState<string | null>(null);
 
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const canUseRecommendations = canGenerateSchedule;
   const hasConflict = !!modalConflict;
   const shouldShowRecommendations = canUseRecommendations && (hasConflict || areRecommendationsRequested);
   const isTwoMeetingPattern = modalIsHybrid || modalSplitEnabled;
+  if (slotMeeting !== "first" && (!isTwoMeetingPattern || modalDay2Duration <= 0)) {
+    setSlotMeeting("first");
+  }
+  if (roomFilter !== ALL_ROOMS && !availableSlotRooms.some((room) => slotRoomKey(room) === roomFilter)) {
+    setRoomFilter(ALL_ROOMS);
+  }
   const currentRun = modalRun ? runStartingOn(modalRun, modalDay1Index) : null;
   const preferredRun = modalRun ? tickedRun(modalRun) : null;
   const isSameTimePair = isTwoMeetingPattern && !hasLaboratoryUnits;
@@ -262,6 +273,26 @@ export default function DropModal({
       : getSubjectTotalSlots(dropSubject);
     if (durationSlots <= 0) return null;
 
+    const hasPartner = isTwoMeetingPattern && modalDay2Duration > 0;
+    const isSecond = hasPartner && slotMeeting === "second";
+    const pattern = modalRun ? `consecutive:${modalRun.dayCount}` : modalPreferredPattern;
+    const groupHybrid = !modalRun && ((modalIsHybrid && (!hasLaboratoryUnits || modalDay2ClassMode === "online"))
+      || (modalSplitEnabled && isHybridSplitEligible(dropSubject) && (modalClassMode === "online") !== (modalDay2ClassMode === "online")));
+    const existing = sortSplitMeetingsForEdit(schedules.filter((schedule) => String(schedule.sectionId) === String(selectedSectionId)
+      && String(schedule.courseId ?? schedule.subjectId) === String(dropSubject.id)), dropSubject, modalIsHybrid, manualSchedulingSettings);
+    const row = (dayIndex: number, startSlot: number, length: number, mode: DeliveryMode, roomId: string, index: number) => ({
+      day: FULL_DAY_NAMES[dayIndex], start_time: slotToTime24h(startSlot), end_time: slotToTime24h(startSlot + length),
+      mode, room_id: mode === "online" ? null : Number(roomId) || null,
+      faculty_id: Number(existing[index]?.facultyId) || null,
+      is_hybrid: groupHybrid, preferred_pattern: pattern,
+      meeting_type: modalRun || !hasPartner ? null : modalIsHybrid && hasBoth
+        ? index === 0 ? "laboratory" : "lecture" : hasLaboratoryUnits ? "laboratory" : "lecture",
+    });
+    const groupRows = modalRun
+      ? (currentRun ?? preferredRun ?? modalRun.runs[0] ?? []).map((day, index) => row(getDayIndex(day), modalDay1StartSlot, durationSlots, modalClassMode, modalRoomId, index))
+      : [row(modalDay1Index, modalDay1StartSlot, modalDay1Duration || durationSlots, modalClassMode, modalRoomId, 0),
+        ...(hasPartner ? [row(modalDay2Index, modalDay2StartSlot, modalDay2Duration, modalDay2ClassMode, modalDay2RoomId, 1)] : [])];
+
     return {
       section_id: Number(selectedSectionId),
       course_id: Number(dropSubject.id),
@@ -269,6 +300,11 @@ export default function DropModal({
       meeting_type: slotMeetingPlan.meetingType,
       excluded_days: slotMeetingPlan.excludedDays,
       tentative_schedules: tentativeSchedules,
+      ignore_schedule_ids: existing.map((schedule) => Number(schedule.id)).filter((id) => Number.isInteger(id) && id > 0),
+      placement: { rows: groupRows, selected_meeting: isSecond ? 1 : 0,
+        ...(modalForceDayEnabled ? { allowed_days: [FULL_DAY_NAMES[modalForcedDayIndex]] } : {}),
+        ...(modalRun && preferredRun ? { consecutive_rule: { day_count: modalRun.dayCount, meeting_days: preferredRun } } : {}),
+      },
       ...(searchFromDay ? { search_from_day: searchFromDay } : {}),
       ...(modalRun ? {
         consecutive_days: modalRun.dayCount,
@@ -276,33 +312,45 @@ export default function DropModal({
         excluded_days: preferredRun ? DAYS.filter((day) => !preferredRun.includes(day)) : [],
       } : {}),
     };
-  }, [dropSubject, selectedSectionId, slotMeetingPlan, tentativeSchedules, searchFromDay, modalRun, preferredRun]);
+  }, [dropSubject, selectedSectionId, slotMeetingPlan, tentativeSchedules, searchFromDay, modalRun, preferredRun,
+    currentRun, isTwoMeetingPattern, slotMeeting, modalPreferredPattern, modalIsHybrid, modalSplitEnabled, modalForceDayEnabled, modalForcedDayIndex,
+    modalClassMode, modalRoomId, modalDay2ClassMode, modalDay2RoomId, hasBoth, hasLaboratoryUnits,
+    modalDay1Index, modalDay2Index, modalDay1StartSlot, modalDay2StartSlot, modalDay1Duration, modalDay2Duration, schedules, manualSchedulingSettings]);
 
-  useEffect(() => {
-    if (!shouldShowRecommendations || !availableSlotsPayload) {
-      setAvailableSlots([]);
+  const requestKey = JSON.stringify(availableSlotsPayload);
+  const activeRequestKey = shouldShowRecommendations && availableSlotsPayload ? requestKey : null;
+  if (slotRequestKey !== activeRequestKey) {
+    setSlotRequestKey(activeRequestKey);
+    setIsSlotsLoading(activeRequestKey !== null);
+    setAvailableSlots([]);
+    setBestMatches([]);
+    setPairSlots(null);
+    if (activeRequestKey === null) {
       setAvailableSlotRooms([]);
       setAreSlotsTruncated(false);
-      setSlotsError(null);
-
-      return;
     }
+    setSlotsError(null);
+  }
+
+  useEffect(() => {
+    const payload = JSON.parse(requestKey) as typeof availableSlotsPayload;
+    if (!shouldShowRecommendations || !payload) return;
 
     let active = true;
     const controller = new AbortController();
-    setIsSlotsLoading(true);
-    setSlotsError(null);
 
     const timerId = window.setTimeout(() => {
       void api.post<AvailableSlotsResponse>(
         "/schedule-recommendations/available-slots",
-        availableSlotsPayload,
+        payload,
         { signal: controller.signal },
       ).then((response) => {
         if (!active) return;
-        setAvailableSlots(response.data.slots ?? []);
-        setAvailableSlotRooms(response.data.rooms ?? []);
-        setAreSlotsTruncated(Boolean(response.data.truncated));
+        setAvailableSlots(response.data.placements ?? []);
+        setBestMatches(response.data.best_matches ?? []);
+        setPairSlots(response.data.same_time_starts ?? null);
+        setAvailableSlotRooms(response.data.placement_rooms ?? []);
+        setAreSlotsTruncated(Boolean(response.data.placement_truncated));
       }).catch(() => {
         if (!active) return;
         setAvailableSlots([]);
@@ -318,20 +366,9 @@ export default function DropModal({
       active = false;
       controller.abort();
       window.clearTimeout(timerId);
-      setIsSlotsLoading(false);
     };
-  }, [shouldShowRecommendations, availableSlotsPayload]);
-
-  useEffect(() => {
-    if (!isTwoMeetingPattern || modalDay2Duration <= 0) setSlotMeeting("first");
-  }, [isTwoMeetingPattern, modalDay2Duration]);
-
-  useEffect(() => {
-    if (roomFilter === ALL_ROOMS) return;
-    if (!availableSlotRooms.some((room) => slotRoomKey(room) === roomFilter)) {
-      setRoomFilter(ALL_ROOMS);
-    }
-  }, [availableSlotRooms, roomFilter]);
+  // The serialized dependency includes every meeting fact without object-identity refetches.
+  }, [shouldShowRecommendations, requestKey]);
 
   const visibleSlots = useMemo(
     () => (roomFilter === ALL_ROOMS
@@ -340,39 +377,13 @@ export default function DropModal({
     [availableSlots, roomFilter],
   );
 
-  const splitPairStarts = useMemo(() => {
-    if (!isSameTimePair || modalDay2Duration <= 0) return null;
-
-    const matches = (slot: AvailableSlot, mode: DeliveryMode, roomId: string): boolean =>
-      slot.mode === mode && (mode !== "on-site" || String(slot.room_id) === roomId);
-    const firstDay = FULL_DAY_NAMES[modalDay1Index];
-    const secondDay = FULL_DAY_NAMES[modalDay2Index];
-    const firstStarts = new Map<number, AvailableSlot>();
-    const secondStarts = new Set<number>();
-
-    availableSlots.forEach((slot) => {
-      if (slot.day === firstDay && matches(slot, modalClassMode, modalRoomId)) {
-        firstStarts.set(slot.start_slot, slot);
-      }
-      if (slot.day === secondDay && matches(slot, modalDay2ClassMode, modalDay2RoomId)) {
-        secondStarts.add(slot.start_slot);
-      }
-    });
-
-    const distance = (startSlot: number) => Math.abs(startSlot - modalDay1StartSlot);
-    return [...firstStarts.entries()]
-      .filter(([startSlot]) => secondStarts.has(startSlot))
-      .map(([startSlot, slot]) => ({ startSlot, endSlot: slot.end_slot }))
-      .sort((left, right) => distance(left.startSlot) - distance(right.startSlot) || left.startSlot - right.startSlot);
-  }, [
-    isSameTimePair, modalDay2Duration, availableSlots, modalDay1StartSlot,
-    modalDay1Index, modalDay2Index, modalClassMode, modalRoomId, modalDay2ClassMode, modalDay2RoomId,
-  ]);
+  const splitPairStarts = isSameTimePair && modalDay2Duration > 0
+    ? (pairSlots ?? []).map((slot) => ({ startSlot: slot.start_slot, endSlot: slot.end_slot }))
+    : null;
 
   const applySplitPairStart = (startSlot: number): void => {
-    setModalDay1StartSlot(startSlot);
-    setModalDay2StartSlot(startSlot);
-    setModalValidationError("");
+    const selected = pairSlots?.find((slot) => slot.start_slot === startSlot);
+    if (selected) applyAvailableSlot(selected);
   };
 
   const splitDelivery: SplitDelivery = modalClassMode === "online" && modalDay2ClassMode === "online"
@@ -423,41 +434,6 @@ export default function DropModal({
   const requestedDay = FULL_DAY_NAMES[isSecondSlotMeeting ? modalDay2Index : modalDay1Index];
   const requestedStartSlot = isSecondSlotMeeting ? modalDay2StartSlot : modalDay1StartSlot;
   const requestedRoomKey = isSecondSlotMeeting ? modalDay2RoomId : modalRoomId;
-
-  const bestMatches = useMemo(() => {
-    if (!dropSubject || availableSlots.length === 0) return [];
-    const isPlaced = (schedule: ScheduleItem) =>
-      String(schedule.sectionId) === String(selectedSectionId)
-      && String(schedule.courseId ?? schedule.subjectId) === String(dropSubject.id);
-    const otherSchedules = schedules.filter((schedule) => !isPlaced(schedule));
-    const sectionSchedules = otherSchedules.filter((schedule) => String(schedule.sectionId) === String(selectedSectionId));
-    const sectionName = sections.find((section) => String(section.id) === String(selectedSectionId))?.name ?? "this section";
-
-    return rankBestMatches(availableSlots, {
-      day: requestedDay,
-      startSlot: requestedStartSlot,
-      roomKey: requestedRoomKey,
-      penaltyOf: (slot) => evaluatePlacementQuality({
-        meetings: [{
-          dayIndex: getDayIndex(slot.day),
-          startSlot: slot.start_slot,
-          durationSlots: slot.end_slot - slot.start_slot,
-          mode: slot.mode,
-          roomId: slotRoomKey(slot),
-          meetingType: slotMeetingPlan.meetingType,
-        }],
-        sectionSchedules,
-        allSchedules: otherSchedules,
-        rooms,
-        sectionName,
-        isHybrid: modalIsHybrid,
-        isForcedDay: modalForceDayEnabled,
-      }).reduce((sum, note) => sum + (note.tone === "warning" ? 3 : 1), 0),
-    });
-  }, [
-    availableSlots, dropSubject, modalForceDayEnabled, modalIsHybrid, requestedDay, requestedRoomKey,
-    requestedStartSlot, rooms, schedules, sections, selectedSectionId, slotMeetingPlan.meetingType,
-  ]);
 
   if (!dropContext || !dropSubject) return null;
 
@@ -519,7 +495,7 @@ export default function DropModal({
     const requiredRoomType = modalClassMode === "field" ? "field" : requiredRoomTypeForMeeting(dropSubject);
     if (requiredRoomType === "laboratory") return isLabMeetingRoomType(r.roomType);
 
-    return !requiredRoomType || r.roomType === requiredRoomType;
+    return !requiredRoomType || r.roomType === requiredRoomType || laboratoryServesLecture(dropSubject, r);
   });
 
   const secondMeetingRoomOptions = isIntegrated
@@ -551,36 +527,25 @@ export default function DropModal({
         ? splitDelivery === "online" ? "Online split" : "Hybrid split"
         : modalClassMode.replace("-", " ");
 
-  const applyAvailableSlot = (slot: AvailableSlot): void => {
-    if (isTwoMeetingPattern) {
-      const slotDayIndex = getDayIndex(slot.day);
-      const roomId = slot.room_id == null ? slot.mode : String(slot.room_id);
-      const isSecondMeeting = slotMeeting === "second" && modalDay2Duration > 0;
-
-      if (isSecondMeeting) {
-        setModalDay2Index(slotDayIndex);
-        updateTwoMeetingPattern(modalDay1Index, slotDayIndex);
-        setModalDay2ClassMode(slot.mode);
-        setModalDay2RoomId(roomId);
-        setModalDay2StartSlot(slot.start_slot);
-        setIsDay2ModifiedByUser(true);
-      } else {
-        setModalDay1Index(slotDayIndex);
-        updateTwoMeetingPattern(slotDayIndex, modalDay2Index);
-        setModalClassMode(slot.mode);
-        setModalRoomId(roomId);
-        setModalDay1StartSlot(slot.start_slot);
-      }
-
-      setModalValidationError("");
-
-      return;
+  const applyAvailableSlot = (slot: Pick<AvailableSlot, "group_rows">): void => {
+    const rows = slot.group_rows;
+    if (!rows?.length || isSlotsLoading) return;
+    const first = rows[0];
+    setModalDay1Index(getDayIndex(first.day));
+    setModalDay1StartSlot(timeToSlotUnclamped(first.start_time));
+    setModalDay1Duration(timeToSlotUnclamped(first.end_time) - timeToSlotUnclamped(first.start_time));
+    setModalClassMode(first.mode ?? "on-site");
+    setModalRoomId(first.room_id == null ? first.mode ?? "online" : String(first.room_id));
+    setModalPreferredPattern(first.preferred_pattern ?? null);
+    if (!modalRun && rows[1]) {
+      const second = rows[1];
+      setModalDay2Index(getDayIndex(second.day));
+      setModalDay2StartSlot(timeToSlotUnclamped(second.start_time));
+      setModalDay2Duration(timeToSlotUnclamped(second.end_time) - timeToSlotUnclamped(second.start_time));
+      setModalDay2ClassMode(second.mode ?? "on-site");
+      setModalDay2RoomId(second.room_id == null ? second.mode ?? "online" : String(second.room_id));
+      setIsDay2ModifiedByUser(true);
     }
-
-    setModalDay1Index(getDayIndex(slot.day));
-    setModalClassMode(slot.mode);
-    setModalRoomId(slot.room_id == null ? slot.mode : String(slot.room_id));
-    setModalDay1StartSlot(slot.start_slot);
     setModalValidationError("");
   };
 
@@ -844,7 +809,7 @@ export default function DropModal({
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
             <div className="min-w-0 flex-1 text-sm leading-snug">
               <p className="break-words text-red-700">
-                <span className="font-bold text-red-800">This placement has a conflict: </span>
+                <span className="font-bold text-red-800">This placement is not valid: </span>
                 {modalConflict}
               </p>
               <p className="mt-0.5 text-xs text-red-600">
@@ -897,7 +862,7 @@ export default function DropModal({
                   hasConflict ? "bg-red-50 text-red-700 ring-red-200" : "bg-emerald-50 text-emerald-700 ring-emerald-200"
                 }`}>
                   {hasConflict ? <AlertTriangle className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                  {hasConflict ? "Conflict detected" : "Ready to place"}
+                  {hasConflict ? "Schedule issue" : "Ready to place"}
                 </span>
               </dl>
             </div>
@@ -1095,6 +1060,19 @@ export default function DropModal({
             )}
           </div>
 
+          {canUseRecommendations && availableSlotsPayload && !modalRun && (
+            <SessionAlternatives key={requestKey} payload={availableSlotsPayload} disabled={isModalLoading || isSlotsLoading}
+              requiredDay={manualSchedulingSettings?.forced_day_rules?.find((rule) => rule.course_id === Number(dropSubject.id))?.day ?? forcedDayName}
+              onStage={(option) => {
+                const integrated = option.rows.some((row) => row.meeting_type === "laboratory");
+                const rows = integrated ? [...option.rows].sort((a, b) => Number(b.meeting_type === "laboratory") - Number(a.meeting_type === "laboratory")) : option.rows;
+                setModalIsHybrid(integrated);
+                setModalSplitEnabled(!integrated);
+                applyAvailableSlot({ group_rows: rows });
+                setModalPreferredPattern(`days:${getDayIndex(rows[0].day)}-${getDayIndex(rows[1].day)}`);
+              }} />
+          )}
+
           {modalValidationError && (
             <div role="alert" className="flex items-start gap-3 rounded-xl border border-red-200 bg-white p-4">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-600">
@@ -1158,7 +1136,7 @@ export default function DropModal({
           <p className={`flex items-center gap-2 text-sm font-bold ${hasConflict ? "text-red-700" : "text-emerald-700"}`}>
             {hasConflict ? <AlertTriangle className="h-4 w-4 shrink-0" /> : <CheckCircle2 className="h-4 w-4 shrink-0" />}
             {hasConflict
-              ? "Resolve the conflict to continue"
+              ? "Resolve the schedule issue to continue"
               : modalWasConflicted
               ? <><span className="rounded-md bg-emerald-600 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white">Resolved</span> Conflict cleared. Ready to add to the timetable</>
               : "Ready to add to the timetable"}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
+import { useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   Building2,
@@ -7,7 +8,6 @@ import {
   Check,
   ClipboardList,
   Eye,
-  Filter,
   LayoutGrid,
   List,
   RefreshCw,
@@ -48,12 +48,15 @@ import {
   reviewRoomRequest,
   submitRoomRequest,
   type RoomOccupancyBlock,
+  type RoomOccupancySchedule,
   type RoomRequest,
   type RoomRequestStatus,
 } from '../../lib/roomRequests';
 import { useDataTable } from '../../components/ui/useDataTable';
+import { parseLinkedSlots, type LinkedSlot } from '../../lib/notificationLink';
 
 type ViewMode = 'list' | 'grid';
+type RequestsTab = 'requester' | 'owner';
 type RoomType = 'lecture' | 'laboratory' | 'online' | 'field';
 type ScheduleDay = (typeof FULL_DAY_NAMES)[number];
 
@@ -75,48 +78,14 @@ interface RoomRecord {
   department: DepartmentRecord | null;
 }
 
-interface ScheduleRecord {
-  id: number;
-  semester_id: number;
-  section_id: number;
-  course_id: number;
-  faculty_id: number | null;
-  room_id: number;
-  department_id: number;
-  day: ScheduleDay;
-  start_time: string;
-  end_time: string;
-  mode: string;
-  meeting_type?: 'lecture' | 'laboratory' | null;
-  status: string;
-  section?: { id: number; section_name: string } | null;
-  course?: {
-    id: number;
-    course_code: string;
-    course_name: string;
-    course_category?: 'major' | 'minor';
-    units?: number | string | null;
-    lecture_hours?: number | string | null;
-    lab_hours?: number | string | null;
-  } | null;
-  faculty?: {
-    id: number;
-    first_name: string;
-    last_name: string;
-    middle_name?: string | null;
-  } | null;
-}
-
 interface RoomRequestsPageData {
   departments: DepartmentRecord[];
   rooms: RoomRecord[];
-  schedules: ScheduleRecord[];
   requests: RoomRequest[];
   timeGrid: InitialDataResponse['time_grid'];
 }
 
 interface InitialDataResponse {
-  schedules?: ScheduleRecord[];
   time_grid?: {
     opening_time?: string;
     closing_time?: string;
@@ -169,8 +138,10 @@ const formatDateCompact = (isoString?: string | null): string => {
   }
 };
 
+const isLectureRoom = (room: RoomRecord) => room.room_type === 'lecture';
+
 const isLendable = (room: RoomRecord, departmentId: number | null) =>
-  room.room_type === 'lecture'
+  isLectureRoom(room)
   && room.status === 'available'
   && room.department_id !== null
   && room.department_id !== departmentId;
@@ -207,14 +178,12 @@ export default function RoomRequests() {
     return data;
   });
   const [departments, setDepartments] = useState<DepartmentRecord[]>(cached?.departments ?? []);
-  const [rooms, setRooms] = useState<RoomRecord[]>(cached?.rooms ?? []);
-  const [schedules, setSchedules] = useState<ScheduleRecord[]>(cached?.schedules ?? []);
+  const [rooms, setRooms] = useState<RoomRecord[]>((cached?.rooms ?? []).filter(isLectureRoom));
   const [requests, setRequests] = useState<RoomRequest[]>(cached?.requests ?? []);
   const [isLoading, setIsLoading] = useState(!cached);
 
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [globalFilter, setGlobalFilter] = useState('');
-  const [roomTypeFilter, setRoomTypeFilter] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState<DepartmentRecord | null>(null);
   const [selectedRoom, setSelectedRoom] = useState<RoomRecord | null>(null);
   const [requestRoom, setRequestRoom] = useState<RoomRecord | null>(null);
@@ -227,17 +196,16 @@ export default function RoomRequests() {
       const [departmentResponse, roomResponse, initialResponse] = await Promise.all([
         api.get<DepartmentRecord[]>('/departments'),
         api.get<RoomRecord[]>('/rooms'),
-        api.get<InitialDataResponse>('/initial-data?include=schedules&schedule_limit=2000'),
+        api.get<InitialDataResponse>('/initial-data?include=departments'),
       ]);
       const initialData = initialResponse.data;
       configureTimeGrid(initialData.time_grid);
-      const roomData = Array.isArray(roomResponse.data) ? roomResponse.data : [];
+      const roomData = (Array.isArray(roomResponse.data) ? roomResponse.data : []).filter(isLectureRoom);
       const departmentData = Array.isArray(departmentResponse.data) ? departmentResponse.data : [];
 
       if (mountedRef.current) {
         setDepartments(departmentData);
         setRooms(roomData);
-        setSchedules(initialData.schedules ?? []);
       }
 
       const requestData = await fetchRoomRequests();
@@ -245,7 +213,6 @@ export default function RoomRequests() {
       setCachedData<RoomRequestsPageData>(cacheKey, {
         departments: departmentData,
         rooms: roomData,
-        schedules: initialData.schedules ?? [],
         requests: requestData,
         timeGrid: initialData.time_grid,
       });
@@ -265,9 +232,53 @@ export default function RoomRequests() {
     };
   }, [loadData]);
 
+  const [roomSchedules, setRoomSchedules] = useState<{ roomId: number; schedules: RoomOccupancySchedule[] } | null>(null);
+  const [roomScheduleVersion, setRoomScheduleVersion] = useState(0);
+  const selectedRoomId = selectedRoom?.id ?? null;
+
+  useEffect(() => {
+    if (selectedRoomId === null) return;
+    let active = true;
+    fetchRoomOccupancy(selectedRoomId)
+      .then((data) => {
+        if (active) setRoomSchedules({ roomId: selectedRoomId, schedules: data.schedules });
+      })
+      .catch((error) => {
+        if (!active) return;
+        setRoomSchedules({ roomId: selectedRoomId, schedules: [] });
+        toast.error('Timetable Unavailable', apiErrorMessage(error, "The room's timetable could not be loaded."));
+      });
+    return () => { active = false; };
+  }, [selectedRoomId, roomScheduleVersion, toast]);
+
   useLiveRefresh(['rooms'], () => {
     void loadData(true);
+    setRoomScheduleVersion((version) => version + 1);
   });
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkedRoomId = Number(searchParams.get('room')) || null;
+  const [handledRoomLink, setHandledRoomLink] = useState<number | null>(null);
+  const [linkedHighlight, setLinkedHighlight] = useState<{ roomId: number; slots: LinkedSlot[]; seq: number } | null>(null);
+  if (linkedRoomId === null && handledRoomLink !== null) setHandledRoomLink(null);
+  if (linkedRoomId !== null && linkedRoomId !== handledRoomLink && rooms.length > 0) {
+    setHandledRoomLink(linkedRoomId);
+    const room = rooms.find((candidate) => candidate.id === linkedRoomId);
+    if (room) {
+      setGlobalFilter('');
+      setSelectedDepartment(departments.find((candidate) => candidate.id === room.department_id) ?? room.department ?? null);
+      setSelectedRoom(room);
+      setLinkedHighlight((current) => ({ roomId: room.id, slots: parseLinkedSlots(searchParams.get('slots')), seq: (current?.seq ?? 0) + 1 }));
+    }
+  }
+  useEffect(() => {
+    if (handledRoomLink === null || linkedRoomId !== handledRoomLink) return;
+    setSearchParams((params) => {
+      params.delete('room');
+      params.delete('slots');
+      return params;
+    }, { replace: true });
+  }, [handledRoomLink, linkedRoomId, setSearchParams]);
 
   const replaceRequest = (updated: RoomRequest) =>
     setRequests((current) => current.map((request) => (request.id === updated.id ? updated : request)));
@@ -278,7 +289,9 @@ export default function RoomRequests() {
   );
 
   const sortedDepartments = useMemo(() => {
-    let result = [...departments].sort((a, b) => a.department_name.localeCompare(b.department_name));
+    let result = departments
+      .filter((department) => department.id !== departmentId)
+      .sort((a, b) => a.department_name.localeCompare(b.department_name));
     if (globalFilter.trim()) {
       const query = globalFilter.toLowerCase();
       result = result.filter((d) =>
@@ -287,7 +300,7 @@ export default function RoomRequests() {
       );
     }
     return result;
-  }, [departments, globalFilter]);
+  }, [departments, departmentId, globalFilter]);
 
   const departmentRooms = useMemo(() => {
     if (!selectedDepartment) return [];
@@ -301,11 +314,8 @@ export default function RoomRequests() {
         (room.building && room.building.toLowerCase().includes(query)),
       );
     }
-    if (roomTypeFilter) {
-      result = result.filter((room) => room.room_type === roomTypeFilter);
-    }
     return result;
-  }, [rooms, selectedDepartment, globalFilter, roomTypeFilter]);
+  }, [rooms, selectedDepartment, globalFilter]);
 
   const openDepartment = (department: DepartmentRecord) => {
     setSelectedDepartment(department);
@@ -568,20 +578,6 @@ export default function RoomRequests() {
       />
       <div className="flex flex-wrap items-center gap-3">
         <RequestsButton count={pendingFromOthers} onClick={() => setShowRequests(true)} />
-        {selectedDepartment && (
-          <div className="flex items-center gap-1.5">
-            <Filter size={13} className="text-gray-400" />
-            <select
-              value={roomTypeFilter}
-              onChange={(e) => setRoomTypeFilter(e.target.value)}
-              className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
-            >
-              <option value="">All Types</option>
-              <option value="lecture">Lecture</option>
-              <option value="laboratory">Laboratory</option>
-            </select>
-          </div>
-        )}
 
         <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1">
           <button
@@ -631,10 +627,11 @@ export default function RoomRequests() {
           <button
             type="button"
             onClick={() => setSelectedRoom(null)}
-            className="inline-flex w-fit items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-bold text-gray-600 shadow-sm transition hover:bg-gray-50 cursor-pointer"
+            aria-label={`Back to ${selectedDepartment?.department_code ?? 'rooms'}`}
+            title={`Back to ${selectedDepartment?.department_code ?? 'rooms'}`}
+            className="p-2 w-fit text-gray-500 hover:text-gray-800 bg-white border border-gray-200 hover:border-gray-300 rounded-xl transition-all shadow-sm flex items-center justify-center cursor-pointer"
           >
             <ArrowLeft size={16} />
-            {selectedDepartment?.department_code ?? 'Rooms'}
           </button>
           {canRequest && isLendable(selectedRoom, departmentId) && (
             <button
@@ -648,10 +645,12 @@ export default function RoomRequests() {
           )}
         </div>
         <RoomDetailContent
+          key={linkedHighlight?.seq ?? 0}
           room={{ ...selectedRoom, building: selectedRoom.building ?? '' }}
-          schedules={schedules}
-          isLoading={false}
+          schedules={roomSchedules?.roomId === selectedRoom.id ? roomSchedules.schedules : []}
+          isLoading={roomSchedules?.roomId !== selectedRoom.id}
           initialViewMode="grid"
+          highlightSlots={linkedHighlight?.roomId === selectedRoom.id ? linkedHighlight.slots : undefined}
         />
         {requestRoom && (
           <RequestRoomModal
@@ -998,10 +997,27 @@ function RequestsModal({
   onChanged: (request: RoomRequest) => void;
 }) {
   const { giveBack, busyId } = useGiveBack(onChanged);
+  const activeRequests = useMemo(
+    () => requests.filter((request) => request.status === 'pending' || request.status === 'approved'),
+    [requests],
+  );
+  const sentRequests = useMemo(
+    () => activeRequests.filter((request) => request.requesting_department?.id === departmentId),
+    [activeRequests, departmentId],
+  );
+  const receivedRequests = useMemo(
+    () => activeRequests.filter((request) => getOwnerId(request) === departmentId),
+    [activeRequests, departmentId],
+  );
+  const hasTabs = departmentId !== null;
+  const [tab, setTab] = useState<RequestsTab>(() =>
+    receivedRequests.some((request) => request.status === 'pending') ? 'owner' : 'requester',
+  );
+  const visibleRequests = !hasTabs ? activeRequests : tab === 'requester' ? sentRequests : receivedRequests;
+
   const rows = useMemo<RequestRow[]>(
     () =>
-      requests
-        .filter((request) => request.status === 'pending' || request.status === 'approved')
+      visibleRequests
         .flatMap((request) =>
           request.windows.map((window, index) => ({
             id: `${request.id}-${index}`,
@@ -1011,87 +1027,98 @@ function RequestsModal({
             request,
           })),
         ),
-    [requests],
+    [visibleRequests],
   );
 
   const columns = useMemo<ColumnDef<RequestRow>[]>(
-    () => [
-      {
-        id: 'room',
-        accessorKey: 'room',
-        header: 'Room',
-        cell: ({ getValue }) => <span className="font-mono font-bold text-[#4e0a10]">{getValue<string>()}</span>,
-      },
-      {
-        id: 'requester',
-        accessorFn: (row) => row.request.requesting_department?.code ?? '',
-        header: 'Requested By',
-        cell: ({ getValue }) => <span className="font-semibold text-gray-700">{getValue<string>() || '-'}</span>,
-      },
-      {
-        id: 'owner',
-        accessorFn: (row) => row.request.owner_department?.code ?? '',
-        header: 'Room Owner',
-        cell: ({ getValue }) => <span className="font-semibold text-gray-700">{getValue<string>() || '-'}</span>,
-      },
-      {
-        id: 'day',
-        accessorKey: 'day',
-        header: 'Day',
-        cell: ({ getValue }) => <span className="font-semibold text-gray-700">{getValue<string>()}</span>,
-      },
-      {
-        id: 'time',
-        accessorKey: 'time',
-        header: 'Time',
-        cell: ({ getValue }) => <span className="font-semibold text-gray-700">{getValue<string>()}</span>,
-      },
-      {
-        id: 'status',
-        accessorFn: (row) => row.request.status,
-        header: 'Status',
-        cell: ({ row }) => <StatusBadge status={row.original.request.status} />,
-      },
-      {
-        id: 'actions',
-        header: 'Actions',
-        enableSorting: false,
-        meta: { align: 'right', stopRowClick: true },
-        cell: ({ row }) => {
-          const { request } = row.original;
-          const isApproved = request.status === 'approved';
-          return (
-            <div className="flex justify-end gap-1.5">
-              <TableActionButton
-                label={`View request for ${row.original.room}`}
-                variant="view"
-                onClick={() => onPreview(request)}
-                className="!w-auto gap-1.5 px-3 text-xs font-extrabold"
-              >
-                <Eye size={15} />
-                View
-              </TableActionButton>
-              {canGiveBack(request, departmentId) && (
+    () => {
+      const all: ColumnDef<RequestRow>[] = [
+        {
+          id: 'room',
+          accessorKey: 'room',
+          header: 'Room',
+          cell: ({ getValue }) => <span className="font-mono font-bold text-[#4e0a10]">{getValue<string>()}</span>,
+        },
+        {
+          id: 'requester',
+          accessorFn: (row) => row.request.requesting_department?.code ?? '',
+          header: 'Requested By',
+          cell: ({ getValue }) => <span className="font-semibold text-gray-700">{getValue<string>() || '-'}</span>,
+        },
+        {
+          id: 'owner',
+          accessorFn: (row) => row.request.owner_department?.code ?? '',
+          header: 'Room Owner',
+          cell: ({ getValue }) => <span className="font-semibold text-gray-700">{getValue<string>() || '-'}</span>,
+        },
+        {
+          id: 'day',
+          accessorKey: 'day',
+          header: 'Day',
+          cell: ({ getValue }) => <span className="font-semibold text-gray-700">{getValue<string>()}</span>,
+        },
+        {
+          id: 'time',
+          accessorKey: 'time',
+          header: 'Time',
+          cell: ({ getValue }) => <span className="font-semibold text-gray-700">{getValue<string>()}</span>,
+        },
+        {
+          id: 'status',
+          accessorFn: (row) => row.request.status,
+          header: 'Status',
+          cell: ({ row }) => <StatusBadge status={row.original.request.status} />,
+        },
+        {
+          id: 'actions',
+          header: 'Actions',
+          enableSorting: false,
+          meta: { align: 'right', stopRowClick: true },
+          cell: ({ row }) => {
+            const { request } = row.original;
+            const isApproved = request.status === 'approved';
+            return (
+              <div className="flex justify-end gap-1.5">
                 <TableActionButton
-                  label={isApproved ? `Give back ${row.original.room}` : `Cancel request for ${row.original.room}`}
-                  variant="remove"
-                  disabled={busyId !== null}
-                  onClick={() => void giveBack(request)}
+                  label={`View request for ${row.original.room}`}
+                  variant="view"
+                  onClick={() => onPreview(request)}
                   className="!w-auto gap-1.5 px-3 text-xs font-extrabold"
                 >
-                  <Undo2 size={15} />
-                  {isApproved ? 'Give Back' : 'Cancel'}
+                  <Eye size={15} />
+                  View
                 </TableActionButton>
-              )}
-            </div>
-          );
+                {canGiveBack(request, departmentId) && (
+                  <TableActionButton
+                    label={isApproved ? `Give back ${row.original.room}` : `Cancel request for ${row.original.room}`}
+                    variant="remove"
+                    disabled={busyId !== null}
+                    onClick={() => void giveBack(request)}
+                    className="!w-auto gap-1.5 px-3 text-xs font-extrabold"
+                  >
+                    <Undo2 size={15} />
+                    {isApproved ? 'Give Back' : 'Cancel'}
+                  </TableActionButton>
+                )}
+              </div>
+            );
+          },
         },
-      },
-    ],
-    [onPreview, departmentId, busyId, giveBack],
+      ];
+      const hidden = tab === 'requester' ? 'requester' : 'owner';
+      return hasTabs ? all.filter((column) => column.id !== hidden) : all;
+    },
+    [onPreview, departmentId, busyId, giveBack, hasTabs, tab],
   );
 
   const table = useDataTable({ data: rows, columns, pageSize: false, getRowId: (row) => row.id });
+
+  const tabButtonClass = (active: boolean) =>
+    `inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-extrabold transition-all duration-200 cursor-pointer ${
+      active ? 'bg-[#5A1220] text-white shadow-sm' : 'text-gray-500 hover:text-gray-800'
+    }`;
+  const tabCountClass = (active: boolean) =>
+    `min-w-5 rounded-full px-1.5 py-0.5 text-center text-[10px] font-bold ${active ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-600'}`;
 
   return (
     <Modal
@@ -1100,8 +1127,21 @@ function RequestsModal({
       title="Room Requests"
       description="Pending and approved room requests sent to or from your department."
       size="lg"
+      className="!max-w-4xl"
     >
-      <div className="p-5 font-sans">
+      <div className="space-y-4 p-5 font-sans">
+        {hasTabs && (
+          <div className="flex w-max items-center gap-1 rounded-xl border border-gray-200 bg-gray-100/90 p-1" role="tablist" aria-label="Room request view">
+            <button type="button" role="tab" aria-selected={tab === 'requester'} onClick={() => setTab('requester')} className={tabButtonClass(tab === 'requester')}>
+              Requester
+              <span className={tabCountClass(tab === 'requester')}>{sentRequests.length}</span>
+            </button>
+            <button type="button" role="tab" aria-selected={tab === 'owner'} onClick={() => setTab('owner')} className={tabButtonClass(tab === 'owner')}>
+              Requestor
+              <span className={tabCountClass(tab === 'owner')}>{receivedRequests.length}</span>
+            </button>
+          </div>
+        )}
         <DataTable
           table={table}
           showPagination={false}
@@ -1223,7 +1263,7 @@ function RequestPreviewModal({
         <DetailLine label="Status" value={<StatusBadge status={request.status} />} />
         <DetailLine label="Room" value={request.room?.room_code ?? 'Room unavailable'} />
         <DetailLine label="Requested By" value={request.requesting_department?.code ?? 'Not specified'} />
-        <DetailLine label="Owner Department" value={request.owner_department?.code ?? 'Not specified'} />
+        <DetailLine label="Department" value={request.owner_department?.code ?? 'Not specified'} />
         {request.windows.length === 0 && <DetailLine label="Schedule" value="Not specified" />}
         {request.windows.map((window, index) => (
           <DetailLine

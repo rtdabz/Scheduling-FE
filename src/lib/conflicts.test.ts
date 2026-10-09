@@ -46,7 +46,7 @@ const schedule = (overrides: Partial<ConflictSchedule> = {}): ConflictSchedule =
 describe('describeConflictSchedule', () => {
   it('names the class, when it meets, where, and who teaches it', () => {
     expect(describeConflictSchedule(schedule())).toBe(
-      'IT 301 — BSIT 3A · Monday 08:00-09:30 · CL-201 · No instructor',
+      'IT 301 — BSIT 3A · Monday 8:00 AM - 9:30 AM · CL-201 · No instructor',
     );
   });
 
@@ -120,7 +120,7 @@ describe('labels', () => {
 
   it('names each action as the thing the user is choosing to do', () => {
     expect(resolutionActionLabel('reassign_instructor')).toBe('Reassign the instructor');
-    expect(resolutionActionLabel('request_override')).toBe('Allow it to stand, with a reason');
+    expect(resolutionActionLabel('move_schedule')).toBe('Move to another day or time');
   });
 });
 
@@ -147,6 +147,15 @@ describe('fetchConflictRecommendations', () => {
     apiGet.mockResolvedValueOnce({ data: {} });
 
     await expect(fetchConflictRecommendations('room_conflict:42:77')).resolves.toEqual([]);
+  });
+
+  it('discards retired instructor candidates from an older server while preserving placement order', async () => {
+    const move = { rank: 2, action: 'move_schedule', payload: { action: 'move_schedule', schedule_id: 42 } };
+    const room = { rank: 3, action: 'change_room', payload: { action: 'change_room', schedule_id: 42 } };
+    const retired = { rank: 1, action: 'reassign_instructor', payload: { action: 'reassign_instructor', schedule_id: 42, faculty_id: 9 } };
+    apiGet.mockResolvedValueOnce({ data: { options: [retired, move, room] } });
+
+    await expect(fetchConflictRecommendations('faculty_conflict:42:77')).resolves.toEqual([move, room]);
   });
 });
 

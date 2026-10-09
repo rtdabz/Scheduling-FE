@@ -116,7 +116,6 @@ export default function ScheduleScopeSummary({ scopeLabel, level, stats, isLoadi
   const toggle = (next: OverviewFocus) => onFocusChange(focus === next ? null : next);
   const target = level === 'institution' ? 'departments' : level === 'department' ? 'sections' : 'meetings';
   const readiness = stats.sectionsTotal === 0 ? 0 : Math.round((stats.sectionsScheduled / stats.sectionsTotal) * 100);
-  const overridden = stats.conflicts.overridden ?? 0;
   const conflictKinds = [
     stats.conflicts.faculty > 0 ? `${stats.conflicts.faculty} faculty` : '',
     stats.conflicts.room > 0 ? `${stats.conflicts.room} room` : '',
@@ -187,11 +186,8 @@ export default function ScheduleScopeSummary({ scopeLabel, level, stats, isLoadi
           icon={AlertTriangle}
           title="Conflicts"
           count={stats.conflicts.total}
-          detail={[
-            conflictKinds ? `meetings clash (${conflictKinds})` : 'meetings clash',
-            overridden > 0 ? `· ${overridden} overridden` : '',
-          ].filter(Boolean).join(' ')}
-          clearLabel={overridden > 0 ? `No open conflicts · ${overridden} overridden` : 'No double-bookings'}
+          detail={conflictKinds ? `meetings clash (${conflictKinds})` : 'meetings clash'}
+          clearLabel="No double-bookings"
           actionLabel={`Show affected ${target}`}
           tone="danger"
           isActive={focus === 'conflicts'}

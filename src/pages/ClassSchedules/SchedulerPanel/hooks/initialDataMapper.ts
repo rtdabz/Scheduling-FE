@@ -178,7 +178,6 @@ export const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
       ? String(item.faculty_id ?? item.faculty?.id)
       : null,
     facultyAssignmentDone: Boolean(item.faculty_assignment_done),
-    facultyConflictOverride: Boolean(item.faculty_conflict_override),
     status: item.status,
     dayIndex,
     startSlot,
@@ -226,6 +225,7 @@ export const mapApiCourse = (s: ApiCourseRecord): Subject => {
     departmentId: s.department_id ?? null,
     programId: s.program_id ?? null,
     teachingProgramId: s.teaching_program_id ?? null,
+    delegatedOnly: Boolean(s.delegated_only),
     programCode: s.program?.code ?? null,
     teachingDepartmentId: delegatedTo ?? (servesOwnCollege ? s.department_id : null),
     teachingDepartmentCode: teachingDepartment?.department_code,
@@ -256,7 +256,6 @@ export const mapApiFaculty = (f: InitialDataResponse["faculties"][number]): Facu
   maxUnits: numberOrUndefined(f.max_units),
   deloadUnits: numberOrUndefined(f.deload_units),
   overloadUnits: numberOrUndefined(f.overload_units),
-  probonoUnits: numberOrUndefined(f.probono_units),
   assignedUnits: numberOrUndefined(f.assigned_units),
   requiredUnits: numberOrUndefined(f.required_units),
   unitCeiling: numberOrUndefined(f.unit_ceiling),
@@ -313,9 +312,11 @@ export const mapInitialData = (
   const mappedRooms = apiRooms.map((r): Room => ({
     id: r.id.toString(),
     name: r.room_code,
+    building: r.building,
     departmentId: r.department_id,
     roomType: r.room_type,
     status: r.status,
+    ...(r.allow_lecture_usage ? { allowLectureUsage: true } : {}),
     ...(r.grant_windows?.length ? { grantWindows: r.grant_windows } : {}),
   }));
 

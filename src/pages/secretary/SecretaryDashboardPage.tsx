@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -15,12 +16,12 @@ import {
   FileClock,
   FileText,
   FlaskConical,
-  GaugeCircle,
   Globe2,
-  GraduationCap,
   Handshake,
   LayoutGrid,
   MapPin,
+  Maximize2,
+  Minimize2,
   RotateCcw,
   Send,
   ShieldCheck,
@@ -29,7 +30,10 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
-import DashboardTimetableGrid from '../../components/scheduling/DashboardTimetableGrid';
+import DashboardGantt from '../vpaa/calendar/DashboardGantt';
+import ScheduleDetailModal from '../vpaa/calendar/ScheduleDetailModal';
+import { buildStandardHours, DEFAULT_STANDARD_HOURS, findOverlaps, type CalendarSchedule, type StandardHours } from '../vpaa/calendar/ganttLayout';
+import type { TimeGridConfigInput } from '../../lib/timeGrid';
 import InstructorWorkloadChart from '../../components/scheduling/InstructorWorkloadChart';
 import { DEAN_REQUIRED_MESSAGE, useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
 import { useToast } from '../../context/ToastContext';
@@ -43,14 +47,14 @@ import { Bar, BarChart, Cell, LabelList, Pie, PieChart, ResponsiveContainer, XAx
 import DashboardMetricCard from '../../components/overview/DashboardMetricCard';
 import { basicLoadOf } from '../../lib/facultyLoad';
 
-interface Schedule { id:number; semester_id:number; section_id:number; faculty_id?:number|null; room_id?:number|null; mode?:string|null; day:string; start_time:string; end_time:string; status:string; course?:{course_code:string;course_category?:string|null}|null; subject?:{subject_code:string;subject_category?:string|null}|null; faculty?:{first_name:string;last_name:string}|null; room?:{room_code:string;room_type?:string}|null; section?:{section_name:string}|null; department_id?:number|null }
+interface Schedule { id:number; semester_id:number; section_id:number; faculty_id?:number|null; room_id?:number|null; mode?:string|null; day:string; start_time:string; end_time:string; status:string; meeting_type?:string|null; course_id?:number|null; subject_id?:number|null; course?:{id?:number;course_code:string;course_name?:string;course_category?:string|null;units?:number}|null; subject?:{id?:number;subject_code:string;subject_name?:string;subject_category?:string|null;units?:number}|null; faculty?:{id?:number;first_name:string;last_name:string}|null; room?:{id?:number;room_code:string;room_type?:string;building?:string|null}|null; section?:{id?:number;section_name:string}|null; department_id?:number|null }
 interface Room { id:number; room_code:string; room_type:string; building?:string|null; status?:string|null; department_id?:number|null }
 interface Section { id:number; section_name:string; department_id?:number|null }
 interface Faculty { id:number; first_name:string; last_name:string; max_units:number; assigned_units?:number; deload_units?:number; profile_picture?:string|null; department_id:number }
 interface Subject { id:number; subject_code:string; subject_name:string; department_id?:number|null }
 interface Semester { id:number; status:string }
-interface Overview { schedules:Schedule[]; rooms:Room[]; sections:Section[]; faculties:Faculty[]; subjects:Subject[]; activeSemester:Semester|null }
-interface InitialData { schedules?:Schedule[]; rooms?:Room[]; sections?:Section[]; faculties?:Faculty[]; subjects?:Subject[]; courses?:Subject[]; active_semester?:Semester }
+interface Overview { schedules:Schedule[]; rooms:Room[]; sections:Section[]; faculties:Faculty[]; subjects:Subject[]; activeSemester:Semester|null; standardHours?:StandardHours }
+interface InitialData { schedules?:Schedule[]; rooms?:Room[]; sections?:Section[]; faculties?:Faculty[]; subjects?:Subject[]; courses?:Subject[]; active_semester?:Semester; time_grid?:TimeGridConfigInput }
 
 type Tone = 'brand' | 'info' | 'good' | 'warn' | 'alert' | 'accent';
 
@@ -63,6 +67,7 @@ const TONES: Record<Tone, string> = {
   good: 'bg-emerald-50 text-emerald-600',
   warn: 'bg-amber-50 text-amber-700',
   alert: 'bg-rose-50 text-rose-600',
+  accent: 'bg-violet-50 text-violet-600',
 };
 
 const STAGES = ['Draft', 'Ready to Submit', 'Submitted to Dean', 'Returned by Dean', 'Approved by Dean', 'Approved by VPAA'];
@@ -135,6 +140,14 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
   const [faculties, setFaculties] = useState<Faculty[]>(cached?.faculties ?? []);
   const [subjects, setSubjects] = useState<Subject[]>(cached?.subjects ?? []);
   const [semester, setSemester] = useState<Semester | null>(cached?.activeSemester ?? null);
+  const [standardHours, setStandardHours] = useState<StandardHours>(cached?.standardHours ?? DEFAULT_STANDARD_HOURS);
+  const [selectedSchedule, setSelectedSchedule] = useState<CalendarSchedule | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -152,6 +165,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
             faculties: Array.isArray(data.faculties) ? data.faculties : [],
             subjects: Array.isArray(data.subjects) ? data.subjects : (Array.isArray(data.courses) ? data.courses : []),
             activeSemester: data.active_semester || null,
+            standardHours: buildStandardHours(data.time_grid?.opening_time, data.time_grid?.closing_time, data.time_grid?.slot_minutes),
           };
         }, reloadKey > 0);
 
@@ -162,6 +176,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
         setFaculties(overview.faculties);
         setSubjects(overview.subjects);
         setSemester(overview.activeSemester);
+        setStandardHours(overview.standardHours ?? DEFAULT_STANDARD_HOURS);
       } catch {
         if (active) setLoadError('Could not load scheduling data. Figures below may be out of date.');
       } finally {
@@ -203,8 +218,30 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     [schedules, semesterId, sectionIds, departmentId],
   );
 
+  const calendarSchedules = useMemo<CalendarSchedule[]>(() => visibleSchedules.map(item => ({
+    ...item,
+    course_id: item.course_id ?? item.course?.id ?? item.subject_id,
+    room: item.room?.id ? { id: item.room.id, room_code: item.room.room_code ?? '', building: item.room.building } : null,
+    section: item.section?.id ? { id: item.section.id, section_name: item.section.section_name ?? '' } : null,
+    faculty: item.faculty?.id ? { id: item.faculty.id, first_name: item.faculty.first_name, last_name: item.faculty.last_name } : null,
+    mode: deliveryOf(item),
+  })), [visibleSchedules]);
+  const timelineOverlaps = useMemo(() => findOverlaps(calendarSchedules), [calendarSchedules]);
+
+  useEffect(() => {
+    document.body.style.overflow = isFullscreen ? 'hidden' : '';
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && isFullscreen && !selectedSchedule) setIsFullscreen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isFullscreen, selectedSchedule]);
+
   const scheduledSections = useMemo(() => new Set(visibleSchedules.map(s => s.section_id)).size, [visibleSchedules]);
-  const sectionCoverage = percent(scheduledSections, visibleSections.length);
   const remaining = Math.max(0, visibleSections.length - scheduledSections);
   const noInstructor = visibleSchedules.filter(s => !s.faculty_id && !s.faculty).length;
   const noRoom = visibleSchedules.filter(s => needsRoom(s) && !s.room_id && !s.room).length;
@@ -235,7 +272,6 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
   }, [visibleSchedules]);
   const roomUsage = useMemo(() => buildRoomUsage(visibleRooms, classesByRoom), [visibleRooms, classesByRoom]);
   const roomsUsed = roomsInUse(roomUsage);
-  const unbookedRooms = Math.max(0, assignableRooms.length - roomsUsed);
   const labRooms = assignableRooms.filter(r => (r.room_type ?? '').toLowerCase().includes('lab')).length;
 
   const checks: ReadonlyArray<readonly [string, boolean]> = [
@@ -328,8 +364,6 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     ? yearLevels
     : [{ year_level:0, label:'All sections', total:visibleSections.length, drafted:scheduledSections, isComplete:remaining === 0 }];
 
-  const roomUtilization = percent(roomsUsed, assignableRooms.length);
-
   const kpis: Tile[] = [
     {
       label: 'Needs Attention',
@@ -347,6 +381,39 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     { label: 'Courses', value: visibleSubjects.length, detail: 'Offered courses', icon: BookOpen, path: paths.courses, tone: 'good' },
     { label: 'Rooms', value: assignableRooms.length, detail: 'Department rooms', icon: Building2, path: paths.rooms, tone: 'warn' },
   ];
+
+  const timetablePanel = (
+    <div className={isFullscreen ? 'fixed inset-0 z-[999999] flex flex-col overflow-auto bg-white p-4 sm:p-6' : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
+      <Panel
+        title="Department Academic Timetable"
+        action="View full timetable"
+        onAction={() => navigate(paths.schedules)}
+        headerExtra={<button
+          type="button"
+          onClick={() => setIsFullscreen(open => !open)}
+          title={isFullscreen ? 'Exit full window (Esc)' : 'Full window view'}
+          aria-label={isFullscreen ? 'Exit full window' : 'Full window view'}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-primary/30 hover:text-primary"
+        >
+          {isFullscreen ? <Minimize2 className="h-3.5 w-3.5"/> : <Maximize2 className="h-3.5 w-3.5"/>}
+        </button>}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <DashboardGantt
+            schedules={calendarSchedules}
+            allSchedules={calendarSchedules}
+            standardHours={standardHours}
+            overlaps={timelineOverlaps}
+            now={now}
+            onSelect={setSelectedSchedule}
+            isFullscreen={isFullscreen}
+          />
+        </div>
+      </Panel>
+      <ScheduleDetailModal schedule={selectedSchedule} allSchedules={calendarSchedules} overlaps={timelineOverlaps} onClose={() => setSelectedSchedule(null)} onSelect={setSelectedSchedule} />
+    </div>
+  );
 
   if (loading) {
     return <DashboardSkeleton
@@ -436,61 +503,57 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
         </ul>
       </Panel>
 
-      {canViewSchedules && <Panel title="Department Drafting Progress" className="flex flex-col xl:col-span-4">
-        <div className="grid gap-5 sm:grid-cols-[144px_1fr] sm:items-center">
-          <div className="relative mx-auto h-32 w-32">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={progressRows.map(row => ({
-                    name: row.label,
-                    value: Math.max(1, row.total),
-                    complete: row.isComplete,
-                  }))}
-                  dataKey="value"
-                  innerRadius="67%"
-                  outerRadius="100%"
-                  startAngle={90}
-                  endAngle={-270}
-                  paddingAngle={1}
-                  stroke="#ffffff"
-                  strokeWidth={3}
-                >
-                  {progressRows.map(row => (
-                    <Cell
-                      key={row.year_level}
-                      fill={row.isComplete ? '#16a36a' : '#f59e0b'}
-                    />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="absolute inset-[22%] flex flex-col items-center justify-center rounded-full bg-white text-center">
-              <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Complete</span>
-              <b className="mt-0.5 text-2xl leading-none text-primary">{draftingProgress}%</b>
-              <span className="mt-1 text-[9px] text-slate-500">{draftedCount}/{totalSections} sections</span>
-            </div>
-          </div>
-          <div className="h-[168px] min-w-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={progressRows.map(row => ({ name: row.label, progress: percent(row.drafted, row.total), count: `${percent(row.drafted, row.total)}%  ${row.drafted}/${row.total}` }))} layout="vertical" margin={{ top: 0, right: 64, left: 0, bottom: 0 }} barCategoryGap={10}>
-                <XAxis type="number" domain={[0, 100]} hide />
-                <YAxis type="category" dataKey="name" width={58} tick={{ fontSize: 10, fontWeight: 700, fill: '#334155' }} axisLine={false} tickLine={false} />
-                <Bar dataKey="progress" fill="#16a36a" radius={[4, 4, 4, 4]} barSize={7} background={{ fill: '#e2e8f0', radius: 4 }}>
-                  <LabelList dataKey="count" position="right" offset={8} style={{ fontSize: 9, fill: '#64748b' }} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+      {canViewSchedules && <Panel title="Department Drafting Progress" className="xl:col-span-4" action="Open Schedule" onAction={() => navigate(paths.schedules)}>
+        <div className="relative mx-auto h-44 w-44">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={progressRows.map(row => ({
+                  name: row.label,
+                  value: Math.max(1, row.total),
+                }))}
+                dataKey="value"
+                innerRadius="67%"
+                outerRadius="100%"
+                startAngle={90}
+                endAngle={-270}
+                paddingAngle={1}
+                stroke="#ffffff"
+                strokeWidth={3}
+              >
+                {progressRows.map(row => (
+                  <Cell
+                    key={row.year_level}
+                    fill={row.isComplete ? '#16a36a' : '#f59e0b'}
+                  />
+                ))}
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="absolute inset-[22%] flex flex-col items-center justify-center rounded-full bg-white text-center">
+            <b className="text-3xl leading-none text-primary">{draftingProgress}%</b>
+            <span className="mt-1 text-[10px] text-slate-500">{draftedCount}/{totalSections} sections</span>
           </div>
         </div>
-        <div className="mt-auto border-t border-slate-100 pt-4">
-          <div className="grid grid-cols-3 gap-2">
-            <div className="rounded-md bg-emerald-50 p-2 text-center"><div className="text-lg font-bold leading-none text-emerald-700">{draftedCount}</div><div className="mt-1 text-[9px] font-semibold text-emerald-700">Drafted</div></div>
-            <div className="rounded-md bg-amber-50 p-2 text-center"><div className="text-lg font-bold leading-none text-amber-700">{remaining}</div><div className="mt-1 text-[9px] font-semibold text-amber-700">Remaining</div></div>
-            <div className="rounded-md bg-slate-50 p-2 text-center"><div className="text-lg font-bold leading-none text-primary">{progressRows.filter(row => row.isComplete).length}/{progressRows.length}</div><div className="mt-1 text-[9px] font-semibold text-slate-600">Years Complete</div></div>
-          </div>
-          <button type="button" onClick={() => navigate(paths.schedules)} className="mt-3 w-full rounded-md border border-primary px-3 py-2 text-[10px] font-bold text-primary transition hover:bg-primary/5">Open Department Schedule</button>
-        </div>
+        <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-slate-100 pt-3">
+          {progressRows.map(row => {
+            const value = percent(row.drafted, row.total);
+            return (
+              <li key={row.year_level} className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  {row.isComplete
+                    ? <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-500"/>
+                    : <span className="h-3 w-3 shrink-0 rounded-full border-2 border-amber-400"/>}
+                  <span className="min-w-0 flex-1 truncate text-[10px] font-bold text-slate-700">{row.label}</span>
+                  <span className="shrink-0 text-[10px] tabular-nums text-slate-500">{row.drafted}/{row.total}</span>
+                </div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-200">
+                  <div className={`h-full rounded-full ${row.isComplete ? 'bg-[#16a36a]' : 'bg-amber-400'}`} style={{ width: `${value}%` }} />
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       </Panel>}
 
       {canAssignInstructors && <Panel title="Instructor Assignment" className="xl:col-span-4" action="Open Schedule Builder" onAction={() => navigate(paths.schedules)}>
@@ -502,13 +565,9 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
       </Panel>}
     </section>
 
-    <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      {canViewSchedules && <div className="min-w-0">
-        <DashboardTimetableGrid
-          schedules={visibleSchedules}
-          sectionLabel={`${visibleSections.length} Sections`}
-          onOpenSchedule={() => navigate(paths.schedules)}
-        />
+    <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      {canViewSchedules && <div className="flex min-h-0 min-w-0 flex-col xl:[contain:size]">
+        {isFullscreen ? createPortal(timetablePanel, document.body) : timetablePanel}
       </div>}
 
       <div className="flex min-w-0 flex-col gap-4">
@@ -694,11 +753,14 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
   </div>;
 }
 
-function Panel({title, children, action, onAction, className = ''}:{title:string; children:ReactNode; action?:string; onAction?:() => void; className?:string}) {
+function Panel({title, children, action, onAction, headerExtra, className = ''}:{title:string; children:ReactNode; action?:string; onAction?:() => void; headerExtra?:ReactNode; className?:string}) {
   return <section className={`rounded-lg border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
     <div className="mb-3 flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
       <h2 className="text-[11px] font-bold uppercase tracking-wide text-primary">{title}</h2>
-      {action && <button type="button" onClick={onAction} className="inline-flex shrink-0 items-center text-[10px] font-bold text-primary hover:underline">{action}<ChevronRight className="h-3 w-3"/></button>}
+      <div className="flex shrink-0 items-center gap-3">
+        {action && <button type="button" onClick={onAction} className="inline-flex shrink-0 items-center text-[10px] font-bold text-primary hover:underline">{action}<ChevronRight className="h-3 w-3"/></button>}
+        {headerExtra}
+      </div>
     </div>
     {children}
   </section>;

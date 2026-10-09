@@ -23,7 +23,7 @@ const schedulesPath = (role: HelperRole): string => {
   if (role === "program_head") return "/program_head/schedule-management";
   if (role === "secretary") return "/secretary/schedule-management";
   if (role === "dean") return "/dean/schedules";
-  return "/schedules";
+  return "/schedules/approval";
 };
 
 const roleOf = (user: StoredUser | null): HelperRole => {

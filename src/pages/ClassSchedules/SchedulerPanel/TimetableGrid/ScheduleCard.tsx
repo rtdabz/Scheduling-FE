@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { AlertTriangle, CheckCircle2, Flag, Move, Pencil, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Flag, Move, Pencil, Trash2, UserPlus } from "lucide-react";
 import {
   getGridCardStyles,
   getGridModeBadgeClass
@@ -13,7 +13,6 @@ interface ScheduleCardProps {
   subject: Subject;
   conflict?: { conflictType: "room" | "faculty" | "section"; message: string } | null;
   isResolved?: boolean;
-  isAllowed?: boolean;
   isEditable: boolean;
   isPhase2Active: boolean;
   currentStatus: ScheduleItem["status"];
@@ -27,6 +26,8 @@ interface ScheduleCardProps {
   onDelete: (id: string) => void;
   onCardClick: (id: string) => void;
   onEdit?: () => void;
+  /** Opens the conflicts dialog on this class; the badge stays a label without it. */
+  onOpenConflict?: (id: string) => void;
   slotHeight?: number;
   isWideView?: boolean;
   isReadOnlyViewer?: boolean;
@@ -38,7 +39,6 @@ const ScheduleCard = memo(function ScheduleCard({
   subject,
   conflict,
   isResolved = false,
-  isAllowed = false,
   isEditable,
   isPhase2Active,
   currentStatus,
@@ -52,6 +52,7 @@ const ScheduleCard = memo(function ScheduleCard({
   onDelete,
   onCardClick,
   onEdit,
+  onOpenConflict,
   slotHeight,
   isWideView = false,
   isReadOnlyViewer = false
@@ -116,17 +117,8 @@ const ScheduleCard = memo(function ScheduleCard({
       ? "inside"
       : "below";
 
-  const showAllowed = isAllowed && !conflict;
-  const showResolved = isResolved && !conflict && !showAllowed;
-  const resolvedFlag = showAllowed ? (
-    <span
-      className="inline-flex items-center rounded bg-amber-500 p-0.5 text-white"
-      title="Instructor conflict allowed to stand"
-      aria-label="Instructor conflict allowed to stand"
-    >
-      <ShieldCheck className="h-2.5 w-2.5 shrink-0" />
-    </span>
-  ) : (
+  const showResolved = isResolved && !conflict;
+  const resolvedFlag = (
     <span
       className={`inline-flex items-center gap-0.5 rounded bg-emerald-600 px-1 py-0.5 ${isWideView ? "text-[11px]" : "text-[10px]"} font-semibold leading-none text-white`}
       title="Conflict resolved"
@@ -246,12 +238,25 @@ const ScheduleCard = memo(function ScheduleCard({
         )}
       </TimetableCardTooltip>
 
-      {conflict && (
+      {conflict && (onOpenConflict ? (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenConflict(schedule.id);
+          }}
+          title="See this conflict and how to fix it"
+          className="absolute top-1 left-1 z-20 flex cursor-pointer items-center gap-1 bg-red-600 text-white px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider shadow-sm animate-pulse hover:bg-red-700 hover:animate-none"
+        >
+          <AlertTriangle className="w-3 h-3 text-white shrink-0" />
+          {!isCompact && <span>Conflict</span>}
+        </button>
+      ) : (
         <div className="absolute top-1 left-1 z-20 flex items-center gap-1 bg-red-600 text-white px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider shadow-sm animate-pulse">
           <AlertTriangle className="w-3 h-3 text-white shrink-0" />
           {!isCompact && <span>Conflict</span>}
         </div>
-      )}
+      ))}
 
       {isFacultyAssigned && !isCompact && (
         <div className="absolute top-1 right-1 bg-green-100 rounded-full p-0.5 z-20 border border-green-200">
@@ -272,16 +277,16 @@ const ScheduleCard = memo(function ScheduleCard({
                 {displayModeLabel}
               </span>
               <span className={`text-[8.5px] px-1 rounded font-bold ${gridStyles.badgeText}`}>
-                {subject.units}u
+                {subject.units} {subject.units === 1 ? "unit" : "units"}
               </span>
             </div>
           </div>
           <div className="flex items-start justify-between text-[9.5px] text-slate-500 mt-0.5 gap-1">
             {roomDisplayName ? (
-              <span className="break-words whitespace-normal font-semibold leading-tight min-w-0">{roomDisplayName}</span>
+              <span className="break-words whitespace-normal font-semibold leading-tight min-w-0"><span className="font-medium text-slate-400">Room: </span>{roomDisplayName}</span>
             ) : null}
             <span className={`shrink-0 flex items-center gap-1 text-slate-400 font-semibold ${!roomDisplayName ? "ml-auto" : ""}`}>
-              {(showResolved || showAllowed) && resolvedFlag}
+              {showResolved && resolvedFlag}
               {schedule.startTime}
             </span>
           </div>
@@ -309,11 +314,11 @@ const ScheduleCard = memo(function ScheduleCard({
           <div className="mt-0.5 flex min-w-0 items-start justify-between gap-1">
             {roomDisplayName ? (
               <div className={`min-w-0 break-words font-semibold text-slate-600 ${isWideView ? "text-[12px]" : "text-[11px] leading-tight"}`}>
-                {roomDisplayName}
+                <span className="font-medium text-slate-400">Room: </span>{roomDisplayName}
               </div>
             ) : <span />}
             <span className={`shrink-0 rounded px-1 py-0.5 font-bold leading-none ${isWideView ? "text-[10.5px]" : "text-[9.5px]"} ${gridStyles.badgeText}`}>
-              {subject.units}u
+              {subject.units} {subject.units === 1 ? "unit" : "units"}
             </span>
           </div>
 
@@ -334,7 +339,7 @@ const ScheduleCard = memo(function ScheduleCard({
               ) : <span />}
               <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
                 {schedule.startTime} – {schedule.endTime}
-                {(showResolved || showAllowed) && resolvedFlag}
+                {showResolved && resolvedFlag}
               </span>
             </div>
           ) : (
@@ -356,7 +361,7 @@ const ScheduleCard = memo(function ScheduleCard({
             ) : null}
             <div className="flex items-center gap-1.5">
               <span>{schedule.startTime} – {schedule.endTime}</span>
-              {(showResolved || showAllowed) && resolvedFlag}
+              {showResolved && resolvedFlag}
             </div>
           </div>
           )}

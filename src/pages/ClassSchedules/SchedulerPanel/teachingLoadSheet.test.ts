@@ -209,20 +209,20 @@ const recordColours = (doc: jsPDF) => {
   return { fills, texts };
 };
 
-const PROBONO_TEXT = "107,114,128";
+const OVER_LIMIT_TEXT = "107,114,128";
 const CONFLICT_TEXT = "220,38,38";
 const PALE_FILLS = ["254,226,226", "255,237,213"];
 
-describe("drawSheet pro bono text", () => {
-  const renderWith = (probonoUnits: number, overriddenIndex: number | null = null, overloadUnits = 3) => {
+describe("drawSheet over-limit text", () => {
+  const renderWith = (overloadUnits = 3) => {
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: FORM_PAGE_SIZE });
     const { fills, texts } = recordColours(doc);
 
-    // Basic Load 3: the first subject is basic, the second overload, the third pro bono.
+    // Basic Load 3: the first subject is basic, the second overload, the third past the limit.
     const schedules = [0, 1, 2].map((index) =>
-      meeting({ id: String(index), courseId: `c${index}`, courseCode: `IT 10${index}`, dayIndex: index, day: ["monday", "tuesday", "wednesday"][index], facultyConflictOverride: index === overriddenIndex }),
+      meeting({ id: String(index), courseId: `c${index}`, courseCode: `IT 10${index}`, dayIndex: index, day: ["monday", "tuesday", "wednesday"][index] }),
     );
-    const faculty = { id: "f1", name: "A B Cruz", employmentType: "full-time", requiredUnits: 3, overloadUnits, probonoUnits } as Faculty;
+    const faculty = { id: "f1", name: "A B Cruz", employmentType: "full-time", requiredUnits: 3, overloadUnits } as Faculty;
     const load = classifyLoad(faculty, schedules);
 
     drawSheet(doc, {
@@ -234,37 +234,36 @@ describe("drawSheet pro bono text", () => {
     return { fills, texts };
   };
 
-  it("prints pro bono in grey and paid overload in plain black, without shading the rows, and says why", () => {
-    const { fills, texts } = renderWith(3);
-    // Line 1 of the Overload table (IT 101) is paid overload, line 2 (IT 102) pro bono.
-    expect(texts.find((entry) => entry.text === "IT 102")?.color).toBe(PROBONO_TEXT);
+  it("prints over-limit lines in grey and paid overload in plain black, without shading the rows", () => {
+    const { fills, texts } = renderWith();
+    // Line 1 of the Overload table (IT 101) is paid overload, line 2 (IT 102) is past the limit.
+    expect(texts.find((entry) => entry.text === "IT 102")?.color).toBe(OVER_LIMIT_TEXT);
     expect(texts.find((entry) => entry.text === "IT 101")?.color).toBe("0,0,0");
     // The basic subject keeps plain black text.
     expect(texts.find((entry) => entry.text === "IT 100")?.color).toBe("0,0,0");
     expect(fills.filter((colour) => PALE_FILLS.includes(colour))).toHaveLength(0);
-    expect(texts.map((entry) => entry.text)).not.toContain("Grey text is Pro Bono");
+    expect(texts.map((entry) => entry.text)).not.toContain("Grey text is over the limit");
     expect(texts.map((entry) => entry.text)).not.toContain("Light red text is Overload");
   });
 
-  it("colours nothing when no subject reached pro bono", () => {
+  it("colours nothing when no subject is past the limit", () => {
     // A 6-unit overload allowance holds both subjects past Basic Load.
-    const { texts } = renderWith(0, null, 6);
-    expect(texts.filter((entry) => entry.text.startsWith("IT 10") && entry.color === PROBONO_TEXT)).toHaveLength(0);
+    const { texts } = renderWith(6);
+    expect(texts.filter((entry) => entry.text.startsWith("IT 10") && entry.color === OVER_LIMIT_TEXT)).toHaveLength(0);
     expect(texts.filter((entry) => entry.text.startsWith("IT 10") && entry.color === "0,0,0")).toHaveLength(3);
-    expect(texts.map((entry) => entry.text)).not.toContain("Grey text is Pro Bono");
+    expect(texts.map((entry) => entry.text)).not.toContain("Grey text is over the limit");
   });
 });
 
 describe("drawSheet instructor conflict text", () => {
-  it("prints an override's times in red, leaving the rest of the line its own colour, with no conflict label", () => {
-    // All three bands have an override; pro bono must retain its grey text.
+  it("leaves times black when nothing on the sheet clashes", () => {
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: FORM_PAGE_SIZE });
     const { fills, texts } = recordColours(doc);
 
     const schedules = [0, 1, 2].map((index) =>
-      meeting({ id: String(index), courseId: `c${index}`, courseCode: `IT 10${index}`, dayIndex: index, day: ["monday", "tuesday", "wednesday"][index], facultyConflictOverride: true }),
+      meeting({ id: String(index), courseId: `c${index}`, courseCode: `IT 10${index}`, dayIndex: index, day: ["monday", "tuesday", "wednesday"][index] }),
     );
-    const faculty = { id: "f1", name: "A B Cruz", employmentType: "full-time", requiredUnits: 3, overloadUnits: 3, probonoUnits: 3 } as Faculty;
+    const faculty = { id: "f1", name: "A B Cruz", employmentType: "full-time", requiredUnits: 3, overloadUnits: 3 } as Faculty;
     const load = classifyLoad(faculty, schedules);
     drawSheet(doc, {
       logoImg: null, muniImg: null, collegeName: "IT", semester: "1ST", academicYear: "2026-2027",
@@ -273,15 +272,13 @@ describe("drawSheet instructor conflict text", () => {
       load, basicLines: load.basic, overloadLines: load.overload, sheetNumber: 1, sheetCount: 1,
     });
 
-    // No meeting on the sheet explains the override, so each subject's times carry it.
     expect(texts.find((entry) => entry.text === "IT 100")?.color).toBe("0,0,0");
     expect(texts.find((entry) => entry.text === "IT 101")?.color).toBe("0,0,0");
-    expect(texts.find((entry) => entry.text === "IT 102")?.color).toBe(PROBONO_TEXT);
+    expect(texts.find((entry) => entry.text === "IT 102")?.color).toBe(OVER_LIMIT_TEXT);
     expect(texts.filter((entry) => entry.text.includes("–")).map((entry) => entry.color))
-      .toEqual([CONFLICT_TEXT, CONFLICT_TEXT, CONFLICT_TEXT]);
+      .toEqual(["0,0,0", "0,0,0", OVER_LIMIT_TEXT]);
     expect(fills.filter((colour) => PALE_FILLS.includes(colour))).toHaveLength(0);
     expect(texts.some((entry) => /override|conflict/i.test(entry.text))).toBe(false);
-    expect(texts.map((entry) => entry.text)).not.toContain("Grey text is Pro Bono");
   });
 });
 
@@ -293,11 +290,11 @@ describe("drawSheet clashing times", () => {
     // BSIT 1D meets W 3-5 PM and Th 10 AM-1 PM; BSIT 1B meets Th 10 AM-1 PM and F 5-7 PM.
     const schedules = [
       meeting({ id: "1", courseId: "c1", courseCode: "IT 101", sectionId: "d", sectionName: "BSIT 1D", day: "wednesday", dayIndex: 2, startTime: "15:00", endTime: "17:00", startSlot: 16, durationSlots: 4 }),
-      meeting({ id: "2", courseId: "c1", courseCode: "IT 101", sectionId: "d", sectionName: "BSIT 1D", day: "thursday", dayIndex: 3, startTime: "10:00", endTime: "13:00", startSlot: 6, durationSlots: 6, facultyConflictOverride: true }),
-      meeting({ id: "3", courseId: "c1", courseCode: "IT 101", sectionId: "b", sectionName: "BSIT 1B", day: "thursday", dayIndex: 3, startTime: "10:00", endTime: "13:00", startSlot: 6, durationSlots: 6, facultyConflictOverride: true }),
+      meeting({ id: "2", courseId: "c1", courseCode: "IT 101", sectionId: "d", sectionName: "BSIT 1D", day: "thursday", dayIndex: 3, startTime: "10:00", endTime: "13:00", startSlot: 6, durationSlots: 6 }),
+      meeting({ id: "3", courseId: "c1", courseCode: "IT 101", sectionId: "b", sectionName: "BSIT 1B", day: "thursday", dayIndex: 3, startTime: "10:00", endTime: "13:00", startSlot: 6, durationSlots: 6 }),
       meeting({ id: "4", courseId: "c1", courseCode: "IT 101", sectionId: "b", sectionName: "BSIT 1B", day: "friday", dayIndex: 4, startTime: "17:00", endTime: "19:00", startSlot: 20, durationSlots: 4 }),
     ];
-    const faculty = { id: "f1", name: "A B Cruz", employmentType: "full-time", requiredUnits: 24, overloadUnits: 0, probonoUnits: 0 } as Faculty;
+    const faculty = { id: "f1", name: "A B Cruz", employmentType: "full-time", requiredUnits: 24, overloadUnits: 0 } as Faculty;
     const load = classifyLoad(faculty, schedules);
     drawSheet(doc, {
       logoImg: null, muniImg: null, collegeName: "IT", semester: "1ST", academicYear: "2026-2027",
@@ -345,7 +342,7 @@ describe("drawSheet with more overload subjects than the form's six lines", () =
         endTime: index < 6 ? "10:00" : "16:00",
       }),
     );
-    const faculty = { id: "f1", name: "A B Cruz", employmentType: "full-time", requiredUnits: 3, overloadUnits: 30, probonoUnits: 0 } as Faculty;
+    const faculty = { id: "f1", name: "A B Cruz", employmentType: "full-time", requiredUnits: 3, overloadUnits: 30 } as Faculty;
     const load = classifyLoad(faculty, schedules);
     expect(load.overload).toHaveLength(8);
 

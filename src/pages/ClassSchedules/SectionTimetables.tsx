@@ -198,7 +198,6 @@ export default function SectionTimetables() {
           rooms={data.rooms}
           subjects={data.subjects}
           activeSemesterText={formatActiveSemester(data)}
-          activeSemester={data.activeSemester}
           selectedSectionId={selectedSectionId}
           totalScheduled={totalScheduled}
           totalSubjects={totalSubjects}

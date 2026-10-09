@@ -21,8 +21,8 @@ export default function ClassSummaryTable({
   onRowClick,
   isRowFlagged,
   emptyMessage = "No class meetings match these filters.",
-  className = "flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white",
-  scrollClassName = "min-h-0 flex-1 overflow-auto",
+  className = "overflow-hidden rounded-xl border border-slate-200 bg-white",
+  scrollClassName = "",
   sortable = true,
 }: {
   classes: SummaryClass[];
@@ -52,7 +52,7 @@ export default function ClassSummaryTable({
       cell: ({ row }) => (
         <>
           <span className="block text-xs font-black text-slate-900">{row.original.courseCode}</span>
-          <span className="block whitespace-nowrap text-[11px] font-semibold text-slate-600">{row.original.courseName}</span>
+          <span className="block text-[11px] font-semibold text-slate-600">{row.original.courseName}</span>
           {renderCourseExtras?.(row.original)}
         </>
       ),
@@ -99,7 +99,7 @@ export default function ClassSummaryTable({
       header: "Instructor",
       meta: { cellClassName: "align-top text-slate-700" },
       cell: ({ row }: { row: { original: SummaryClass } }) => partLines(row.original, (part) => part.faculty || "Unassigned").map((faculty, index) => (
-        <span key={index} className={`block whitespace-nowrap leading-5 ${faculty === "Unassigned" ? "italic text-amber-700" : ""}`}>
+        <span key={index} className={`block leading-5 ${faculty === "Unassigned" ? "italic text-amber-700" : ""}`}>
           {faculty}
         </span>
       )),
@@ -127,7 +127,6 @@ export default function ClassSummaryTable({
       density="compact"
       className={className}
       scrollClassName={scrollClassName}
-      tableClassName="min-w-[720px]"
       onRowClick={onRowClick}
       rowClassName={(item) => (isRowFlagged?.(item) ? "!bg-rose-50/60" : "")}
       emptyState={<p className="text-xs font-semibold text-slate-500">{emptyMessage}</p>}

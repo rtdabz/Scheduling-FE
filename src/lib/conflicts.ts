@@ -1,4 +1,5 @@
 import api from './api';
+import { formatTime12h } from './timeGrid';
 
 export type ConflictRule =
   | 'section_conflict'
@@ -10,8 +11,7 @@ export type ResolutionAction =
   | 'move_schedule'
   | 'change_room'
   | 'change_delivery_mode'
-  | 'reassign_instructor'
-  | 'request_override';
+  | 'reassign_instructor';
 
 export interface ConflictSchedule {
   id: number;
@@ -31,6 +31,13 @@ export interface ConflictSchedule {
   section_name: string | null;
   room_code: string | null;
   faculty_name: string | null;
+  department_code?: string | null;
+  department_name?: string | null;
+  assigning_department_id?: number | null;
+  assigning_department_code?: string | null;
+  assigning_department_name?: string | null;
+  assigning_program_id?: number | null;
+  assigning_program_code?: string | null;
 }
 
 export interface ScheduleConflict {
@@ -47,7 +54,7 @@ export interface ScheduleConflict {
 
 export interface ResolutionOutcome {
   conflict_id: string;
-  status: 'resolved' | 'overridden';
+  status: 'resolved';
   affected_schedule_ids: number[];
   history_version_id: number;
   semester_id: number;
@@ -55,7 +62,7 @@ export interface ResolutionOutcome {
 }
 
 export interface ResolutionRequest {
-  action: Exclude<ResolutionAction, 'request_override'>;
+  action: ResolutionAction;
   schedule_id: number;
   day?: string;
   start_time?: string;
@@ -64,7 +71,6 @@ export interface ResolutionRequest {
   faculty_id?: number | null;
   mode?: string;
   reason?: string;
-  confirm_overload?: boolean;
   source?: 'manual' | 'recommendation';
 }
 
@@ -83,6 +89,7 @@ export interface ConflictResolution {
   resolved_by: string | null;
   reason: string | null;
   affected_schedule_ids: number[];
+  fix?: string | null;
 }
 
 export interface ConflictRecommendation {
@@ -98,10 +105,6 @@ export interface ConflictRecommendation {
   mode?: string;
   room_id?: number | null;
   room_code?: string;
-  faculty_id?: number;
-  faculty_name?: string;
-  projected_units?: number;
-  requires_overload_confirmation?: boolean;
   payload: ResolutionRequest;
 }
 
@@ -226,8 +229,6 @@ export const resolutionActionLabel = (action: ResolutionAction | string): string
       return 'Change the delivery mode';
     case 'reassign_instructor':
       return 'Reassign the instructor';
-    case 'request_override':
-      return 'Allow it to stand, with a reason';
     default:
       return action;
   }
@@ -236,7 +237,7 @@ export const resolutionActionLabel = (action: ResolutionAction | string): string
 export const describeConflictSchedule = (schedule: ConflictSchedule): string =>
   [
     [schedule.course_code, schedule.section_name].filter(Boolean).join(' — ') || `Class #${schedule.id}`,
-    `${schedule.day} ${schedule.start_time.slice(0, 5)}-${schedule.end_time.slice(0, 5)}`,
+    `${schedule.day} ${formatTime12h(schedule.start_time)} - ${formatTime12h(schedule.end_time)}`,
     schedule.room_code ?? (schedule.mode === 'online' ? 'Online' : 'No room'),
     schedule.faculty_name ?? 'No instructor',
   ].join(' · ');
@@ -268,30 +269,9 @@ export const fetchConflictRecommendations = async (
     { signal: params.signal, params: { limit: params.limit } },
   );
 
-  return response.data.options ?? [];
-};
-
-export interface InstructorRecommendation {
-  faculty_id: number;
-  faculty_name: string;
-  employment_type: string | null;
-  reasons: string[];
-  score: number;
-  projected_units: number;
-  semesters_taught: number;
-  requires_overload_confirmation: boolean;
-}
-
-export const fetchInstructorRecommendations = async (
-  scheduleId: number | string,
-  params: { limit?: number; signal?: AbortSignal } = {},
-): Promise<InstructorRecommendation[]> => {
-  const response = await api.get<{ options?: InstructorRecommendation[] }>(
-    `/instructor-assignments/${scheduleId}/recommendations`,
-    { signal: params.signal, params: { limit: params.limit } },
-  );
-
-  return response.data.options ?? [];
+  // Older servers may still return ranked instructor replacements during rollout.
+  return (response.data.options ?? []).filter((option) =>
+    option.action !== 'reassign_instructor' && option.payload.action !== 'reassign_instructor');
 };
 
 export const fetchResolvedConflicts = async (params: {
@@ -337,18 +317,6 @@ export const resolveConflict = async (
   const response = await api.post<ResolutionOutcome>(
     `/conflicts/${encodeURIComponent(conflictId)}/resolve`,
     request,
-  );
-
-  return response.data;
-};
-
-export const overrideConflict = async (
-  conflictId: string,
-  reason: string,
-): Promise<ResolutionOutcome> => {
-  const response = await api.post<ResolutionOutcome>(
-    `/conflicts/${encodeURIComponent(conflictId)}/override`,
-    { reason, confirm: true },
   );
 
   return response.data;

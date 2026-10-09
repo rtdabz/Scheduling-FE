@@ -155,6 +155,7 @@ export default function MeetingCard({
                     return (
                       <option key={room.id} value={room.id} disabled={isUnavailable}>
                         {room.name}
+                        {room.roomType === "laboratory" ? " (Lab)" : ""}
                         {room.grantWindows ? ` — Granted: ${room.grantWindows.map(describeWindow).join(", ")}` : ""}
                         {isUnavailable ? " — (Not Available)" : ""}
                       </option>

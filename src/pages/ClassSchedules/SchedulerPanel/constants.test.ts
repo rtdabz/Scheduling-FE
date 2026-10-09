@@ -10,8 +10,8 @@ describe("INSTRUCTOR_ASSIGNED_STATUSES", () => {
     );
   });
 
-  it("keeps a class under reassignment on the load sheet, so pro bono still reaches the Overload table", () => {
-    // Basic Load 3, overload allowance 3: the third subject is pro bono. It is
+  it("keeps a class under reassignment on the load sheet, so an over-limit line still reaches the Overload table", () => {
+    // Basic Load 3, overload allowance 3: the third subject is past the limit. It is
     // under reassignment -- the case that used to vanish from the print.
     const schedules = [0, 1, 2].map((index) => ({
       id: String(index),
@@ -28,14 +28,14 @@ describe("INSTRUCTOR_ASSIGNED_STATUSES", () => {
       totalUnits: 3,
       status: index === 2 ? "reassignment" : "faculty_assignment",
     })) as ScheduleItem[];
-    const faculty = { id: "f1", name: "A B Cruz", requiredUnits: 3, overloadUnits: 3, probonoUnits: 3 } as Faculty;
+    const faculty = { id: "f1", name: "A B Cruz", requiredUnits: 3, overloadUnits: 3 } as Faculty;
 
     const printed = schedules.filter((schedule) => INSTRUCTOR_ASSIGNED_STATUSES.includes(schedule.status));
     const load = classifyLoad(faculty, printed);
 
     expect(load.overload.map((line) => [line.code, line.band])).toEqual([
       ["IT 101", "overload"],
-      ["IT 102", "probono"],
+      ["IT 102", "over_limit"],
     ]);
     expect(load.grandTotals.units).toBe(9);
   });

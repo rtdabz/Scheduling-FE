@@ -1,10 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearDataCache } from '../../lib/dataCache';
 import Reports from './Reports';
 import { fetchReportData, fetchReportsOverview, type ReportsOverview } from '../../lib/reports';
+import { mapInitialData } from '../ClassSchedules/SchedulerPanel/hooks/initialDataMapper';
 
-const { toast } = vi.hoisted(() => ({ toast: { error: vi.fn(), warning: vi.fn() } }));
+const { toast } = vi.hoisted(() => ({ toast: { error: vi.fn(), warning: vi.fn(), success: vi.fn() } }));
 vi.mock('../../context/ToastContext', () => ({ useToast: () => ({ toast }) }));
 vi.mock('../../lib/reports', () => ({ fetchReportsOverview: vi.fn(), fetchReportData: vi.fn() }));
 vi.mock('../ClassSchedules/SchedulerPanel/PrintSchedule', () => ({ default: () => <div>Schedule PDF opened</div> }));
@@ -29,9 +30,62 @@ beforeEach(() => {
     sections: [{ id: '1' }], schedules: [], departments: [], users: [], faculties: [], activeSemester: null,
   } as unknown as Awaited<ReturnType<typeof fetchReportData>>);
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe('Reports directory', () => {
+  it.each([
+    ['Room Utilization', 'CIT Room Utilization', 'SCI-101', 'Science Building', false],
+    ['Curriculums & Courses', 'CIT Curriculum Courses', 'IT 101', 'Programming', false],
+    ['Approval & Readiness', 'CIT Approval Status', 'BSIT 1A', 'Year 1', false],
+    ['Room Utilization', 'CIT Room Utilization', 'SCI-101', 'Main Campus', true],
+    ['Curriculums & Courses', 'CIT Curriculum Courses', 'IT 101', 'Programming', true],
+  ])('renders, searches and exports mapped %s data: %s / %s / %s / fallback=%s', async (tab, label, code, detail, fallback) => {
+    const data = mapInitialData({
+      active_semester: null, faculties: [], departments: [], users: [], time_grid: null,
+      rooms: [{ id: 1, room_code: 'SCI-101', building: 'Science Building', room_type: 'lecture', status: 'available', department_id: 1 }],
+      courses: [{ id: 10, course_code: 'IT 101', course_name: 'Programming', units: 3, lecture_hours: 3, lab_hours: 0,
+        course_category: 'major', semester: '1st', department_id: 1, year_level: 1, room_type_required: 'lecture' }],
+      sections: [{ id: 1, section_name: 'BSIT 1A', year_level: 1, semester: '1st', semester_id: 1, department_id: 1 }],
+      schedules: [{ id: 1, semester_id: 1, department_id: 1, course_id: 10, section_id: 1, room_id: 1, faculty_id: null,
+        day: 'Monday', start_time: '07:00:00', end_time: '10:00:00', status: 'approved', mode: 'on-site',
+        course: { course_code: 'IT 101', course_name: 'Programming', units: 3 },
+        section: { section_name: 'BSIT 1A' }, room: { room_code: 'SCI-101' } }],
+    }, { isVpaa: true });
+    if (fallback) { data.rooms = []; data.subjects = []; }
+    vi.mocked(fetchReportData).mockResolvedValue(data);
+    const createObjectURL = vi.fn<(blob: Blob) => string>(() => 'blob:report');
+    const NativeURL = URL;
+    vi.stubGlobal('URL', class extends NativeURL { static createObjectURL = createObjectURL; });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    render(<Reports />);
+    await screen.findByText('CIT Class Schedule');
+    fireEvent.click(screen.getByRole('tab', { name: new RegExp(tab) }));
+    fireEvent.click(screen.getByRole('button', { name: `View Details: ${label}` }));
+    const dialog = within(await screen.findByRole('dialog'));
+    expect(dialog.getByRole('cell', { name: code })).toBeTruthy();
+    expect(dialog.getByRole('cell', { name: detail })).toBeTruthy();
+    fireEvent.change(dialog.getByRole('searchbox'), { target: { value: code } });
+    expect(dialog.getByRole('cell', { name: code })).toBeTruthy();
+    fireEvent.change(dialog.getByRole('searchbox'), { target: { value: 'no matching record' } });
+    expect(dialog.queryByRole('cell', { name: code })).toBeNull();
+    fireEvent.click(dialog.getByRole('button', { name: /Export CSV/ }));
+    await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1));
+    const blob = createObjectURL.mock.calls[0][0];
+    const csv = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsText(blob);
+    });
+    expect(csv).toContain(`"${code}"`);
+    expect(csv).toContain(`"${detail}"`);
+    expect(csv).not.toContain('undefined');
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
   it('lists one report per department covering every program, found by any program name', async () => {
     render(<Reports />);
     await screen.findByText('CIT Class Schedule');

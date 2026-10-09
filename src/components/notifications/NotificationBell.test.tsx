@@ -6,6 +6,9 @@ import type { ActivityFeedItem } from '../overview';
 const markAsRead = vi.fn(() => Promise.resolve());
 const markAllAsRead = vi.fn(() => Promise.resolve());
 const refresh = vi.fn(() => Promise.resolve());
+const navigate = vi.fn();
+
+vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
 
 let hookState: {
   feedItems: ActivityFeedItem[];
@@ -111,6 +114,26 @@ describe('NotificationBell', () => {
 
     expect(markAsRead).toHaveBeenCalledTimes(1);
     expect(markAsRead).toHaveBeenCalledWith(9);
+  });
+
+  it('opens the linked page and closes the list', () => {
+    hookState = { feedItems: [item({ id: 5, href: '/secretary/room-requests', isUnread: false })], unreadCount: 0, isLoading: false };
+    render(<NotificationBell />);
+    fireEvent.click(bell());
+    fireEvent.click(screen.getByText('BSIT submitted 12 schedules for review.'));
+
+    expect(navigate).toHaveBeenCalledWith('/secretary/room-requests');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('stays put when an item has no page for this role', () => {
+    hookState = { feedItems: [item({ id: 6 })], unreadCount: 1, isLoading: false };
+    render(<NotificationBell />);
+    fireEvent.click(bell());
+    fireEvent.click(screen.getByText('BSIT submitted 12 schedules for review.'));
+
+    expect(navigate).not.toHaveBeenCalled();
+    expect(markAsRead).toHaveBeenCalledWith(6);
   });
 
   it('does not re-mark an item that is already read', () => {

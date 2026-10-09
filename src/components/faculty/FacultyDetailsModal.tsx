@@ -15,7 +15,6 @@ export interface FacultyDetailsRecord {
   max_units: number;
   deload_units: number;
   overload_units: number;
-  probono_units: number;
   assigned_units: number;
   required_units: number;
   unit_ceiling: number;
@@ -63,7 +62,7 @@ export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canE
   const breakdown = [
     `${bands.filled.basic} Basic Load`,
     bands.filled.overload > 0 ? `${bands.filled.overload} Overload` : '',
-    bands.filled.probono > 0 ? `${bands.filled.probono} Pro bono` : '',
+    bands.beyondCeiling > 0 ? `${bands.beyondCeiling} over limit` : '',
   ].filter(Boolean).join(' + ');
 
   const allowances: { label: string; value: number; hint?: string }[] = [
@@ -161,7 +160,7 @@ export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canE
                 {aboveCeiling && (
                   <p className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs font-semibold text-amber-800">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    Past the Basic Load and Overload allowances, so the extra units are pro bono.
+                    Past the Basic Load and Overload allowances. New assignments are blocked until the load is back within the limit.
                   </p>
                 )}
               </section>

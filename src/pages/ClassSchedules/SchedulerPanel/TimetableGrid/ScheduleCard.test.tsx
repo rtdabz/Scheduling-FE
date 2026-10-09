@@ -154,15 +154,8 @@ describe("ScheduleCard resolution flag", () => {
     expect(screen.getByLabelText("Conflict resolved")).toBeTruthy();
   });
 
-  it("shows the amber flag, not the green one, for a clash allowed to stand", () => {
-    render(<ScheduleCard {...commonProps} schedule={card} isResolved isAllowed />);
-    expect(screen.getByLabelText("Instructor conflict allowed to stand")).toBeTruthy();
+  it("lets a live conflict hide the resolved flag", () => {
+    render(<ScheduleCard {...commonProps} schedule={card} conflict={conflict} isResolved />);
     expect(screen.queryByLabelText("Conflict resolved")).toBeNull();
-  });
-
-  it("lets a live conflict hide both flags", () => {
-    render(<ScheduleCard {...commonProps} schedule={card} conflict={conflict} isResolved isAllowed />);
-    expect(screen.queryByLabelText("Conflict resolved")).toBeNull();
-    expect(screen.queryByLabelText("Instructor conflict allowed to stand")).toBeNull();
   });
 });

@@ -3,7 +3,6 @@ import { CheckCircle2, Pencil, UserCheck } from 'lucide-react';
 import InstructorAssignment from './InstructorAssignment';
 import type { InstructorAssignmentWorkspaceState } from './InstructorAssignment';
 import AutoAssignModal from './SchedulerPanel/Modals/AutoAssignModal';
-import OverloadConfirmationModal from '../../components/faculty/OverloadConfirmationModal';
 import { useScheduler } from './SchedulerPanel/hooks/useScheduler';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
@@ -68,7 +67,7 @@ export default function CrossDepartmentAssignments() {
     setWorkspaceState(state);
   }, []);
   const handleWorkflowReady = useCallback(() => setIsAssignmentWorkspaceReady(true), []);
-  const handleAutoAssign = useCallback(async (assignments: { scheduleIds: string[]; facultyId: string; overrideConflicts?: boolean }[]) => {
+  const handleAutoAssign = useCallback(async (assignments: { scheduleIds: string[]; facultyId: string }[]) => {
     const success = await scheduler.handleBulkFacultyAssign(assignments);
     if (success) setAssignmentRefreshToken((current) => current + 1);
     return success;
@@ -154,13 +153,6 @@ export default function CrossDepartmentAssignments() {
         onRemoveAssignment={handleRemoveAssignment}
         allowExternalInstructors={false}
       />
-      {scheduler.overloadPrompt && (
-        <OverloadConfirmationModal
-          confirmation={scheduler.overloadPrompt.confirmation}
-          onConfirm={scheduler.confirmOverloadPrompt}
-          onCancel={scheduler.cancelOverloadPrompt}
-        />
-      )}
     </div>
   );
 }

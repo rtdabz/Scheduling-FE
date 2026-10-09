@@ -22,6 +22,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import api from '../../lib/api';
+import { programLabel } from '../../lib/programLabel';
 import { photoDataUrl } from '../../lib/imageDataUrl';
 import { getStoredUser, hasStoredCapability } from '../../lib/storedUser';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
@@ -80,6 +81,7 @@ interface Program {
   id: number;
   code: string;
   name: string;
+  major?: string | null;
   department_id: number;
 }
 
@@ -106,7 +108,6 @@ interface FacultyMember {
   max_units: number;
   overload_units: number;
   deload_units: number;
-  probono_units: number;
   assigned_units: number;
   assigned_subjects: AssignedSubject[];
   assigned_classes: AssignedClass[];
@@ -134,7 +135,6 @@ interface ApiFacultyMember {
   max_units: number;
   overload_units?: number | null;
   deload_units?: number | null;
-  probono_units?: number | null;
   assigned_units?: number | null;
   assigned_subjects?: AssignedSubject[] | null;
   assigned_classes?: AssignedClass[] | null;
@@ -169,7 +169,6 @@ const mapApiFaculty = (f: ApiFacultyMember): FacultyMember => ({
   max_units: f.max_units ?? 21,
   overload_units: f.overload_units || 0,
   deload_units: f.deload_units || 0,
-  probono_units: f.probono_units || 0,
   assigned_units: f.assigned_units || 0,
   assigned_subjects: f.assigned_subjects || [],
   assigned_classes: f.assigned_classes || [],
@@ -1342,7 +1341,7 @@ export default function Faculty() {
                     <option value="">Not program-specific</option>
                     {formPrograms.map(program => (
                       <option key={program.id} value={program.id.toString()}>
-                        {program.code} - {program.name}
+                        {programLabel(program)}
                       </option>
                     ))}
                   </select>

@@ -25,6 +25,8 @@ import {
   Building2,
   Archive,
   AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import {
   useReactTable,
@@ -40,7 +42,7 @@ import { apiErrorMessage, apiFieldErrors } from '../../lib/apiError';
 import api from '../../lib/api';
 import { logoDataUrl } from '../../lib/imageDataUrl';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
-import { programLabel, programMajorLabel } from '../../lib/programLabel';
+import { programLabel, programMajorLabel, programName } from '../../lib/programLabel';
 
 const DEPARTMENT_COLORS: Record<string, { bg: string; modal: string }> = {
   'INFORMATION TECHNOLOGY':      { bg: 'bg-blue-100 border-blue-400 text-blue-900',          modal: 'bg-blue-600'    },
@@ -69,13 +71,15 @@ const CODE_MAX_LENGTH = 20;
 
 const SPECIALIZED_PROFILE_LABEL = 'Specialized rooms';
 
+const FACULTY_PAGE_SIZE = 8;
+
 interface Department {
   id: number;
   code: string;
   name: string;
   dean: string | null;
   secretary: string | null;
-  programHeads: string[];
+  programHeads: ProgramHead[];
   facultyCount: number;
   sectionsCount: number;
   logo?: string | null;
@@ -92,6 +96,11 @@ interface Program {
   name?: string | null;
 }
 
+interface ProgramHead {
+  name: string;
+  program: Program | null;
+}
+
 interface ApiDepartment {
   id: number;
   department_code: string;
@@ -104,6 +113,7 @@ interface ApiDepartment {
   users?: Array<{
     name?: string;
     role?: string;
+    program?: Program | null;
   }>;
   programs?: Program[];
 }
@@ -148,6 +158,23 @@ function DepartmentLogo({
   return <SharedDepartmentLogo name={name} logo={logo} className={className} iconSize={iconSize} fallbackClassName={getDepartmentColor(name || '').bg} />;
 }
 
+const programLabelShort = (program: Program) => (program.major ? `${program.code} (${program.major})` : program.code);
+
+function PersonInitials({ name, accent = false, small = false }: { name: string | null; accent?: boolean; small?: boolean }) {
+  const words = (name ?? '').split(/\s+/).filter((word) => /^[A-Za-zÀ-ɏ]/.test(word) && !word.endsWith('.'));
+  const initials = words.length > 0 ? `${words[0][0]}${words.length > 1 ? words[words.length - 1][0] : ''}`.toUpperCase() : '';
+
+  return (
+    <div
+      className={`flex shrink-0 items-center justify-center rounded-full font-bold ${small ? 'h-8 w-8 text-[11px]' : 'h-9 w-9 text-xs'} ${accent
+        ? 'bg-[#C9952A]/15 text-[#7b5c18]'
+        : initials ? 'bg-[#4e0a10]/[0.08] text-[#4e0a10]' : 'bg-slate-100 text-slate-400'}`}
+    >
+      {initials || <UserRound size={16} />}
+    </div>
+  );
+}
+
 export default function Departments() {
   const { toast, confirm } = useToast();
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
@@ -160,7 +187,7 @@ export default function Departments() {
   const userDeptCode = user?.department?.department_code ?? null;
   const userDeptName = user?.department?.department_name ?? null;
 
-  const departmentsCacheKey = 'page:departments:v2';
+  const departmentsCacheKey = 'page:departments:v3';
   const cachedDepartmentsData = getCachedData<DepartmentsPageData>(departmentsCacheKey);
   const [departments, setDepartments] = useState<Department[]>(cachedDepartmentsData?.departments ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(departmentsCacheKey));
@@ -180,6 +207,7 @@ export default function Departments() {
   const [faculties, setFaculties] = useState<ApiFacultyMember[]>([]);
   const [isLoadingFaculties, setIsLoadingFaculties] = useState(false);
   const [activeFacultyTab, setActiveFacultyTab] = useState<'full-time' | 'part-time'>('full-time');
+  const [facultyPage, setFacultyPage] = useState(0);
   
   const [globalFilter, setGlobalFilter] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
@@ -264,6 +292,7 @@ export default function Departments() {
 
   const openDepartmentDetail = (department: Department) => {
     setSelectedDeptForDetail(department);
+    setFacultyPage(0);
     closeProgramForm();
     setIsDetailModalOpen(true);
   };
@@ -301,6 +330,20 @@ export default function Departments() {
     );
   }, [faculties, selectedDeptForDetail]);
 
+  const headsByProgramId = useMemo(() => {
+    const map = new Map<number, string[]>();
+    for (const head of selectedDeptForDetail?.programHeads ?? []) {
+      if (!head.program) continue;
+      map.set(head.program.id, [...(map.get(head.program.id) ?? []), head.name]);
+    }
+    return map;
+  }, [selectedDeptForDetail]);
+
+  const programsWithoutHead = useMemo(
+    () => (selectedDeptForDetail?.programs ?? []).filter((program) => !headsByProgramId.has(program.id)),
+    [selectedDeptForDetail, headsByProgramId]
+  );
+
   const fullTimeFaculty = useMemo(() => {
     return deptFaculties.filter((f) => f.employment_type === 'full-time');
   }, [deptFaculties]);
@@ -309,13 +352,20 @@ export default function Departments() {
     return deptFaculties.filter((f) => f.employment_type === 'part-time');
   }, [deptFaculties]);
 
+  const activeFaculty = activeFacultyTab === 'full-time' ? fullTimeFaculty : partTimeFaculty;
+  const facultyPageCount = Math.max(1, Math.ceil(activeFaculty.length / FACULTY_PAGE_SIZE));
+  const safeFacultyPage = Math.min(facultyPage, facultyPageCount - 1);
+
   const mapDepartment = (department: ApiDepartment): Department => ({
     id: department.id,
     code: department.department_code,
     name: department.department_name,
     dean: department.users?.find((user) => user.role === 'dean')?.name ?? null,
     secretary: department.users?.find((user) => user.role === 'secretary')?.name ?? null,
-    programHeads: department.users?.filter((user) => user.role === 'program_head').map((user) => user.name || '') ?? [],
+    programHeads: (department.users ?? [])
+      .filter((user) => user.role === 'program_head')
+      .map((user) => ({ name: user.name || '', program: user.program ?? null }))
+      .sort((a, b) => (a.program?.code ?? '￿').localeCompare(b.program?.code ?? '￿') || a.name.localeCompare(b.name)),
     facultyCount: department.faculties_count ?? 0,
     sectionsCount: department.sections_count ?? 0,
     logo: department.logo || null,
@@ -1156,70 +1206,99 @@ export default function Departments() {
 
       {isDetailModalOpen && selectedDeptForDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
-          <div className="bg-[#F8F6F2] border border-white/70 rounded-[22px] max-w-3xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 font-sans">
-            <div className="relative shrink-0 overflow-hidden border-b border-slate-200/80 bg-white px-7 py-5">
+          <div className="bg-[#F8F6F2] border border-white/70 rounded-[22px] max-w-6xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 font-sans">
+            <div className="relative shrink-0 border-b border-slate-200/80 bg-white">
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#4e0a10] via-[#C9952A] to-[#4e0a10]" />
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 pt-5 pb-4 sm:px-6">
+                <div className="flex min-w-0 items-center gap-4">
                   <DepartmentLogo
                     name={selectedDeptForDetail.name}
                     logo={selectedDeptForDetail.logo}
-                    className="w-12 h-12 rounded-2xl shadow-sm"
+                    className="w-12 h-12 shrink-0 rounded-2xl shadow-sm ring-4 ring-[#C9952A]/10"
                     iconSize={23}
                   />
                   <div className="min-w-0">
-                    <p className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[#C9952A]">Department profile</p>
-                    <h2 className="text-lg font-bold text-[#1A1410] font-display break-words leading-tight">{selectedDeptForDetail.name}</h2>
-                    <p className="mt-0.5 text-xs text-gray-500 font-medium">
-                      {selectedDeptForDetail.code} &middot; Dean <span className="text-gray-700">{selectedDeptForDetail.dean || 'Not assigned'}</span>
-                    </p>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#C9952A]">Department profile</p>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <h2 className="text-lg font-bold text-[#1A1410] font-display leading-tight">{selectedDeptForDetail.name}</h2>
+                      <span className="rounded-md bg-[#4e0a10] px-2 py-0.5 font-mono text-[10px] font-bold tracking-wide text-white">
+                        {selectedDeptForDetail.code}
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsDetailModalOpen(false)}
-                  aria-label="Close department profile"
-                  className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer transition-colors"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-7 py-6 space-y-6 font-sans">
-              {!showProgramForm && (
-                <>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="flex items-center gap-4">
+                  <div className="flex divide-x divide-slate-200">
                     {[
-                      { label: 'Instructors', value: `${selectedDeptForDetail.facultyCount ?? 0} Instructors` },
-                      { label: 'Sections', value: `${selectedDeptForDetail.sectionsCount ?? 0} Sections` },
-                      { label: 'Department code', value: selectedDeptForDetail.code || '-' },
+                      { label: 'Instructors', value: selectedDeptForDetail.facultyCount ?? 0 },
+                      { label: 'Sections', value: selectedDeptForDetail.sectionsCount ?? 0 },
+                      { label: 'Programs', value: selectedDeptForDetail.programs.length },
                       {
-                        label: 'Date created',
+                        label: 'Created',
                         value: selectedDeptForDetail.createdAt
                           ? formatPhilippineDate(selectedDeptForDetail.createdAt, { month: 'short', day: '2-digit', year: 'numeric' })
                           : '-',
                       },
-                    ].map((tile) => (
-                      <div key={tile.label} className="rounded-xl border border-gray-200/80 bg-white p-3 shadow-sm">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{tile.label}</p>
-                        <p className="mt-1 text-xs font-bold text-gray-800">{tile.value}</p>
+                    ].map((stat) => (
+                      <div key={stat.label} className="px-3 first:pl-0 sm:px-4">
+                        <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">{stat.label}</p>
+                        <p className="text-sm font-bold text-[#1A1410] font-display whitespace-nowrap">{stat.value}</p>
                       </div>
                     ))}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsDetailModalOpen(false)}
+                    aria-label="Close department profile"
+                    className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors cursor-pointer hover:bg-gray-100 hover:text-gray-600"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 py-5 sm:px-6 font-sans">
+              <div className="grid gap-5 lg:grid-cols-3">
+                <div className="space-y-5">
+                  <section className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <UsersIcon size={15} className="text-[#4e0a10]" />
+                      <h3 className="text-sm font-bold text-[#1A1410]">Leadership</h3>
+                    </div>
+                    {[
+                      { role: 'Dean', name: selectedDeptForDetail.dean },
+                      { role: 'Secretary', name: selectedDeptForDetail.secretary },
+                    ].map((person) => (
+                      <div
+                        key={person.role}
+                        className={`flex items-center gap-3 rounded-xl px-3 py-2 ${person.name
+                          ? 'border border-slate-200/80 bg-white shadow-sm'
+                          : 'border border-dashed border-slate-300 bg-white/60'}`}
+                      >
+                        <PersonInitials name={person.name} />
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{person.role}</p>
+                          <p className={`truncate text-sm font-semibold ${person.name ? 'text-gray-800' : 'text-gray-400'}`}>
+                            {person.name || 'Not assigned'}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </section>
 
                   {(() => {
                     const specialized = selectedDeptForDetail.schedulingProfile === 'laboratory_enabled';
                     return (
-                      <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-200/80 bg-white px-4 py-3">
+                      <section className="flex items-center justify-between gap-4 rounded-xl border border-slate-200/80 bg-white px-3 py-2.5 shadow-sm">
                         <div className="min-w-0">
                           <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Scheduling profile</p>
-                          <p className="mt-1 text-sm font-semibold text-gray-800">
+                          <p className="text-sm font-semibold text-gray-800">
                             {specialized ? SPECIALIZED_PROFILE_LABEL : 'Standard scheduling'}
                           </p>
-                          <p className="mt-0.5 text-[11px] leading-4 text-gray-500">
+                          <p className="text-[11px] leading-4 text-gray-500">
                             {specialized
-                              ? 'Can use laboratories and other specialized rooms (e.g. kitchens, clinics, studios).'
+                              ? 'Can use laboratories and other specialized rooms.'
                               : 'Classes use regular lecture rooms only.'}
                           </p>
                         </div>
@@ -1240,306 +1319,315 @@ export default function Departments() {
                             }`}
                           />
                         </button>
-                      </div>
+                      </section>
                     );
                   })()}
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-xl border border-slate-200/80 bg-white px-4 py-3">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Secretary</p>
-                      <p className="mt-1 text-sm font-semibold text-gray-800">{selectedDeptForDetail.secretary || 'Not assigned'}</p>
+                  <section className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Layers size={15} className="text-[#4e0a10]" />
+                      <h3 className="text-sm font-bold text-[#1A1410]">Program heads</h3>
+                      <span className="min-w-6 rounded-full bg-[#4e0a10] px-2 py-0.5 text-center text-[10px] font-bold text-white">
+                        {selectedDeptForDetail.programHeads.length}
+                      </span>
                     </div>
-                    <div className="rounded-xl border border-slate-200/80 bg-white px-4 py-3">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Program heads</p>
-                      <p className="mt-1 text-sm font-semibold text-gray-800">
-                        {selectedDeptForDetail.programHeads.length > 0 ? selectedDeptForDetail.programHeads.join(', ') : 'Not assigned'}
+
+                    {selectedDeptForDetail.programHeads.length > 0 ? (
+                      selectedDeptForDetail.programHeads.map((head, index) => (
+                        <div
+                          key={`${head.name}-${head.program?.id ?? 'none'}-${index}`}
+                          className={`flex items-center gap-3 rounded-xl border border-l-4 border-slate-200/80 bg-white px-3 py-2 shadow-sm ${head.program
+                            ? 'border-l-[#C9952A]'
+                            : 'border-l-slate-300'}`}
+                        >
+                          <PersonInitials name={head.name} accent />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-xs font-semibold text-gray-800">{head.name || 'Unnamed'}</p>
+                            {head.program ? (
+                              <div className="mt-0.5 flex min-w-0 items-center gap-1" title={programName(head.program)}>
+                                <span className="shrink-0 rounded bg-[#C9952A]/15 px-1.5 py-px font-mono text-[10px] font-bold text-[#4e0a10]">
+                                  {head.program.code}
+                                </span>
+                                {head.program.major && (
+                                  <span className="truncate text-[10px] font-semibold text-[#8b681b]">{head.program.major}</span>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="mt-0.5 text-[10px] font-semibold text-slate-400">No program assigned</p>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 px-3 py-4 text-center">
+                        <p className="text-xs font-semibold text-slate-500">No program heads assigned.</p>
+                        <p className="mt-0.5 text-[11px] text-slate-400">The secretary schedules every program.</p>
+                      </div>
+                    )}
+
+                    {selectedDeptForDetail.programHeads.length > 0 && programsWithoutHead.length > 0 && (
+                      <p className="flex items-start gap-1.5 text-[11px] text-gray-500">
+                        <AlertTriangle size={13} className="mt-px shrink-0 text-amber-500" />
+                        <span>
+                          No head for{' '}
+                          <span className="font-semibold text-gray-700">{programsWithoutHead.map(programLabelShort).join(', ')}</span>
+                          {' '}— the secretary schedules {programsWithoutHead.length === 1 ? 'it' : 'these'}.
+                        </span>
                       </p>
+                    )}
+                  </section>
+                </div>
+
+                <section className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <LibraryBig size={15} className="text-[#4e0a10]" />
+                      <h3 className="text-sm font-bold text-[#1A1410]">Program directory</h3>
+                      <span className="min-w-6 rounded-full bg-[#4e0a10] px-2 py-0.5 text-center text-[10px] font-bold text-white">
+                        {selectedDeptForDetail.programs.length}
+                      </span>
+                    </div>
+                    {canManageDepartments && (
+                      <button
+                        type="button"
+                        onClick={() => (showProgramForm ? closeProgramForm() : openProgramCreateForm())}
+                        className={`shrink-0 inline-flex items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-[11px] font-bold transition-all duration-200 cursor-pointer whitespace-nowrap ${showProgramForm
+                          ? 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                          : 'bg-[#5A1220] text-white shadow-sm hover:bg-[#410b15]'}`}
+                      >
+                        {showProgramForm ? <X size={13} /> : <Plus size={13} />}
+                        {showProgramForm ? 'Cancel' : 'Add program'}
+                      </button>
+                    )}
+                  </div>
+
+                  {showProgramForm && (
+                    <div className="rounded-xl border border-[#C9952A]/30 bg-[#C9952A]/[0.06] p-3">
+                      {liveProgramDuplicate && (
+                        <div className="mb-2 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-2 text-[11px] font-semibold text-red-700 animate-in fade-in">
+                          <AlertTriangle size={14} className="shrink-0 text-red-600" />
+                          <span>
+                            &ldquo;{liveProgramDuplicate.code}&rdquo;{liveProgramDuplicate.major ? ` (${liveProgramDuplicate.major})` : ''} already exists in this department.
+                          </span>
+                        </div>
+                      )}
+                      <p className="mb-2 text-xs font-bold text-[#4e0a10]">
+                        {editingProgramId === null ? 'Add a program' : 'Edit program'}
+                      </p>
+                      <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-2">
+                        <input
+                          aria-label="Program code"
+                          value={newProgram.code}
+                          onChange={(event) => setNewProgram({ ...newProgram, code: event.target.value.toUpperCase() })}
+                          onKeyDown={handleProgramFormKeyDown}
+                          placeholder="Code (BSED)"
+                          maxLength={50}
+                          className={`w-full rounded-lg border bg-white px-2.5 py-2 text-xs font-mono outline-none transition ${liveProgramDuplicate ? 'border-red-500 focus:ring-2 focus:ring-red-200' : 'border-slate-200 focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20'}`}
+                        />
+                        <input
+                          aria-label="Major"
+                          value={newProgram.major}
+                          onChange={(event) => setNewProgram({ ...newProgram, major: event.target.value })}
+                          onKeyDown={handleProgramFormKeyDown}
+                          placeholder="Major (optional)"
+                          maxLength={255}
+                          className={`w-full rounded-lg border bg-white px-2.5 py-2 text-xs outline-none transition ${liveProgramDuplicate ? 'border-red-500 focus:ring-2 focus:ring-red-200' : 'border-slate-200 focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20'}`}
+                        />
+                        <input
+                          aria-label="Program name"
+                          value={newProgram.name}
+                          onChange={(event) => setNewProgram({ ...newProgram, name: event.target.value })}
+                          onKeyDown={handleProgramFormKeyDown}
+                          placeholder="Program name (Bachelor of Secondary Education)"
+                          maxLength={255}
+                          className="col-span-2 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20"
+                        />
+                      </div>
+                      <p className="mt-2 truncate text-[11px] text-gray-500">
+                        Saved as <span className="font-semibold text-gray-700">{programPreview}</span>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={saveProgram}
+                        disabled={isSavingProgram || !canSubmitProgram}
+                        className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#4e0a10] px-3 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-[#C9952A] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isSavingProgram
+                          ? <Loader2 size={13} className="animate-spin" />
+                          : (editingProgramId === null ? <Plus size={13} /> : <Pencil size={12} />)}
+                        {editingProgramId === null ? 'Add program' : 'Save changes'}
+                      </button>
+                      {programFormError && <p className="mt-1.5 text-[11px] font-semibold text-red-500">{programFormError}</p>}
+                    </div>
+                  )}
+
+                  {selectedDeptForDetail.programs.length > 0 ? selectedDeptForDetail.programs.map((program) => {
+                    const heads = headsByProgramId.get(program.id);
+                    return (
+                      <div
+                        key={program.id}
+                        className={`flex items-center justify-between gap-2 rounded-xl border bg-white px-3 py-2 shadow-sm transition-colors ${editingProgramId === program.id
+                          ? 'border-[#C9952A] ring-2 ring-[#C9952A]/20'
+                          : 'border-slate-200/80 hover:border-[#C9952A]/50'}`}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            <p className="shrink-0 text-xs font-bold text-gray-800">{program.code}</p>
+                            {programMajorLabel(program) && (
+                              <span className="truncate rounded-full bg-[#C9952A]/10 px-2 py-px text-[10px] font-semibold text-[#8b681b]">
+                                {program.major}
+                              </span>
+                            )}
+                          </div>
+                          <p className="truncate text-[11px] text-gray-500" title={program.name || undefined}>{program.name || 'Unnamed program'}</p>
+                          {heads ? (
+                            <p className="flex items-center gap-1 truncate text-[10px] font-semibold text-[#4e0a10]">
+                              <UserRound size={11} className="shrink-0 text-[#C9952A]" />
+                              {heads.join(', ')}
+                            </p>
+                          ) : (
+                            <p className="text-[10px] text-gray-400">No program head</p>
+                          )}
+                        </div>
+                        {canManageDepartments && (
+                          <div className="flex shrink-0 items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => openProgramEditForm(program)}
+                              aria-label={`Edit ${program.code}`}
+                              title="Edit program"
+                              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-gray-400 transition-colors cursor-pointer hover:border-[#C9952A] hover:text-[#C9952A]"
+                            >
+                              <Pencil size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void archiveProgram(program)}
+                              aria-label={`Archive ${program.code}`}
+                              title="Archive program"
+                              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-gray-400 transition-colors cursor-pointer hover:border-stone-400 hover:text-stone-700"
+                            >
+                              <Archive size={13} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }) : (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 px-3 py-6 text-center">
+                      <LibraryBig size={20} className="mx-auto mb-1.5 text-slate-300" />
+                      <p className="text-xs font-semibold text-slate-500">No programs added yet.</p>
+                      <p className="mt-0.5 text-[11px] text-slate-400">Use Add program to add the first one.</p>
+                    </div>
+                  )}
+                </section>
+
+                <section className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <GraduationCap size={16} className="text-[#4e0a10]" />
+                      <h3 className="text-sm font-bold text-[#1A1410]">Instructors</h3>
+                    </div>
+                    <div className="flex items-center gap-1 rounded-lg bg-gray-200/60 p-0.5">
+                      {(['full-time', 'part-time'] as const).map((tab) => (
+                        <button
+                          key={tab}
+                          type="button"
+                          onClick={() => {
+                            setActiveFacultyTab(tab);
+                            setFacultyPage(0);
+                          }}
+                          className={`rounded-md px-2.5 py-1 text-[11px] font-bold transition-all cursor-pointer ${
+                            activeFacultyTab === tab ? 'bg-[#4e0a10] text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                          }`}
+                        >
+                          {tab === 'full-time' ? 'Full-Time' : 'Part-Time'} ({tab === 'full-time' ? fullTimeFaculty.length : partTimeFaculty.length})
+                        </button>
+                      ))}
                     </div>
                   </div>
 
-                  <section className="rounded-2xl border border-gray-200/90 bg-white p-5 shadow-sm">
-                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-gray-100 pb-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <GraduationCap size={18} className="text-[#4e0a10]" />
-                          <h3 className="text-sm font-bold text-gray-900 font-sans">Instructor Directory</h3>
-                        </div>
-                        <p className="mt-0.5 text-xs text-gray-500 font-sans">
-                          Instructors assigned to this department, grouped by employment status.
-                        </p>
-                      </div>
-                      
-                      <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
-                        <button
-                          type="button"
-                          onClick={() => setActiveFacultyTab('full-time')}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                            activeFacultyTab === 'full-time'
-                              ? 'bg-[#4e0a10] text-white shadow-xs'
-                              : 'text-gray-600 hover:text-gray-900'
-                          }`}
-                        >
-                          Full-Time ({fullTimeFaculty.length})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setActiveFacultyTab('part-time')}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                            activeFacultyTab === 'part-time'
-                              ? 'bg-[#4e0a10] text-white shadow-xs'
-                              : 'text-gray-600 hover:text-gray-900'
-                          }`}
-                        >
-                          Part-Time ({partTimeFaculty.length})
-                        </button>
-                      </div>
+                  {isLoadingFaculties ? (
+                    <div className="py-6 text-center text-xs text-gray-400 animate-pulse">Loading instructors...</div>
+                  ) : activeFaculty.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 px-3 py-6 text-center">
+                      <UserRound className="mx-auto mb-1.5 text-gray-300" size={20} />
+                      <p className="text-xs font-semibold text-gray-600">
+                        No {activeFacultyTab === 'full-time' ? 'full-time' : 'part-time'} instructors.
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-gray-400">Assign instructors in Instructor Management.</p>
                     </div>
-
-                    {isLoadingFaculties ? (
-                      <div className="py-6 text-center text-xs text-gray-400 animate-pulse">
-                        Loading instructors...
-                      </div>
-                    ) : (activeFacultyTab === 'full-time' ? fullTimeFaculty : partTimeFaculty).length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/50 p-6 text-center">
-                        <UserRound className="mx-auto mb-2 text-gray-300" size={24} />
-                        <p className="text-xs font-bold text-gray-600">
-                          No {activeFacultyTab === 'full-time' ? 'full-time' : 'part-time'} instructors assigned.
-                        </p>
-                        <p className="mt-0.5 text-[11px] text-gray-400">
-                          Instructors can be assigned to this department in the Instructor Management section.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {(activeFacultyTab === 'full-time' ? fullTimeFaculty : partTimeFaculty).map((faculty) => {
+                  ) : (
+                    <>
+                      {activeFaculty
+                        .slice(safeFacultyPage * FACULTY_PAGE_SIZE, (safeFacultyPage + 1) * FACULTY_PAGE_SIZE)
+                        .map((faculty) => {
                           const fullName = `${faculty.first_name}${faculty.middle_name ? ' ' + faculty.middle_name[0] + '.' : ''} ${faculty.last_name}${faculty.suffix ? ' ' + faculty.suffix : ''}`;
                           const designationsList = (faculty.designations ?? []).map((d) => d.label || (d.parent ? `${d.parent.name} · ${d.name}` : d.name));
 
                           return (
                             <div
                               key={faculty.id}
-                              className="flex items-center gap-3 rounded-xl border border-gray-200/80 bg-gray-50/40 p-3 shadow-2xs hover:bg-white hover:border-[#C9952A]/40 transition-all"
+                              className="flex items-center gap-2.5 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 shadow-sm transition-colors hover:border-[#C9952A]/40"
                             >
                               {faculty.profile_picture ? (
                                 <img
                                   src={faculty.profile_picture}
                                   alt={fullName}
-                                  className="h-9 w-9 rounded-full object-cover border border-gray-200 shadow-2xs shrink-0"
+                                  className="h-8 w-8 shrink-0 rounded-full border border-gray-200 object-cover"
                                 />
                               ) : (
-                                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200/70 text-slate-500 shrink-0">
-                                  <UserRound size={18} />
-                                </div>
+                                <PersonInitials name={fullName} small />
                               )}
                               <div className="min-w-0 flex-1">
-                                <div className="flex items-center justify-between gap-2">
-                                  <p className="text-xs font-bold text-gray-900 truncate">{fullName}</p>
-                                  <span
-                                    className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                                      faculty.employment_type === 'full-time'
-                                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                        : 'bg-purple-50 text-purple-700 border border-purple-200'
-                                    }`}
-                                  >
-                                    {faculty.employment_type}
-                                  </span>
-                                </div>
-
+                                <p className="truncate text-xs font-bold text-gray-900">{fullName}</p>
                                 {designationsList.length > 0 ? (
-                                  <div className="mt-1 flex flex-wrap gap-1">
-                                    {designationsList.map((desigText, i) => (
-                                      <span
-                                        key={i}
-                                        className="inline-flex items-center rounded-md bg-[#C9952A]/10 px-2 py-0.5 text-[10px] font-bold text-[#7b5c18]"
-                                      >
-                                        {desigText}
-                                      </span>
-                                    ))}
-                                  </div>
+                                  <p className="truncate text-[10px] font-semibold text-[#7b5c18]" title={designationsList.join(', ')}>
+                                    {designationsList[0]}
+                                    {designationsList.length > 1 && <span className="text-gray-400"> +{designationsList.length - 1}</span>}
+                                  </p>
                                 ) : (
-                                  <p className="mt-0.5 text-[10px] font-medium text-gray-400">No designation</p>
+                                  <p className="text-[10px] text-gray-400">No designation</p>
                                 )}
                               </div>
                             </div>
                           );
                         })}
-                      </div>
-                    )}
-                  </section>
-                </>
-              )}
-
-              <section className="space-y-3">
-                <div className="flex items-end justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <LibraryBig size={16} className="text-[#4e0a10]" />
-                      <p className="text-sm font-bold text-[#1A1410]">Program directory</p>
-                      <span className="min-w-6 rounded-full bg-[#4e0a10] px-2 py-0.5 text-center text-[10px] font-bold text-white">
-                        {selectedDeptForDetail.programs.length}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs text-gray-500">
-                      Programs offered by this department. Each major is its own program, so one code can appear more than once.
-                    </p>
-                  </div>
-                  {canManageDepartments && (
-                    <button
-                      type="button"
-                      onClick={() => (showProgramForm ? closeProgramForm() : openProgramCreateForm())}
-                      className={`shrink-0 inline-flex items-center justify-center gap-1.5 rounded-xl px-5 py-2.5 text-xs font-bold transition-all duration-200 cursor-pointer shadow-md whitespace-nowrap ${showProgramForm
-                        ? 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                        : 'bg-[#5A1220] text-white hover:bg-[#410b15] hover:scale-[1.02]'}`}
-                    >
-                      {showProgramForm ? <X size={15} /> : <Plus size={15} />}
-                      {showProgramForm ? 'Cancel' : 'Add program'}
-                    </button>
-                  )}
-                </div>
-
-                {showProgramForm && (
-                  <div className="rounded-2xl border border-[#C9952A]/30 bg-[#C9952A]/[0.06] p-5">
-                    {liveProgramDuplicate && (
-                      <div className="mb-3 flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-700 animate-in fade-in">
-                        <AlertTriangle size={15} className="shrink-0 text-red-600" />
-                        <span>
-                          Duplicate detected: A program with code &ldquo;{liveProgramDuplicate.code}&rdquo;{liveProgramDuplicate.major ? ` and major &ldquo;${liveProgramDuplicate.major}&rdquo;` : ''} already exists in this department.
-                        </span>
-                      </div>
-                    )}
-                    <div className="mb-3 flex items-center gap-2">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#4e0a10] text-white">
-                        {editingProgramId === null ? <Plus size={15} /> : <Pencil size={13} />}
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-[#4e0a10]">
-                          {editingProgramId === null ? 'Add a program' : 'Edit program'}
-                        </p>
-                        <p className="text-[11px] text-gray-500">
-                          {editingProgramId === null
-                            ? 'Use the official code and program name.'
-                            : 'Renaming a program changes how it reads in every schedule and curriculum.'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
-                      <label className="text-[11px] font-bold text-gray-500">
-                        Program code
-                        <input
-                          aria-label="Program code"
-                          value={newProgram.code}
-                          onChange={(event) => setNewProgram({ ...newProgram, code: event.target.value.toUpperCase() })}
-                          onKeyDown={handleProgramFormKeyDown}
-                          placeholder="BSED"
-                          maxLength={50}
-                          className={`mt-1.5 w-full rounded-xl border bg-white px-3 py-2.5 text-sm font-mono outline-none transition ${liveProgramDuplicate ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-200' : 'border-slate-200 focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20'}`}
-                        />
-                      </label>
-                      <label className="text-[11px] font-bold text-gray-500">
-                        Program name
-                        <input
-                          aria-label="Program name"
-                          value={newProgram.name}
-                          onChange={(event) => setNewProgram({ ...newProgram, name: event.target.value })}
-                          onKeyDown={handleProgramFormKeyDown}
-                          placeholder="Bachelor of Secondary Education"
-                          maxLength={255}
-                          className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20"
-                        />
-                      </label>
-                      <label className="text-[11px] font-bold text-gray-500 sm:col-span-2">
-                        Major <span className="font-normal text-gray-400">(optional - leave blank when the program has no majors)</span>
-                        <input
-                          aria-label="Major"
-                          value={newProgram.major}
-                          onChange={(event) => setNewProgram({ ...newProgram, major: event.target.value })}
-                          onKeyDown={handleProgramFormKeyDown}
-                          placeholder="English"
-                          maxLength={255}
-                          className={`mt-1.5 w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none transition ${liveProgramDuplicate ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-200' : 'border-slate-200 focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20'}`}
-                        />
-                      </label>
-                    </div>
-                    <p className="mt-2.5 text-[11px] text-gray-500">
-                      Saved as <span className="font-semibold text-gray-700">{programPreview}</span>
-                    </p>
-                    <button
-                      type="button"
-                      onClick={saveProgram}
-                      disabled={isSavingProgram || !canSubmitProgram}
-                      className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#4e0a10] px-4 py-2.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-[#C9952A] disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {isSavingProgram
-                        ? <Loader2 size={14} className="animate-spin" />
-                        : (editingProgramId === null ? <Plus size={14} /> : <Pencil size={13} />)}
-                      {editingProgramId === null ? 'Add program' : 'Save changes'}
-                    </button>
-                    {programFormError && <p className="mt-2 text-xs font-semibold text-red-500">{programFormError}</p>}
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  {selectedDeptForDetail.programs.length > 0 ? selectedDeptForDetail.programs.map((program) => (
-                    <div
-                      key={program.id}
-                      className={`flex items-center justify-between gap-3 rounded-xl border bg-white px-4 py-3 shadow-sm transition-colors ${editingProgramId === program.id
-                        ? 'border-[#C9952A] ring-2 ring-[#C9952A]/20'
-                        : 'border-slate-200/80 hover:border-[#C9952A]/50'}`}
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#4e0a10]/[0.07] text-[#4e0a10]">
-                          <LibraryBig size={15} />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-gray-800">{program.code}</p>
-                          <p className="truncate text-[11px] text-gray-500">{program.name || 'Unnamed program'}</p>
-                        </div>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {programMajorLabel(program) && (
-                          <span className="rounded-full bg-[#C9952A]/10 px-2.5 py-1 text-[10px] font-semibold text-[#8b681b]">
-                            {programMajorLabel(program)}
+                      {facultyPageCount > 1 && (
+                        <div className="flex items-center justify-between pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setFacultyPage(safeFacultyPage - 1)}
+                            disabled={safeFacultyPage === 0}
+                            aria-label="Previous instructors"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-gray-500 transition-colors cursor-pointer hover:border-[#C9952A] hover:text-[#C9952A] disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            <ChevronLeft size={14} />
+                          </button>
+                          <span className="text-[11px] font-semibold text-gray-500">
+                            {safeFacultyPage * FACULTY_PAGE_SIZE + 1}–{Math.min((safeFacultyPage + 1) * FACULTY_PAGE_SIZE, activeFaculty.length)} of {activeFaculty.length}
                           </span>
-                        )}
-                        {canManageDepartments && (
                           <button
                             type="button"
-                            onClick={() => openProgramEditForm(program)}
-                            aria-label={`Edit ${program.code}`}
-                            title="Edit program"
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-gray-400 transition-colors cursor-pointer hover:border-[#C9952A] hover:text-[#C9952A]"
+                            onClick={() => setFacultyPage(safeFacultyPage + 1)}
+                            disabled={safeFacultyPage >= facultyPageCount - 1}
+                            aria-label="Next instructors"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-gray-500 transition-colors cursor-pointer hover:border-[#C9952A] hover:text-[#C9952A] disabled:cursor-not-allowed disabled:opacity-40"
                           >
-                            <Pencil size={14} />
+                            <ChevronRight size={14} />
                           </button>
-                        )}
-                        {canManageDepartments && (
-                          <button
-                            type="button"
-                            onClick={() => void archiveProgram(program)}
-                            aria-label={`Archive ${program.code}`}
-                            title="Archive program"
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-gray-400 transition-colors cursor-pointer hover:border-stone-400 hover:text-stone-700"
-                          >
-                            <Archive size={14} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )) : (
-                    <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 px-4 py-7 text-center">
-                      <LibraryBig size={22} className="mx-auto mb-2 text-slate-300" />
-                      <p className="text-xs font-semibold text-slate-500">No programs added yet.</p>
-                      <p className="mt-1 text-[11px] text-slate-400">Use Add program to add the first program to this department&apos;s directory.</p>
-                    </div>
+                        </div>
+                      )}
+                    </>
                   )}
-                </div>
-              </section>
+                </section>
+              </div>
             </div>
 
-            <div className="shrink-0 border-t border-gray-200/80 bg-[#F8F6F2] px-7 py-4 flex items-center justify-end gap-3">
+            <div className="shrink-0 border-t border-gray-200/80 bg-white px-4 py-3 sm:px-6 flex items-center justify-end gap-3">
               <button
                 onClick={() => setIsDetailModalOpen(false)}
-                className="px-5 py-2.5 rounded-xl border border-gray-200 bg-white text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all cursor-pointer"
+                className="px-5 py-2 rounded-xl border border-gray-200 bg-white text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all cursor-pointer"
               >
                 Close
               </button>
@@ -1549,7 +1637,7 @@ export default function Departments() {
                     setIsDetailModalOpen(false);
                     handleEditClick(selectedDeptForDetail);
                   }}
-                  className="px-5 py-2.5 rounded-xl bg-[#5A1220] hover:bg-[#410b15] text-white text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+                  className="px-5 py-2 rounded-xl bg-[#5A1220] hover:bg-[#410b15] text-white text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-1.5"
                 >
                   <Pencil size={14} />
                   <span>Edit Department</span>

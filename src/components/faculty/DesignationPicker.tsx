@@ -101,7 +101,7 @@ export default function DesignationPicker({
             >
               <span className="tabular-nums text-[#C9952A]">{index + 1}.</span>
               {designationLabel(designation)}
-              {designation.deload_units > 0 && <span className="font-semibold text-[#8a6412]/80">(-{designation.deload_units}u)</span>}
+              {designation.deload_units > 0 && <span className="font-semibold text-[#8a6412]/80">(-{designation.deload_units} {designation.deload_units === 1 ? "unit" : "units"})</span>}
               {!disabled && (
                 <button
                   type="button"

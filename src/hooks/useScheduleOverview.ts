@@ -17,7 +17,6 @@ export interface ConflictBreakdown {
   room: number;
   section: number;
   total: number;
-  overridden?: number;
 }
 
 export interface SectionOverview {

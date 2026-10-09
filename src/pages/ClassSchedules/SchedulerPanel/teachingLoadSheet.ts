@@ -96,12 +96,12 @@ const drawLetterhead = (
 
 const INNER_DIVIDERS: Column[] = ["A", "C", "D", "E", "F", "G", "H", "I", "J"];
 
-const PROBONO_TEXT = [107, 114, 128] as const;
+const OVER_LIMIT_TEXT = [107, 114, 128] as const;
 const CONFLICT_TEXT = [220, 38, 38] as const;
 const DELOAD_TEXT = [220, 38, 38] as const;
 
 const lineTextColor = (line: LoadLine): readonly [number, number, number] | undefined =>
-  line.band === "probono" ? PROBONO_TEXT : undefined;
+  line.band === "over_limit" ? OVER_LIMIT_TEXT : undefined;
 
 const drawTableHeader = (doc: jsPDF, firstRow: number): void => {
   const lastRow = firstRow + 1;

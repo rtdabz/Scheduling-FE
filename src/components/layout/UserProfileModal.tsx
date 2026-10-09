@@ -40,7 +40,6 @@ interface Teaching {
   max_units: number;
   deload_units: number;
   overload_units: number;
-  probono_units: number;
   tier: string;
   tier_label: string;
   classes: TeachingClass[];
@@ -115,7 +114,7 @@ function Detail({ label, value }: { label: string; value?: string | null }) {
 const tierStyles: Record<string, string> = {
   basic: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
   overload: 'bg-amber-50 text-amber-700 ring-amber-600/20',
-  probono: 'bg-rose-50 text-rose-700 ring-rose-600/20',
+  beyond_ceiling: 'bg-rose-50 text-rose-700 ring-rose-600/20',
 };
 
 function TeachingLoad({ teaching }: { teaching: Teaching }) {

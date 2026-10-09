@@ -4,9 +4,10 @@ import AutoAssignModal from "./AutoAssignModal";
 import type { Faculty, ScheduleItem, Subject } from "../types";
 
 const confirm = vi.fn();
+const toastError = vi.fn();
 
 vi.mock("../../../../context/ToastContext", () => ({
-  useToast: () => ({ confirm }),
+  useToast: () => ({ confirm, toast: { error: toastError } }),
 }));
 
 const subject = {
@@ -45,21 +46,23 @@ const faculty = {
   employmentType: "full-time",
   requiredUnits: 21,
   overloadUnits: 6,
-  probonoUnits: 3,
 } as unknown as Faculty;
 
-const renderModal = () =>
+const renderModal = (
+  conflict: string | null = "Juan Dela Cruz already teaches IT 102 on Monday 07:00-10:00.",
+  instructor: Faculty = faculty,
+) =>
   render(
     <AutoAssignModal
       isOpen
       onClose={vi.fn()}
       schedules={[schedule]}
       subjects={[subject]}
-      faculties={[faculty]}
+      faculties={[instructor]}
       departmentId={6}
       facultyActionSlotId={null}
       canManageScheduleFaculty={() => true}
-      checkFacultyConflict={() => "Juan Dela Cruz already teaches IT 102 on Monday 07:00-10:00."}
+      checkFacultyConflict={() => conflict}
       onAssign={vi.fn().mockResolvedValue(true)}
     />,
   );
@@ -70,48 +73,41 @@ const selectInstructor = () => {
 };
 
 describe("AutoAssignModal instructor conflict", () => {
-  beforeEach(() => confirm.mockReset());
+  beforeEach(() => {
+    confirm.mockReset();
+    toastError.mockReset();
+  });
   afterEach(cleanup);
 
-  it("offers an Assign button on a conflicting section and asks before selecting it", async () => {
-    confirm.mockResolvedValue(true);
+  it("offers no way to assign a conflicting section", () => {
     renderModal();
     selectInstructor();
 
-    fireEvent.click(screen.getByRole("button", { name: /Assign IT 101 BSIT 1A despite the conflict/ }));
-
-    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
-    expect(confirm.mock.calls[0][0]).toMatchObject({
-      title: "Instructor has a conflict",
-      confirmLabel: "Assign anyway",
-    });
-    expect(confirm.mock.calls[0][0].message).toMatch(/already teaches IT 102/);
-    expect(await screen.findByText("Conflict · confirmed")).toBeTruthy();
-    expect(confirm.mock.calls[0][0].message).not.toMatch(/override/i);
-  });
-
-  it("leaves the section unselected when the override is declined", async () => {
-    confirm.mockResolvedValue(false);
-    renderModal();
-    selectInstructor();
-
-    fireEvent.click(screen.getByRole("button", { name: /Assign IT 101 BSIT 1A despite the conflict/ }));
-
-    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
     expect(screen.getByText("Conflict")).toBeTruthy();
-    expect(screen.queryByText("Conflict · confirmed")).toBeNull();
+    expect(screen.queryByRole("button", { name: /despite the conflict/ })).toBeNull();
   });
 
-  it("asks the same question when the conflicting row itself is clicked", async () => {
-    confirm.mockResolvedValue(false);
+  it("does not select a conflicting row when it is clicked", () => {
     renderModal();
     selectInstructor();
 
     fireEvent.click(screen.getByText("BSIT 1A"));
 
-    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
-    expect(screen.queryByText("Conflict · confirmed")).toBeNull();
+    expect(confirm).not.toHaveBeenCalled();
+    expect((screen.getByRole("button", { name: "Add to list" }) as HTMLButtonElement).disabled).toBe(true);
   });
+
+  it("refuses a section that would push the instructor past the unit limit", async () => {
+    renderModal(null, { ...faculty, requiredUnits: 1, overloadUnits: 1 } as Faculty);
+    selectInstructor();
+
+    fireEvent.click(screen.getByText("BSIT 1A"));
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+    expect(toastError.mock.calls[0][0]).toBe("Unit limit reached");
+    expect((screen.getByRole("button", { name: "Add to list" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("filters the instructor list by name as you type", () => {
     const other = { ...faculty, id: "f2", name: "Maria Santos" } as unknown as Faculty;
     render(

@@ -9,7 +9,6 @@ import LockedModuleView from './components/ui/LockedModuleView';
 import { lazyPage, registerPagePrefetch } from './lib/pagePrefetch';
 
 const Dashboard = lazyPage(() => import('./pages/Dashboard'));
-const VpaaSchedules = lazyPage(() => import('./pages/vpaa/Schedules'));
 const ScheduleApprovalPage = lazyPage(() => import('./pages/shared/ScheduleApprovalPage'));
 const VpaaCalendarPage = lazyPage(() => import('./pages/vpaa/CalendarPage'));
 const Faculty = lazyPage(() => import('./pages/shared/Faculty'));
@@ -42,7 +41,6 @@ const CurriculumDetailPage = lazyPage(() => import('./pages/curriculum/Curriculu
 const SecretarySections = lazyPage(() => import('./pages/secretary/Sections'));
 
 registerPagePrefetch([
-  [VpaaSchedules, ['/schedules']],
   [ScheduleApprovalPage, ['/schedules/approval', '/dean/schedules/approval']],
   [VpaaCalendarPage, ['/calendar']],
   [Faculty, ['/instructors', '/dean/instructors', '/secretary/instructors', '/program_head/instructors']],
@@ -202,7 +200,7 @@ export default function App() {
         
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route path="/dashboard" element={<DashboardRoute />} />
-            <Route path="/schedules" element={<CapabilityRoute capability="schedule.view" moduleName="Schedules"><VpaaSchedules /></CapabilityRoute>} />
+            <Route path="/schedules" element={<Navigate to="/schedules/approval" replace />} />
             <Route path="/schedules/approval" element={<CapabilityRoute capability="schedule.approve_vpaa" moduleName="Schedule Approval"><ScheduleApprovalPage stage="vpaa" /></CapabilityRoute>} />
             <Route path="/calendar" element={<CapabilityRoute capability="schedule.view" moduleName="Calendar"><VpaaCalendarPage /></CapabilityRoute>} />
             <Route path="/instructors" element={<RoleRoute role="vpaa" moduleName="Instructor Management"><Faculty /></RoleRoute>} />

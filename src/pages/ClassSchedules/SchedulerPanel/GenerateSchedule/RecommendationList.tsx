@@ -6,6 +6,7 @@ import {
   groupRecommendations,
   type RecommendationOption,
 } from "./recommendationGroups";
+import { isSessionEnhancement } from "./yearLevelGenerationFailure";
 import type {
   GenerationAttempt,
   GenerationBottleneck,
@@ -44,6 +45,8 @@ export default function RecommendationList({
   const selectedOption = (key: string, options: RecommendationOption[]): RecommendationOption =>
     options.find((option) => option.recommendation.id === chosen[key]) ?? options[0];
 
+  const requiresIndividualApply = groups.some((group) => selectedOption(group.key, group.options).recommendation.adjustments.some(isSessionEnhancement));
+
   const applyAll = () =>
     onApply?.(combineRecommendations(groups.map((group) => selectedOption(group.key, group.options).recommendation)));
 
@@ -58,7 +61,7 @@ export default function RecommendationList({
               {heading}
               <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] text-slate-700">{groups.length}</span>
             </p>
-            {onApply && groups.length > 1 && (
+            {onApply && groups.length > 1 && !requiresIndividualApply && (
               <button
                 type="button"
                 onClick={applyAll}
@@ -70,6 +73,7 @@ export default function RecommendationList({
             )}
           </div>
 
+          {requiresIndividualApply && <p className="mt-2 text-xs text-slate-600">Apply one session alternative and generate again before combining adjustments.</p>}
           <ul className="mt-1.5 divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white">
             {groups.map((group) => {
               const selected = selectedOption(group.key, group.options);

@@ -268,6 +268,8 @@ export default function ScheduleSummaryStep({
 
           <ClassSummaryTable
             classes={filtered}
+            className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white"
+            scrollClassName="min-h-0 flex-1 overflow-auto"
             isRowFlagged={(item) =>
               attentionKeys?.has(
                 `${Number(item.sectionId)}:${Number(item.courseId)}`,

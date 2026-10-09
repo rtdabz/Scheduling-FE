@@ -1,4 +1,4 @@
-import type { Course } from "./types";
+import type { Course, ScheduleItem, Subject } from "./types";
 
 export const SLOTS_PER_HOUR = 2;
 
@@ -63,3 +63,26 @@ export const laboratoryComponentSlots = (
   course?: CourseHours | null,
   settings?: LaboratoryDurationSettings | null,
 ): number => customLaboratoryDurationSlots(settings) ?? getCourseSlotPlan(course).laboratorySlots;
+
+export const sortSplitMeetingsForEdit = (
+  items: ScheduleItem[],
+  subject?: Subject | null,
+  laboratoryFirst = false,
+  laboratorySettings: LaboratoryDurationSettings | null = null,
+): ScheduleItem[] => {
+  const lectureSlots = getCourseSlotPlan(subject).lectureSlots;
+  const labSlots = Number(subject?.labHours ?? 0) > 0 ? laboratoryComponentSlots(subject, laboratorySettings) : 0;
+  const meetingRank = (item: ScheduleItem): number => {
+    if (item.meetingType === "laboratory") return laboratoryFirst ? 0 : 1;
+    if (item.meetingType === "lecture") return laboratoryFirst ? 1 : 0;
+    if (labSlots > 0 && item.durationSlots === labSlots) return laboratoryFirst ? 0 : 1;
+    if (lectureSlots > 0 && item.durationSlots === lectureSlots) return laboratoryFirst ? 1 : 0;
+    return 2;
+  };
+
+  return [...items].sort((a, b) =>
+    meetingRank(a) - meetingRank(b)
+    || a.dayIndex - b.dayIndex
+    || a.startSlot - b.startSlot
+  );
+};

@@ -1,12 +1,11 @@
 import type React from "react";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, CalendarDays, ChevronDown, Clock, MapPin, User, UserCheck, X } from "lucide-react";
 import { getCategoryStyles } from "../constants";
-import EmploymentBadge, { instructorOptionLabel } from "../EmploymentBadge";
-import { eligibleFacultiesForSubject, requiredTeachingProgramId } from "../facultyEligibility";
+import EmploymentBadge from "../EmploymentBadge";
+import InstructorPickerModal from "./InstructorPickerModal";
+import { eligibleFacultiesForSubject, majorTeachingDepartmentId, requiredTeachingProgramId } from "../facultyEligibility";
 import { AVAILABILITY_WARNING_TITLE, isAvailabilityWarning } from "../../../../lib/availabilityWindows";
-import type { InstructorRecommendation } from "../../../../lib/conflicts";
-import RecommendedOptionList from "../components/RecommendedOptionList";
 import type { FacultyAssignmentPopupState, ScheduleItem, Subject, Faculty } from "../types";
 
 interface FacultyModalProps {
@@ -24,7 +23,6 @@ interface FacultyModalProps {
   checkFacultyConflict: (facultyId: string, scheduleId: string) => string | null;
   subjects: Subject[];
   faculties: Faculty[];
-  recommendedInstructors?: InstructorRecommendation[] | null;
 }
 
 export default function FacultyModal({
@@ -42,9 +40,10 @@ export default function FacultyModal({
   checkFacultyConflict,
   subjects,
   faculties,
-  recommendedInstructors,
 }: FacultyModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const [pickerScheduleId, setPickerScheduleId] = useState<string | null>(null);
+  const closePicker = useCallback(() => setPickerScheduleId(null), []);
 
   useEffect(() => {
     if (!facultyAssignmentPopup) return;
@@ -205,28 +204,26 @@ export default function FacultyModal({
               )}
             </div>
 
-            <div className="relative">
-              <User className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
-              <select
-                value={facultyAssignmentPopup.facultyId}
-                disabled={isSavingFaculty || !canManageFaculty}
-                onChange={(event) => handlePopupFacultyChange(event.target.value)}
-                className={`w-full appearance-none rounded-lg border border-gray-200 bg-white py-2.5 pl-9 pr-8 text-sm font-semibold text-gray-700 outline-none transition-all focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/20 ${
-                  isSavingFaculty || !canManageFaculty ? "cursor-not-allowed opacity-70" : ""
-                }`}
-              >
-                <option value="">{canManageFaculty ? "Select an instructor" : restrictionMessage}</option>
-                {eligibleFaculties.map((faculty) => {
-                  const conflict = checkFacultyConflict(faculty.id, schedule.id);
-                  return (
-                    <option key={faculty.id} value={faculty.id}>
-                      {instructorOptionLabel(faculty.name, faculty.employmentType, Boolean(conflict))}
-                    </option>
-                  );
-                })}
-              </select>
+            <button
+              type="button"
+              disabled={isSavingFaculty || !canManageFaculty}
+              onClick={() => setPickerScheduleId(schedule.id)}
+              aria-haspopup="dialog"
+              className={`relative flex w-full items-center gap-2 rounded-lg border border-gray-200 bg-white py-2.5 pl-9 pr-8 text-left text-sm font-semibold text-gray-700 outline-none transition-all hover:border-[#4e0a10]/40 focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/20 ${
+                isSavingFaculty || !canManageFaculty ? "cursor-not-allowed opacity-70" : ""
+              }`}
+            >
+              <User className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              {selectedFaculty ? (
+                <>
+                  <span className="truncate">{selectedFaculty.name}</span>
+                  <EmploymentBadge type={selectedFaculty.employmentType} />
+                </>
+              ) : (
+                <span className="truncate text-gray-400">{canManageFaculty ? "Select an instructor" : restrictionMessage}</span>
+              )}
               <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
+            </button>
 
             {canManageFaculty && programRestrictionNote && (
               <p className="text-xs font-semibold text-[#7a4c08]">{programRestrictionNote}</p>
@@ -251,13 +248,6 @@ export default function FacultyModal({
               ))}
             </div>
 
-            {selectedFaculty && (
-              <p className="text-xs font-semibold text-gray-500">
-                Selected instructor: <span className="text-gray-800">{selectedFaculty.name}</span>
-                <EmploymentBadge type={selectedFaculty.employmentType} className="ml-2 align-middle" />
-              </p>
-            )}
-
             {!canManageFaculty && (
               <p className="text-xs font-semibold text-slate-500">
                 {restrictionMessage} You can view the assignment, but only that department can change the instructor.
@@ -272,52 +262,10 @@ export default function FacultyModal({
                 <div className="text-[10px] font-bold uppercase tracking-wider text-orange-900">{isAvailabilityWarning(popupConflictWarning) ? AVAILABILITY_WARNING_TITLE : "Conflict found"}</div>
                 <div className="text-[10px] font-semibold mt-0.5 leading-relaxed">{popupConflictWarning}</div>
                 <div className="text-[10px] font-semibold mt-1 leading-relaxed">
-                  {recommendedInstructors === undefined
-                    ? "You can still assign this instructor. Assign will ask you to confirm."
-                    : "Pick a free instructor below, or assign this one anyway. Assign will ask you to confirm."}
+                  This instructor cannot be assigned here. Choose another instructor or move the class.
                 </div>
               </div>
             </div>
-          )}
-
-          {recommendedInstructors !== undefined && canManageFaculty && (popupConflictWarning
-            || recommendedInstructors?.some((option) => String(option.faculty_id) === facultyAssignmentPopup.facultyId)) && (
-            <section className="space-y-2" aria-busy={recommendedInstructors === null}>
-              <div className="text-xs font-bold uppercase tracking-wide text-gray-700">Free instructors</div>
-              {recommendedInstructors === null ? (
-                <p className="text-xs font-semibold text-gray-500">Finding instructors free at this time…</p>
-              ) : recommendedInstructors.length === 0 ? (
-                <p className="text-xs font-semibold text-gray-500">
-                  No eligible instructor is free for every meeting of this class. Move the class in the Schedule Builder, or assign anyway.
-                </p>
-              ) : (
-                <RecommendedOptionList
-                  label="Free instructors"
-                  applyLabel="Select"
-                  isBusy={isSavingFaculty}
-                  items={recommendedInstructors.map((option, index) => ({
-                    key: String(option.faculty_id),
-                    isApplied: facultyAssignmentPopup.facultyId === String(option.faculty_id),
-                    tag: option.requires_overload_confirmation ? (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">Over Basic Load</span>
-                    ) : index === 0 ? (
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">Best match</span>
-                    ) : null,
-                    body: (
-                      <div>
-                        <p className="text-sm font-bold text-gray-800">{option.faculty_name}</p>
-                        <ul className="mt-1 flex flex-wrap gap-1">
-                          {option.reasons.map((reason) => (
-                            <li key={reason} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">{reason}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ),
-                  }))}
-                  onApply={handlePopupFacultyChange}
-                />
-              )}
-            </section>
           )}
 
           {popupValidationError && (
@@ -330,11 +278,11 @@ export default function FacultyModal({
           <div className="flex gap-2 pt-1">
             <button
               type="submit"
-              disabled={isSavingFaculty || !canManageFaculty || isSameAssignedFaculty}
+              disabled={isSavingFaculty || !canManageFaculty || isSameAssignedFaculty || Boolean(popupConflictWarning)}
               className={`flex-1 px-4 py-2.5 text-white rounded-lg text-sm font-bold shadow-xs transition-colors flex items-center justify-center gap-2 ${
                 "bg-[#4e0a10] hover:bg-[#3a0809]"
               } ${
-                isSavingFaculty || !canManageFaculty || isSameAssignedFaculty ? "cursor-not-allowed opacity-75" : ""
+                isSavingFaculty || !canManageFaculty || isSameAssignedFaculty || popupConflictWarning ? "cursor-not-allowed opacity-75" : ""
               }`}
             >
               {isSavingFaculty ? (
@@ -361,6 +309,20 @@ export default function FacultyModal({
           </div>
         </form>
       </div>
+      {pickerScheduleId === schedule.id && canManageFaculty && (
+        <InstructorPickerModal
+          faculties={eligibleFaculties}
+          selectedFacultyId={facultyAssignmentPopup.facultyId}
+          preferredDepartmentId={majorTeachingDepartmentId(subject, schedule.departmentId ?? null)}
+          preferredProgramId={requiredProgramId}
+          conflictFor={(facultyId) => checkFacultyConflict(facultyId, schedule.id)}
+          onSelect={(facultyId) => {
+            handlePopupFacultyChange(facultyId);
+            setPickerScheduleId(null);
+          }}
+          onClose={closePicker}
+        />
+      )}
     </div>
   );
 }

@@ -3,7 +3,6 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 import PageHeader from './PageHeader';
 import { deanNav } from '../../navigation/deanNav';
-import { vpaaNav } from '../../navigation/vpaaNav';
 
 const renderAt = (path: string, nav = deanNav) => render(
   <MemoryRouter initialEntries={[path]}>
@@ -21,7 +20,7 @@ describe('PageHeader', () => {
   });
 
   it('still titles the sibling page itself', () => {
-    renderAt('/schedules', vpaaNav);
+    renderAt('/dean/schedules');
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('All Schedules');
   });
 });

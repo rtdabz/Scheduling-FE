@@ -338,7 +338,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
                         aria-expanded={expanded}
                         title={item.isLocked ? `Locked: Requires permission` : item.label}
                       >
-                        <div className="flex items-center min-w-0">
+                        <div className={`flex items-center min-w-0 ${isOpen ? 'gap-3' : ''}`}>
                           <div className="relative flex items-center justify-center w-5 h-5 shrink-0">
                             {item.icon && <item.icon size={18} className="flex-shrink-0" aria-hidden="true" />}
                             {!isOpen && showNotif && (
@@ -354,23 +354,13 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
                         </div>
                         <div className={`flex items-center gap-2 transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-w-[70px] opacity-100' : 'max-w-0 opacity-0 pointer-events-none'}`}>
                           {showNotif && (
-                            notifCount > 0 ? (
-                              <span
-                                className="flex items-center gap-1 rounded-full bg-[#C9952A] px-1.5 py-0.5 text-[10px] font-black text-[#4e0a10] shadow-[0_0_8px_rgba(201,149,42,0.4)]"
-                                title={`${notifCount} pending notification${notifCount === 1 ? '' : 's'}`}
-                              >
-                                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#4e0a10]" />
-                                {notifCount >= 9 ? '9+' : notifCount}
-                              </span>
-                            ) : (
-                              <span
-                                className="relative flex h-2 w-2"
-                                title="New activity"
-                              >
-                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#C9952A] opacity-75" />
-                                <span className="relative inline-flex h-2 w-2 rounded-full bg-[#C9952A] shadow-[0_0_6px_#C9952A]" />
-                              </span>
-                            )
+                            <span
+                              className="relative flex h-2 w-2"
+                              title={notifCount > 0 ? `${notifCount} pending notification${notifCount === 1 ? '' : 's'}` : 'New activity'}
+                            >
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#C9952A] opacity-75" />
+                              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#C9952A] shadow-[0_0_6px_#C9952A]" />
+                            </span>
                           )}
                           {item.isLocked && <Lock size={12} className="text-[#E8D5C4]/50 shrink-0" />}
                           <ChevronDown

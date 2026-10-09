@@ -3,7 +3,7 @@ import { getPhilippineNowParts } from '../../lib/philippineTime';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { BuildingsTable, RoomsTable } from '../../components/rooms/RoomListTables';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import ConfirmModal from '../../components/ui/ConfirmModal';
@@ -31,6 +31,7 @@ import TruncatedDataNotice from '../../components/ui/TruncatedDataNotice';
 import { getStoredUser } from '../../lib/storedUser';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
+import { parseLinkedSlots, type LinkedSlot } from '../../lib/notificationLink';
 
 
 interface Department {
@@ -183,6 +184,35 @@ export default function Rooms() {
   const [selectedBuilding, setSelectedBuilding] = useState<string | null>(
     location.state?.selectedBuilding ?? null
   );
+  const openBuilding = (name: string | null) => {
+    setSelectedBuilding(name);
+    setGlobalFilter('');
+  };
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkedRoomId = Number(searchParams.get('room')) || null;
+  const [handledRoomLink, setHandledRoomLink] = useState<number | null>(null);
+  const [linkedHighlight, setLinkedHighlight] = useState<{ roomId: number; slots: LinkedSlot[]; seq: number } | null>(null);
+  if (linkedRoomId === null && handledRoomLink !== null) setHandledRoomLink(null);
+  if (linkedRoomId !== null && linkedRoomId !== handledRoomLink && filteredRooms.length > 0) {
+    setHandledRoomLink(linkedRoomId);
+    const room = filteredRooms.find(r => r.id === linkedRoomId);
+    if (room) {
+      setSelectedBuilding(room.building || UNASSIGNED_BUILDING);
+      setGlobalFilter('');
+      setSelectedRoomIdForDetail(room.id);
+      setIsDetailModalOpen(true);
+      setLinkedHighlight((current) => ({ roomId: room.id, slots: parseLinkedSlots(searchParams.get('slots')), seq: (current?.seq ?? 0) + 1 }));
+    }
+  }
+  useEffect(() => {
+    if (handledRoomLink === null || linkedRoomId !== handledRoomLink) return;
+    setSearchParams((params) => {
+      params.delete('room');
+      params.delete('slots');
+      return params;
+    }, { replace: true });
+  }, [handledRoomLink, linkedRoomId, setSearchParams]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -543,15 +573,11 @@ export default function Rooms() {
   const searchedRooms = useMemo(() => {
     let result = filteredRooms;
 
-    if (globalFilter.trim()) {
-      const query = globalFilter.toLowerCase();
-      result = result.filter(r => 
-        r.room_code.toLowerCase().includes(query) || 
-        (r.building && r.building.toLowerCase().includes(query)) ||
-        (r.room_type && r.room_type.toLowerCase().includes(query)) ||
-        (r.department?.department_code && r.department.department_code.toLowerCase().includes(query)) ||
-        (r.department?.department_name && r.department.department_name.toLowerCase().includes(query))
-      );
+    const query = globalFilter.trim().toLowerCase();
+    if (query) {
+      result = selectedBuilding
+        ? result.filter(r => r.room_code.toLowerCase().includes(query))
+        : result.filter(r => (r.building || UNASSIGNED_BUILDING).toLowerCase().includes(query));
     }
 
     if (departmentFilter) {
@@ -563,7 +589,7 @@ export default function Rooms() {
     }
 
     return result;
-  }, [filteredRooms, globalFilter, departmentFilter, roomTypeFilter]);
+  }, [filteredRooms, globalFilter, departmentFilter, roomTypeFilter, selectedBuilding]);
 
   const buildings = useMemo(() => {
     const map = new Map<string, Room[]>();
@@ -638,7 +664,7 @@ export default function Rooms() {
   }, [isDetailModalOpen, printAfterOpen]);
 
   const roomGuideSteps = useMemo(() => [
-    { element: '#rooms-filters select', action: 'select' as const, taskHint: 'Change a room filter to continue.', title: 'Find a room', description: 'Search by room or building. Use the type filter to narrow the list.', side: 'bottom' as const },
+    { element: '#rooms-filters select', action: 'select' as const, taskHint: 'Change a room filter to continue.', title: 'Find a room', description: 'Search buildings by name, or room codes inside a building. Use the type filter to narrow the list.', side: 'bottom' as const },
     { element: '[data-tour="building-card"]', waitFor: '#rooms-workspace', action: 'click' as const, skipIfMissing: true, taskHint: 'Click a building to see its rooms.', title: 'Check room details', description: 'Select a building to see its rooms, status and today’s classes. Great work — that is the whole flow.', side: 'top' as const },
   ], []);
   useWorkflowGuide({ id: 'rooms', isReady: showGuide, steps: roomGuideSteps, mission: 'Browse Rooms' });
@@ -649,7 +675,7 @@ export default function Rooms() {
         <SearchInput
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}
-          placeholder="Search rooms or buildings..."
+          placeholder={selectedBuilding ? "Search room code..." : "Search buildings..."}
         />
 
         <div className="flex flex-wrap items-center gap-3">
@@ -796,7 +822,7 @@ export default function Rooms() {
                   <div
                     key={building.name}
                     data-tour="building-card"
-                    onClick={() => setSelectedBuilding(building.name)}
+                    onClick={() => openBuilding(building.name)}
                     className={`bg-white border border-gray-100 rounded-2xl p-6 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between space-y-4 group relative overflow-hidden font-sans ${GRID_CARD_HOVER}`}
                   >
                     {bldgLogo && (
@@ -864,7 +890,7 @@ export default function Rooms() {
           ) : (
             <BuildingsTable
               buildings={buildings}
-              onSelect={(building) => setSelectedBuilding(building.name)}
+              onSelect={(building) => openBuilding(building.name)}
               onEdit={canManageRooms ? (building) => openBuildingEdit(building.name) : undefined}
               onArchive={canManageRooms ? (building) => openBuildingArchive(building.name) : undefined}
               rowTourId="building-card"
@@ -876,7 +902,7 @@ export default function Rooms() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <button
-                onClick={() => setSelectedBuilding(null)}
+                onClick={() => openBuilding(null)}
                 className="p-2 text-gray-500 hover:text-gray-800 bg-white border border-gray-200 hover:border-gray-300 rounded-xl transition-all shadow-sm flex items-center justify-center cursor-pointer"
               >
                 <ArrowLeft size={16} />
@@ -1305,12 +1331,14 @@ export default function Rooms() {
       />
 
       <RoomDetailModal
+        key={linkedHighlight?.seq ?? 0}
         isOpen={isDetailModalOpen}
         onClose={() => {
           setIsDetailModalOpen(false);
           setSelectedRoomIdForDetail(null);
         }}
         roomId={selectedRoomIdForDetail}
+        highlightSlots={linkedHighlight?.roomId === selectedRoomIdForDetail ? linkedHighlight.slots : undefined}
         initialViewMode="grid"
         className="room-timetable-modal"
         initialRoom={rooms.find(room => room.id === selectedRoomIdForDetail) ?? null}

@@ -11,7 +11,6 @@ import RoomViewModal from "./Modals/RoomViewModal";
 import PrintSchedule from "./PrintSchedule";
 import AutoAssignModal from "./Modals/AutoAssignModal";
 import ResolveConflictModal from "./Modals/ResolveConflictModal";
-import OverloadConfirmationModal from "../../../components/faculty/OverloadConfirmationModal";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import { useEffect, useMemo, useState } from "react";
 import { useScheduler } from "./hooks/useScheduler";
@@ -29,7 +28,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
   const plottingGuideSteps = useMemo(() => [
     { element: '#schedule-builder-section button[aria-haspopup="listbox"]', action: "click" as const, taskHint: "Open the section picker and choose a section.", title: "Choose a section", description: "Select a section to load its courses and timetable.", side: "bottom" as const, align: "start" as const },
     { element: "#schedule-builder-generate button", action: "click" as const, skipIfMissing: true, taskHint: "Click Generate to continue.", title: "Generate a schedule", description: "Open the generator to build a whole year level at once. It has its own step-by-step guide, and this one waits here until you close it.", side: "bottom" as const, align: "end" as const },
-    { element: "#schedule-builder-course-bank-toggle", action: "click" as const, taskHint: "Click the toggle to continue.", title: "Show the Course Bank", description: "Show or hide the Course Bank.", side: "bottom" as const, align: "start" as const },
+    { element: "#schedule-builder-course-bank-toggle", action: "click" as const, taskHint: "Click the toggle to continue.", title: "Manual Plotting", description: "Show or hide the Manual Plotting panel.", side: "bottom" as const, align: "start" as const },
     { element: "#schedule-builder-course-bank", title: "Place each course", description: "Select a course and click an empty time, or drag it onto the timetable.", side: "right" as const, align: "start" as const },
     { element: "#schedule-builder-timetable", title: "Check the timetable", description: "Review times, rooms, and conflicts. Move or edit classes if needed.", side: "top" as const },
     { element: "#schedule-builder-next-step", title: "Finish plotting", description: "When every section is fully plotted and checked, submit the department schedule to the Dean.", side: "bottom" as const },
@@ -58,14 +57,25 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
   const [isClearInstructorConfirmOpen, setIsClearInstructorConfirmOpen] = useState(false);
   const [clearInstructorScope, setClearInstructorScope] = useState<"section" | "department">("section");
   const [isConflictsOpen, setIsConflictsOpen] = useState(false);
-  const conflictRoomOptions = useMemo(
-    () => scheduler.rooms.map((room) => ({ id: Number(room.id), label: room.name })),
-    [scheduler.rooms],
-  );
-  const conflictFacultyOptions = useMemo(
-    () => scheduler.faculties.map((faculty) => ({ id: Number(faculty.id), label: faculty.name })),
-    [scheduler.faculties],
-  );
+  // The class whose Conflict badge was clicked; null opens on the first conflict.
+  const [conflictsFocusId, setConflictsFocusId] = useState<number | null>(null);
+  // The dialog opens by itself whenever the open count goes up -- on the first
+  // load with conflicts, and when a save adds one -- so nobody has to look for
+  // it. Adjusted during render rather than in an effect, as React recommends
+  // for state that follows a changing value.
+  const openConflictCount = scheduler.conflictCounts?.open ?? null;
+  const [seenOpenConflictCount, setSeenOpenConflictCount] = useState<number | null>(null);
+  if (openConflictCount !== seenOpenConflictCount) {
+    setSeenOpenConflictCount(openConflictCount);
+    if (
+      (scheduler.canUpdateSchedule || scheduler.canAssignInstructor)
+      && openConflictCount !== null
+      && openConflictCount > (seenOpenConflictCount ?? 0)
+    ) {
+      setConflictsFocusId(null);
+      setIsConflictsOpen(true);
+    }
+  }
 
   useEffect(() => {
     if (autoAssignOnOpen && scheduler.schedules.length > 0) {
@@ -136,7 +146,10 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
       <TopBar
         {...scheduler}
         onPrint={() => scheduler.setIsPrintModalOpen(true)}
-        onOpenConflicts={scheduler.activeSemester ? () => setIsConflictsOpen(true) : undefined}
+        onOpenConflicts={scheduler.activeSemester ? () => {
+          setConflictsFocusId(null);
+          setIsConflictsOpen(true);
+        } : undefined}
         onGenerateYearLevel={scheduler.canGenerateSchedule ? () => setIsGeneratorOpen(true) : undefined}
         onResetSchedules={scheduler.handleClearAll}
         canResetSchedules={scheduler.isEditable && scheduler.schedules.length > 0}
@@ -146,7 +159,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
 
       {scheduler.canUpdateSchedule && !scheduler.ownsSelectedProgram && (
         <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-          <span className="font-bold">View only.</span> This section's program is scheduled by its owner: its Program Head, or the department Secretary when it has none. You can view it and check conflicts against it, but only the owner can change it.
+          Add the section first. <span className="font-bold">View-only</span> — just the Program Head or Secretary can edit its schedule.
         </p>
       )}
 
@@ -169,6 +182,11 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
           {...scheduler}
           activeSemesterText={scheduler.activeSemesterText}
           savingMessage={isSavingGenerated ? "Saving the generated timetable…" : null}
+          onOpenConflict={scheduler.activeSemester ? (scheduleId) => {
+            const id = Number(scheduleId);
+            setConflictsFocusId(Number.isFinite(id) ? id : null);
+            setIsConflictsOpen(true);
+          } : undefined}
         />
       </div>
 
@@ -178,7 +196,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
             <YearLevelGenerateScheduleWorkflow
               onClose={() => setIsGeneratorOpen(false)}
               sections={scheduler.sections.filter((section) => scheduler.ownsProgram(section.programId))}
-              courses={scheduler.subjects}
+              courses={scheduler.subjects.filter((subject) => !subject.delegatedOnly)}
               activeSemester={scheduler.activeSemester}
               departmentId={generatorDepartmentId}
               departmentLogoUrl={generatorDepartmentLogoUrl}
@@ -192,20 +210,16 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         </div>
       )}
 
-      {isConflictsOpen && scheduler.activeSemester && (
+      {/* Held back while the generator is up, and shown once it closes. */}
+      {isConflictsOpen && scheduler.activeSemester && !isGeneratorOpen && (
         <ResolveConflictModal
+          key={conflictsFocusId ?? "first"}
           isOpen
           onClose={() => setIsConflictsOpen(false)}
           semesterId={Number(scheduler.activeSemester.id)}
           departmentId={generatorDepartmentId === null ? null : Number(generatorDepartmentId)}
-          rooms={conflictRoomOptions}
-          faculties={conflictFacultyOptions}
-          canUpdateSchedule={scheduler.canUpdateSchedule}
-          canAssignInstructor={scheduler.canAssignInstructor}
+          focusScheduleId={conflictsFocusId}
           initialTab={(scheduler.conflictCounts?.open ?? 0) > 0 ? "open" : "resolved"}
-          onOpenInBuilder={scheduler.canUpdateSchedule ? (scheduleId) => {
-            if (scheduler.openScheduleInBuilder(String(scheduleId))) setIsConflictsOpen(false);
-          } : undefined}
           onResolved={() => {
             void scheduler.refreshSchedules();
             scheduler.refreshConflictCounts();
@@ -308,13 +322,6 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         selectedSectionId={scheduler.selectedSectionId}
         activeSemester={scheduler.activeSemester}
       />
-      {scheduler.overloadPrompt && (
-        <OverloadConfirmationModal
-          confirmation={scheduler.overloadPrompt.confirmation}
-          onConfirm={scheduler.confirmOverloadPrompt}
-          onCancel={scheduler.cancelOverloadPrompt}
-        />
-      )}
       {scheduler.canGenerateSchedule && (
         <GenerationProgressDrawer
           hidden={isGeneratorOpen}

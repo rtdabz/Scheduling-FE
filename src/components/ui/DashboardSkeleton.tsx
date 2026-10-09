@@ -1,6 +1,4 @@
 import type { ReactNode } from 'react';
-import WeeklyTimetableGrid from '../scheduling/WeeklyTimetableGrid';
-import { slotCount } from '../../lib/timeGrid';
 import Skeleton from './Skeleton';
 
 type DashboardSkeletonVariant = 'secretary' | 'dean' | 'vpaa' | 'program' | 'institutional';
@@ -355,58 +353,6 @@ function SubmissionOverviewSkeleton({ checks }: { checks: number }) {
   );
 }
 
-function SecretaryTimetableSkeleton() {
-  const scheduleCards = [
-    { id: 'dashboard-grid-1', startSlot: 2, durationSlots: 4 },
-    { id: 'dashboard-grid-2', startSlot: 8, durationSlots: 3 },
-    { id: 'dashboard-grid-3', startSlot: 13, durationSlots: 4 },
-  ];
-
-  return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <header className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/60 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <div className="flex h-6 items-center gap-2">
-            <Skeleton className="h-5 w-5 rounded" />
-            <Skeleton className="h-4 w-32 rounded" />
-          </div>
-          <TextLine line="mt-1 h-4" className="w-20" />
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Skeleton className="h-9 w-[168px] rounded-xl" />
-          <Skeleton className="h-7 w-32 rounded-full" />
-          <Skeleton className="h-[34px] w-44 rounded-xl" />
-        </div>
-      </header>
-      <div className="overflow-hidden bg-slate-50/70 p-4">
-        <WeeklyTimetableGrid days={['Loading']} slotCount={slotCount()} minWidth={0} getTimeLabel={() => ''} isLoading>
-          {scheduleCards.map((card) => (
-            <div
-              key={card.id}
-              className="z-10 m-0.5 flex h-full flex-col justify-between overflow-hidden rounded-xl border border-[#E2D9D0] bg-[#F7F4F0]/80 p-2 shadow-sm"
-              style={{ gridColumn: 2, gridRow: `${card.startSlot + 2} / span ${card.durationSlots}` }}
-            >
-              <div>
-                <Skeleton className="h-3 w-16 rounded" />
-                <Skeleton className="mt-1.5 h-2.5 w-24 rounded" />
-              </div>
-              <div className="mt-1 flex items-center justify-between gap-1">
-                <Skeleton className="h-2 w-20 rounded" />
-                <Skeleton className="h-3 w-5 rounded" />
-              </div>
-            </div>
-          ))}
-        </WeeklyTimetableGrid>
-      </div>
-      <footer className="flex items-center gap-4 border-t border-slate-200 bg-slate-50/60 px-5 py-3">
-        <TextLine className="w-16" />
-        <TextLine className="w-14" />
-        <TextLine className="w-14" />
-      </footer>
-    </section>
-  );
-}
-
 function SecretarySkeleton({ layout }: { layout: SecretaryDashboardLayout }) {
   return (
     <div className="space-y-4 pb-8 text-slate-800" aria-label="Loading dashboard" aria-busy="true">
@@ -416,8 +362,12 @@ function SecretarySkeleton({ layout }: { layout: SecretaryDashboardLayout }) {
         {layout.showDraftingProgress && <ProgressSkeleton />}
         {layout.showFacultyAssignment && <WorkloadSkeleton />}
       </div>
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        {layout.showTimetable && <div className="min-w-0"><SecretaryTimetableSkeleton /></div>}
+      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        {layout.showTimetable && <div data-skeleton="timetable" className="flex min-h-0 min-w-0 flex-col xl:[contain:size]">
+          <PanelFrame className="flex min-h-0 flex-1 flex-col" subtitle={false}>
+            <GanttSkeleton />
+          </PanelFrame>
+        </div>}
         <div className="flex min-w-0 flex-col gap-4">
           <RoomAssignmentSkeleton />
           <SubmissionOverviewSkeleton checks={layout.readinessCheckCount} />

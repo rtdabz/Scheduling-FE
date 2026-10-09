@@ -3,7 +3,6 @@ import { loadBandsOf, type LoadBands } from '../../lib/facultyLoad';
 const BANDS = [
   { key: 'basic', label: 'Basic', track: 'bg-emerald-100', fill: 'bg-emerald-500', dot: 'bg-emerald-500' },
   { key: 'overload', label: 'Overload', track: 'bg-red-100', fill: 'bg-red-400', dot: 'bg-red-400' },
-  { key: 'probono', label: 'Pro bono', track: 'bg-slate-200', fill: 'bg-slate-400', dot: 'bg-slate-400' },
 ] as const;
 
 export default function SegmentedLoadBar({
@@ -17,7 +16,7 @@ export default function SegmentedLoadBar({
   className?: string;
 }) {
   const bands = loadBandsOf(load);
-  const scale = Math.max(bands.basic + bands.overload + bands.probono, 1);
+  const scale = Math.max(bands.ceiling + bands.beyondCeiling, 1);
   const pct = (units: number) => `${(units / scale) * 100}%`;
   const height = size === 'sm' ? 'h-1.5' : 'h-2.5';
 
@@ -25,8 +24,7 @@ export default function SegmentedLoadBar({
     `${bands.assigned} of ${bands.ceiling} units assigned`,
     `Basic ${bands.basic}`,
     bands.overload > 0 ? `Overload ${bands.overload}` : '',
-    bands.probono > 0 ? `Pro bono ${bands.probono}` : '',
-    bands.beyondCeiling > 0 ? `${bands.beyondCeiling} over the ceiling` : '',
+    bands.beyondCeiling > 0 ? `${bands.beyondCeiling} over the limit` : '',
   ].filter(Boolean).join(' · ');
 
   return (
@@ -59,13 +57,11 @@ export default function SegmentedLoadBar({
           {BANDS.map((band) => bands[band.key] > 0 && (
             <span key={band.key} className="inline-flex items-center gap-1">
               <span className={`h-2 w-2 rounded-full ${band.dot}`} />
-              {band.label} {band.key === 'probono'
-                ? bands.filled.probono
-                : `${bands.filled[band.key]}/${bands[band.key]}`}
+              {band.label} {bands.filled[band.key]}/{bands[band.key]}
             </span>
           ))}
           {bands.beyondCeiling > 0 && (
-            <span className="font-bold text-red-700">+{bands.beyondCeiling} over ceiling</span>
+            <span className="font-bold text-red-700">+{bands.beyondCeiling} over limit</span>
           )}
         </div>
       )}

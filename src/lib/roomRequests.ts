@@ -50,6 +50,39 @@ export interface RoomOccupancy {
   opening_time: string;
   closing_time: string;
   occupied: RoomOccupancyBlock[];
+  schedules: RoomOccupancySchedule[];
+}
+
+export interface RoomOccupancySchedule {
+  id: number;
+  semester_id: number;
+  section_id: number;
+  course_id: number;
+  faculty_id: number | null;
+  room_id: number;
+  department_id: number;
+  day: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
+  start_time: string;
+  end_time: string;
+  mode: string;
+  meeting_type?: 'lecture' | 'laboratory' | null;
+  status: string;
+  section?: { id: number; section_name: string } | null;
+  course?: {
+    id: number;
+    course_code: string;
+    course_name: string;
+    course_category?: 'major' | 'minor';
+    units?: number | string | null;
+    lecture_hours?: number | string | null;
+    lab_hours?: number | string | null;
+  } | null;
+  faculty?: {
+    id: number;
+    first_name: string;
+    last_name: string;
+    middle_name?: string | null;
+  } | null;
 }
 
 export interface RoomRequestInput {

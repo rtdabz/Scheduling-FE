@@ -176,8 +176,7 @@ const drawInstitutionHeader = (
   doc.setTextColor(0, 0, 0);
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(6.5);
-  doc.text('Province of Misamis Oriental', PAGE_WIDTH / 2, 8.5, { align: 'center' });
-  doc.text('Municipality of TAGOLOAN', PAGE_WIDTH / 2, 12, { align: 'center' });
+  doc.text('Province of Misamis Oriental, Municipality of Tagoloan', PAGE_WIDTH / 2, 10.5, { align: 'center' });
 
   doc.setFont('Times', 'bolditalic');
   doc.setFontSize(18);

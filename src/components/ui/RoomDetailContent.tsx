@@ -1,6 +1,6 @@
 import { getPhilippineNowParts } from '../../lib/philippineTime';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeftRight,
   Calendar,
@@ -16,6 +16,7 @@ import ScheduleCard from '../../pages/ClassSchedules/SchedulerPanel/TimetableGri
 import { DAYS, GRID_HEADER_HEIGHT_PX, SLOT_HEIGHT_PX } from '../../pages/ClassSchedules/SchedulerPanel/constants';
 import { slotCount, slotToTimeLabel, timeToSlot } from '../../lib/timeGrid';
 import { useRoomGrants } from '../../hooks/useRoomGrants';
+import type { LinkedSlot } from '../../lib/notificationLink';
 import type {
   Room as SchedulerRoom,
   ScheduleItem,
@@ -78,6 +79,7 @@ interface RoomDetailContentProps {
   schedules: Schedule[];
   isLoading: boolean;
   initialViewMode?: 'list' | 'grid';
+  highlightSlots?: LinkedSlot[];
 }
 
 const formatTime = (timeStr: string) => {
@@ -99,11 +101,24 @@ const getMinutes = (timeStr: string) => {
 
 const noop = () => undefined;
 
-export default function RoomDetailContent({ room, schedules, isLoading, initialViewMode = 'list' }: RoomDetailContentProps) {
+const NO_SLOTS: LinkedSlot[] = [];
+
+export default function RoomDetailContent({ room, schedules, isLoading, initialViewMode = 'list', highlightSlots = NO_SLOTS }: RoomDetailContentProps) {
   const [activeTabDay, setActiveTabDay] = useState<string>(() => {
+    if (highlightSlots[0]) return highlightSlots[0].day;
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     return days[getPhilippineNowParts().weekdayIndex];
   });
+  const scrolledToHighlight = useRef(false);
+  const scrollToHighlight = useCallback((node: HTMLDivElement | null) => {
+    if (!node || scrolledToHighlight.current) return;
+    scrolledToHighlight.current = true;
+    node.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+  }, []);
+  const activeDayHighlights = useMemo(
+    () => highlightSlots.filter((slot) => slot.day === activeTabDay),
+    [highlightSlots, activeTabDay],
+  );
   const [viewMode, setViewMode] = useState<'list' | 'grid'>(initialViewMode);
   const { grants: roomGrants, ready: grantsReady } = useRoomGrants(room?.id ?? null);
   const activeDayGrants = useMemo(
@@ -346,6 +361,25 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
                   </div>
                 );
               })}
+              {highlightSlots.map((slot, index) => {
+                const dayIndex = DAYS.indexOf(slot.day);
+                if (dayIndex < 0) return null;
+                const startSlot = timeToSlot(slot.start_time);
+                const span = Math.max(1, timeToSlot(slot.end_time) - startSlot);
+                return (
+                  <div
+                    key={`highlight-${slot.day}-${slot.start_time}-${index}`}
+                    ref={index === 0 ? scrollToHighlight : undefined}
+                    title={`Requested slot · ${formatTime(slot.start_time)} - ${formatTime(slot.end_time)}`}
+                    className="pointer-events-none relative z-30 m-0.5 rounded-lg border-2 border-[#C9952A] bg-[#C9952A]/10 ring-4 ring-[#C9952A]/25"
+                    style={{ gridColumn: dayIndex + 2, gridRow: `${startSlot + 2} / span ${span}` }}
+                  >
+                    <span className="absolute -top-2.5 right-1.5 rounded-full bg-[#C9952A] px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-white shadow-sm">
+                      Requested slot
+                    </span>
+                  </div>
+                );
+              })}
               {roomGridCards.map(({ schedule, subject }) => (
                 <ScheduleCard
                   key={schedule.id}
@@ -385,6 +419,9 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
                     }`}
                   >
                     <span>{day}</span>
+                    {highlightSlots.some((slot) => slot.day === day) && (
+                      <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-[#C9952A]" aria-label="Requested slot" />
+                    )}
                     {count > 0 && (
                       <span className={`ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
                         isActive ? 'bg-[#5A1220] text-white' : 'bg-gray-200 text-gray-600'
@@ -398,6 +435,23 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
             </div>
 
             <div className="flex-1 overflow-y-auto p-6">
+              {activeDayHighlights.length > 0 && (
+                <div className="mb-3 space-y-2">
+                  {activeDayHighlights.map((slot, index) => (
+                    <div
+                      key={`highlight-${slot.start_time}-${index}`}
+                      ref={index === 0 ? scrollToHighlight : undefined}
+                      className="flex items-center justify-between gap-3 rounded-xl border-2 border-[#C9952A] bg-[#C9952A]/10 px-4 py-2.5 text-[#8a6418] ring-4 ring-[#C9952A]/20"
+                    >
+                      <span className="flex items-center gap-2 text-xs font-black uppercase tracking-wide">
+                        <Clock size={14} />
+                        Requested slot
+                      </span>
+                      <span className="text-xs font-bold">{formatTime(slot.start_time)} - {formatTime(slot.end_time)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {activeDayGrants.length > 0 && (
                 <div className="mb-5 space-y-2">
                   {activeDayGrants.map((block, index) => (

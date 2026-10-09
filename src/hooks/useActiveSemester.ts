@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../lib/api';
+import { useLiveRevision } from './useLiveRefresh';
 
 export interface ActiveSemester {
   id: number;
@@ -11,6 +12,7 @@ export interface ActiveSemester {
 export function useActiveSemester() {
   const [semester, setSemester] = useState<ActiveSemester | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const revision = useLiveRevision(['settings']);
 
   useEffect(() => {
     let active = true;
@@ -21,7 +23,7 @@ export function useActiveSemester() {
       .finally(() => { if (active) setIsLoading(false); });
 
     return () => { active = false; };
-  }, []);
+  }, [revision]);
 
   return { semester, isLoading };
 }

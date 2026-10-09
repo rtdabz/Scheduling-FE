@@ -213,7 +213,7 @@ describe("applyAdjustments", () => {
     expect(settings.allowFridaySaturdaySplit).toBe(true);
     expect(applied.map((item) => item.type)).toEqual(["add_preferred_day", "enable_friday_saturday_split"]);
     // Section configs are not touched by year-level adjustments.
-    expect(applyAdjustments({ "5": config() }, perSection("add_preferred_day", "Tuesday")).applied).toEqual([]);
+    expect(applyAdjustments({ "5": config(), "6": config() }, perSection("add_preferred_day", "Tuesday")).applied).toEqual([]);
   });
 
   it("does not add a Preferred Day when every day is already open", () => {
@@ -236,12 +236,12 @@ describe("applyAdjustments", () => {
     expect(next["5"].modesByCourseId["31"]).toBe("automatic");
   });
 
-  it("reports nothing applied for no-op, unknown, and missing-section adjustments", () => {
+  it("reports no-ops honestly and rejects unknown or missing-section selections", () => {
     const configs = { "5": config() };
 
     expect(applyAdjustments(configs, [adjustment({ value: "MW" })]).applied).toEqual([]);
-    expect(applyAdjustments(configs, [adjustment({ type: "explode" })]).applied).toEqual([]);
-    expect(applyAdjustments(configs, [adjustment({ section_id: 99 })]).applied).toEqual([]);
+    expect(() => applyAdjustments(configs, [adjustment({ type: "explode" })])).toThrow("guidance only");
+    expect(() => applyAdjustments(configs, [adjustment({ section_id: 99 })])).toThrow("outside");
     expect(applyAdjustments(configs, [adjustment({ type: "disable_lecture_lab_split", course_id: 404 })]).applied).toEqual([]);
     expect(applyAdjustments(configs, [adjustment()]).configs).not.toBe(configs);
   });

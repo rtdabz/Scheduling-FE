@@ -3,6 +3,7 @@ import api from '../../lib/api';
 import { getCachedData } from '../../lib/dataCache';
 import { getStoredUser } from '../../lib/storedUser';
 import RoomDetailContent from './RoomDetailContent';
+import type { LinkedSlot } from '../../lib/notificationLink';
 import Modal from './Modal';
 
 interface Department {
@@ -60,13 +61,14 @@ interface RoomDetailModalProps {
   initialRoom?: Room | null;
   initialSchedules?: Schedule[];
   initialSchedulesComplete?: boolean;
+  highlightSlots?: LinkedSlot[];
 }
 
 const fetchRoomSchedules = (roomId: number) => api.get<Schedule[]>('/schedules', {
   params: { room_id: roomId, semester_id: 'active', per_page: 1000 },
 });
 
-export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMode = 'list', className = '', initialRoom = null, initialSchedules = [], initialSchedulesComplete = true }: RoomDetailModalProps) {
+export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMode = 'list', className = '', initialRoom = null, initialSchedules = [], initialSchedulesComplete = true, highlightSlots }: RoomDetailModalProps) {
   const [room, setRoom] = useState<Room | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -154,7 +156,7 @@ export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMo
       className={`max-h-[95vh] ${className}`}
     >
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-6">
-        <RoomDetailContent room={room} schedules={schedules} isLoading={isLoading} initialViewMode={initialViewMode} />
+        <RoomDetailContent room={room} schedules={schedules} isLoading={isLoading} initialViewMode={initialViewMode} highlightSlots={highlightSlots} />
       </div>
     </Modal>
   );

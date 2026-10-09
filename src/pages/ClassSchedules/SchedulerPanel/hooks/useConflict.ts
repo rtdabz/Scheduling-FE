@@ -148,6 +148,14 @@ export const requiredRoomTypeForMeeting = (
   return subject.roomTypeRequired ?? null;
 };
 
+export const laboratoryServesLecture = (subject: Subject | undefined, room: Room | undefined): boolean =>
+  (subject?.category ?? "major") === "major"
+  && Number(subject?.lectureHours ?? 0) > 0
+  && Number(subject?.labHours ?? 0) === 0
+  && (subject?.roomTypeRequired ?? "lecture") === "lecture"
+  && room?.roomType === "laboratory"
+  && Boolean(room.allowLectureUsage);
+
 export const checkFieldEveningWindow = (
   isFieldPlacement: boolean,
   endSlot: number
@@ -300,11 +308,7 @@ export const getConflictedScheduleMap = (
           }
         }
 
-        if (
-          s1.facultyId
-          && s1.facultyId === s2.facultyId
-          && !(s1.facultyConflictOverride && s2.facultyConflictOverride)
-        ) {
+        if (s1.facultyId && s1.facultyId === s2.facultyId) {
           const faculty = faculties.find((f) => String(f.id) === String(s1.facultyId));
           const facName = faculty?.name ?? "Assigned faculty";
           const msg1 = `Faculty conflict: ${facName} is already teaching ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;

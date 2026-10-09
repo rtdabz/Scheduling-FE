@@ -10,8 +10,7 @@ import TableActionButton from "../../../../components/ui/TableActionButton";
 import { useToast } from "../../../../context/ToastContext";
 import { facultyEligibilityForSubject } from "../facultyEligibility";
 import { AVAILABILITY_WARNING_TITLE, isAvailabilityWarning } from "../../../../lib/availabilityWindows";
-import { LOAD_TIER_BADGE_CLASSES, LOAD_TIER_LABELS, basicLoadOf, loadTierForUnits, type LoadAllowances } from "../../../../lib/facultyLoad";
-import type { LoadTier } from "../../../../lib/overloadConfirmation";
+import { LOAD_TIER_BADGE_CLASSES, LOAD_TIER_LABELS, basicLoadOf, loadTierForUnits, type LoadAllowances, type LoadTier } from "../../../../lib/facultyLoad";
 import WizardProgressStepper from "../GenerateSchedule/WizardProgressStepper";
 import EmploymentBadge, { employmentLabel } from "../EmploymentBadge";
 import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
@@ -21,7 +20,6 @@ import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
 interface AssignmentBatch {
   scheduleIds: string[];
   facultyId: string;
-  overrideConflicts?: boolean;
 }
 
 interface AutoAssignModalProps {
@@ -83,7 +81,6 @@ const QUEUED_ISSUE = "Queued for assignment";
 const loadBandsOf = (faculty?: Faculty): LoadAllowances => ({
   basicLoad: faculty?.requiredUnits ?? basicLoadOf(faculty?.maxUnits, faculty?.deloadUnits),
   overloadUnits: faculty?.overloadUnits ?? 0,
-  probonoUnits: faculty?.probonoUnits ?? 0,
 });
 
 interface LoadDisplay {
@@ -123,6 +120,12 @@ const loadDisplay = (faculty: Faculty | undefined, units: number): LoadDisplay =
     percentage: Math.min(100, (units / ceiling) * 100),
     barClass: tier === "basic" ? "bg-emerald-500" : tier === "beyond_ceiling" ? "bg-rose-500" : "bg-amber-500",
   };
+};
+
+const exceedsCeiling = (faculty: Faculty | undefined, units: number): boolean => {
+  const { ceiling } = loadDisplay(faculty, units);
+
+  return ceiling > 0 && units > ceiling;
 };
 
 const isPastBasicLoad = (faculty: Faculty | undefined, units: number): boolean => {
@@ -189,7 +192,7 @@ export default function AutoAssignModal({
   onRemoveAssignment,
   allowExternalInstructors = true,
 }: AutoAssignModalProps) {
-  const { confirm } = useToast();
+  const { confirm, toast } = useToast();
   const faculties = useMemo(
     () => providedFaculties.filter((faculty) => (
       programId === null || Number(faculty.programId ?? 0) === Number(programId)
@@ -417,29 +420,18 @@ export default function AutoAssignModal({
     setSelectedKeys([]);
   };
 
-  const confirmConflictOverride = async (group: SectionGroup) => {
-    const conflict = getConflict(group);
-    if (!conflict || !selectedFaculty || getIssue(group)) return;
-    const availability = isAvailabilityWarning(conflict);
-    const confirmed = await confirm({
-      title: availability ? AVAILABILITY_WARNING_TITLE : "Instructor has a conflict",
-      message: `${conflict}\n\nAssign ${selectedFaculty.name} to ${group.courseCode} ${group.sectionName} anyway?`,
-      eyebrow: availability ? "Instructor availability" : "Instructor conflict",
-      confirmLabel: "Assign anyway",
-      variant: "warning",
-    });
-    if (!confirmed) return;
-    setSelectedKeys((current) => (current.includes(group.key) ? current : [...current, group.key]));
-  };
-
   const toggleGroup = (group: SectionGroup) => {
     if (getIssue(group)) return;
     if (selectedKeys.includes(group.key)) {
       setSelectedKeys((current) => current.filter((key) => key !== group.key));
       return;
     }
-    if (getConflict(group)) {
-      void confirmConflictOverride(group);
+    if (getConflict(group)) return;
+    if (selectedFaculty && exceedsCeiling(selectedFaculty, currentLoad + selectedUnits + group.units)) {
+      toast.error(
+        "Unit limit reached",
+        `${selectedFaculty.name} would carry ${currentLoad + selectedUnits + group.units} of ${projectedLoad.ceiling} units (basic load + overload). Choose another instructor for ${group.courseCode} ${group.sectionName}.`,
+      );
       return;
     }
     setSelectedKeys((current) => [...current, group.key]);
@@ -447,10 +439,16 @@ export default function AutoAssignModal({
 
   const selectableCourseGroupKeys = (() => {
     const keys: string[] = [];
+    let units = currentLoad;
 
     courseGroups.forEach((group) => {
-      if (getIssue(group) === null && getConflict(group, keys) === null) {
+      if (
+        getIssue(group) === null
+        && getConflict(group, keys) === null
+        && !exceedsCeiling(selectedFaculty, units + group.units)
+      ) {
         keys.push(group.key);
+        units += group.units;
       }
     });
 
@@ -519,14 +517,17 @@ export default function AutoAssignModal({
 
   const removeAssignment = (key: string) => setAssignments((current) => current.filter((assignment) => assignment.key !== key));
 
+  const hasBlockedAssignments = checkedAssignments.some((assignment) => assignment.conflict)
+    || [...new Set(checkedAssignments.map((assignment) => assignment.facultyId))]
+      .some((id) => exceedsCeiling(faculties.find((faculty) => faculty.id === id), facultyLoads.get(id) ?? 0));
+
   const saveAssignments = async () => {
+    if (hasBlockedAssignments) return;
     const byFaculty = new Map<string, AssignmentBatch>();
     checkedAssignments.forEach((assignment) => {
-      const overrideConflicts = Boolean(assignment.conflict);
-      const batchKey = `${assignment.facultyId}:${overrideConflicts ? "override" : "plain"}`;
-      const existing = byFaculty.get(batchKey);
+      const existing = byFaculty.get(assignment.facultyId);
       if (existing) existing.scheduleIds.push(...assignment.scheduleIds);
-      else byFaculty.set(batchKey, { facultyId: assignment.facultyId, scheduleIds: [...assignment.scheduleIds], overrideConflicts });
+      else byFaculty.set(assignment.facultyId, { facultyId: assignment.facultyId, scheduleIds: [...assignment.scheduleIds] });
     });
     const success = await onAssign([...byFaculty.values()]);
     if (success) onClose();
@@ -562,7 +563,7 @@ export default function AutoAssignModal({
                     return { value: course.id, label: `${course.code} - ${course.name}${programs ? ` (${programs})` : ""}` };
                   })} placeholder="Select course" />
                 </div>
-                <SectionTable groups={courseGroups} selectedKeys={selectedKeys} getIssue={getIssue} getConflict={getConflict} getConflictMeetings={getConflictMeetings} clashPartners={clashPartners} onToggle={toggleGroup} onOverride={confirmConflictOverride} onSelectAll={selectAllGroups} selectAllChecked={allSelectableGroupsSelected} selectAllDisabled={selectableCourseGroupKeys.length === 0} onRemove={onRemoveAssignment ? removeClassAssignment : undefined} removalBlockedReason={removalBlockedReason} busy={isSaving} />
+                <SectionTable groups={courseGroups} selectedKeys={selectedKeys} getIssue={getIssue} getConflict={getConflict} getConflictMeetings={getConflictMeetings} clashPartners={clashPartners} onToggle={toggleGroup} onSelectAll={selectAllGroups} selectAllChecked={allSelectableGroupsSelected} selectAllDisabled={selectableCourseGroupKeys.length === 0} onRemove={onRemoveAssignment ? removeClassAssignment : undefined} removalBlockedReason={removalBlockedReason} busy={isSaving} />
                 <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50/70 px-3 py-2.5">
                   {selectedFaculty ? (
                     <div className="mr-auto min-w-0 text-xs text-slate-600">
@@ -614,7 +615,7 @@ export default function AutoAssignModal({
               </button>
             )}
             {step === 3 && (
-              <button type="button" onClick={saveAssignments} disabled={isSaving || assignments.length === 0} className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-5 py-2 text-sm font-black text-white transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:opacity-50">
+              <button type="button" onClick={saveAssignments} disabled={isSaving || assignments.length === 0 || hasBlockedAssignments} className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-5 py-2 text-sm font-black text-white transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:opacity-50">
                 {isSaving ? <LoadingSpinner className="h-4 w-4" /> : <Save className="h-4 w-4" />} {isSaving ? "Saving..." : "Save Assignments"}
               </button>
             )}
@@ -867,7 +868,7 @@ function SelectField({ label, value, onChange, options, placeholder, allValue }:
   return <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}<div className="relative mt-1"><select value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-8 text-sm font-semibold normal-case tracking-normal text-slate-800 outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/25"><option value={allValue ?? ""}>{placeholder}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><ChevronDown className="pointer-events-none absolute right-2.5 top-3 h-4 w-4 text-slate-400" /></div></label>;
 }
 
-function SectionTable({ groups, selectedKeys, getIssue, getConflict, getConflictMeetings, clashPartners, onToggle, onOverride, onSelectAll, selectAllChecked, selectAllDisabled, onRemove, removalBlockedReason, busy }: { groups: SectionGroup[]; selectedKeys: string[]; getIssue: (group: SectionGroup) => string | null; getConflict: (group: SectionGroup) => string | null; getConflictMeetings: (group: SectionGroup) => Set<string>; clashPartners: Map<string, string[]>; onToggle: (group: SectionGroup) => void; onOverride: (group: SectionGroup) => void; onSelectAll: () => void; selectAllChecked: boolean; selectAllDisabled: boolean; onRemove?: (group: SectionGroup) => void; removalBlockedReason: (group: SectionGroup) => string | null; busy: boolean }) {
+function SectionTable({ groups, selectedKeys, getIssue, getConflict, getConflictMeetings, clashPartners, onToggle, onSelectAll, selectAllChecked, selectAllDisabled, onRemove, removalBlockedReason, busy }: { groups: SectionGroup[]; selectedKeys: string[]; getIssue: (group: SectionGroup) => string | null; getConflict: (group: SectionGroup) => string | null; getConflictMeetings: (group: SectionGroup) => Set<string>; clashPartners: Map<string, string[]>; onToggle: (group: SectionGroup) => void; onSelectAll: () => void; selectAllChecked: boolean; selectAllDisabled: boolean; onRemove?: (group: SectionGroup) => void; removalBlockedReason: (group: SectionGroup) => string | null; busy: boolean }) {
   const columns = useMemo<ColumnDef<SectionGroup>[]>(() => [
     {
       id: "selected",
@@ -937,7 +938,6 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, getConflict
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-orange-500" />
                 {isAvailabilityWarning(conflict) ? AVAILABILITY_WARNING_TITLE : "Conflict"}
-                {selectedKeys.includes(row.original.key) && " · confirmed"}
               </span>
               <span className="whitespace-nowrap text-[11px] font-medium text-orange-600/90">{conflict}</span>
             </span>
@@ -962,24 +962,6 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, getConflict
       enableSorting: false,
       meta: { align: "right" as const, stopRowClick: true },
       cell: ({ row }: { row: { original: SectionGroup } }) => {
-        const needsConfirmation = !getIssue(row.original)
-          && Boolean(getConflict(row.original))
-          && !selectedKeys.includes(row.original.key);
-        if (needsConfirmation) {
-          return (
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={(event) => { event.stopPropagation(); onOverride(row.original); }}
-                disabled={busy}
-                aria-label={`Assign ${row.original.courseCode} ${row.original.sectionName} despite the conflict`}
-                className="inline-flex h-8 items-center rounded-lg border border-orange-300 bg-white px-3 text-xs font-bold text-orange-700 transition-colors hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Assign
-              </button>
-            </div>
-          );
-        }
         if (!onRemove || !row.original.assignedFacultyId) return null;
         const blocked = removalBlockedReason(row.original);
         return (
@@ -997,7 +979,7 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, getConflict
         );
       },
     } satisfies ColumnDef<SectionGroup>,
-  ], [busy, clashPartners, getConflict, getConflictMeetings, getIssue, onOverride, onRemove, removalBlockedReason, selectedKeys]);
+  ], [busy, clashPartners, getConflict, getConflictMeetings, getIssue, onRemove, removalBlockedReason, selectedKeys]);
 
   const table = useDataTable({
     data: groups,
@@ -1015,7 +997,6 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, getConflict
           variant="embedded"
           className="flex min-h-0 flex-1 flex-col"
           scrollClassName="min-h-0 flex-1 overflow-auto"
-          tableClassName="min-w-[650px]"
           ariaLabel="Sections"
           onRowClick={onToggle}
           rowClassName={(group) => (getIssue(group)
@@ -1160,7 +1141,7 @@ function ReviewAssignments({ assignments, faculties, facultyLoads, onRemove }: {
 
             <p className="flex shrink-0 items-start gap-2 border-t border-slate-100 bg-slate-50/70 px-4 py-2.5 text-xs text-slate-600">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-              Going past Basic Load is allowed: it uses the overload allowance, then pro bono, and you confirm it once when saving.
+              Loads can go past Basic Load up to the overload allowance. Sections past that limit cannot be added.
             </p>
           </section>
         );
@@ -1250,7 +1231,6 @@ function AssignmentItemsTable({ items, onRemove, showTotal = false, className, s
       density="compact"
       className={className}
       scrollClassName={scrollClassName}
-      tableClassName="min-w-[640px]"
       ariaLabel="Queued assignments"
       emptyTitle="No sections on the list."
       emptyDescription=""
@@ -1284,7 +1264,7 @@ function ConfirmAssignments({ assignments, faculties, facultyLoads, onEdit }: { 
             <h3 className="text-base font-black text-slate-900">Ready to save</h3>
             <p className="mt-0.5 text-xs leading-5 text-slate-600">
               {overloaded.length
-                ? "Some loads go past Basic Load. You will be asked to confirm them."
+                ? "Some loads go past Basic Load and use the overload allowance."
                 : "Every instructor stays within Basic Load."}
             </p>
           </div>
@@ -1360,7 +1340,7 @@ function ConfirmValidationSummary({ assignments, faculties, facultyLoads }: { as
       <span className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-600" /> {plural(assignments.length, "section")}</span>
       {assignments.some((assignment) => assignment.conflict) && (
         <span className="flex items-center gap-1.5 text-orange-700">
-          <AlertTriangle className="h-3.5 w-3.5" /> {plural(assignments.filter((assignment) => assignment.conflict).length, "conflict")}
+          <AlertTriangle className="h-3.5 w-3.5" /> {plural(assignments.filter((assignment) => assignment.conflict).length, "conflict")} · remove to save
         </span>
       )}
       <span className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-600" /> {plural(totalUnits, "unit")} to save</span>

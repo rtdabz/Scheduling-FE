@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   APPLY_ALL_RECOMMENDATION_ID,
   combineRecommendations,
   describeOption,
   groupRecommendations,
 } from "./recommendationGroups";
-import type { GenerationAdjustment, GenerationRecommendation } from "./yearLevelGenerationFailure";
+import { isApplicableRecommendation, type GenerationAdjustment, type GenerationAttempt, type GenerationRecommendation } from "./yearLevelGenerationFailure";
 
 const adjustment = (overrides: Partial<GenerationAdjustment> = {}): GenerationAdjustment => ({
   type: "clear_pattern",
@@ -37,14 +38,55 @@ const recommendation = (
   ...overrides,
 });
 
+describe("server selection contract and stored-run compatibility", () => {
+  const fixture = JSON.parse(readFileSync("../backend/tests/Fixtures/GenerationSelectionCases.json", "utf8")) as {
+    attempts: Pick<GenerationAttempt, "strategy" | "outcome">[];
+    cases: (Pick<GenerationRecommendation, "id" | "impact" | "adjustments" | "status"> & { expected: NonNullable<GenerationRecommendation["selection"]> })[];
+    active_order: string[];
+  };
+
+  it.each([true, false])("uses the shared expected order with selection metadata: %s", (withSelection) => {
+    const options = fixture.cases.map(({ expected, ...option }) => recommendation(option.id, option.adjustments, {
+      ...option, selection: withSelection ? expected : undefined,
+    }));
+    const attempts = fixture.attempts.map((attempt) => ({ ...attempt, label: "", description: "", section_id: null,
+      section_name: null, iterations: 0, search_limit_reached: false }));
+    const grouped = groupRecommendations(options, withSelection ? [] : attempts);
+    expect(grouped.groups[0].options.map((option) => option.recommendation.id)).toEqual(fixture.active_order);
+    options.forEach((option, index) => expect(isApplicableRecommendation(option)).toBe(fixture.cases[index].expected.applicable));
+    expect(grouped.groups[0].options.find((option) => option.recommendation.id === "strategy-tried")?.triedAlone).toBe(true);
+  });
+
+  it("honors server priority and guidance even when local impact would choose differently", () => {
+    const preferred = recommendation("preferred", [adjustment()], { impact: "high",
+      selection: { contract_version: 1, priority: 0, tried_alone: false, applicable: true } });
+    const other = recommendation("other", [adjustment({ type: "disable_minor_split" })], { impact: "low",
+      selection: { contract_version: 1, priority: 2, tried_alone: false, applicable: true } });
+    const guidance = recommendation("guidance", [adjustment({ type: "enable_hybrid_split" })], {
+      selection: { contract_version: 1, priority: -1, tried_alone: false, applicable: false } });
+    const result = groupRecommendations([other, guidance, preferred]);
+    expect(result.groups[0].options.map((option) => option.recommendation.id)).toEqual(["preferred", "other"]);
+    expect(result.manual).toHaveLength(1);
+    expect(isApplicableRecommendation({ ...preferred, adjustments: [adjustment({ type: "future_operation" })] })).toBe(false);
+  });
+
+  it("uses the legacy adapter for an unknown selection contract version", () => {
+    const future = recommendation("future", [adjustment()], { impact: "high",
+      selection: { contract_version: 99, priority: -1, tried_alone: true, applicable: false } });
+    const old = recommendation("old", [adjustment({ type: "disable_minor_split" })], { impact: "low" });
+    expect(groupRecommendations([future, old]).groups[0].options.map((option) => option.recommendation.id)).toEqual(["old", "future"]);
+    expect(describeOption(future).triedAlone).toBe(false);
+  });
+});
+
 describe("describeOption", () => {
   it("names each fix by what it changes", () => {
     const label = (id: string, overrides: Partial<GenerationAdjustment>) =>
       describeOption(recommendation(id, [adjustment(overrides)]));
 
     expect(label("recommend-hybrid-split-1-5", { type: "enable_hybrid_split" })).toMatchObject({
-      label: "Hybrid",
-      action: "Apply Hybrid",
+      label: "Hybrid Split",
+      action: "Apply Hybrid Split",
     });
     // Online for a Split Session means both meetings.
     expect(label("recommend-online-split-1-5", { type: "set_delivery_mode", value: "online" })).toMatchObject({
@@ -131,7 +173,7 @@ describe("groupRecommendations", () => {
 
     expect(groups).toHaveLength(1);
     expect(groups[0].target).toBe("GEC 1 · BSIT 1A");
-    expect(groups[0].options.map((option) => option.label)).toEqual(["Online (All)", "Hybrid", "Regular"]);
+    expect(groups[0].options.map((option) => option.label)).toEqual(["Online (All)", "Hybrid Split", "Regular"]);
   });
 
   it("lists the bottleneck's class first and leaves its reason to the headline", () => {
@@ -181,7 +223,7 @@ describe("groupRecommendations", () => {
 });
 
 describe("combineRecommendations", () => {
-  it("carries every chosen fix, keeping the first decision per class", () => {
+  it("carries every chosen fix so conflicting selections can be rejected together", () => {
     const online = recommendation("recommend-online-split-1-5", [adjustment({ type: "set_delivery_mode", value: "online" })]);
     // A section-wide "Automatic mode" that also covers GEC 1 would undo it.
     const automatic = recommendation("strategy-clear_section_forced_modes", [
@@ -196,6 +238,7 @@ describe("combineRecommendations", () => {
     expect(combined.title).toBe("3 recommendations");
     expect(combined.adjustments.map((item) => [item.type, item.course_id, item.value])).toEqual([
       ["set_delivery_mode", 5, "online"],
+      ["set_delivery_mode", 5, "automatic"],
       ["set_delivery_mode", 6, "automatic"],
       // Days and delivery are separate decisions, so both land.
       ["clear_pattern", 5, null],

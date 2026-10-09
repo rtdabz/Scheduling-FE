@@ -65,7 +65,7 @@ interface Schedule {
 }
 interface Room { id:number; room_code:string; room_type:string; building?:string|null; status?:string|null }
 interface Section { id:number; section_name:string; department_id:number }
-interface Faculty { id:number; first_name:string; last_name:string; employment_type?:'full-time'|'part-time'; max_units:number; deload_units?:number|null; assigned_units?:number; probono_units?:number|null; department_id:number; status:string }
+interface Faculty { id:number; first_name:string; last_name:string; employment_type?:'full-time'|'part-time'; max_units:number; deload_units?:number|null; assigned_units?:number; department_id:number; status:string }
 interface Department { id:number; department_name:string; department_code:string; logo?:string|null }
 interface Subject { id:number; subject_code:string; subject_name:string }
 interface Semester { id:number; academic_year:string; semester:'1st'|'2nd'|'summer'; is_active:boolean }
@@ -478,7 +478,7 @@ export default function VpaaDashboardPage() {
     { label: 'Instructors', value: grouped(faculties.length), detail: 'Active instructors', icon: Users, path: '/instructors', tone: 'accent' },
     { label: 'Curriculums', value: grouped(activeCurriculaCount), detail: 'Active curriculums', icon: BookOpen, path: '/curriculum', tone: 'good' },
     { label: 'Rooms', value: grouped(campusRooms.length), detail: 'Across campus', icon: Building2, path: '/facilities', tone: 'warn' },
-    { label: 'Sections', value: grouped(totals.sections), detail: 'In the active semester', icon: LayoutGrid, path: '/schedules', tone: 'info' },
+    { label: 'Sections', value: grouped(totals.sections), detail: 'In the active semester', icon: LayoutGrid, path: '/schedules/approval', tone: 'info' },
   ];
 
   const timetablePanel = (
@@ -581,7 +581,7 @@ export default function VpaaDashboardPage() {
         detail={`${grouped(totals.approved)} / ${grouped(totals.sections)} sections approved`}
         progress={totals.progressPercent}
         tone={totals.progressPercent === 100 ? 'good' : 'brand'}
-        onClick={() => navigate('/schedules')}
+        onClick={() => navigate('/schedules/approval')}
       />
 
       {inventory.map(({ label, value, detail, icon, path, tone }) => <DashboardMetricCard key={label} label={label} value={value} detail={detail} icon={icon} tone={tone} onClick={() => navigate(path)} />)}

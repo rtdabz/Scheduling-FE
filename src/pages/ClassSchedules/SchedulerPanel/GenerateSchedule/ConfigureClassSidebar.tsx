@@ -256,7 +256,7 @@ export default function ConfigureClassSidebar({
     : daysOutsidePreferred.length > 0
       ? `Untick ${daysOutsidePreferred.join(", ")}: the Preferred Days are ${preferredDays.join(", ")}.`
       : meetingDays.length === 1
-        ? "Tick at least two days."
+        ? "Pick at least two days."
         : null;
   const meetingDaysMissing = isConsecutive && meetingDays.length === 0;
 
@@ -607,8 +607,8 @@ export default function ConfigureClassSidebar({
                 {daysChosen
                   ? `Every section meets ${runLabel(meetingDays)}; the Generator picks each section's time and room.`
                   : preferredDays.length > 0
-                    ? `Tick the days the class meets, from the Preferred Days (${preferredDays.join(", ")}).`
-                    : "Tick the days the class meets, e.g. Monday, Wednesday and Friday."}
+                    ? `Pick the days the class meets, from the Preferred Days (${preferredDays.join(", ")}).`
+                    : "Pick the days the class meets, e.g. Monday, Wednesday and Friday."}
               </Hint>
             </>
           )}

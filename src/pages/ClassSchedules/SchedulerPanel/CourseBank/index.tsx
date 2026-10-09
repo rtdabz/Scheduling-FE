@@ -82,7 +82,7 @@ export default function CourseBank({
             <BookOpen className="h-4 w-4" />
           </span>
           <div className="min-w-0 flex-1 leading-tight">
-            <h2 className="text-sm font-black text-slate-900">Course Bank</h2>
+            <h2 className="text-sm font-black text-slate-900">Manual Plotting</h2>
             <p className="mt-0.5 text-[11px] text-slate-500">Click a course, then a time slot — or drag it</p>
           </div>
         </div>

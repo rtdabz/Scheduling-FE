@@ -216,7 +216,7 @@ describe("RecommendedAdjustmentPanel", () => {
     // One row for GEC 1, its fixes as choices: untried and least disruptive first.
     const choices = within(screen.getByRole("radiogroup", { name: "Fixes for GEC 1 · BSIT 1A" }));
     expect(choices.getAllByRole("radio").map((radio) => radio.textContent)).toEqual([
-      "Hybrid",
+      "Hybrid Split",
       "Online (All)",
       "Regular",
     ]);
@@ -225,6 +225,16 @@ describe("RecommendedAdjustmentPanel", () => {
     expect(screen.getByText(/Both meetings online/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Apply Online (All) to GEC 1 · BSIT 1A" }));
     expect(onApplyAndRetry).toHaveBeenCalledWith(onlineSplit);
+  });
+
+  it("keeps a group-verified session enhancement out of Apply all", () => {
+    const onApplyAndRetry = vi.fn();
+    const enhancement = { ...hybridSplit, id: "session-enhancement", title: "Split", adjustments: [{ ...hybridSplit.adjustments[0], type: "enable_balanced_split" }] };
+    renderPanel({ ...splitFailure, recommendations: [enhancement, ...splitFailure.recommendations.filter((r) => r.adjustments.every((a) => a.type === "add_preferred_day"))] }, { onApplyAndRetry });
+    expect(screen.queryByRole("button", { name: /Apply all/ })).toBeNull();
+    expect(screen.getByText(/Apply one session alternative and generate again/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Apply Split to/ }));
+    expect(onApplyAndRetry).toHaveBeenCalledWith(enhancement);
   });
 
   it("applies the chosen fix of every row at once", () => {

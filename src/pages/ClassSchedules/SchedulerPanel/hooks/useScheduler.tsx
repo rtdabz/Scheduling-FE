@@ -26,7 +26,7 @@ import type {
   WithdrawalStage
 } from "../types";
 import { DEAN_REQUIRED_MESSAGE } from "../../../../hooks/useDepartmentScheduleStatus";
-import { getCourseSlotPlan, laboratoryComponentSlots, type LaboratoryDurationSettings } from "../courseSlotPlan";
+import { getCourseSlotPlan, laboratoryComponentSlots, sortSplitMeetingsForEdit, type LaboratoryDurationSettings } from "../courseSlotPlan";
 import { buildSectionClearCandidates } from "../sectionClearCandidates";
 import { buildSectionFinalizeCandidates, buildSectionReassignCandidates } from "../sectionFinalizeCandidates";
 import { getSubjectTotalSlots } from "../types";
@@ -69,8 +69,6 @@ import { invalidateCacheGroups } from "../../../../lib/cacheGroups";
 import { roomGrantFits } from "../../../../lib/roomRequests";
 import { configureLabRoomType, roomTypeSatisfies } from "../../../../lib/labRoomPolicy";
 import { getStoredUser, hasStoredCapability } from "../../../../lib/storedUser";
-import { overloadConfirmationFrom, type OverloadConfirmation } from "../../../../lib/overloadConfirmation";
-import { OVERRIDE_CONFLICTS_FLAG, conflictOverrideFrom, conflictOverridePrompt, type ConflictOverrideQuestion } from "../../../../lib/conflictOverride";
 import { buildPreferredPattern, consecutiveDayCount, fixedSplitPatternForDays, FULL_DAY_NAMES, parsePreferredPattern, slotCount } from "../../../../lib/timeGrid";
 import { isHybridSplitEligible, savedMeetingPairShape } from "../schedulingConfigurationEligibility";
 import { resolveManualOperationStatus } from "../manualScheduleOperation";
@@ -117,29 +115,6 @@ export interface ManualSchedulingSettings extends LaboratoryDurationSettings {
   field_course_codes?: string[];
   sunday_classes_enabled?: boolean;
 }
-
-const sortSplitMeetingsForEdit = (
-  items: ScheduleItem[],
-  subject?: Subject | null,
-  laboratoryFirst = false,
-  laboratorySettings: LaboratoryDurationSettings | null = null,
-): ScheduleItem[] => {
-  const lectureSlots = getCourseSlotPlan(subject).lectureSlots;
-  const labSlots = Number(subject?.labHours ?? 0) > 0 ? laboratoryComponentSlots(subject, laboratorySettings) : 0;
-  const meetingRank = (item: ScheduleItem): number => {
-    if (item.meetingType === "laboratory") return laboratoryFirst ? 0 : 1;
-    if (item.meetingType === "lecture") return laboratoryFirst ? 1 : 0;
-    if (labSlots > 0 && item.durationSlots === labSlots) return laboratoryFirst ? 0 : 1;
-    if (lectureSlots > 0 && item.durationSlots === lectureSlots) return laboratoryFirst ? 1 : 0;
-    return 2;
-  };
-
-  return [...items].sort((a, b) =>
-    meetingRank(a) - meetingRank(b)
-    || a.dayIndex - b.dayIndex
-    || a.startSlot - b.startSlot
-  );
-};
 
 const departmentPlottingStatuses: ScheduleItem["status"][] = [
   "draft",
@@ -437,11 +412,6 @@ export const useScheduler = () => {
   }, [sections, selectedSectionId]);
 
 
-  const isSummerWeekendBlocked = useCallback(
-    (dayIndex: number) => activeSemester?.semester === "summer" && dayIndex >= 5,
-    [activeSemester?.semester],
-  );
-
   const refreshSchedules = useCallback(async () => {
     try {
       const res = await api.get<Pick<InitialDataResponse, "schedules" | "schedules_truncated">>('/initial-data', {
@@ -637,10 +607,6 @@ export const useScheduler = () => {
   const [isClearingSectionInstructors, setIsClearingSectionInstructors] = useState(false);
   const [popupValidationError, setPopupValidationError] = useState<string>("");
   const [popupConflictWarning, setPopupConflictWarning] = useState<string>("");
-  const [overloadPrompt, setOverloadPrompt] = useState<{
-    confirmation: OverloadConfirmation;
-    resolve: (proceed: boolean) => void;
-  } | null>(null);
 
   const [isSectionDropdownOpen, setIsSectionDropdownOpen] = useState(false);
   const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
@@ -757,6 +723,7 @@ export const useScheduler = () => {
   const coursesForSection = useCallback((section: Section) => {
     const sectionSemester = normalizeSemester(section.semester);
     return subjects.filter((s) => {
+      if (s.delegatedOnly) return false;
       const isMinor = s.category === "minor";
       const matchesDept =
         isMinor ||
@@ -782,10 +749,10 @@ export const useScheduler = () => {
   );
 
   const semesterSubjects = useMemo(() => {
-    if (subjects.length === 0) return [];
-    if (!activeSemester?.semester) return subjects;
+    const ownSubjects = subjects.filter((s) => !s.delegatedOnly);
+    if (!activeSemester?.semester) return ownSubjects;
     const activeSem = normalizeSemester(activeSemester.semester);
-    return subjects.filter((s) => {
+    return ownSubjects.filter((s) => {
       if (!s.semester) return true;
       const subSem = normalizeSemester(s.semester);
       return subSem === activeSem;
@@ -1455,10 +1422,6 @@ export const useScheduler = () => {
   const onScheduleRelocated =useCallback(async (scheduleId: string, dayIndex: number, startSlot: number) => {
     const sched = schedules.find((s) => s.id === scheduleId);
     if (!sched) return;
-    if (isSummerWeekendBlocked(dayIndex)) {
-      toast.error("Weekend Not Available", "Summer semester classes are scheduled Monday through Friday.");
-      return;
-    }
     const dayName = FULL_DAY_NAMES[dayIndex];
     const startTime24h = slotToTime24h(startSlot);
     const endTime24h = slotToTime24h(startSlot + sched.durationSlots);
@@ -1522,7 +1485,7 @@ export const useScheduler = () => {
         toast.error("Relocation Failed", "Could not save the new schedule slot.");
       }
     }
-  }, [schedules, refreshSchedules, refreshData, schedulerCacheKey, applyUpdatedSchedules, isSummerWeekendBlocked, toast, triggerConflictReminder, releaseRequiredDayForMove, restoreRequiredDays]);
+  }, [schedules, refreshSchedules, refreshData, schedulerCacheKey, applyUpdatedSchedules, toast, triggerConflictReminder, releaseRequiredDayForMove, restoreRequiredDays]);
 
   const dragDrop = useDragDrop({
     schedules,
@@ -1538,8 +1501,7 @@ export const useScheduler = () => {
     setDropContext,
     setConflictInfo,
     checkMoveConflict,
-    onScheduleRelocated,
-    activeSemester
+    onScheduleRelocated
   });
 
   const handleConfirmSchedule = async (e: React.FormEvent) => {
@@ -2019,12 +1981,20 @@ export const useScheduler = () => {
         .filter((s) => s.status === "revision")
         .map((s) => s.sectionId),
     ).size;
+    const instructorClassCount = new Set(
+      targetSchedules
+        .filter((s) => s.facultyId)
+        .map((s) => `${s.sectionId}:${s.courseId || s.subjectId}`),
+    ).size;
     const confirmed = await confirm({
       title: "Reset Schedules",
       message: `Are you sure you want to reset the schedules of ${sectionLabel}? `
         + `${targetSchedules.length} meeting${targetSchedules.length === 1 ? "" : "s"} will be permanently deleted. This action cannot be undone.`
         + (recalledCount > 0
           ? ` ${recalledCount} of these section${recalledCount === 1 ? " was" : "s were"} recalled or returned from approval; only the working copy is cleared — the submitted version stays in the approval history.`
+          : "")
+        + (instructorClassCount > 0
+          ? ` ${instructorClassCount} class${instructorClassCount === 1 ? " has an instructor" : "es have instructors"} assigned; ${instructorClassCount === 1 ? "that assignment is" : "those assignments are"} released too, including classes taught by other departments, which will be notified.`
           : ""),
       eyebrow: "Irreversible Action",
       confirmLabel: "Yes, Reset Schedules",
@@ -2052,20 +2022,30 @@ export const useScheduler = () => {
         .map(Number)
         .filter((id) => id > 0);
 
+      let releasedInstructors = 0;
       if (targetSectionIds.length > 0 && activeSemester) {
-        await api.post('/schedules/batch', {
+        const response = await api.post<{ instructors_released?: number }>('/schedules/batch', {
           operations: [],
           delete_ids: validSchedules.map((s) => Number(s.id)),
           replace_section_ids: targetSectionIds,
           replace_semester_id: Number(activeSemester.id),
         });
+        releasedInstructors = Number(response.data?.instructors_released ?? 0);
       } else if (validSchedules.length > 0) {
-        await api.post('/schedules/batch', {
+        const response = await api.post<{ instructors_released?: number }>('/schedules/batch', {
           operations: [],
           delete_ids: validSchedules.map((s) => Number(s.id)),
         });
+        releasedInstructors = Number(response.data?.instructors_released ?? 0);
       }
-      toast.success("Schedules Reset", `Reset schedules of ${selectedIds.size} selected section${selectedIds.size === 1 ? "" : "s"} (${clearedCount} loaded meeting${clearedCount === 1 ? "" : "s"}).`);
+      toast.success(
+        "Schedules Reset",
+        `Reset schedules of ${selectedIds.size} selected section${selectedIds.size === 1 ? "" : "s"} (${clearedCount} loaded meeting${clearedCount === 1 ? "" : "s"}).`
+          + (releasedInstructors > 0
+            ? ` ${releasedInstructors} instructor assignment${releasedInstructors === 1 ? " was" : "s were"} released.`
+            : ""),
+      );
+      if (releasedInstructors > 0) invalidateCacheGroups('faculty', 'assignments');
       await refreshData({ silent: true });
     } catch (err) {
       const apiMsg = getApiErrorMessage(err);
@@ -2182,7 +2162,7 @@ export const useScheduler = () => {
         prev.map((item) =>
           selectedRevisionSectionIds.has(item.sectionId)
             && departmentWithdrawableStatuses.includes(item.status)
-            ? { ...item, status: "revision", facultyId: null, facultyName: null, facultyAssignmentDone: false, facultyConflictOverride: false }
+            ? { ...item, status: "revision" }
             : item
         )
       );
@@ -2195,7 +2175,7 @@ export const useScheduler = () => {
           + (released > 0
             ? ` ${released} instructor assignment${released === 1 ? " was" : "s were"} released.`
             : "")
-          + " After revision, submit it again for Dean and VPAA approval, then assign instructors again."
+          + " After revision, submit it again for Dean and VPAA approval."
       );
       invalidateCacheGroups('schedules', 'approvals', 'dashboards', 'faculty', 'assignments');
       refreshSchedules().catch(() => {});
@@ -2339,34 +2319,15 @@ export const useScheduler = () => {
     }
   }, [facultyAssignmentPopup, checkFacultyConflict]);
 
-  const askOverloadConfirmation = (confirmation: OverloadConfirmation): Promise<boolean> =>
-    new Promise<boolean>((resolve) => {
-      setOverloadPrompt({ confirmation, resolve });
-    });
-
-  const confirmOverloadPrompt = () => {
-    overloadPrompt?.resolve(true);
-    setOverloadPrompt(null);
-  };
-
-  const cancelOverloadPrompt = () => {
-    overloadPrompt?.resolve(false);
-    setOverloadPrompt(null);
-  };
-
   type FacultyMutationOutcome =
     | { status: "ok"; schedules: ScheduleItem[] }
     | { status: "restricted"; message: string }
     | { status: "resynced" }
-    | { status: "needs_overload_confirmation"; confirmation: OverloadConfirmation }
-    | { status: "needs_conflict_override"; question: ConflictOverrideQuestion }
     | { status: "failed"; message: string };
 
   const mutateScheduleFaculty = async (
     slotId: string,
-    facultyId: string | null,
-    confirmOverload = false,
-    overrideConflicts = false
+    facultyId: string | null
   ): Promise<FacultyMutationOutcome> => {
     const targetSchedule = schedules.find((schedule) => schedule.id === slotId);
     if (!targetSchedule || !canManageScheduleFaculty(targetSchedule)) {
@@ -2382,9 +2343,7 @@ export const useScheduler = () => {
 
     try {
       const response = await api.put<FacultyAssignResponse>(`/schedules/${slotId}`, {
-        faculty_id: facultyId === null ? null : Number(facultyId),
-        ...(confirmOverload ? { confirm_overload: true } : {}),
-        ...(overrideConflicts && facultyId !== null ? { [OVERRIDE_CONFLICTS_FLAG]: true } : {})
+        faculty_id: facultyId === null ? null : Number(facultyId)
       });
       const resData = response.data;
       const rawList: ApiScheduleRecord[] = resData.schedules
@@ -2400,16 +2359,6 @@ export const useScheduler = () => {
         return { status: "resynced" };
       }
 
-      const confirmation = overloadConfirmationFrom(err);
-      if (confirmation) {
-        return { status: "needs_overload_confirmation", confirmation };
-      }
-
-      const question = facultyId === null ? null : conflictOverrideFrom(err);
-      if (question) {
-        return { status: "needs_conflict_override", question };
-      }
-
       return {
         status: "failed",
         message: getApiErrorMessage(err)
@@ -2418,38 +2367,6 @@ export const useScheduler = () => {
             : "Failed to assign faculty. Please try again.")
       };
     }
-  };
-
-  const askConflictOverride = (question: ConflictOverrideQuestion): Promise<boolean> =>
-    confirm({
-      title: "Instructor has a conflict",
-      message: conflictOverridePrompt(question),
-      eyebrow: "Instructor conflict",
-      confirmLabel: "Assign anyway",
-    });
-
-  const withAssignmentQuestions = async <T extends { status: string }>(
-    send: (confirmOverload: boolean, overrideConflicts: boolean) => Promise<T>,
-    overrideConflicts = false,
-  ): Promise<T | null> => {
-    let confirmOverload = false;
-    let override = overrideConflicts;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const outcome = await send(confirmOverload, override);
-      const question = outcome as unknown as { status: string; confirmation?: OverloadConfirmation; question?: ConflictOverrideQuestion };
-      if (question.status === "needs_overload_confirmation" && question.confirmation && !confirmOverload) {
-        if (!(await askOverloadConfirmation(question.confirmation))) return null;
-        confirmOverload = true;
-        continue;
-      }
-      if (question.status === "needs_conflict_override" && question.question && !override) {
-        if (!(await askConflictOverride(question.question))) return null;
-        override = true;
-        continue;
-      }
-      return outcome;
-    }
-    return null;
   };
 
   const facultySuccessToast = (facultyId: string | null) => {
@@ -2464,17 +2381,11 @@ export const useScheduler = () => {
   const facultyFailureTitle = (facultyId: string | null) =>
     facultyId === null ? "Failed to remove faculty" : "Failed to assign faculty";
 
-  const handlePopupFacultyMutation = async (slotId: string, facultyId: string | null, overrideConflicts = false) => {
+  const handlePopupFacultyMutation = async (slotId: string, facultyId: string | null) => {
     if (facultyActionSlotId === slotId) return;
     setFacultyActionSlotId(slotId);
     try {
-      const outcome = await withAssignmentQuestions(
-        (confirmOverload, override) => mutateScheduleFaculty(slotId, facultyId, confirmOverload, override),
-        overrideConflicts,
-      );
-      if (outcome === null) return;
-      if (outcome.status === "needs_overload_confirmation" || outcome.status === "needs_conflict_override") return;
-
+      const outcome = await mutateScheduleFaculty(slotId, facultyId);
       if (outcome.status === "restricted") {
         setPopupValidationError(outcome.message);
         return;
@@ -2497,12 +2408,7 @@ export const useScheduler = () => {
     if (facultyActionSlotId === slotId) return;
     setFacultyActionSlotId(slotId);
     try {
-      const outcome = await withAssignmentQuestions(
-        (confirmOverload, override) => mutateScheduleFaculty(slotId, facultyId, confirmOverload, override),
-      );
-      if (outcome === null) return;
-      if (outcome.status === "needs_overload_confirmation" || outcome.status === "needs_conflict_override") return;
-
+      const outcome = await mutateScheduleFaculty(slotId, facultyId);
       if (outcome.status === "restricted") {
         toast.error("Assignment Restricted", outcome.message);
       } else if (outcome.status === "failed") {
@@ -2573,44 +2479,7 @@ export const useScheduler = () => {
     }
   };
 
-  const submitBulkFacultyAssign = async (
-    assignments: { scheduleIds: string[]; facultyId: string; overrideConflicts?: boolean }[],
-    confirmOverload: boolean,
-    overrideAll = false
-  ): Promise<
-    | { status: "ok"; schedules: ScheduleItem[] }
-    | { status: "needs_overload_confirmation"; confirmation: OverloadConfirmation }
-    | { status: "needs_conflict_override"; question: ConflictOverrideQuestion }
-    | { status: "failed"; error: unknown }
-  > => {
-    try {
-      const response = await api.patch<{ schedules?: ApiScheduleRecord[] }>("/schedules/batch-faculty", {
-        assignments: assignments.map((assignment) => ({
-          schedule_ids: assignment.scheduleIds.map(Number),
-          faculty_id: Number(assignment.facultyId),
-          ...(assignment.overrideConflicts ? { [OVERRIDE_CONFLICTS_FLAG]: true } : {}),
-        })),
-        ...(confirmOverload ? { confirm_overload: true } : {}),
-        ...(overrideAll ? { [OVERRIDE_CONFLICTS_FLAG]: true } : {}),
-      });
-
-      return { status: "ok", schedules: (response.data.schedules ?? []).map(mapApiScheduleToItem) };
-    } catch (err: unknown) {
-      const confirmation = overloadConfirmationFrom(err);
-      if (confirmation) {
-        return { status: "needs_overload_confirmation", confirmation };
-      }
-
-      const question = conflictOverrideFrom(err);
-      if (question) {
-        return { status: "needs_conflict_override", question };
-      }
-
-      return { status: "failed", error: err };
-    }
-  };
-
-  const handleBulkFacultyAssign = async (assignments: { scheduleIds: string[]; facultyId: string; overrideConflicts?: boolean }[]): Promise<boolean> => {
+  const handleBulkFacultyAssign = async (assignments: { scheduleIds: string[]; facultyId: string }[]): Promise<boolean> => {
     if (assignments.length === 0 || facultyActionSlotId !== null) return false;
 
     setFacultyActionSlotId("bulk");
@@ -2631,19 +2500,16 @@ export const useScheduler = () => {
         }
       }
 
-      const outcome = await withAssignmentQuestions(
-        (confirmOverload, overrideAll) => submitBulkFacultyAssign(assignments, confirmOverload, overrideAll),
-      );
-      if (outcome === null) return false;
-      if (outcome.status !== "ok") {
-        throw outcome.status === "failed"
-          ? outcome.error
-          : new Error("The assignments could not be confirmed.");
-      }
+      const response = await api.patch<{ schedules?: ApiScheduleRecord[] }>("/schedules/batch-faculty", {
+        assignments: assignments.map((assignment) => ({
+          schedule_ids: assignment.scheduleIds.map(Number),
+          faculty_id: Number(assignment.facultyId),
+        })),
+      });
 
       const assignedCount = assignments.reduce((total, assignment) => total + assignment.scheduleIds.length, 0);
 
-      applyUpdatedSchedules(outcome.schedules);
+      applyUpdatedSchedules((response.data.schedules ?? []).map(mapApiScheduleToItem));
       toast.success("Auto-Assign Complete", `${assignedCount} schedule${assignedCount === 1 ? "" : "s"} assigned successfully.`);
       void refreshSchedules();
       return true;
@@ -2797,10 +2663,6 @@ export const useScheduler = () => {
 
   const handleCellClick = useCallback(async (dayIndex: number, timeIndex: number) => {
     if (!isEditable) return;
-    if (isSummerWeekendBlocked(dayIndex)) {
-      toast.error("Weekend Not Available", "Summer semester classes are scheduled Monday through Friday.");
-      return;
-    }
 
     if (placementSubjectId) {
       setDropContext({
@@ -2863,7 +2725,7 @@ export const useScheduler = () => {
         setConflictInfo(null);
       }
     }
-  }, [isEditable, placementSubjectId, movingScheduleId, schedules, checkMoveConflict, applyUpdatedSchedules, refreshSchedules, refreshData, schedulerCacheKey, triggerConflictReminder, toast, isSummerWeekendBlocked, releaseRequiredDayForMove, restoreRequiredDays]);
+  }, [isEditable, placementSubjectId, movingScheduleId, schedules, checkMoveConflict, applyUpdatedSchedules, refreshSchedules, refreshData, schedulerCacheKey, triggerConflictReminder, toast, releaseRequiredDayForMove, restoreRequiredDays]);
 
 
   const activeSemesterText = useMemo(() => {
@@ -2956,9 +2818,6 @@ export const useScheduler = () => {
     setFacultyAssignmentPopup,
     popupValidationError,
     popupConflictWarning,
-    overloadPrompt,
-    confirmOverloadPrompt,
-    cancelOverloadPrompt,
     isSectionDropdownOpen,
     setIsSectionDropdownOpen,
     isClearAllModalOpen,

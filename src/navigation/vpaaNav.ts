@@ -21,9 +21,9 @@ export const vpaaNav: NavSection[] = [
     section: 'MAIN MENU',
     items: [
       { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
-      { label: 'User Management', path: '/users', icon: Users, id: 'sidebar-users' },
-      { label: 'Department Management', path: '/departments', icon: Building2, id: 'sidebar-departments' },
-      { label: 'Facility Management', path: '/facilities', icon: DoorOpen, id: 'sidebar-rooms' },
+      { label: 'Users', path: '/users', icon: Users, id: 'sidebar-users' },
+      { label: 'Departments', path: '/departments', icon: Building2, id: 'sidebar-departments' },
+      { label: 'Facilities', path: '/facilities', icon: DoorOpen, id: 'sidebar-rooms' },
       {
         label: 'Instructors',
         path: '/instructors',
@@ -31,9 +31,9 @@ export const vpaaNav: NavSection[] = [
         id: 'sidebar-faculty',
       },
       { label: 'Designations', path: '/designations', icon: Award, id: 'sidebar-designations' },
-      { label: 'Curriculum', path: '/curriculum', icon: BookOpen, id: 'sidebar-curriculum' },
+      { label: 'Curriculums', path: '/curriculum', icon: BookOpen, id: 'sidebar-curriculum' },
       {
-        label: 'Schedule Review',
+        label: 'Academic Scheduling',
         icon: CalendarDays,
         id: 'sidebar-schedules',
         children: [
@@ -41,11 +41,6 @@ export const vpaaNav: NavSection[] = [
             label: 'Schedule Approval',
             path: '/schedules/approval',
             id: 'sidebar-schedule-approval'
-          },
-          {
-            label: 'All Schedules',
-            path: '/schedules',
-            id: 'sidebar-all-schedules'
           },
           {
             label: 'Master Calendar',

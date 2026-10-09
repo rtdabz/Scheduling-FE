@@ -103,7 +103,7 @@ describe('Departments management identifies departments by logo', () => {
 
     fireEvent.click(await screen.findByText('College of Information Technology'));
 
-    expect(screen.getByText('Department code')).toBeTruthy();
+    expect(screen.getByText('CIT')).toBeTruthy();
     expect(screen.getAllByText('Specialized rooms').length).toBeGreaterThan(0);
     expect(screen.getByRole('switch', { name: 'Use specialized rooms' }).getAttribute('aria-checked')).toBe('true');
   });
@@ -215,7 +215,7 @@ describe('Departments management takes a typed department code', () => {
     fireEvent.click(await screen.findByText('College of Information Technology'));
 
     expect(await screen.findByText('Department profile')).toBeTruthy();
-    expect(screen.getByText(/CIT · Dean/i).textContent).toContain('Not assigned');
+    expect(screen.getByText('Dean', { selector: 'p' }).parentElement?.textContent).toContain('Not assigned');
     expect(screen.getByText('Kay Rejoice Waga')).toBeTruthy();
   });
 

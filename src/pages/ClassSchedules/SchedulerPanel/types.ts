@@ -70,6 +70,7 @@ export interface Course {
   teachingDepartmentCode?: string;
   teachingDepartmentName?: string;
   teachingProgramId?: number | null;
+  delegatedOnly?: boolean;
   programId?: number | null;
   programCode?: string | null;
   categories?: { id: number | string; name: string; description?: string | null }[];
@@ -143,7 +144,6 @@ export interface Faculty {
   maxUnits?: number;
   deloadUnits?: number;
   overloadUnits?: number;
-  probonoUnits?: number;
   assignedUnits?: number;
   requiredUnits?: number;
   unitCeiling?: number;
@@ -154,9 +154,11 @@ export interface Faculty {
 export interface Room {
   id: string;
   name: string;
+  building?: string | null;
   departmentId: number | null;
   roomType: RoomType;
   status: RoomStatus;
+  allowLectureUsage?: boolean;
   grantWindows?: RoomGrantWindow[];
 }
 
@@ -191,7 +193,6 @@ export interface ScheduleItem {
   facultyName: string | null;
   facultyId: string | null;
   facultyAssignmentDone?: boolean;
-  facultyConflictOverride?: boolean;
   status: ScheduleStatus;
   dayIndex: number;
   startSlot: number;
@@ -292,6 +293,7 @@ export interface ApiCourseRecord {
     department_name?: string;
   } | null;
   teaching_program_id?: number | null;
+  delegated_only?: boolean;
   program_id?: number | null;
   program?: {
     id?: number | string;
@@ -333,7 +335,6 @@ export interface ApiFacultyRecord {
   max_units?: number | string | null;
   deload_units?: number | string | null;
   overload_units?: number | string | null;
-  probono_units?: number | string | null;
   assigned_units?: number | string | null;
   required_units?: number | string | null;
   unit_ceiling?: number | string | null;
@@ -381,7 +382,6 @@ export interface ApiScheduleRecord {
   room_id: number | string | null;
   faculty_id?: number | string | null;
   faculty_assignment_done?: boolean | number;
-  faculty_conflict_override?: boolean | number;
   day: string;
   start_time: string;
   end_time: string;

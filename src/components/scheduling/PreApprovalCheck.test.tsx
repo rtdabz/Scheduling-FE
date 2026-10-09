@@ -5,7 +5,6 @@ import type { ConflictSchedule } from '../../lib/conflicts';
 
 const lib = vi.hoisted(() => ({
   fetchConflicts: vi.fn(),
-  fetchResolvedConflicts: vi.fn(),
   fetchRuleIssues: vi.fn(),
 }));
 vi.mock('../../lib/conflicts', async (importOriginal) => ({
@@ -45,33 +44,27 @@ describe('PreApprovalCheck', () => {
       // Another package's sections: not this approver's concern here.
       { id: 'section_conflict:7:8', rule: 'section_conflict', semester_id: 1, day: 'Monday', overlap_start: '08:00', overlap_end: '09:00', message: 'Elsewhere.', resolution_options: [], schedules: [row(7, 99), row(8, 99)] },
     ]);
-    lib.fetchResolvedConflicts.mockResolvedValue([
-      { key: 'a', conflict_id: 'faculty_conflict:1:4', rule: 'faculty_conflict', message: 'Same instructor.', day: 'Monday', overlap_start: null, overlap_end: null, method: 'overridden', source: 'conflict_inbox', status: 'overridden', resolved_at: null, resolved_by: 'Secretary', reason: 'Team taught.', affected_schedule_ids: [1, 4] },
-    ]);
     lib.fetchRuleIssues.mockResolvedValue([
       { id: 'rule_issue:room_availability:2', rule: 'room_availability', message: 'Room CIT 101 is not available for scheduling.', schedule: row(2, 11) },
     ]);
     const onOpenConflicts = vi.fn();
 
-    render(<PreApprovalCheck departmentId={5} sectionIds={['10', '11']} scheduleIds={['1', '2']} onOpenConflicts={onOpenConflicts} />);
+    render(<PreApprovalCheck departmentId={5} sectionIds={['10', '11']} onOpenConflicts={onOpenConflicts} />);
 
     await waitFor(() => expect(onOpenConflicts).toHaveBeenCalledWith(1));
     expect(screen.getByText(/1 open conflict — approval is blocked/)).toBeTruthy();
     expect(screen.queryByText(/Elsewhere/)).toBeNull();
-    expect(screen.getByText(/1 instructor clash allowed to stand/)).toBeTruthy();
-    expect(screen.getByText(/Team taught/)).toBeTruthy();
     expect(screen.getByText(/1 class no longer meets a scheduling rule/)).toBeTruthy();
   });
 
   it('says so when the package is clean', async () => {
     lib.fetchConflicts.mockResolvedValue([]);
-    lib.fetchResolvedConflicts.mockResolvedValue([]);
     lib.fetchRuleIssues.mockResolvedValue([]);
     const onOpenConflicts = vi.fn();
 
-    render(<PreApprovalCheck departmentId={5} sectionIds={['10']} scheduleIds={['1']} onOpenConflicts={onOpenConflicts} />);
+    render(<PreApprovalCheck departmentId={5} sectionIds={['10']} onOpenConflicts={onOpenConflicts} />);
 
-    expect(await screen.findByText(/No conflicts, allowed clashes or rule issues/)).toBeTruthy();
+    expect(await screen.findByText(/No conflicts or scheduling issues found/)).toBeTruthy();
     expect(onOpenConflicts).toHaveBeenCalledWith(0);
   });
 });

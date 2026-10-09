@@ -150,7 +150,7 @@ export default function PlacementAlternatives({
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
             <p className="text-sm leading-5 text-amber-900">{slotsError}</p>
           </div>
-        ) : availableSlots.length === 0 ? (
+        ) : availableSlots.length === 0 && !isSplitPair ? (
           <div className="flex flex-col items-center px-4 py-8 text-center">
             <span className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-slate-100">
               <Sparkles className="h-5 w-5 text-slate-400" />
@@ -216,7 +216,10 @@ function SlotLabel({ slot }: { slot: AvailableSlot }) {
         : slot.mode === "field"
           ? <TreePine className="h-3 w-3" />
           : <MapPin className="h-3 w-3" />}
-      {slot.room_code}
+      <span>{slot.room_code}</span>
+      {slot.mode === "on-site" && (
+        <span className="text-slate-400">· {slot.room_type === "laboratory" ? "Lab" : "Classroom"}</span>
+      )}
     </span>
   );
 }
@@ -408,11 +411,6 @@ function RoomFilter({
   roomFilter: string;
   onRoomFilterChange: (value: string) => void;
 }) {
-  const chipClass = (isActive: boolean) => `inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold transition-colors ${
-    isActive ? "border-[#4e0a10] bg-[#4e0a10] text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-  }`;
-  const countClass = (isActive: boolean) => `rounded-full px-1 ${isActive ? "bg-white/20" : "bg-slate-100 text-slate-700"}`;
-
   return (
     <div className="mb-3">
       <div className="relative">
@@ -432,30 +430,6 @@ function RoomFilter({
         </select>
         <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
       </div>
-
-      {availableSlotRooms.length > 1 && (
-        <ul className="-mx-1 mt-2 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
-          <li>
-            <button type="button" onClick={() => onRoomFilterChange(ALL_ROOMS)} className={chipClass(roomFilter === ALL_ROOMS)}>
-              All
-              <span className={countClass(roomFilter === ALL_ROOMS)}>{availableSlots.length}</span>
-            </button>
-          </li>
-          {availableSlotRooms.map((room) => {
-            const value = slotRoomKey(room);
-            const isActive = roomFilter === value;
-
-            return (
-              <li key={`badge-${value}`}>
-                <button type="button" onClick={() => onRoomFilterChange(value)} className={chipClass(isActive)}>
-                  {room.room_code}
-                  <span className={countClass(isActive)}>{room.slot_count}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
     </div>
   );
 }

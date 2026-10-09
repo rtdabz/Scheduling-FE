@@ -1,4 +1,3 @@
-import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import ProfileAvatar from '../ui/ProfileAvatar';
 
 export interface InstructorWorkload {
@@ -11,74 +10,54 @@ export interface InstructorWorkload {
 }
 
 interface WorkloadDatum {
+  id: number | string;
   name: string;
   photo: string | null;
   progress: number;
   units: string;
 }
 
-const ROW_HEIGHT = 46;
-const AXIS_WIDTH = 196;
-
 const toDatum = (instructor: InstructorWorkload): WorkloadDatum => {
   const first = instructor.first_name?.trim() ?? '';
   const last = instructor.last_name?.trim() ?? '';
 
   return {
+    id: instructor.id,
     name: `${first} ${last}`.trim() || 'Instructor',
     photo: instructor.profile_picture ?? null,
     progress: instructor.max > 0 ? Math.min(100, Math.round((instructor.assigned / instructor.max) * 100)) : 0,
-    units: `${instructor.assigned}/${instructor.max}u`,
+    units: `${instructor.assigned}/${instructor.max} units`,
   };
 };
-
-function InstructorAxisTick({ x = 0, y = 0, index = 0, rows = [] }: { x?: number; y?: number; index?: number; rows?: WorkloadDatum[] }) {
-  const row = rows[index];
-  if (!row) return <g />;
-
-  return (
-    <g transform={`translate(${x},${y})`}>
-      <foreignObject x={-x} y={-ROW_HEIGHT / 2} width={Math.max(0, x - 4)} height={ROW_HEIGHT}>
-        <div className="flex h-full items-center gap-2">
-          <ProfileAvatar src={row.photo} className="h-7 w-7 shrink-0 rounded-full border border-slate-200" iconClassName="h-4 w-4" />
-          <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-slate-700" title={row.name}>{row.name}</span>
-          <span className="shrink-0 text-[10px] font-semibold tabular-nums text-slate-500">{row.units}</span>
-        </div>
-      </foreignObject>
-    </g>
-  );
-}
 
 export default function InstructorWorkloadChart({ instructors }: { instructors: InstructorWorkload[] }) {
   if (!instructors.length) {
     return <p className="mt-3 py-3 text-center text-[11px] italic text-slate-400">No instructors available to this department.</p>;
   }
 
-  const rows = instructors.map(toDatum);
-
   return (
-    <div className="mt-3 min-w-0" style={{ height: Math.max(3, rows.length) * ROW_HEIGHT }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={rows} layout="vertical" margin={{ top: 0, right: 26, left: 0, bottom: 0 }} barCategoryGap={12}>
-          <XAxis type="number" domain={[0, 100]} hide />
-          <YAxis
-            type="category"
-            dataKey="name"
-            width={AXIS_WIDTH}
-            tick={<InstructorAxisTick rows={rows} />}
-            axisLine={false}
-            tickLine={false}
-          />
-          <Bar
-            dataKey="progress"
-            fill="#16a36a"
-            radius={[6, 6, 6, 6]}
-            barSize={12}
-            minPointSize={1}
-            background={{ fill: '#e2e8f0', radius: 6 }}
-          />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
+    <ul className="mt-3 min-w-0 space-y-3">
+      {instructors.map(toDatum).map((row) => (
+        <li key={row.id} className="flex min-w-0 items-center gap-2.5">
+          <ProfileAvatar src={row.photo} className="h-7 w-7 shrink-0 rounded-full border border-slate-200" iconClassName="h-4 w-4" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="min-w-0 truncate text-[11px] font-semibold text-slate-700" title={row.name}>{row.name}</span>
+              <span className="shrink-0 whitespace-nowrap text-[10px] font-semibold tabular-nums text-slate-500">{row.units}</span>
+            </div>
+            <div
+              role="progressbar"
+              aria-label={`${row.name} workload`}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={row.progress}
+              className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-200"
+            >
+              <div className="h-full rounded-full bg-[#16a36a]" style={{ width: `${row.progress}%` }} />
+            </div>
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }

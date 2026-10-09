@@ -107,9 +107,9 @@ export default function SecretarySections() {
 
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
   const isSecretary = user?.role?.toLowerCase() === 'secretary';
+  const isProgramHead = user?.role?.toLowerCase() === 'program_head';
   const canManageSections = hasStoredCapability('schedule.create') || ((isSecretary || isProgramHead) && (programs.length > 0 || user?.scheduling_ready !== false));
 
-  const isProgramHead = user?.role?.toLowerCase() === 'program_head';
   const selectablePrograms = useMemo(
     () => (isProgramHead ? programs.filter((p) => Number(p.id) === Number(user?.program_id)) : programs),
     [programs, isProgramHead, user?.program_id],
@@ -406,7 +406,7 @@ export default function SecretarySections() {
     { element: '[data-tour="section-row-name"]', waitFor: '#section-form', action: 'input' as const, taskHint: 'Type a section name to continue.', title: 'Name the section', description: 'Use the official section code, e.g. BSIT 1A.', side: 'bottom' as const },
     { element: '[data-tour="section-row-year"]', waitFor: '#section-form', action: 'select' as const, taskHint: 'Choose the year level to continue.', title: 'Set the year level', description: 'Year level decides which courses the section takes.', side: 'bottom' as const },
     { element: '#section-form', action: 'submit' as const, taskHint: 'Click Save section to create it.', title: 'Save the section', description: 'Submit the form to create it. Great work — that is the whole flow.', side: 'top' as const },
-  ], []);
+  ].slice(0, canManageSections ? undefined : 1), [canManageSections]);
   useWorkflowGuide({ id: 'sections', isReady: true, steps: sectionGuideSteps, mission: 'Manage Sections' });
 
   return (
@@ -493,14 +493,16 @@ export default function SecretarySections() {
           totalLabel="sections"
           ariaLabel="Sections"
           emptyTitle="No sections found."
-          emptyDescription="Try adjusting your search criteria or add a new section."
+          emptyDescription={canManageSections ? 'Try adjusting your search criteria or add a new section.' : 'Try adjusting your search criteria.'}
           emptyState={
             !isLoading && sections.length === 0 ? (
               <div className="py-12 text-center flex flex-col items-center justify-center">
                 <Users className="w-12 h-12 text-gray-300 mb-3" />
                 <h3 className="text-base font-bold text-gray-800">No sections added yet</h3>
                 <p className="text-xs text-gray-500 max-w-sm mt-1 mb-4">
-                  Get started by adding your department's first section to begin scheduling.
+                  {canManageSections
+                    ? "Get started by adding your department's first section to begin scheduling."
+                    : 'Your department has not added any sections yet.'}
                 </p>
                 {canManageSections && (
                   <button

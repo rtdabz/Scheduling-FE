@@ -92,7 +92,7 @@ export const GENERATION_GUIDE: GuideChapter[] = [
         ],
       },
       {
-        term: "Online Split",
+        term: "Online (All)",
         meaning:
           "A Split Session whose two meetings are both online, so neither one needs a room.",
         whenToUse: "Use it when rooms are scarce and the course can be taught online.",
@@ -244,9 +244,9 @@ export const GENERATION_GUIDE: GuideChapter[] = [
       {
         term: "Recommendations",
         meaning:
-          "When the generator cannot fit every class, it suggests changes, grouped by what they would change. Examples are switching a stuck Split Session to Hybrid, Online or one Regular meeting, or adding a Preferred Day.",
+          "When the generator cannot fit every class, it suggests changes, grouped by what they would change. Examples include shorter Split meetings when a Regular class cannot fit, an online lecture for Integrated Hybrid, switching a stuck Split Session, or adding a Preferred Day.",
         notes: [
-          "Pick one option per group. Apply all takes one option from every group, so two fixes never contradict each other.",
+          "Pick one option per group. Apply all checks the selected changes for conflicts. New session alternatives must be applied individually, followed by generation to check the whole timetable.",
           "Tried alone means the generator already retried with that change by itself and still could not make a timetable.",
         ],
       },

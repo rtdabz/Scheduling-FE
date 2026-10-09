@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Pencil, AlertCircle } from 'lucide-react';
 import type { CurriculumCourse, Program } from '../../types/curriculum';
 import { formatCourseName } from '../../lib/formatters';
+import { programLabel } from '../../lib/programLabel';
 
 export interface EditCourseFormData {
   courseId: number;
@@ -176,7 +177,7 @@ export default function EditCourseModal({
                 <option value="">Not program-specific</option>
                 {programs.map((program) => (
                   <option key={program.id} value={String(program.id)}>
-                    {program.code} - {program.name}
+                    {programLabel(program)}
                   </option>
                 ))}
               </select>

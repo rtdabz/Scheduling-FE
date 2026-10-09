@@ -1,6 +1,9 @@
+import { parsePreferredPattern } from "../../../../lib/timeGrid";
 import { orderDays } from "./generationTypes";
 
 export type AdjustmentType =
+  | "enable_balanced_split"
+  | "set_integrated_hybrid"
   | "set_pattern"
   | "clear_pattern"
   | "disable_lecture_lab_split"
@@ -37,7 +40,17 @@ export type GenerationRecommendation = {
   adjustments: GenerationAdjustment[];
   status?: "active" | "resolved" | string;
   resolved?: boolean;
+  apply_individually?: boolean;
+  selection?: {
+    contract_version: number;
+    priority: number;
+    tried_alone: boolean;
+    applicable: boolean;
+  };
 };
+
+export const recommendationSelection = (recommendation: GenerationRecommendation) =>
+  recommendation.selection?.contract_version === 1 ? recommendation.selection : undefined;
 
 export type BlockingConstraint = {
   code: string;
@@ -88,6 +101,7 @@ export type AppliedStrategy = {
 };
 
 export type AdjustableSectionConfig = {
+  courseIds?: string[];
   splitCourseIds: string[];
   gecSplitCourseIds: string[];
   hybridSplitCourseIds?: string[];
@@ -197,7 +211,9 @@ function preflightFailure(payload: Record<string, unknown>): YearLevelGeneration
 }
 
 export const isApplicableRecommendation = (recommendation: GenerationRecommendation): boolean =>
-  recommendation.adjustments.length > 0
+  recommendationSelection(recommendation)?.applicable !== false
+  && recommendation.adjustments.length > 0
+  && recommendation.adjustments.every(isSupportedAdjustment)
   && !recommendation.resolved
   && recommendation.status !== "resolved";
 
@@ -216,6 +232,10 @@ export function describeAdjustment(adjustment: GenerationAdjustment): string {
   const section = adjustment.section_name || `section ${adjustment.section_id}`;
 
   switch (adjustment.type) {
+    case "enable_balanced_split":
+      return `${course} in ${section}: split into two matching meetings, keeping delivery`;
+    case "set_integrated_hybrid":
+      return `${course} in ${section}: lecture online, laboratory on-site`;
     case "set_pattern":
       return `${course} in ${section}: pattern set to ${adjustment.value}`;
     case "clear_pattern":
@@ -241,6 +261,79 @@ export function describeAdjustment(adjustment: GenerationAdjustment): string {
       return `${course} in ${section}: Can't split, switched to one meeting.`;
     default:
       return `${course} in ${section}: configuration updated`;
+  }
+}
+
+export const isSessionEnhancement = (adjustment: GenerationAdjustment): boolean =>
+  ["enable_balanced_split", "set_integrated_hybrid"].includes(adjustment.type);
+
+const supportedAdjustmentTypes = new Set([
+  "set_pattern", "clear_pattern", "disable_lecture_lab_split", "disable_minor_split",
+  "enable_hybrid_split", "set_hybrid_split", "disable_hybrid_split", "disable_section_hybrid",
+  "set_delivery_mode", "enable_friday_saturday_split", "add_preferred_day",
+  "enable_balanced_split", "set_integrated_hybrid",
+]);
+
+export function isSupportedAdjustment(adjustment: GenerationAdjustment): boolean {
+  if (!supportedAdjustmentTypes.has(adjustment.type)) return false;
+  if (adjustment.type === "set_pattern") {
+    const days = parsePreferredPattern(adjustment.value);
+    return days !== null && days[0] !== days[1];
+  }
+  if (adjustment.type === "set_delivery_mode") return adjustment.value === null
+    || ["automatic", "on-site", "online", "field"].includes(adjustment.value);
+  if (adjustment.type === "add_preferred_day") return orderDays([adjustment.value ?? ""]).length === 1;
+  return true;
+}
+
+/** Preview checks only; the server rechecks scope, eligibility and the complete batch. */
+function assertAdjustmentSelection(configs: Record<string, AdjustableSectionConfig>, adjustments: GenerationAdjustment[]): void {
+  if (adjustments.length > 1 && adjustments.some(isSessionEnhancement)) {
+    throw new Error("Apply one session alternative and generate again before combining adjustments.");
+  }
+  const writes = new Map<string, string | boolean | null>();
+  for (const adjustment of adjustments) {
+    if (!isSupportedAdjustment(adjustment)) throw new Error("This adjustment is guidance only. Review the configuration instead.");
+    const { type, section_id: sectionId, course_id: courseId, value } = adjustment;
+    const config = configs[String(sectionId)];
+    const sectionLevel = isYearLevelAdjustment(adjustment) || type === "disable_section_hybrid";
+    if (!config || (sectionLevel && courseId !== 0) || (!sectionLevel
+      && config.courseIds && !config.courseIds.includes(String(courseId)))) {
+      throw new Error("The selected adjustment is outside the configured section/course scope.");
+    }
+    const key = String(courseId);
+    const changes: Record<string, string | boolean | null> = {};
+    switch (type) {
+      case "enable_balanced_split": changes[`${key}:balanced`] = true; changes[`${key}:hybrid`] = false; break;
+      case "set_integrated_hybrid": changes[`${key}:integrated`] = true; changes[`${key}:mode`] = "automatic"; break;
+      case "set_pattern": case "clear_pattern": changes[`${key}:pattern`] = type === "clear_pattern" ? null : value; break;
+      case "disable_lecture_lab_split": changes[`${key}:integrated`] = false; break;
+      case "disable_minor_split": changes[`${key}:balanced`] = false; changes[`${key}:hybrid`] = false; changes[`${key}:pattern`] = null; break;
+      case "set_hybrid_split": changes[`${key}:balanced`] = true; changes[`${key}:hybrid`] = true; changes[`${key}:mode`] = "automatic"; break;
+      case "enable_hybrid_split": changes[`${key}:hybrid`] = true; changes[`${key}:mode`] = "automatic"; break;
+      case "disable_hybrid_split": changes[`${key}:hybrid`] = false; changes[`${key}:mode`] = "on-site"; break;
+      case "set_delivery_mode": changes[`${key}:mode`] = value ?? "automatic"; if (value === "online") changes[`${key}:hybrid`] = false; break;
+      case "disable_section_hybrid": for (const id of config.courseIds ?? config.splitCourseIds) changes[`${id}:integrated`] = false; break;
+      case "enable_friday_saturday_split": changes.friday_saturday = true; break;
+      case "add_preferred_day": changes[`day:${value}`] = true; break;
+    }
+    for (const [field, desired] of Object.entries(changes)) {
+      const target = `${sectionId}:${field}`;
+      if (writes.has(target) && writes.get(target) !== desired) throw new Error("Selected adjustments conflict for the same target. Select one alternative and try again.");
+      writes.set(target, desired);
+    }
+  }
+  const yearLevelTargets = new Map<string, Set<string>>();
+  for (const adjustment of adjustments.filter(isYearLevelAdjustment)) {
+    const key = JSON.stringify([adjustment.type, adjustment.value]);
+    const targets = yearLevelTargets.get(key) ?? new Set<string>();
+    targets.add(String(adjustment.section_id));
+    yearLevelTargets.set(key, targets);
+  }
+  for (const targets of yearLevelTargets.values()) {
+    if (Object.keys(configs).some((sectionId) => !targets.has(sectionId))) {
+      throw new Error("A year-level adjustment must include every configured section. Refresh the recommendations.");
+    }
   }
 }
 
@@ -283,6 +376,7 @@ export function applyAdjustments<T extends AdjustableSectionConfig>(
   configs: Record<string, T>,
   adjustments: GenerationAdjustment[],
 ): { configs: Record<string, T>; applied: GenerationAdjustment[] } {
+  assertAdjustmentSelection(configs, adjustments);
   let next = configs;
   const applied: GenerationAdjustment[] = [];
 
@@ -309,16 +403,29 @@ function applyOne<T extends AdjustableSectionConfig>(
   courseKey: string,
 ): T | null {
   switch (adjustment.type) {
+    case "enable_balanced_split": {
+      if (config.gecSplitCourseIds.includes(courseKey) && !(config.hybridSplitCourseIds ?? []).includes(courseKey)) return null;
+      return { ...config,
+        gecSplitCourseIds: [...new Set([...config.gecSplitCourseIds, courseKey])],
+        hybridSplitCourseIds: (config.hybridSplitCourseIds ?? []).filter((id) => id !== courseKey),
+      };
+    }
+    case "set_integrated_hybrid": {
+      if (config.splitCourseIds.includes(courseKey) && config.modesByCourseId[courseKey] === "automatic") return null;
+      return { ...config, splitCourseIds: [...new Set([...config.splitCourseIds, courseKey])],
+        modesByCourseId: { ...config.modesByCourseId, [courseKey]: "automatic" },
+      };
+    }
     case "set_pattern": {
-      const value = adjustment.value === "TTh" ? "TTh" : adjustment.value === "MW" ? "MW" : null;
-      if (!value || config.gecSplitPatternsByCourseId[courseKey] === value) return null;
+      const value = parsePreferredPattern(adjustment.value) ? adjustment.value : null;
+      if (!value || !config.gecSplitCourseIds.includes(courseKey) || config.gecSplitPatternsByCourseId[courseKey] === value) return null;
       return {
         ...config,
         gecSplitPatternsByCourseId: { ...config.gecSplitPatternsByCourseId, [courseKey]: value },
       };
     }
     case "clear_pattern": {
-      if (config.gecSplitPatternsByCourseId[courseKey] === "auto") return null;
+      if (!config.gecSplitPatternsByCourseId[courseKey] || config.gecSplitPatternsByCourseId[courseKey] === "auto") return null;
       return {
         ...config,
         gecSplitPatternsByCourseId: { ...config.gecSplitPatternsByCourseId, [courseKey]: "auto" },
@@ -334,6 +441,7 @@ function applyOne<T extends AdjustableSectionConfig>(
         ...config,
         gecSplitCourseIds: config.gecSplitCourseIds.filter((id) => id !== courseKey),
         hybridSplitCourseIds: (config.hybridSplitCourseIds ?? []).filter((id) => id !== courseKey),
+        gecSplitPatternsByCourseId: { ...config.gecSplitPatternsByCourseId, [courseKey]: "auto" },
       };
     }
     case "enable_hybrid_split": {

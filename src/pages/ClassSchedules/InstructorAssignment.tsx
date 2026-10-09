@@ -8,35 +8,45 @@ import {
   CalendarRange,
   CheckCircle2,
   Eye,
+  Inbox,
   LayoutList,
   Search,
   UserMinus,
 } from "lucide-react";
 import axios from "axios";
 import api from "../../lib/api";
-import { yearLevelLabel } from "../../lib/semesterLabel";
 import { useToast } from "../../context/ToastContext";
-import { OVERRIDE_CONFLICTS_FLAG, conflictOverrideFrom, conflictOverridePrompt } from "../../lib/conflictOverride";
 import {
   fetchConflicts,
-  fetchInstructorRecommendations,
   fetchResolvedConflicts,
   type ConflictRule,
-  type InstructorRecommendation,
 } from "../../lib/conflicts";
 import ResolveConflictModal from "./SchedulerPanel/Modals/ResolveConflictModal";
 
 const FACULTY_CONFLICT_ONLY: ConflictRule[] = ["faculty_conflict"];
+
+const INSTRUCTOR_CLASH_RULES = new Set(["faculty_conflict", "part_time_faculty_availability"]);
+
+const instructorConflictFrom = (err: unknown): string | null => {
+  if (!axios.isAxiosError(err) || err.response?.status !== 422) return null;
+  const violations = (err.response.data as { violations?: unknown } | undefined)?.violations;
+  if (!Array.isArray(violations)) return null;
+  const messages = violations
+    .filter((violation): violation is { rule: string; message: string } =>
+      INSTRUCTOR_CLASH_RULES.has((violation as { rule?: unknown })?.rule as string)
+      && typeof (violation as { message?: unknown })?.message === "string")
+    .map((violation) => violation.message.trim())
+    .filter(Boolean);
+  return messages.length > 0 ? [...new Set(messages)].join(" ") : null;
+};
 import Skeleton from "../../components/ui/Skeleton";
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from "../../lib/dataCache";
 import { useLiveRevision } from "../../hooks/useLiveRefresh";
 import { invalidateCacheGroups } from "../../lib/cacheGroups";
 import { publishLiveTopics } from "../../lib/liveUpdates";
 import { apiErrorMessage } from "../../lib/apiError";
-import { overloadConfirmationFrom } from "../../lib/overloadConfirmation";
 import { availabilityWarningMessage, coveredContinuously } from "../../lib/availabilityWindows";
-import type { LoadTier, OverloadConfirmation } from "../../lib/overloadConfirmation";
-import OverloadConfirmationModal from "../../components/faculty/OverloadConfirmationModal";
+import type { LoadTier } from "../../lib/facultyLoad";
 import ConfirmModal from "../../components/ui/ConfirmModal";
 import WeeklyTimetableGrid from "../../components/scheduling/WeeklyTimetableGrid";
 import { gridOpeningMinutes, slotCount, slotMinutes } from "../../lib/timeGrid";
@@ -54,6 +64,7 @@ import {
 import type { ZoomLevel } from "../vpaa/calendar/ganttPresentation";
 import FacultyModal from "./SchedulerPanel/Modals/FacultyModal";
 import AssignmentWorklist from "./AssignmentWorklist";
+import IncomingCoursesModal, { type IncomingCourse } from "./IncomingCoursesModal";
 import type { WorklistClass } from "./AssignmentWorklist";
 import { eligibleFacultiesForSubject, requiredTeachingProgramId } from "./SchedulerPanel/facultyEligibility";
 import type {
@@ -123,7 +134,6 @@ interface ApiFaculty {
   max_units?: number | null;
   deload_units?: number | null;
   overload_units?: number | null;
-  probono_units?: number | null;
   assigned_units?: number | null;
   profile_picture?: string | null;
   department?: ApiDepartment | null;
@@ -145,7 +155,6 @@ interface ApiSchedule {
   subject_id?: number;
   faculty_id: number | null;
   faculty_assignment_done?: boolean | number;
-  faculty_conflict_override?: boolean | number;
   section_id?: number;
   room_id?: number | null;
   day: string;
@@ -162,23 +171,6 @@ interface ApiSchedule {
   room?: { room_code?: string; building?: string | null } | null;
   faculty?: { first_name?: string; last_name?: string } | null;
 }
-interface ApiIncomingCourse {
-  id: number;
-  course_code: string;
-  course_name: string;
-  units?: number | null;
-  year_level?: number | null;
-  department?: ApiDepartment | null;
-  teaching_source_program?: { id?: number; code?: string | null; major?: string | null } | null;
-}
-
-const sourceProgramLabel = (program?: ApiIncomingCourse['teaching_source_program']): string | null => {
-  const code = program?.code?.trim();
-  if (!code) return null;
-  const major = program?.major?.trim();
-  return major ? `${code}-${major}` : code;
-};
-
 interface AssignmentResponse {
   active_semester: ApiSemester | null;
   current_department_id?: number | null;
@@ -186,7 +178,7 @@ interface AssignmentResponse {
   subjects: ApiSubject[];
   faculties: ApiFaculty[];
   schedules: ApiSchedule[];
-  incoming_courses?: ApiIncomingCourse[];
+  incoming_courses?: IncomingCourse[];
 }
 
 interface AssignmentWarning {
@@ -399,7 +391,7 @@ export interface InstructorAssignmentWorkspaceState {
 }
 
 export default function InstructorAssignment({ assignmentLocked, headerActions, footerActions, onWorkspaceStateChange, workflowGuideId = "instructor-assignment", onWorkflowReady, refreshToken = 0, scrollableTimetable = true }: InstructorAssignmentProps = {}) {
-  const { toast, confirm } = useToast();
+  const { toast } = useToast();
   const user = getStoredUser();
   const assignmentsCacheKey = `page:instructor-assignments:v5:${user.department_id ?? "all"}:${user.program_id ?? "all"}`;
   const cachedAssignmentData = getCachedData<AssignmentResponse>(assignmentsCacheKey);
@@ -407,7 +399,8 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   const [subjects, setSubjects] = useState<ApiSubject[]>(cachedAssignmentData?.subjects ?? []);
   const [faculties, setFaculties] = useState<ApiFaculty[]>(cachedAssignmentData?.faculties ?? []);
   const [schedules, setSchedules] = useState<ApiSchedule[]>(cachedAssignmentData?.schedules ?? []);
-  const [incomingCourses, setIncomingCourses] = useState<ApiIncomingCourse[]>(cachedAssignmentData?.incoming_courses ?? []);
+  const [incomingCourses, setIncomingCourses] = useState<IncomingCourse[]>(cachedAssignmentData?.incoming_courses ?? []);
+  const [incomingModalOpen, setIncomingModalOpen] = useState(false);
   const [activeSemester, setActiveSemester] = useState<ApiSemester | null>(cachedAssignmentData?.active_semester ?? null);
   const [currentDepartmentId, setCurrentDepartmentId] = useState<number | null>(user.department_id ?? null);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | null>(null);
@@ -417,13 +410,6 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   const [facultyResolvedCount, setFacultyResolvedCount] = useState(0);
   const [isConflictsOpen, setIsConflictsOpen] = useState(false);
   const [conflictsRevision, setConflictsRevision] = useState(0);
-  const conflictFacultyOptions = useMemo(
-    () => faculties.map((faculty) => ({
-      id: Number(faculty.id),
-      label: `${faculty.first_name} ${faculty.last_name}`.trim(),
-    })),
-    [faculties],
-  );
   const [viewMode, setViewMode] = useState<AssignmentView>(storedViewMode);
   const [ganttZoom, setGanttZoom] = useState<ZoomLevel>("fit");
   const [collapsedGanttDays, setCollapsedGanttDays] = useState<ReadonlySet<number>>(new Set());
@@ -434,18 +420,6 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     scheduleId: string;
     facultyId: string;
     message: string;
-  } | null>(null);
-  const [instructorRecommendations, setInstructorRecommendations] = useState<{
-    scheduleId: string;
-    options: InstructorRecommendation[];
-    failed: boolean;
-  } | null>(null);
-  const recommendationsForRef = useRef<string | null>(null);
-  const [overloadPrompt, setOverloadPrompt] = useState<{
-    confirmation: OverloadConfirmation;
-    schedule: AssignmentSchedule;
-    facultyId: number;
-    overrideConflicts: boolean;
   } | null>(null);
   const [isLoading, setIsLoading] = useState(!hasCachedData(assignmentsCacheKey));
   const [isSaving, setIsSaving] = useState(false);
@@ -520,7 +494,7 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     const controller = new AbortController();
     void fetchConflicts({
       semesterId,
-      departmentId: selectedDepartmentId ?? currentDepartmentId,
+      departmentId: currentDepartmentId,
       signal: controller.signal,
     })
       .then((conflicts) => setFacultyConflictCount(
@@ -529,7 +503,7 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
       .catch(() => undefined);
     void fetchResolvedConflicts({
       semesterId,
-      departmentId: selectedDepartmentId ?? currentDepartmentId,
+      departmentId: currentDepartmentId,
       signal: controller.signal,
     })
       .then((entries) => setFacultyResolvedCount(
@@ -538,7 +512,7 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
       .catch(() => undefined);
 
     return () => controller.abort();
-  }, [activeSemester, assignmentLocked, currentDepartmentId, selectedDepartmentId, schedules]);
+  }, [activeSemester, assignmentLocked, currentDepartmentId, schedules]);
 
   const subjectMap = useMemo(
     () => new Map(subjects.map((subject) => [Number(subject.id), subject])),
@@ -726,7 +700,6 @@ const selectedSchedule = assignmentSchedules.find(
     maxUnits: faculty.max_units ?? undefined,
     deloadUnits: faculty.deload_units ?? undefined,
     overloadUnits: faculty.overload_units ?? undefined,
-    probonoUnits: faculty.probono_units ?? undefined,
     assignedUnits: faculty.assigned_units ?? undefined,
     requiredUnits: faculty.required_units ?? undefined,
     unitCeiling: faculty.unit_ceiling ?? undefined,
@@ -766,7 +739,6 @@ const selectedSchedule = assignmentSchedules.find(
       facultyName: getFacultyName(schedule),
       facultyId: schedule.faculty_id === null ? null : String(schedule.faculty_id),
       facultyAssignmentDone: Boolean(schedule.faculty_assignment_done),
-      facultyConflictOverride: Boolean(schedule.faculty_conflict_override),
       status: schedule.status as ScheduleItem["status"],
       dayIndex: DAYS.indexOf(schedule.day),
       startSlot: Math.max(0, Math.floor((startMinutes - gridOpeningMinutes()) / slotMinutes())),
@@ -795,8 +767,6 @@ const selectedSchedule = assignmentSchedules.find(
 
   const resetConflictHelp = () => {
     setRefusedConflict(null);
-    setInstructorRecommendations(null);
-    recommendationsForRef.current = null;
   };
 
   const openAssignment = (schedule: AssignmentSchedule) => {
@@ -818,9 +788,7 @@ const selectedSchedule = assignmentSchedules.find(
 
   const submitAssignment = async (
     schedule: AssignmentSchedule,
-    facultyId: number | null,
-    confirmOverload: boolean,
-    overrideConflicts = false
+    facultyId: number | null
   ) => {
     setIsSaving(true);
     setSavingScheduleId(schedule.id);
@@ -828,8 +796,6 @@ const selectedSchedule = assignmentSchedules.find(
     try {
       const response = await api.patch<AssignmentUpdateResponse>(`/instructor-assignments/${schedule.id}`, {
         faculty_id: facultyId,
-        ...(confirmOverload ? { confirm_overload: true } : {}),
-        ...(overrideConflicts && facultyId !== null ? { [OVERRIDE_CONFLICTS_FLAG]: true } : {}),
       });
       setWarnings(response.data.warnings ?? []);
 
@@ -859,7 +825,6 @@ const selectedSchedule = assignmentSchedules.find(
       });
 
       invalidateAssignmentDependents();
-      setOverloadPrompt(null);
       setFacultyAssignmentPopup(null);
       resetConflictHelp();
       toast.success(
@@ -869,37 +834,16 @@ const selectedSchedule = assignmentSchedules.find(
           : "The instructor was assigned successfully.",
       );
     } catch (err) {
-      const confirmation = overloadConfirmationFrom(err);
-      if (confirmation && facultyId !== null) {
-        setOverloadPrompt({ confirmation, schedule, facultyId, overrideConflicts });
-        return;
-      }
-
-      const question = facultyId === null || overrideConflicts ? null : conflictOverrideFrom(err);
-      if (question && facultyId !== null) {
-        setIsSaving(false);
-        setSavingScheduleId(null);
+      const conflict = facultyId === null ? null : instructorConflictFrom(err);
+      if (conflict !== null && facultyId !== null) {
+        resetConflictHelp();
+        setRefusedConflict({ scheduleId: String(schedule.id), facultyId: String(facultyId), message: conflict });
         if (facultyAssignmentPopup?.scheduleId !== String(schedule.id)) {
-          resetConflictHelp();
-          setRefusedConflict({
-            scheduleId: String(schedule.id),
-            facultyId: String(facultyId),
-            message: question.details.join(" ") || question.message,
-          });
           setFacultyAssignmentPopup({ scheduleId: String(schedule.id), facultyId: String(facultyId) });
           return;
         }
-        const proceed = await confirm({
-          title: "Instructor has a conflict",
-          message: conflictOverridePrompt(question),
-          eyebrow: "Instructor conflict",
-          confirmLabel: "Assign anyway",
-        });
-        if (proceed) await submitAssignment(schedule, facultyId, confirmOverload, true);
-        return;
       }
 
-      setOverloadPrompt(null);
       setError(apiErrorMessage(err, "Unable to assign the instructor. Please try again."));
     } finally {
       setIsSaving(false);
@@ -914,12 +858,12 @@ const selectedSchedule = assignmentSchedules.find(
     }
 
     const facultyId = Number(facultyAssignmentPopup.facultyId);
-    void submitAssignment(selectedSchedule, facultyId, false);
+    void submitAssignment(selectedSchedule, facultyId);
   };
 
   const removeAssignment = () => {
     if (!selectedSchedule?.faculty_id) return;
-    void submitAssignment(selectedSchedule, null, false);
+    void submitAssignment(selectedSchedule, null);
   };
 
   const departmentClassTotals = useMemo(() => {
@@ -941,7 +885,7 @@ const selectedSchedule = assignmentSchedules.find(
     if (!schedule || assignmentLocked) return;
     setError("");
     setWarnings([]);
-    void submitAssignment(schedule, facultyId, false);
+    void submitAssignment(schedule, facultyId);
   };
   const invalidateAssignmentDependents = () => {
     invalidateCacheGroups("faculty", "schedules", "dashboards");
@@ -1092,28 +1036,6 @@ const selectedSchedule = assignmentSchedules.find(
         ? refusedConflict.message
         : "")
     : "";
-  const recommendationScheduleId = facultyAssignmentPopup && popupConflictWarning
-    ? facultyAssignmentPopup.scheduleId
-    : null;
-
-  useEffect(() => {
-    if (recommendationScheduleId === null || recommendationsForRef.current === recommendationScheduleId) return;
-    const scheduleId = recommendationScheduleId;
-    recommendationsForRef.current = scheduleId;
-
-    void fetchInstructorRecommendations(scheduleId)
-      .then((options) => {
-        if (recommendationsForRef.current === scheduleId) {
-          setInstructorRecommendations({ scheduleId, options, failed: false });
-        }
-      })
-      .catch(() => {
-        if (recommendationsForRef.current === scheduleId) {
-          setInstructorRecommendations({ scheduleId, options: [], failed: true });
-        }
-      });
-  }, [recommendationScheduleId]);
-
   if (isLoading && selectedDepartmentId !== null) {
     return (
       <InstructorAssignmentTimetableSkeleton
@@ -1245,30 +1167,36 @@ const selectedSchedule = assignmentSchedules.find(
               <h2 className="text-base font-extrabold text-slate-900">Receiving Departments</h2>
               <p className="text-xs font-medium text-slate-500">Open a source department timetable to assign your instructors to courses assigned to your department.</p>
             </div>
-            <span className="whitespace-nowrap text-xs font-bold text-slate-500">{offeringDepartments.length} departments</span>
+            <div className="flex items-center gap-3">
+              <span className="whitespace-nowrap text-xs font-bold text-slate-500">{offeringDepartments.length} departments</span>
+              {awaitingIncomingCourses.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIncomingModalOpen(true)}
+                  className="inline-flex items-center gap-2 whitespace-nowrap rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 transition-colors hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-[#C9952A]"
+                >
+                  <Inbox className="h-3.5 w-3.5" />
+                  Incoming
+                  <span className="rounded-full bg-amber-600 px-1.5 py-0.5 text-[10px] font-black leading-none text-white">{awaitingIncomingCourses.length}</span>
+                </button>
+              )}
+            </div>
           </div>
 
-          {awaitingIncomingCourses.length > 0 && (
-                <div className={`text-left ${offeringDepartments.length === 0 ? 'mx-auto max-w-3xl py-10' : 'mb-3'}`}>
-                  <h3 className="text-sm font-black text-[#4e0a10]">Incoming courses awaiting schedules</h3>
-                  <p className="mt-1 text-xs font-medium text-slate-500">These courses were assigned to your department, but no approved schedule exists yet. Create the section schedule in Schedule Builder first; it will then appear here for instructor assignment.</p>
-                  <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
-                    {awaitingIncomingCourses.map((course) => (
-                      <div key={course.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0">
-                        <div><p className="text-sm font-black text-slate-900">{course.course_code} · {course.course_name}</p><p className="text-xs text-slate-500">Source: {sourceProgramLabel(course.teaching_source_program) ?? course.department?.department_code ?? course.department?.department_name ?? 'Shared'} · {course.units ?? 0} units · {yearLevelLabel(course.year_level)}</p></div>
-                        <span className="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">Schedule required</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-          )}
+          <IncomingCoursesModal
+            isOpen={incomingModalOpen}
+            onClose={() => setIncomingModalOpen(false)}
+            courses={awaitingIncomingCourses}
+          />
           {offeringDepartments.length === 0 ? (
-            awaitingIncomingCourses.length === 0 && (
+            awaitingIncomingCourses.length === 0 ? (
               <div className="py-10 text-center"><h3 className="text-sm font-black text-[#4e0a10]">No incoming courses or approved schedules yet.</h3><p className="mt-1 text-xs font-medium text-slate-500">Assigned courses will appear here after a schedule is created and approved.</p></div>
+            ) : (
+              <div className="py-10 text-center"><h3 className="text-sm font-black text-[#4e0a10]">No approved schedules yet.</h3><p className="mt-1 text-xs font-medium text-slate-500">{awaitingIncomingCourses.length} incoming {awaitingIncomingCourses.length === 1 ? 'course is' : 'courses are'} waiting for a schedule. Open Incoming to see them.</p></div>
             )
           ) : (
-            <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <table className="w-full min-w-[34rem] text-left text-sm">
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <table className="w-full text-left text-sm">
                 <thead className="border-b border-slate-200 bg-slate-50/70 text-[10px] font-black uppercase tracking-wider text-slate-400">
                   <tr>
                     <th className="px-4 py-3">Department</th>
@@ -1434,18 +1362,20 @@ const selectedSchedule = assignmentSchedules.find(
                 <UserMinus className="h-4 w-4" />
                 {selectedSection === "all" ? "Clear All Instructors" : "Clear Instructor"}
               </button>
-              {(facultyConflictCount > 0 || facultyResolvedCount > 0) && activeSemester && !assignmentLocked && (
+              {activeSemester && !assignmentLocked && (
                 <button
                   type="button"
                   onClick={() => setIsConflictsOpen(true)}
                   className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-bold transition-colors ${
                     facultyConflictCount > 0
                       ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
-                      : "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                      : facultyResolvedCount > 0
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
                   }`}
                   title={facultyConflictCount > 0
                     ? "An instructor is booked for two classes at the same time"
-                    : "Every instructor conflict this semester has been resolved"}
+                    : "No instructor is double-booked this semester"}
                 >
                   {facultyConflictCount > 0 ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
                   Instructor Conflicts
@@ -1552,11 +1482,6 @@ const selectedSchedule = assignmentSchedules.find(
         facultyActionSlotId={isSaving && facultyAssignmentPopup ? facultyAssignmentPopup.scheduleId : null}
         schedules={modalSchedules}
         popupConflictWarning={popupConflictWarning}
-        recommendedInstructors={instructorRecommendations?.failed
-          ? undefined
-          : instructorRecommendations?.scheduleId === facultyAssignmentPopup?.scheduleId
-            ? instructorRecommendations?.options ?? null
-            : null}
         popupValidationError={error}
         setFacultyAssignmentPopup={(value) => {
           if (isSaving) return;
@@ -1590,27 +1515,12 @@ const selectedSchedule = assignmentSchedules.find(
         onCancel={() => !isClearingSection && setClearSectionTarget(null)}
       />
 
-      {overloadPrompt && (
-        <OverloadConfirmationModal
-          confirmation={overloadPrompt.confirmation}
-          isSaving={isSaving}
-          onConfirm={() =>
-            void submitAssignment(overloadPrompt.schedule, overloadPrompt.facultyId, true, overloadPrompt.overrideConflicts)
-          }
-          onCancel={() => setOverloadPrompt(null)}
-        />
-      )}
-
       {isConflictsOpen && (
         <ResolveConflictModal
           isOpen
           onClose={() => setIsConflictsOpen(false)}
           semesterId={activeSemester ? Number(activeSemester.id) : null}
-          departmentId={selectedDepartmentId ?? currentDepartmentId}
-          rooms={[]}
-          faculties={conflictFacultyOptions}
-          canUpdateSchedule={!assignmentLocked}
-          canAssignInstructor={!assignmentLocked}
+          departmentId={currentDepartmentId}
           rules={FACULTY_CONFLICT_ONLY}
           initialTab={facultyConflictCount > 0 ? "open" : "resolved"}
           onResolved={() => setConflictsRevision((revision) => revision + 1)}

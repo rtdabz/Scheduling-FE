@@ -1,8 +1,9 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DropModal from "./DropModal";
 import api from "../../../../lib/api";
+import { slotToTime24h } from "../../../../lib/timeGrid";
 import type { DeliveryMode, DropContext, Room, ScheduleItem, Subject } from "../types";
 import { consecutiveDayRuns, type ConsecutivePlacement } from "../GenerateSchedule/courseClassConfig";
 
@@ -49,6 +50,7 @@ function HybridModalHarness({
   secondMeetingMode = "on-site",
   firstMeetingRoomId = "lecture-room",
   run = null,
+  requiredDay,
 }: {
   schedules?: ScheduleItem[];
   modalConflict?: string | null;
@@ -63,6 +65,7 @@ function HybridModalHarness({
   firstMeetingRoomId?: string;
   /** The course's Consecutive Days rule for this section. */
   run?: ConsecutivePlacement | null;
+  requiredDay?: string;
 }) {
   const [modalRoomId, setModalRoomId] = useState(firstMeetingRoomId);
   const [modalClassMode, setModalClassModeState] = useState<DeliveryMode>("on-site");
@@ -102,7 +105,6 @@ function HybridModalHarness({
       sections={[{ id: "1", name: "BSIT 1A", yearLevel: 1, semester: "1st", departmentId: 1, semesterId: 1, status: "active" }]}
       schedules={schedules}
       selectedSectionId="1"
-      activeSemester={{ id: 1, academic_year: "2026-2027", semester: "1st", is_active: true }}
       dropContext={DROP_CONTEXT}
       dropSubject={lectureOnly ? LECTURE_COURSE : LAB_COURSE}
       dropSubjectIsField={false}
@@ -125,7 +127,7 @@ function HybridModalHarness({
       modalForcedDayIndex={modalForcedDayIndex}
       setModalForcedDayIndex={setModalForcedDayIndex}
       canGenerateSchedule={canGenerateSchedule}
-      manualSchedulingSettings={{ lecture_lab_schedule_override_enabled: true }}
+      manualSchedulingSettings={{ lecture_lab_schedule_override_enabled: true, forced_day_rules: requiredDay ? [{ course_id: 1, day: requiredDay }] : [] }}
       modalPreferredPattern={modalPreferredPattern}
       setModalPreferredPattern={setModalPreferredPattern}
       modalDay1Index={modalDay1Index}
@@ -160,16 +162,39 @@ function HybridModalHarness({
 const slotCalls = () => vi.mocked(api.post).mock.calls
   .filter(([url]) => url === "/schedule-recommendations/available-slots");
 
-const mockRecommendationApi = (slots: unknown[] = [], rooms: unknown[] = []) => {
-  vi.mocked(api.post).mockImplementation((() => (
-    Promise.resolve({ data: { slots, rooms, total: slots.length, truncated: false } })
-  )) as never);
+const mockRecommendationApi = (slots: unknown[] = [], rooms: unknown[] = [], serverPairStarts: unknown[] | null = null, serverBestMatches?: unknown[]) => {
+  vi.mocked(api.post).mockImplementation(((_url: string, request: { placement?: { rows: Record<string, unknown>[]; selected_meeting: number } }) => {
+    const templates = request.placement?.rows ?? [];
+    const selected = request.placement?.selected_meeting ?? 0;
+    const reviewed = (raw: unknown) => {
+      const slot = raw as { day: string; start_slot: number; end_slot: number; mode: string; room_id: number | null; group_rows?: unknown[] };
+      return { ...slot, group_rows: slot.group_rows ?? templates.map((row, index) => index === selected
+        ? { ...row, day: slot.day, start_time: slotToTime24h(slot.start_slot), end_time: slotToTime24h(slot.end_slot), mode: slot.mode, room_id: slot.room_id }
+        : row) };
+    };
+    const placements = (serverPairStarts ?? slots).map(reviewed);
+    return Promise.resolve({ data: { slots, rooms, total: slots.length, truncated: false,
+      placements, placement_rooms: rooms, placement_truncated: false,
+      same_time_starts: serverPairStarts?.map(reviewed) ?? null,
+      best_matches: (serverBestMatches ?? []).map(reviewed),
+    } });
+  }) as never);
 };
 
 describe("DropModal Integrated configuration", () => {
   beforeEach(() => {
     vi.mocked(api.post).mockReset();
     mockRecommendationApi();
+  });
+
+  it("passes the course Required Day to the session-alternative empty state", async () => {
+    vi.mocked(api.post).mockResolvedValue({ data: { slots: [], rooms: [], total: 0, placements: [], recommendations: [] } });
+    render(<HybridModalHarness lectureOnly requiredDay="Thursday" />);
+    const button = await screen.findByRole("button", { name: "Check session alternatives" });
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(button);
+    expect(await screen.findByText(/Required Day restricts this class to Thursday/)).toBeTruthy();
+    expect(slotCalls().some(([, body]) => (body as { placement?: { session_alternatives?: boolean } }).placement?.session_alternatives)).toBe(true);
   });
 
   afterEach(cleanup);
@@ -273,15 +298,17 @@ describe("DropModal Integrated configuration", () => {
       ...overrides,
     });
 
+    const affected = schedule({ id: "21", courseId: "1" });
     const { rerender } = render(
-      <HybridModalHarness schedules={[schedule({})]} modalConflict="Section conflict" />
+      <HybridModalHarness schedules={[affected, schedule({})]} modalConflict="Section conflict" />
     );
 
     await waitFor(() => expect(slotCalls()).toHaveLength(1));
+    expect(slotCalls()[0][1]).toMatchObject({ ignore_schedule_ids: [21], placement: { rows: [{ faculty_id: 10 }] } });
 
     rerender(
       <HybridModalHarness
-        schedules={[schedule({
+        schedules={[affected, schedule({
           day: "Thursday",
           dayIndex: 3,
           startTime: "10:00",
@@ -344,17 +371,46 @@ describe("DropModal manual placement support", () => {
     expect(await screen.findByText("No alternatives found")).toBeTruthy();
   });
 
-  it("does not re-ask for slots when a meeting is switched to Online", async () => {
+  it("rechecks the complete group when a meeting is switched to Online", async () => {
     render(<HybridModalHarness lectureOnly modalConflict="Room conflict: BA 201 is already occupied" />);
 
     await waitFor(() => expect(slotCalls()).toHaveLength(1));
 
-    // The slot list already covers every delivery the course may use, so
-    // trying Online on the meeting changes nothing it was asked for.
+    // Complete-group verification must track the changed delivery.
     fireEvent.click(screen.getByRole("button", { name: "Online" }));
     await new Promise((resolve) => window.setTimeout(resolve, 450));
 
+    await waitFor(() => expect(slotCalls()).toHaveLength(2));
+  });
+
+  it("keeps the request when equivalent meeting objects are rendered again", async () => {
+    const { rerender } = render(<HybridModalHarness lectureOnly modalConflict="Room conflict" />);
+    await waitFor(() => expect(slotCalls()).toHaveLength(1));
+    const request = slotCalls()[0][2] as { signal: AbortSignal };
+    rerender(<HybridModalHarness lectureOnly modalConflict="Room conflict" />);
+    await new Promise((resolve) => window.setTimeout(resolve, 450));
     expect(slotCalls()).toHaveLength(1);
+    expect(request.signal.aborted).toBe(false);
+  });
+
+  it("aborts stale requests without clearing the replacement request's loading state", async () => {
+    let rejectOld!: (reason: Error) => void;
+    let finishCurrent!: (response: { data: { placements: never[] } }) => void;
+    vi.mocked(api.post)
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectOld = reject; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { finishCurrent = resolve; }));
+    render(<HybridModalHarness lectureOnly modalConflict="Room conflict" />);
+    await waitFor(() => expect(slotCalls()).toHaveLength(1));
+    const oldSignal = slotCalls()[0][2]?.signal;
+    fireEvent.click(screen.getByRole("button", { name: "Online" }));
+    expect(oldSignal?.aborted).toBe(true);
+    await waitFor(() => expect(slotCalls()).toHaveLength(2));
+    await act(async () => rejectOld(new Error("stale request")));
+    expect(screen.queryByText(/Suggestions are unavailable/)).toBeNull();
+    expect((screen.getByRole("button", { name: "Check session alternatives" }) as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => finishCurrent({ data: { placements: [] } }));
+    expect((screen.getByRole("button", { name: "Check session alternatives" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByText("No alternatives found")).toBeTruthy();
   });
 
   it("lists every valid slot grouped by day, with a per-room count in the filter", async () => {
@@ -420,6 +476,40 @@ describe("DropModal manual placement support", () => {
 
     expect(screen.queryByRole("checkbox", { name: /Field Course/i })).toBeNull();
     expect(screen.queryByText(/field courses\./i)).toBeNull();
+  });
+
+  it("keeps the room filter through a placement refresh and resets it when the room disappears", async () => {
+    const rooms = [10, 11].map((id) => ({
+      room_id: id, room_code: `Room ${id}`, room_type: "lecture", mode: "on-site", slot_count: 1,
+    }));
+    const slots = rooms.map((room) => ({
+      ...room, day: "Monday", day_index: 0, start_slot: 0, end_slot: 6,
+      start_time: "07:00:00", end_time: "10:00:00",
+    }));
+    mockRecommendationApi(slots, rooms);
+    render(<HybridModalHarness lectureOnly modalConflict="Section conflict" />);
+    fireEvent.click(await screen.findByRole("tab", { name: /Weekdays/ }));
+    const filter = () => screen.getByLabelText<HTMLSelectElement>("Filter placements by room");
+    await waitFor(() => expect(filter().options).toHaveLength(3));
+    fireEvent.change(filter(), { target: { value: "11" } });
+    const placements = within(screen.getByRole("region", { name: "Valid placements" }));
+    expect(placements.getByText("Room 11")).toBeTruthy();
+    expect(placements.queryByText("Room 10")).toBeNull();
+
+    fireEvent.click(placements.getByRole("button"));
+    await waitFor(() => expect(slotCalls()).toHaveLength(2));
+    await screen.findByRole("region", { name: "Valid placements" });
+    expect(filter().value).toBe("11");
+    expect(within(screen.getByRole("region", { name: "Valid placements" })).queryByText("Room 10")).toBeNull();
+
+    // A later response, rather than the loading transition, invalidates the filter.
+    mockRecommendationApi([slots[0]], [rooms[0]]);
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Meeting duration" }), { target: { value: "2" } });
+    await waitFor(() => expect(slotCalls()).toHaveLength(3));
+    await screen.findByRole("region", { name: "Valid placements" });
+    expect(filter().options).toHaveLength(2);
+    expect(filter().value).toBe("__all__");
+    expect(within(screen.getByRole("region", { name: "Valid placements" })).getByText("Room 10")).toBeTruthy();
   });
 
   it("offers Online slots beside room slots and filters them apart", async () => {
@@ -490,7 +580,7 @@ describe("DropModal manual placement support", () => {
         slot("Thursday", 3, "on-site", 10, 4),
         slot("Friday", 4, "online", null, 0),
         slot("Friday", 4, "online", null, 8),
-      ]);
+      ], [], [slot("Thursday", 3, "on-site", 10, 0)]);
 
       render(splitHarness());
 
@@ -539,12 +629,27 @@ describe("DropModal manual placement support", () => {
       mockRecommendationApi([
         slot("Thursday", 3, "on-site", 10, 0),
         slot("Friday", 4, "online", null, 8),
-      ]);
+      ], [], []);
 
       render(splitHarness());
 
       const panel = within(await screen.findByRole("region", { name: "Valid split times" }));
       await waitFor(() => expect(panel.getByText(/No time is free on both days/)).toBeTruthy());
+    });
+
+    it("stages both meetings exactly as reviewed by the server", async () => {
+      const reviewed = { ...slot("Thursday", 3, "on-site", 10, 4), group_rows: [
+        { day: "Thursday", start_time: "09:00", end_time: "10:30", mode: "on-site", room_id: 10, preferred_pattern: "days:3-4", meeting_type: "lecture", is_hybrid: true },
+        { day: "Friday", start_time: "09:00", end_time: "10:30", mode: "online", room_id: null, preferred_pattern: "days:3-4", meeting_type: "lecture", is_hybrid: true },
+      ] };
+      mockRecommendationApi([], [], [reviewed]);
+      render(splitHarness());
+      const panel = within(await screen.findByRole("region", { name: "Valid split times" }));
+      fireEvent.click(await panel.findByRole("button", { name: /9 AM/ }));
+      await waitFor(() => expect((screen.getByLabelText("First Meeting start time") as HTMLSelectElement).value).toBe("4"));
+      expect((screen.getByLabelText("Second Meeting start time") as HTMLSelectElement).value).toBe("4");
+      expect((screen.getByLabelText("First meeting day") as HTMLSelectElement).value).toBe("3");
+      expect((screen.getByLabelText("Second meeting day") as HTMLSelectElement).value).toBe("4");
     });
   });
 
@@ -594,7 +699,7 @@ describe("DropModal manual placement support", () => {
     expect((screen.getByLabelText("Second meeting day") as HTMLSelectElement).value).toBe("2");
   });
 
-  it("leads with the best match on the requested day and applies it in place", async () => {
+  it("keeps the server Best Match order and applies the reviewed group in place", async () => {
     const slot = (day: string, dayIndex: number, startSlot: number, mode: DeliveryMode, roomId: number | null) => ({
       day, day_index: dayIndex, start_slot: startSlot, end_slot: startSlot + 6,
       start_time: "07:00:00", end_time: "10:00:00", mode,
@@ -606,17 +711,17 @@ describe("DropModal manual placement support", () => {
       slot("Thursday", 3, 12, "on-site", 10),
       slot("Thursday", 3, 4, "on-site", 10),
       slot("Friday", 4, 2, "on-site", 10),
-    ]);
+    ], [], null, [slot("Thursday", 3, 12, "on-site", 10), slot("Thursday", 3, 4, "on-site", 10)]);
     const setDropContext = vi.fn();
 
     render(<HybridModalHarness lectureOnly modalConflict="Room conflict" setDropContext={setDropContext} />);
 
-    // Best Match: Thursday only, nearest the requested start first.
+    // The server order wins even when the second entry is closer.
     const best = within(await screen.findByRole("list", { name: "Best matches" }));
     const options = best.getAllByRole("listitem");
     expect(options).toHaveLength(2);
     expect(within(options[0]).getByText("Best match")).toBeTruthy();
-    expect(within(options[0]).getByText(/^9 AM – /)).toBeTruthy();
+    expect(within(options[0]).getByText(/^1 PM – /)).toBeTruthy();
 
     fireEvent.click(within(options[0]).getByRole("button", { name: "Use this option" }));
 
@@ -749,5 +854,42 @@ describe("DropModal Consecutive Days", () => {
       meeting_type: null,
       excluded_days: ["Monday", "Tuesday", "Wednesday", "Sunday"],
     });
+  });
+});
+
+
+describe("explicit session enhancements", () => {
+  afterEach(cleanup);
+  it("stages an Integrated Hybrid with independent lecture and lab times", async () => {
+    const rows = [
+      { day: "Monday", start_time: "10:00", end_time: "12:00", mode: "online", room_id: null, meeting_type: "lecture" },
+      { day: "Wednesday", start_time: "07:00", end_time: "10:00", mode: "on-site", room_id: 2, meeting_type: "laboratory" },
+    ];
+    vi.mocked(api.post).mockResolvedValue({ data: { recommendations: [{ id: "integrated", label: "Integrated Hybrid", summary: "Lecture online, laboratory on-site", reasons: [], rows }], placements: [], best_matches: [], placement_rooms: [] } });
+    render(<HybridModalHarness />);
+    fireEvent.click(screen.getByRole("button", { name: "Check session alternatives" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Stage Integrated Hybrid" }));
+    expect(screen.getByRole("radio", { name: /Integrated/i }).getAttribute("aria-checked")).toBe("true");
+    expect((screen.getByLabelText("First meeting day") as HTMLSelectElement).value).toBe("2");
+    expect((screen.getByLabelText("Second meeting day") as HTMLSelectElement).value).toBe("0");
+    expect((screen.getByRole("spinbutton", { name: "Laboratory Meeting duration" }) as HTMLInputElement).value).toBe("3");
+    expect((screen.getByRole("spinbutton", { name: "Lecture Meeting duration" }) as HTMLInputElement).value).toBe("2");
+    expect((screen.getByRole("combobox", { name: /Delivery mode/i }) as HTMLSelectElement).value).toBe("hybrid");
+    expect((screen.getByLabelText("Laboratory Meeting start time") as HTMLSelectElement).value).toBe("0");
+    expect((screen.getByLabelText("Lecture Meeting start time") as HTMLSelectElement).value).toBe("6");
+  });
+  it.each(["on-site", "online"] as const)("stages both %s Split meetings without saving", async (mode) => {
+    const rows = ["Monday", "Wednesday"].map((day) => ({ day, start_time: "07:00", end_time: "08:30", mode, room_id: mode === "online" ? null : 1, meeting_type: "lecture" }));
+    vi.mocked(api.post).mockResolvedValue({ data: { recommendations: [{ id: "new", label: "Split", summary: "Two shorter meetings", reasons: [], rows }], placements: [], best_matches: [], placement_rooms: [] } });
+    render(<HybridModalHarness lectureOnly />);
+    fireEvent.click(screen.getByRole("button", { name: "Check session alternatives" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Stage Split" }));
+    expect(screen.getByRole("radio", { name: /Split Session/ }).getAttribute("aria-checked")).toBe("true");
+    expect((screen.getByLabelText("First meeting day") as HTMLSelectElement).value).toBe("0");
+    expect((screen.getByLabelText("Second meeting day") as HTMLSelectElement).value).toBe("2");
+    expect((screen.getByRole("combobox", { name: /Delivery mode/i }) as HTMLSelectElement).value).toBe(mode === "online" ? "online" : "onsite");
+    expect((screen.getByLabelText("First Meeting start time") as HTMLSelectElement).value).toBe("0");
+    expect((screen.getByLabelText("Second Meeting start time") as HTMLSelectElement).value).toBe("0");
+    expect(vi.mocked(api.post).mock.calls.every(([url]) => url === "/schedule-recommendations/available-slots")).toBe(true);
   });
 });

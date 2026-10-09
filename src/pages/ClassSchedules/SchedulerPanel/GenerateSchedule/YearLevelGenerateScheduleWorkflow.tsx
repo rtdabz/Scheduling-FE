@@ -48,6 +48,7 @@ import {
   applyYearLevelAdjustments,
   recommendationTarget,
   describeAdjustment,
+  type GenerationAdjustment,
   type GenerationRecommendation,
 } from "./yearLevelGenerationFailure";
 import type { DeliveryModeOption } from "./generationTypes";
@@ -921,6 +922,7 @@ export default function YearLevelGenerateScheduleWorkflow({
   const generate = async (
     configsOverride?: Record<string, SectionConfig>,
     draftOverride?: SetupDraft,
+    selectedAdjustments?: GenerationAdjustment[],
   ) => {
     if (!activeSemester || departmentId === null) return;
     if (!yearLevelGenerationAllowed) return;
@@ -946,6 +948,7 @@ export default function YearLevelGenerateScheduleWorkflow({
         semester_id: Number(activeSemester.id),
         department_id: departmentId,
         year_level: yearLevel,
+        ...(selectedAdjustments?.length ? { selected_adjustments: selectedAdjustments } : {}),
         ...(targetSectionIds !== null
           ? { section_ids: targetSections.map((section) => Number(section.id)) }
           : {}),
@@ -1080,10 +1083,18 @@ export default function YearLevelGenerateScheduleWorkflow({
   const applyRecommendationAndRetry = async (
     recommendation: GenerationRecommendation,
   ) => {
-    const { configs: nextConfigs, applied: appliedToSections } = applyAdjustments(
-      configs,
-      recommendation.adjustments,
+    const runConfigs: Record<string, SectionConfig> = Object.fromEntries(
+      targetSections.map((section) => [section.id, configs[section.id]]),
     );
+    let sectionChanges: ReturnType<typeof applyAdjustments<SectionConfig>>;
+    try {
+      sectionChanges = applyAdjustments(runConfigs, recommendation.adjustments);
+    } catch (error: unknown) {
+      toast.error("Cannot Apply", error instanceof Error ? error.message : "Review the selected adjustments.");
+      return;
+    }
+    const { configs: previewedConfigs, applied: appliedToSections } = sectionChanges;
+    const nextConfigs = { ...configs, ...previewedConfigs };
     const { settings: yearLevelSettings, applied: appliedToYearLevel } =
       applyYearLevelAdjustments(
         {
@@ -1124,7 +1135,8 @@ export default function YearLevelGenerateScheduleWorkflow({
     );
     setStepDirection("forward");
     setStep(3);
-    void generate(nextConfigs, nextDraft);
+    // Send the original configuration and explicit operations; the server owns application.
+    void generate(configs, setupDraft, recommendation.adjustments);
   };
 
   const reviewConstraints = (sectionId: number | null) => {
@@ -1247,11 +1259,31 @@ export default function YearLevelGenerateScheduleWorkflow({
         )
         .map((schedule) => String(schedule.sectionId)),
     );
-    if (recalledSectionIds.size > 0) {
+    const replacedCourseKeys = new Set([
+      ...generatedKeys,
+      ...remainingUnplaced.map((course) => `${course.section_id}:${course.course_id}`),
+    ]);
+    const instructorClassCount = new Set(
+      existingSchedules
+        .filter(
+          (schedule) =>
+            Boolean(schedule.facultyId) &&
+            ["draft", "completed", "revision"].includes(schedule.status) &&
+            replacedCourseKeys.has(`${schedule.sectionId}:${schedule.courseId || schedule.subjectId}`) &&
+            (!activeSemester || Number(schedule.semesterId) === Number(activeSemester.id)),
+        )
+        .map((schedule) => `${schedule.sectionId}:${schedule.courseId || schedule.subjectId}`),
+    ).size;
+    if (recalledSectionIds.size > 0 || instructorClassCount > 0) {
       const count = recalledSectionIds.size;
       const confirmed = await confirm({
-        title: "Replace Recalled Schedules",
-        message: `${count} section${count === 1 ? " was" : "s were"} recalled or returned from approval. Saving replaces the working copy of the generated courses; the submitted version stays in the approval history.`,
+        title: count > 0 ? "Replace Recalled Schedules" : "Replace Schedules",
+        message: (count > 0
+          ? `${count} section${count === 1 ? " was" : "s were"} recalled. Saving updates the working schedule, while the submitted version stays in history.`
+          : "Saving updates the working schedule.")
+          + (instructorClassCount > 0
+            ? ` ${instructorClassCount} class${instructorClassCount === 1 ? " has an instructor" : "es have instructors"} assigned; the assignment${instructorClassCount === 1 ? "" : "s"} will be removed, including cross-department assignments, and the affected department will be notified.`
+            : ""),
         eyebrow: "Replace Working Copy",
         confirmLabel: "Replace Schedules",
         variant: "danger",
@@ -1306,7 +1338,7 @@ export default function YearLevelGenerateScheduleWorkflow({
         meeting_index: r.meeting_index ?? null,
         status: "draft",
       }));
-      const response = await api.post<{ schedules?: ApiScheduleRecord[] }>(
+      const response = await api.post<{ schedules?: ApiScheduleRecord[]; instructors_released?: number }>(
         "/schedules/batch",
         {
           operations,
@@ -1319,9 +1351,13 @@ export default function YearLevelGenerateScheduleWorkflow({
       );
       window.localStorage.removeItem(storageKey);
       run.clear();
+      const releasedInstructors = Number(response.data.instructors_released ?? 0);
       toast.success(
         "Generation Complete",
-        "The timetable was saved as draft schedules.",
+        "The timetable was saved as draft schedules."
+          + (releasedInstructors > 0
+            ? ` ${releasedInstructors} instructor assignment${releasedInstructors === 1 ? " was" : "s were"} released.`
+            : ""),
       );
       try {
         await onAccepted(response.data.schedules ?? preview);

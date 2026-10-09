@@ -1,7 +1,7 @@
 import type React from "react";
 import { useCallback } from "react";
 import { DAYS, slotToTimeStr } from "../constants";
-import type { ConflictInfo, DropContext, ScheduleItem, Subject, Semester } from "../types";
+import type { ConflictInfo, DropContext, ScheduleItem, Subject } from "../types";
 
 type CheckMoveConflict = (
   scheduleId: string,
@@ -24,7 +24,6 @@ interface UseDragDropParams {
   setConflictInfo: React.Dispatch<React.SetStateAction<ConflictInfo | null>>;
   checkMoveConflict: CheckMoveConflict;
   onScheduleRelocated?: (scheduleId: string, dayIndex: number, timeIndex: number) => void;
-  activeSemester: Semester | null;
 }
 
 export const useDragDrop = ({
@@ -40,11 +39,8 @@ export const useDragDrop = ({
   setDropContext,
   setConflictInfo,
   checkMoveConflict,
-  onScheduleRelocated,
-  activeSemester
+  onScheduleRelocated
 }: UseDragDropParams) => {
-  const isSummerSemester = activeSemester?.semester === "summer";
-
   const handleDragStartFromBank = useCallback((e: React.DragEvent, subjectId: string) => {
     setDragSubjectId(subjectId);
     setDraggedScheduleId(null);
@@ -70,13 +66,9 @@ export const useDragDrop = ({
 
   const handleDragOver = useCallback((e: React.DragEvent, dayIndex: number, timeIndex: number) => {
     e.preventDefault();
-    if (isSummerSemester && dayIndex >= 5) {
-      e.dataTransfer.dropEffect = "none";
-      return;
-    }
     const key = `${dayIndex}-${timeIndex}`;
     setHoveredCell((current) => (current === key ? current : key));
-  }, [isSummerSemester, setHoveredCell]);
+  }, [setHoveredCell]);
 
   const handleDragLeave = useCallback(() => setHoveredCell(null), [setHoveredCell]);
 
@@ -84,8 +76,6 @@ export const useDragDrop = ({
     e.preventDefault();
     setHoveredCell(null);
     setConflictInfo(null);
-
-    if (isSummerSemester && dayIndex >= 5) return;
 
     if (draggedScheduleId) {
       const sched = schedules.find((s) => s.id === draggedScheduleId);
@@ -129,7 +119,6 @@ export const useDragDrop = ({
       setDragSubjectId(null);
     }
   }, [
-    isSummerSemester,
     draggedScheduleId,
     dragSubjectId,
     schedules,

@@ -1,12 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Check, CheckCircle2, ClipboardX, Loader2, Pencil, RotateCcw, ShieldAlert, Sparkles } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Loader2, RotateCcw, ShieldAlert, Sparkles } from "lucide-react";
 import Modal from "../../../../components/ui/Modal";
 import { useToast } from "../../../../context/ToastContext";
 import { apiErrorMessage } from "../../../../lib/apiError";
-import { overloadConfirmationFrom, type OverloadConfirmation } from "../../../../lib/overloadConfirmation";
-import OverloadConfirmationModal from "../../../../components/faculty/OverloadConfirmationModal";
-import RecommendedOptionList from "../components/RecommendedOptionList";
-import { FULL_DAY_NAMES } from "../../../../lib/timeGrid";
 import {
   alreadyResolvedFrom,
   conflictRuleLabel,
@@ -14,69 +10,66 @@ import {
   fetchConflictRecommendations,
   fetchConflicts,
   fetchResolvedConflicts,
-  fetchRuleIssues,
-  isReplottable,
-  overrideConflict,
   refusalDetails,
-  resolutionActionLabel,
-  resolutionMethodLabel,
   resolutionStatusLabel,
-  ruleIssueLabel,
   resolveConflict,
   reviewConflict,
   type ConflictRecommendation,
   type ConflictResolution,
-  type RuleIssue,
   type ConflictRule,
-  type ConflictSchedule,
-  type ResolutionAction,
   type ResolutionRequest,
   type ScheduleConflict,
 } from "../../../../lib/conflicts";
-
-export interface ResolveConflictOption {
-  id: number;
-  label: string;
-}
 
 interface ResolveConflictModalProps {
   isOpen: boolean;
   onClose: () => void;
   semesterId: number | null;
   departmentId: number | null;
-  rooms: ResolveConflictOption[];
-  faculties: ResolveConflictOption[];
-  canUpdateSchedule: boolean;
-  canAssignInstructor: boolean;
   focusScheduleId?: number | null;
   rules?: ConflictRule[];
   initialTab?: "open" | "resolved";
-  onOpenInBuilder?: (scheduleId: number) => void;
   onResolved: () => void;
 }
 
-const DELIVERY_MODES = [
-  { value: "on-site", label: "On-site" },
-  { value: "online", label: "Online" },
-  { value: "field", label: "Field" },
-];
-
-const APPLIABLE: ResolutionAction[] = [
-  "move_schedule",
-  "change_room",
-  "change_delivery_mode",
-  "reassign_instructor",
-];
-
-const fieldClass =
-  "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 focus:border-[#4e0a10] focus:outline-none";
-
-const hhmm = (time: string): string => time.slice(0, 5);
+type ConflictTab = "open" | "resolved";
 
 const RESOLUTION_STATUS_CLASSES: Record<ConflictResolution["status"], string> = {
   resolved: "border-emerald-200 bg-emerald-50 text-emerald-800",
   overridden: "border-amber-200 bg-amber-50 text-amber-800",
   reopened: "border-red-200 bg-red-50 text-red-800",
+};
+
+const departmentLabel = (name?: string | null, code?: string | null): string | null =>
+  name && code ? `${name} (${code})` : name ?? code ?? null;
+
+const otherDepartment = (
+  conflict: ScheduleConflict,
+  departmentId: number | null,
+): { label: string; detail: string } | null => {
+  if (departmentId === null) return null;
+
+  if (conflict.rule === "faculty_conflict") {
+    const schedule = conflict.schedules.find((row) =>
+      row.assigning_department_id != null && Number(row.assigning_department_id) !== departmentId);
+    const department = schedule
+      ? departmentLabel(schedule.assigning_department_name, schedule.assigning_department_code)
+      : null;
+    if (schedule && department) {
+      return {
+        label: schedule.assigning_program_code ? `the ${schedule.assigning_program_code} program of ${department}` : department,
+        detail: `${schedule.course_code ?? "This course"} is assigned to them, so only they can change its instructor.`,
+      };
+    }
+  }
+
+  const schedule = conflict.schedules.find((row) =>
+    row.department_id != null && Number(row.department_id) !== departmentId);
+  const label = schedule ? departmentLabel(schedule.department_name, schedule.department_code) : null;
+
+  return schedule && label
+    ? { label, detail: "One of these classes belongs to their department, so the change has to be made there." }
+    : null;
 };
 
 const formatResolvedAt = (iso: string | null): string => {
@@ -93,36 +86,22 @@ export default function ResolveConflictModal({
   onClose,
   semesterId,
   departmentId,
-  rooms,
-  faculties,
-  canUpdateSchedule,
-  canAssignInstructor,
   focusScheduleId = null,
   rules,
   initialTab = "open",
-  onOpenInBuilder,
   onResolved,
 }: ResolveConflictModalProps) {
   const { toast } = useToast();
   const [conflicts, setConflicts] = useState<ScheduleConflict[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [targetId, setTargetId] = useState<number | null>(null);
-  const [action, setAction] = useState<ResolutionAction | null>(null);
-  const [form, setForm] = useState<ResolutionRequest | null>(null);
-  const [reason, setReason] = useState("");
   const [violations, setViolations] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [overloadPrompt, setOverloadPrompt] = useState<{
-    confirmation: OverloadConfirmation;
-    request: ResolutionRequest;
-  } | null>(null);
   const [recommendations, setRecommendations] = useState<{
     conflictId: string;
     options: ConflictRecommendation[] | null;
   } | null>(null);
   const [applyingRank, setApplyingRank] = useState<number | null>(null);
-  const [tab, setTab] = useState<"open" | "resolved" | "issues">(initialTab);
-  const [ruleIssues, setRuleIssues] = useState<RuleIssue[] | null>(null);
+  const [tab, setTab] = useState<ConflictTab>(initialTab);
   const [resolutions, setResolutions] = useState<ConflictResolution[] | null>(null);
 
   const open = useMemo(
@@ -133,9 +112,11 @@ export default function ResolveConflictModal({
     () => open.find((conflict) => conflict.id === selectedId) ?? null,
     [open, selectedId],
   );
-  const target = useMemo<ConflictSchedule | null>(
-    () => selected?.schedules.find((schedule) => schedule.id === targetId) ?? null,
-    [selected, targetId],
+  const selectedIndex = selected === null ? -1 : open.findIndex((conflict) => conflict.id === selected.id);
+
+  const shownResolutions = useMemo(
+    () => (resolutions ?? []).filter((entry) => !rules || rules.includes(entry.rule as ConflictRule)),
+    [resolutions, rules],
   );
 
   const loadRecommendations = useCallback(async (conflictId: string) => {
@@ -149,173 +130,96 @@ export default function ResolveConflictModal({
       current?.conflictId === conflictId ? { conflictId, options } : current);
   }, []);
 
+  const loadResolutions = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const entries = await fetchResolvedConflicts({ semesterId, departmentId, signal });
+      if (!signal?.aborted) setResolutions(entries);
+    } catch (err) {
+      if (signal?.aborted) return;
+      setResolutions((current) => current ?? []);
+      toast.error("Conflicts", apiErrorMessage(err, "Could not load the resolved conflicts."));
+    }
+  }, [departmentId, semesterId, toast]);
+
+  const select = useCallback((conflict: ScheduleConflict) => {
+    setSelectedId(conflict.id);
+    setViolations([]);
+    void loadRecommendations(conflict.id);
+  }, [loadRecommendations]);
+
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       const scanned = await fetchConflicts({ semesterId, departmentId, signal });
       if (signal?.aborted) return;
       setConflicts(scanned);
 
-      if (focusScheduleId === null) return;
-      const match = scanned.find((conflict) =>
-        (!rules || rules.includes(conflict.rule))
-        && conflict.schedules.some((schedule) => schedule.id === focusScheduleId));
-      if (!match) return;
-
-      const clicked = match.schedules.find((schedule) => schedule.id === focusScheduleId);
-      const editable = clicked && isReplottable(clicked)
-        ? clicked
-        : match.schedules.find(isReplottable) ?? match.schedules[0];
-      setSelectedId(match.id);
-      setTargetId(editable.id);
-      void loadRecommendations(match.id);
+      const shown = scanned.filter((conflict) => !rules || rules.includes(conflict.rule));
+      const match = (focusScheduleId === null
+        ? undefined
+        : shown.find((conflict) => conflict.schedules.some((schedule) => schedule.id === focusScheduleId)))
+        ?? shown[0];
+      if (match) select(match);
     } catch (err) {
       if (signal?.aborted) return;
       setConflicts([]);
       toast.error("Conflicts", apiErrorMessage(err, "Could not load the conflict list."));
     }
-  }, [departmentId, focusScheduleId, loadRecommendations, rules, semesterId, toast]);
+  }, [departmentId, focusScheduleId, rules, select, semesterId, toast]);
 
   useEffect(() => {
     const controller = new AbortController();
     void load(controller.signal);
+    void loadResolutions(controller.signal);
 
     return () => controller.abort();
-  }, [load]);
-
-  const loadResolutions = async () => {
-    try {
-      setResolutions(await fetchResolvedConflicts({ semesterId, departmentId }));
-    } catch (err) {
-      setResolutions([]);
-      toast.error("Conflicts", apiErrorMessage(err, "Could not load the resolved conflicts."));
-    }
-  };
-
-  const loadRuleIssues = async () => {
-    try {
-      setRuleIssues(await fetchRuleIssues({ semesterId, departmentId }));
-    } catch (err) {
-      setRuleIssues([]);
-      toast.error("Conflicts", apiErrorMessage(err, "Could not check the timetable's rules."));
-    }
-  };
-
-  const showTab = (next: "open" | "resolved" | "issues") => {
-    setTab(next);
-    if (next === "resolved" && resolutions === null) void loadResolutions();
-    if (next === "issues" && ruleIssues === null) void loadRuleIssues();
-  };
-
-  const tabs = onOpenInBuilder
-    ? (["open", "resolved", "issues"] as const)
-    : (["open", "resolved"] as const);
-
-  const shownResolutions = useMemo(
-    () => (resolutions ?? []).filter((entry) => !rules || rules.includes(entry.rule as ConflictRule)),
-    [resolutions, rules],
-  );
+  }, [load, loadResolutions]);
 
   const pick = (conflict: ScheduleConflict) => {
-    const editable = conflict.schedules.find(isReplottable) ?? conflict.schedules[0];
-    setSelectedId(conflict.id);
-    setTargetId(editable.id);
     void reviewConflict(conflict.id);
-    setAction(null);
-    setForm(null);
-    setReason("");
-    setViolations([]);
-    void loadRecommendations(conflict.id);
+    select(conflict);
   };
 
-  const chooseAction = (next: ResolutionAction, schedule: ConflictSchedule) => {
-    setAction(next);
-    setViolations([]);
-    setForm(next === "move_schedule"
-      ? {
-        action: "move_schedule",
-        schedule_id: schedule.id,
-        day: schedule.day,
-        start_time: hhmm(schedule.start_time),
-        end_time: hhmm(schedule.end_time),
-      }
-      : next === "change_room"
-        ? { action: "change_room", schedule_id: schedule.id, room_id: schedule.room_id }
-        : next === "change_delivery_mode"
-          ? { action: "change_delivery_mode", schedule_id: schedule.id, mode: schedule.mode }
-          : { action: "reassign_instructor", schedule_id: schedule.id, faculty_id: schedule.faculty_id });
-  };
-
-  const settle = (outcome: { status: string; remaining_conflicts: ScheduleConflict[] }) => {
-    setConflicts(outcome.remaining_conflicts);
+  const replaceOpen = (remaining: ScheduleConflict[]) => {
+    setConflicts(remaining);
     setSelectedId(null);
-    setTargetId(null);
-    setAction(null);
-    setForm(null);
-    setReason("");
-    setViolations([]);
     setRecommendations(null);
-    setResolutions(null);
+    setViolations([]);
     onResolved();
-    toast.success(
-      "Conflicts",
-      outcome.status === "overridden"
-        ? "The conflict was allowed to stand, with your reason on the record."
-        : "The conflict is resolved and the change is saved.",
-    );
+    void loadResolutions();
+    const shown = remaining.filter((conflict) => !rules || rules.includes(conflict.rule));
+    const later = new Set(open.slice(selectedIndex + 1).map((conflict) => conflict.id));
+    const next = shown.find((conflict) => later.has(conflict.id))
+      ?? shown[Math.min(Math.max(selectedIndex, 0), shown.length - 1)];
+    if (next) select(next);
   };
 
-  const handleFailure = (err: unknown, fallback: string) => {
-    const stillOpen = alreadyResolvedFrom(err);
-    if (stillOpen !== null) {
-      setConflicts(stillOpen);
-      setSelectedId(null);
-      setAction(null);
-      setForm(null);
-      setRecommendations(null);
-      setResolutions(null);
-      onResolved();
-      toast.info("Conflicts", "That conflict is already resolved. The list has been refreshed.");
-      return;
-    }
-
-    const details = refusalDetails(err);
-    setViolations(details);
-    toast.error("Conflicts", details[0] ?? apiErrorMessage(err, fallback));
-  };
-
-  const send = async (request: ResolutionRequest, confirmOverload = false) => {
+  const send = async (request: ResolutionRequest) => {
     if (!selected) return;
     setIsSubmitting(true);
     setViolations([]);
     try {
-      settle(await resolveConflict(selected.id, {
-        ...request,
-        reason: reason.trim() || undefined,
-        confirm_overload: confirmOverload || undefined,
-      }));
-      setOverloadPrompt(null);
+      const outcome = await resolveConflict(selected.id, request);
+      replaceOpen(outcome.remaining_conflicts);
+      toast.success("Conflicts", "The conflict is resolved and the change is saved.");
     } catch (err) {
-      const confirmation = overloadConfirmationFrom(err);
-      if (confirmation !== null) {
-        setOverloadPrompt({ confirmation, request });
+      const stillOpen = alreadyResolvedFrom(err);
+      if (stillOpen !== null) {
+        replaceOpen(stillOpen);
+        toast.info("Conflicts", "That conflict is already resolved. The list has been refreshed.");
         return;
       }
-      setOverloadPrompt(null);
-      handleFailure(err, "That change was refused, so nothing was saved.");
+
+      const details = refusalDetails(err);
+      setViolations(details);
+      toast.error("Conflicts", details[0] ?? apiErrorMessage(err, "That change was refused, so nothing was saved."));
     } finally {
       setIsSubmitting(false);
       setApplyingRank(null);
     }
   };
 
-  const submit = () => {
-    if (form) void send(form);
-  };
-
   const applyRecommendation = (option: ConflictRecommendation) => {
     setApplyingRank(option.rank);
-    setAction(null);
-    setForm(null);
     void send({ ...option.payload, source: "recommendation" });
   };
 
@@ -323,61 +227,20 @@ export default function ResolveConflictModal({
     ? recommendations.options
     : null;
 
-  const submitOverride = async () => {
-    if (!selected || reason.trim().length < 3) return;
-    setIsSubmitting(true);
-    setViolations([]);
-    try {
-      settle(await overrideConflict(selected.id, reason.trim()));
-    } catch (err) {
-      handleFailure(err, "The override was refused.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const allowed = (option: ResolutionAction): boolean =>
-    option === "reassign_instructor" ? canAssignInstructor : canUpdateSchedule;
-
-  const canSubmit = form !== null
-    && !isSubmitting
-    && (form.action !== "reassign_instructor" || form.faculty_id !== undefined)
-    && (form.action !== "move_schedule" || Boolean(form.day && form.start_time && form.end_time));
+  const tabs: ConflictTab[] = ["open", "resolved"];
+  const owner = selected ? otherDepartment(selected, departmentId) : null;
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      size="xl"
+      size="lg"
       title="Resolve schedule conflicts"
       description="Every fix is checked against the saved timetable before it is kept. If the conflict is still there afterwards, nothing is saved."
       footer={
-        <>
-          <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
-            Close
-          </button>
-          {tab !== "open" ? null : action === "request_override" ? (
-            <button
-              type="button"
-              onClick={submitOverride}
-              disabled={isSubmitting || reason.trim().length < 3}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldAlert className="h-3.5 w-3.5" />}
-              Allow it to stand
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={submit}
-              disabled={!canSubmit}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#4e0a10] px-3 py-2 text-xs font-bold text-white hover:bg-[#3a0809] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-              Apply and re-check
-            </button>
-          )}
-        </>
+        <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
+          Close
+        </button>
       }
     >
       <div className="flex gap-1 border-b border-slate-200 px-4 pt-3 sm:px-5" role="tablist">
@@ -387,7 +250,7 @@ export default function ResolveConflictModal({
             type="button"
             role="tab"
             aria-selected={tab === name}
-            onClick={() => showTab(name)}
+            onClick={() => setTab(name)}
             className={`-mb-px border-b-2 px-3 py-2 text-xs font-bold transition-colors ${
               tab === name
                 ? "border-[#4e0a10] text-[#4e0a10]"
@@ -396,58 +259,12 @@ export default function ResolveConflictModal({
           >
             {name === "open"
               ? `Open${conflicts !== null ? ` (${open.length})` : ""}`
-              : name === "resolved"
-                ? `Resolved${resolutions !== null ? ` (${shownResolutions.length})` : ""}`
-                : `Rule issues${ruleIssues !== null ? ` (${ruleIssues.length})` : ""}`}
+              : `Resolved${resolutions !== null ? ` (${shownResolutions.length})` : ""}`}
           </button>
         ))}
       </div>
 
-      {tab === "issues" ? (
-        <section className="p-4 sm:p-5">
-          <p className="mb-3 text-[11px] font-semibold text-slate-500">
-            Saved classes that passed every rule when they were placed but no longer do, because the data a rule
-            reads has changed since: a room taken out of service, an instructor's availability, operating hours.
-          </p>
-          {ruleIssues === null ? (
-            <p className="flex items-center gap-2 text-xs font-semibold text-slate-500">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking every class against the current rules…
-            </p>
-          ) : ruleIssues.length === 0 ? (
-            <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-4 text-xs font-semibold text-emerald-800">
-              Every saved class still meets the scheduling rules.
-            </p>
-          ) : (
-            <ul className="space-y-2">
-              {ruleIssues.map((issue) => (
-                <li key={issue.id} className="flex items-start gap-3 rounded-lg border border-amber-200 bg-white px-3 py-2.5">
-                  <ClipboardX className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-black uppercase tracking-wide text-amber-800">{ruleIssueLabel(issue.rule)}</p>
-                    <p className="mt-0.5 text-xs font-semibold text-slate-700">{issue.message}</p>
-                    <p className="mt-0.5 text-[11px] text-slate-500">{describeConflictSchedule(issue.schedule)}</p>
-                    {!isReplottable(issue.schedule) && (
-                      <p className="mt-0.5 text-[10px] font-bold uppercase text-slate-400">
-                        Locked at {issue.schedule.status.replace(/_/g, " ")} — recall it to move the class
-                      </p>
-                    )}
-                  </div>
-                  {onOpenInBuilder && isReplottable(issue.schedule) && (
-                    <button
-                      type="button"
-                      onClick={() => onOpenInBuilder(issue.schedule.id)}
-                      className="inline-flex shrink-0 items-center gap-1 rounded-md bg-[#4e0a10] px-2.5 py-1 text-[11px] font-bold text-white hover:bg-[#3a0809]"
-                    >
-                      <Pencil className="h-3 w-3" />
-                      Fix in Schedule Builder
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      ) : tab === "resolved" ? (
+      {tab === "resolved" ? (
         <section className="p-4 sm:p-5">
           {resolutions === null ? (
             <p className="flex items-center gap-2 text-xs font-semibold text-slate-500">
@@ -461,7 +278,7 @@ export default function ResolveConflictModal({
             <ul className="space-y-2">
               {shownResolutions.map((entry) => (
                 <li key={entry.key} className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-                  <div className="flex flex-wrap items-center gap-1.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${RESOLUTION_STATUS_CLASSES[entry.status]}`}>
                       {entry.status === "reopened"
                         ? <RotateCcw className="h-3 w-3" />
@@ -470,23 +287,27 @@ export default function ResolveConflictModal({
                           : <CheckCircle2 className="h-3 w-3" />}
                       {resolutionStatusLabel(entry.status)}
                     </span>
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
-                      {resolutionMethodLabel(entry)}
-                    </span>
-                    <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">
-                      {conflictRuleLabel(entry.rule)}
+                    <span className="text-[11px] text-slate-500">
+                      {[formatResolvedAt(entry.resolved_at), entry.resolved_by ? `by ${entry.resolved_by}` : null]
+                        .filter(Boolean)
+                        .join(" ")}
                     </span>
                   </div>
-                  <p className="mt-1 text-xs font-semibold text-slate-700">
+                  <p className="mt-1.5 text-xs text-slate-600">
+                    <span className="font-bold text-slate-800">Conflict: </span>
                     {entry.message || conflictRuleLabel(entry.rule)}
                   </p>
-                  <p className="mt-0.5 text-[11px] text-slate-500">
-                    {[formatResolvedAt(entry.resolved_at), entry.resolved_by ? `by ${entry.resolved_by}` : null]
-                      .filter(Boolean)
-                      .join(" ")}
-                  </p>
+                  {entry.fix && (
+                    <p className="mt-0.5 text-xs text-slate-600">
+                      <span className="font-bold text-slate-800">Fix: </span>
+                      {entry.fix}
+                    </p>
+                  )}
                   {entry.reason && (
-                    <p className="mt-1 text-[11px] italic text-slate-600">“{entry.reason}”</p>
+                    <p className="mt-0.5 text-xs text-slate-600">
+                      <span className="font-bold text-slate-800">Reason: </span>
+                      {entry.reason}
+                    </p>
                   )}
                   {entry.status === "reopened" && (
                     <p className="mt-1 text-[11px] font-semibold text-red-700">
@@ -499,59 +320,66 @@ export default function ResolveConflictModal({
           )}
         </section>
       ) : (
-      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] sm:p-5">
-        <section className="min-w-0">
-          <h3 className="text-xs font-black uppercase tracking-wide text-slate-500">
-            Open conflicts{open.length > 0 ? ` (${open.length})` : ""}
-          </h3>
+        <div className="space-y-3 p-4 sm:p-5">
           {conflicts === null ? (
-            <p className="mt-3 flex items-center gap-2 text-xs font-semibold text-slate-500">
+            <p className="flex items-center gap-2 text-xs font-semibold text-slate-500">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> Scanning the timetable…
             </p>
           ) : open.length === 0 ? (
-            <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-4 text-xs font-semibold text-emerald-800">
+            <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-4 text-xs font-semibold text-emerald-800">
               {rules?.length === 1 && rules[0] === "faculty_conflict"
                 ? "No instructor is double-booked this semester."
                 : "No conflicts in this semester."}
             </p>
+          ) : !selected ? (
+            <button
+              type="button"
+              onClick={() => pick(open[0])}
+              className="rounded-lg bg-[#4e0a10] px-3 py-2 text-xs font-bold text-white hover:bg-[#3a0809]"
+            >
+              Show the first conflict
+            </button>
           ) : (
-            <ul className="mt-3 space-y-2">
-              {open.map((conflict) => (
-                <li key={conflict.id}>
-                  <button
-                    type="button"
-                    onClick={() => pick(conflict)}
-                    className={`w-full rounded-lg border px-3 py-2.5 text-left transition-colors ${
-                      conflict.id === selectedId
-                        ? "border-[#4e0a10] bg-[#4e0a10]/5"
-                        : "border-slate-200 bg-white hover:border-slate-300"
-                    }`}
-                  >
-                    <span className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide text-red-700">
-                      <AlertTriangle className="h-3 w-3" />
-                      {conflictRuleLabel(conflict.rule)}
-                    </span>
-                    <span className="mt-1 block text-xs font-semibold text-slate-700">{conflict.message}</span>
-                    {conflict.schedules.map((schedule) => (
-                      <span key={schedule.id} className="mt-1 block text-[11px] text-slate-500">
-                        {describeConflictSchedule(schedule)}
-                      </span>
-                    ))}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+            <>
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => pick(open[selectedIndex - 1])}
+                  disabled={selectedIndex <= 0 || isSubmitting}
+                  aria-label="Previous conflict"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                  Conflict {selectedIndex + 1} of {open.length}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => pick(open[selectedIndex + 1])}
+                  disabled={selectedIndex >= open.length - 1 || isSubmitting}
+                  aria-label="Next conflict"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
 
-        <section className="min-w-0">
-          <h3 className="text-xs font-black uppercase tracking-wide text-slate-500">Fix this conflict</h3>
-          {!selected || !target ? (
-            <p className="mt-3 text-xs font-semibold text-slate-500">
-              Choose a conflict to see what can be done about it.
-            </p>
-          ) : (
-            <div className="mt-3 space-y-3">
+              <div className="rounded-lg border border-red-200 bg-white px-3 py-2.5">
+                <p className="flex flex-wrap items-center gap-1.5 text-[11px] font-black uppercase tracking-wide text-red-700">
+                  <AlertTriangle className="h-3 w-3" />
+                  {conflictRuleLabel(selected.rule)}
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-800">{selected.message}</p>
+                <div className="mt-2 grid gap-1">
+                  {selected.schedules.map((schedule) => (
+                    <p key={schedule.id} className="rounded-md bg-slate-50 px-2 py-1.5 text-[11px] text-slate-600">
+                      {describeConflictSchedule(schedule)}
+                    </p>
+                  ))}
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">
                   <Sparkles className="h-3 w-3" /> Recommended fixes
@@ -561,181 +389,43 @@ export default function ResolveConflictModal({
                     <Loader2 className="h-3 w-3 animate-spin" /> Finding conflict-free options…
                   </p>
                 ) : shownRecommendations.length === 0 ? (
-                  <p className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-500">
-                    No automatic fix was found. Choose a change manually below.
-                  </p>
+                  owner ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                      <p className="text-xs font-bold text-amber-900">Contact {owner.label} to fix this conflict.</p>
+                      <p className="mt-0.5 text-[11px] font-medium text-amber-800">{owner.detail}</p>
+                    </div>
+                  ) : (
+                    <p className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-500">
+                      No placement suggestion is available here. Review the timetable in Schedule Builder or choose an instructor manually in Instructor Assignment.
+                    </p>
+                  )
                 ) : (
-                  <RecommendedOptionList
-                    label="Recommended fixes"
-                    isBusy={isSubmitting}
-                    busyKey={applyingRank === null ? null : String(applyingRank)}
-                    items={shownRecommendations.map((option) => ({
-                      key: String(option.rank),
-                      body: (
-                        <>
-                          <p className="text-xs font-semibold text-slate-700">{option.summary}</p>
+                  <ol className="space-y-1.5" aria-label="Recommended fixes">
+                    {shownRecommendations.slice(0, 3).map((option, index) => (
+                      <li key={option.rank} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#4e0a10] text-[11px] font-black text-white">
+                          {index + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold text-slate-800">{option.summary}</p>
                           {option.reasons && option.reasons.length > 0 && (
                             <p className="mt-0.5 text-[10px] font-medium text-slate-500">{option.reasons.join(" · ")}</p>
                           )}
-                        </>
-                      ),
-                      tag: option.requires_overload_confirmation ? (
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-                          Over Basic Load
-                        </span>
-                      ) : null,
-                    }))}
-                    onApply={(key) => {
-                      const option = shownRecommendations.find((candidate) => String(candidate.rank) === key);
-                      if (option) applyRecommendation(option);
-                    }}
-                  />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => applyRecommendation(option)}
+                          disabled={isSubmitting}
+                          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[#4e0a10] px-3 text-xs font-bold text-white hover:bg-[#3a0809] disabled:opacity-60"
+                        >
+                          {isSubmitting && applyingRank === option.rank && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                          Apply
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
                 )}
               </div>
-
-              <p className="border-t border-slate-200 pt-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                Or choose a change manually
-              </p>
-
-              <fieldset className="space-y-1.5">
-                <legend className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Class to change</legend>
-                {selected.schedules.map((schedule) => (
-                  <label
-                    key={schedule.id}
-                    className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-[11px] font-semibold ${
-                      schedule.id === targetId ? "border-[#4e0a10] bg-white" : "border-slate-200 bg-white"
-                    } ${isReplottable(schedule) ? "text-slate-700" : "text-slate-400"}`}
-                  >
-                    <input
-                      type="radio"
-                      name="conflict-target"
-                      checked={schedule.id === targetId}
-                      onChange={() => {
-                        setTargetId(schedule.id);
-                        setAction(null);
-                        setForm(null);
-                      }}
-                    />
-                    <span className="min-w-0">
-                      {describeConflictSchedule(schedule)}
-                      {!isReplottable(schedule) && (
-                        <span className="mt-0.5 block text-[10px] font-bold uppercase text-amber-700">
-                          Locked at {schedule.status.replace(/_/g, " ")} — only its instructor can change here
-                        </span>
-                      )}
-                    </span>
-                  </label>
-                ))}
-              </fieldset>
-
-              <div className="flex flex-wrap gap-1.5">
-                {selected.resolution_options.map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    disabled={
-                      (APPLIABLE.includes(option) && !allowed(option))
-                      || (option === "request_override" && !canAssignInstructor)
-                    }
-                    onClick={() => {
-                      if (option === "request_override") {
-                        setAction("request_override");
-                        setForm(null);
-                        setViolations([]);
-                        return;
-                      }
-                      if (APPLIABLE.includes(option)) chooseAction(option, target);
-                    }}
-                    className={`rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
-                      action === option
-                        ? "border-[#4e0a10] bg-[#4e0a10] text-white"
-                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                    }`}
-                  >
-                    {resolutionActionLabel(option)}
-                  </button>
-                ))}
-              </div>
-
-              {form?.action === "move_schedule" && (
-                <div className="grid grid-cols-3 gap-2">
-                  <label className="col-span-3 sm:col-span-1">
-                    <span className="mb-1 block text-[11px] font-bold text-slate-600">Day</span>
-                    <select className={fieldClass} value={form.day ?? ""} onChange={(event) => setForm({ ...form, day: event.target.value })}>
-                      {FULL_DAY_NAMES.map((day) => <option key={day} value={day}>{day}</option>)}
-                    </select>
-                  </label>
-                  <label>
-                    <span className="mb-1 block text-[11px] font-bold text-slate-600">Start</span>
-                    <input type="time" className={fieldClass} value={form.start_time ?? ""} onChange={(event) => setForm({ ...form, start_time: event.target.value })} />
-                  </label>
-                  <label>
-                    <span className="mb-1 block text-[11px] font-bold text-slate-600">End</span>
-                    <input type="time" className={fieldClass} value={form.end_time ?? ""} onChange={(event) => setForm({ ...form, end_time: event.target.value })} />
-                  </label>
-                </div>
-              )}
-
-              {form?.action === "change_room" && (
-                <label className="block">
-                  <span className="mb-1 block text-[11px] font-bold text-slate-600">Room</span>
-                  <select
-                    className={fieldClass}
-                    value={form.room_id ?? ""}
-                    onChange={(event) => setForm({ ...form, room_id: event.target.value === "" ? null : Number(event.target.value) })}
-                  >
-                    <option value="">No room</option>
-                    {rooms.map((room) => <option key={room.id} value={room.id}>{room.label}</option>)}
-                  </select>
-                </label>
-              )}
-
-              {form?.action === "change_delivery_mode" && (
-                <label className="block">
-                  <span className="mb-1 block text-[11px] font-bold text-slate-600">Delivery mode</span>
-                  <select className={fieldClass} value={form.mode ?? ""} onChange={(event) => setForm({ ...form, mode: event.target.value })}>
-                    {DELIVERY_MODES.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
-                  </select>
-                </label>
-              )}
-
-              {form?.action === "reassign_instructor" && (
-                <label className="block">
-                  <span className="mb-1 block text-[11px] font-bold text-slate-600">Instructor</span>
-                  <select
-                    className={fieldClass}
-                    value={form.faculty_id ?? ""}
-                    onChange={(event) => setForm({ ...form, faculty_id: event.target.value === "" ? null : Number(event.target.value) })}
-                  >
-                    <option value="">No instructor</option>
-                    {faculties.map((faculty) => <option key={faculty.id} value={faculty.id}>{faculty.label}</option>)}
-                  </select>
-                </label>
-              )}
-
-              {(form !== null || action === "request_override") && (
-                <label className="block">
-                  <span className="mb-1 block text-[11px] font-bold text-slate-600">
-                    Reason{action === "request_override" ? " (required)" : " (optional)"}
-                  </span>
-                  <textarea
-                    rows={2}
-                    className={fieldClass}
-                    value={reason}
-                    onChange={(event) => setReason(event.target.value)}
-                    placeholder={action === "request_override"
-                      ? "Why this clash is allowed to stand."
-                      : "Recorded with the change in the schedule history."}
-                  />
-                </label>
-              )}
-
-              {action === "request_override" && (
-                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">
-                  Both meetings stay where they are and are marked as approved together. The mark is dropped
-                  the moment either one changes instructor, day or time.
-                </p>
-              )}
 
               {violations.length > 0 && (
                 <ul className="space-y-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
@@ -744,19 +434,9 @@ export default function ResolveConflictModal({
                   ))}
                 </ul>
               )}
-            </div>
+            </>
           )}
-        </section>
-      </div>
-      )}
-
-      {overloadPrompt && (
-        <OverloadConfirmationModal
-          confirmation={overloadPrompt.confirmation}
-          isSaving={isSubmitting}
-          onConfirm={() => void send(overloadPrompt.request, true)}
-          onCancel={() => !isSubmitting && setOverloadPrompt(null)}
-        />
+        </div>
       )}
     </Modal>
   );

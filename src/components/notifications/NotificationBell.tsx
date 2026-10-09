@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck, } from 'lucide-react';
 import { useSystemNotifications } from '../../hooks/useSystemNotifications';
 import type { ActivityFeedItem } from '../overview';
@@ -7,6 +8,7 @@ import Skeleton from '../ui/Skeleton';
 export default function NotificationBell() {
   const { feedItems, unreadCount, isLoading, markAsRead, markAllAsRead } = useSystemNotifications();
   const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
   const wrapper = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -27,13 +29,17 @@ export default function NotificationBell() {
     };
   }, [open]);
 
-  const readItem = useCallback(async (item: ActivityFeedItem) => {
+  const openItem = useCallback(async (item: ActivityFeedItem) => {
+    if (item.href) {
+      setOpen(false);
+      navigate(item.href);
+    }
     if (!item.isUnread) return;
     try {
       await markAsRead(item.id);
     } catch {
     }
-  }, [markAsRead]);
+  }, [markAsRead, navigate]);
 
   return (
     <div ref={wrapper} className="relative">
@@ -89,7 +95,7 @@ export default function NotificationBell() {
                   <li key={item.id}>
                     <button
                       type="button"
-                      onClick={() => { void readItem(item); }}
+                      onClick={() => { void openItem(item); }}
                       className={`flex w-full gap-2 px-3 py-2.5 text-left transition hover:bg-slate-50 ${item.isUnread ? 'bg-[#FFF7E8]/70' : ''}`}
                     >
                       <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${item.isUnread ? 'bg-[#b3261e]' : 'bg-slate-200'}`} />

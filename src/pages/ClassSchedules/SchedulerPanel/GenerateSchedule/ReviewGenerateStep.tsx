@@ -451,7 +451,7 @@ export default function ReviewGenerateStep({
     : "No active semester";
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-hidden">
+    <div className="flex flex-1 flex-col gap-2.5">
       {generating ? (
         <GeneratingView
           scopeLabel={`${yearLabel(yearLevel, sections)} · ${fullSemesterLabel}`}
@@ -536,20 +536,18 @@ export default function ReviewGenerateStep({
             </div>
           )}
 
-          <div className="grid min-h-0 min-w-0 flex-1 gap-2.5 xl:grid-cols-3">
+          <div className="grid min-w-0 flex-1 gap-2.5 xl:grid-cols-3">
             <Panel
               icon={BookOpen}
               title="Course plan"
               meta={`${courseRows.length} course${courseRows.length === 1 ? "" : "s"}`}
               className="xl:col-span-2"
             >
-              <div className="min-h-0 flex-1 overflow-auto">
+              <div>
                 <DataTable
                   table={planTable}
                   variant="embedded"
-                  scrollClassName="overflow-visible"
                   density="compact"
-                  tableClassName="min-w-[540px]"
                   ariaLabel="Course plan"
                   emptyState={<p className="text-xs font-semibold text-slate-500">No courses in scope for this year level.</p>}
                 />

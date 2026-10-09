@@ -34,6 +34,15 @@ const unitsLabel = (units: number) => `${units} ${units === 1 ? 'unit' : 'units'
 
 const DESIGNATIONS_CACHE_KEY = 'page:faculty:designations';
 
+const addSubBlockedReason = (d: Designation): string | null => {
+  if (d.parent_id !== null) return `${d.name} is already a sub-designation. Sub-designations go one level deep.`;
+  const holders = d.faculties_count ?? 0;
+  if (holders > 0 && (d.children_count ?? 0) === 0) {
+    return `${d.name} is held by ${holders} instructor${holders === 1 ? '' : 's'}. Clear it from them before adding sub-designations.`;
+  }
+  return null;
+};
+
 export default function Designations() {
   const { toast } = useToast();
   const [designations, setDesignations] = useState<Designation[]>(() => getCachedData<Designation[]>(DESIGNATIONS_CACHE_KEY) ?? []);
@@ -264,11 +273,19 @@ export default function Designations() {
               <Eye size={15} />
             </TableActionButton>
           )}
-          {row.original.parent_id === null && (row.original.faculties_count ?? 0) === 0 && (
-            <TableActionButton label={`Add a sub-designation under ${row.original.name}`} variant="view" onClick={() => openCreate(row.original)}>
-              <Plus size={15} />
-            </TableActionButton>
-          )}
+          {(() => {
+            const blocked = addSubBlockedReason(row.original);
+            return (
+              <TableActionButton
+                label={blocked ?? `Add a sub-designation under ${row.original.name}`}
+                variant="view"
+                disabled={blocked !== null}
+                onClick={() => openCreate(row.original)}
+              >
+                <Plus size={15} />
+              </TableActionButton>
+            );
+          })()}
           <TableActionButton label={`Edit ${row.original.name}`} variant="edit" onClick={() => openEdit(row.original)}>
             <Pencil size={15} />
           </TableActionButton>
@@ -580,11 +597,14 @@ export default function Designations() {
                                 <Eye size={14} />
                               </TableActionButton>
                             )}
-                            {d.parent_id === null && (d.faculties_count ?? 0) === 0 && (
-                              <TableActionButton label={`Add sub-designation under ${d.name}`} variant="view" onClick={() => openCreate(d)}>
-                                <Plus size={14} />
-                              </TableActionButton>
-                            )}
+                            <TableActionButton
+                              label={addSubBlockedReason(d) ?? `Add sub-designation under ${d.name}`}
+                              variant="view"
+                              disabled={addSubBlockedReason(d) !== null}
+                              onClick={() => openCreate(d)}
+                            >
+                              <Plus size={14} />
+                            </TableActionButton>
                             <TableActionButton label={`Edit ${d.name}`} variant="edit" onClick={() => openEdit(d)}>
                               <Pencil size={14} />
                             </TableActionButton>

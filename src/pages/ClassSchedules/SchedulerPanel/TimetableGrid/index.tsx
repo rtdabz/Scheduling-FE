@@ -6,7 +6,7 @@ import {
   SLOT_HEIGHT_PX,
   slotToTimeStr
 } from "../constants";
-import type { ConflictInfo, ScheduleItem, Room, Section, Subject, Semester } from "../types";
+import type { ConflictInfo, ScheduleItem, Room, Section, Subject } from "../types";
 import GridCell from "./GridCell";
 import ScheduleCard from "./ScheduleCard";
 import Skeleton from "../../../../components/ui/Skeleton";
@@ -19,7 +19,6 @@ interface TimetableGridProps {
   rooms: Room[];
   subjects: Subject[];
   activeSemesterText: string;
-  activeSemester: Semester | null;
   selectedSectionId: string;
   totalScheduled: number;
   totalSubjects: number;
@@ -56,6 +55,7 @@ interface TimetableGridProps {
   isWideView?: boolean;
   handleToggleWideView?: () => void;
   isReadOnlyViewer?: boolean;
+  onOpenConflict?: (scheduleId: string) => void;
   savingMessage?: string | null;
 }
 
@@ -64,7 +64,6 @@ export default function TimetableGrid({
   rooms,
   subjects,
   activeSemesterText,
-  activeSemester,
   selectedSectionId,
   totalScheduled,
   totalSubjects,
@@ -100,10 +99,10 @@ export default function TimetableGrid({
   isWideView = false,
   handleToggleWideView,
   isReadOnlyViewer = false,
+  onOpenConflict,
   savingMessage = null,
 }: TimetableGridProps) {
   const isPlacementMode = !!(placementSubjectId || movingScheduleId);
-  const isSummerSemester = activeSemester?.semester === "summer";
   const isFacultyAssignment = ["approved", "faculty_assignment", "reassignment"].includes(currentStatus);
   const subjectsById = React.useMemo(() => buildSubjectIndex(subjects), [subjects]);
   const timetableSlotCount = React.useMemo(
@@ -189,7 +188,7 @@ export default function TimetableGrid({
                   }`}
                 >
                   <BookOpen className="h-3.5 w-3.5" />
-                  {isWideView ? "Show Course Bank" : "Manual Plotting"}
+                  Manual Plotting
                 </button>
               ))}
               {isLoading ? <Skeleton className="h-9 w-28 rounded-lg" /> : (
@@ -199,7 +198,7 @@ export default function TimetableGrid({
                   className={`${gridToolButtonClass} border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50`}
                 >
                   <DoorOpen className="h-3.5 w-3.5" />
-                  Room View
+                  View Schedule
                 </button>
               )}
             </>
@@ -259,7 +258,6 @@ export default function TimetableGrid({
               minWidth={isWideView ? 0 : 900}
               className="shrink-0"
               isLoading={isLoading}
-              disabledDayIndexes={isSummerSemester ? [5, 6] : []}
               getTimeLabel={slotToTimeStr}
               getDayCount={getClassesCountForDay}
               renderCell={isLoading ? undefined : (d, t) => {
@@ -277,7 +275,6 @@ export default function TimetableGrid({
                     isEditable={isEditable}
                     isPhase2Active={isPhase2Active}
                     isPlacementMode={isPlacementMode}
-                    isSummerDisabled={isSummerSemester && d >= 5}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
@@ -324,7 +321,6 @@ export default function TimetableGrid({
                       subject={subject}
                       conflict={conflictedMap?.[schedule.id] ?? null}
                       isResolved={!conflictedMap?.[schedule.id] && !!resolvedIds?.has(schedule.id)}
-                      isAllowed={!conflictedMap?.[schedule.id] && !!schedule.facultyConflictOverride}
                       isEditable={isEditable}
                       isPhase2Active={isPhase2Active}
                       currentStatus={currentStatus}
@@ -338,6 +334,7 @@ export default function TimetableGrid({
                       onDelete={handleRemoveSchedule}
                       onCardClick={handleScheduleCardClick}
                       onEdit={handleEditMovingSchedule}
+                      onOpenConflict={onOpenConflict}
                       isWideView={isWideView}
                       isReadOnlyViewer={isReadOnlyViewer}
                     />

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   ArrowUpRight,
+  Award,
   BookOpen,
   Building2,
   CalendarDays,
@@ -29,6 +30,7 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import DashboardMetricCard from '../../components/overview/DashboardMetricCard';
 import PrintSchedule from '../ClassSchedules/SchedulerPanel/PrintSchedule';
 import TeachingLoad from '../ClassSchedules/SchedulerPanel/TeachingLoad';
+import type { Room, Course } from '../ClassSchedules/SchedulerPanel/types';
 import type { SchedulerCacheData } from '../ClassSchedules/SchedulerPanel/hooks/initialDataMapper';
 import { getDeptBadgeStyles } from '../../lib/departmentTheme';
 import api from '../../lib/api';
@@ -137,44 +139,37 @@ interface ReportDetailModalProps {
   onExportCsv: () => void;
 }
 
+function reportRooms(data: SchedulerCacheData): Pick<Room, 'id' | 'name' | 'building' | 'roomType'>[] {
+  if (data.rooms?.length) return data.rooms;
+  const rooms = new Map<string, Pick<Room, 'id' | 'name' | 'building' | 'roomType'>>();
+  data.schedules.forEach((schedule) => {
+    if (schedule.roomName && !rooms.has(schedule.roomName)) {
+      rooms.set(schedule.roomName, { id: schedule.roomId ?? '', name: schedule.roomName, roomType: 'lecture' });
+    }
+  });
+  return Array.from(rooms.values());
+}
+
+function reportCourses(data: SchedulerCacheData): Pick<Course, 'id' | 'code' | 'name' | 'units' | 'lectureHours' | 'labHours'>[] {
+  if (data.subjects?.length) return data.subjects;
+  const courses = new Map<string, Pick<Course, 'id' | 'code' | 'name' | 'units' | 'lectureHours' | 'labHours'>>();
+  data.schedules.forEach((schedule) => {
+    const code = schedule.courseCode || schedule.subjectCode;
+    if (code && !courses.has(code)) {
+      courses.set(code, {
+        id: schedule.courseId ?? '', code, name: schedule.courseName || schedule.subjectName || code,
+        units: 3, lectureHours: 3, labHours: 0,
+      });
+    }
+  });
+  return Array.from(courses.values());
+}
+
 function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: ReportDetailModalProps) {
   const [query, setQuery] = useState('');
 
-  const roomList = useMemo(() => {
-    if (data.rooms && data.rooms.length > 0) return data.rooms;
-    const map = new Map<string, { id: number; roomCode: string; building?: string | null; roomType?: string }>();
-    data.schedules.forEach((s) => {
-      const code = s.roomName || '';
-      if (code && !map.has(code)) {
-        map.set(code, {
-          id: s.roomId ?? 0,
-          roomCode: code,
-          building: 'Main Campus',
-          roomType: 'Lecture Room',
-        });
-      }
-    });
-    return Array.from(map.values());
-  }, [data.rooms, data.schedules]);
-
-  const courseList = useMemo(() => {
-    if (data.subjects && data.subjects.length > 0) return data.subjects;
-    const map = new Map<string, { id: number; subjectCode: string; subjectName: string; units?: number; lectureHours?: number; labHours?: number }>();
-    data.schedules.forEach((s) => {
-      const code = s.courseCode || s.subjectCode || '';
-      if (code && !map.has(code)) {
-        map.set(code, {
-          id: s.courseId ?? 0,
-          subjectCode: code,
-          subjectName: s.courseName || s.subjectName || code,
-          units: 3,
-          lectureHours: 3,
-          labHours: 0,
-        });
-      }
-    });
-    return Array.from(map.values());
-  }, [data.subjects, data.schedules]);
+  const roomList = useMemo(() => reportRooms(data), [data]);
+  const courseList = useMemo(() => reportCourses(data), [data]);
 
   const q = query.trim().toLowerCase();
 
@@ -194,17 +189,17 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
 
   const filteredRooms = useMemo(() => {
     if (!q) return roomList;
-    return roomList.filter((r) => `${r.roomCode} ${r.building || ''} ${r.roomType || ''}`.toLowerCase().includes(q));
+    return roomList.filter((r) => `${r.name} ${r.building || ''} ${r.roomType || ''}`.toLowerCase().includes(q));
   }, [roomList, q]);
 
   const filteredCourses = useMemo(() => {
     if (!q) return courseList;
-    return courseList.filter((c) => `${c.subjectCode} ${c.subjectName}`.toLowerCase().includes(q));
+    return courseList.filter((c) => `${c.code} ${c.name}`.toLowerCase().includes(q));
   }, [courseList, q]);
 
   const filteredSections = useMemo(() => {
     if (!q) return data.sections;
-    return data.sections.filter((s) => `${s.sectionName} Year ${s.yearLevel || 1}`.toLowerCase().includes(q));
+    return data.sections.filter((s) => `${s.name} Year ${s.yearLevel || 1}`.toLowerCase().includes(q));
   }, [data.sections, q]);
 
   return (
@@ -212,9 +207,9 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
       role="dialog"
       aria-modal="true"
       aria-label={`${row.label} - Detailed Report`}
-      className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-slate-900/60 p-4 backdrop-blur-sm"
     >
-      <div className="relative flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+      <div className="relative my-auto flex w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-150">
         <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-5 py-4">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#4e0a10] text-white shadow-sm">
@@ -330,7 +325,7 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
                   <div className="text-xs font-black text-slate-800">
                     {data.faculties.length
                       ? (data.faculties.reduce((sum, f) => sum + (f.assignedUnits || 0), 0) / data.faculties.length).toFixed(1)
-                      : 0} u
+                      : 0} units
                   </div>
                   <div className="text-[10px] font-semibold text-slate-500">Average Load</div>
                 </div>
@@ -351,7 +346,7 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
                 <CheckCircle2 size={16} className="text-emerald-600" />
                 <div>
                   <div className="text-xs font-black text-slate-800">
-                    {roomList.filter((r) => data.schedules.some((s) => s.roomName === r.roomCode || s.roomId === r.id)).length}
+                    {roomList.filter((r) => data.schedules.some((s) => s.roomName === r.name || s.roomId === r.id)).length}
                   </div>
                   <div className="text-[10px] font-semibold text-slate-500">Rooms in Use</div>
                 </div>
@@ -470,7 +465,7 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
           </span>
         </div>
 
-        <div className="flex-1 overflow-auto max-h-[52vh]">
+        <div>
           {kind === 'schedule' && (
             <table className="w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 z-10 bg-slate-100/90 backdrop-blur-sm border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
@@ -637,20 +632,20 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
                 ) : (
                   filteredRooms.map((r) => {
                     const classCount = data.schedules.filter(
-                      (s) => (s.roomId && s.roomId === r.id) || (s.roomName && s.roomName === r.roomCode)
+                      (s) => (s.roomId && s.roomId === r.id) || (s.roomName && s.roomName === r.name)
                     ).length;
                     const days = Array.from(
                       new Set(
                         data.schedules
-                          .filter((s) => (s.roomId && s.roomId === r.id) || (s.roomName && s.roomName === r.roomCode))
+                          .filter((s) => (s.roomId && s.roomId === r.id) || (s.roomName && s.roomName === r.name))
                           .map((s) => s.day)
                           .filter(Boolean)
                       )
                     ).join(', ');
 
                     return (
-                      <tr key={r.id || r.roomCode} className="hover:bg-slate-50/80 transition">
-                        <td className="px-4 py-2.5 font-bold text-primary">{r.roomCode}</td>
+                      <tr key={r.id || r.name} className="hover:bg-slate-50/80 transition">
+                        <td className="px-4 py-2.5 font-bold text-primary">{r.name}</td>
                         <td className="px-4 py-2.5 text-slate-600">{r.building || 'Main Campus'}</td>
                         <td className="px-4 py-2.5">
                           <span className="inline-flex items-center rounded bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
@@ -699,13 +694,13 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
                 ) : (
                   filteredCourses.map((c) => {
                     const scheduledCount = data.schedules.filter(
-                      (s) => s.courseCode === c.subjectCode || s.subjectCode === c.subjectCode
+                      (s) => s.courseCode === c.code || s.subjectCode === c.code
                     ).length;
 
                     return (
-                      <tr key={c.id || c.subjectCode} className="hover:bg-slate-50/80 transition">
-                        <td className="px-4 py-2.5 font-bold text-primary">{c.subjectCode}</td>
-                        <td className="px-4 py-2.5 font-semibold text-slate-800">{c.subjectName}</td>
+                      <tr key={c.id || c.code} className="hover:bg-slate-50/80 transition">
+                        <td className="px-4 py-2.5 font-bold text-primary">{c.code}</td>
+                        <td className="px-4 py-2.5 font-semibold text-slate-800">{c.name}</td>
                         <td className="px-4 py-2.5 text-right tabular-nums text-slate-600">{c.lectureHours ?? 3}</td>
                         <td className="px-4 py-2.5 text-right tabular-nums text-slate-600">{c.labHours ?? 0}</td>
                         <td className="px-4 py-2.5 text-right tabular-nums font-black text-slate-800">{c.units ?? 3}</td>
@@ -745,18 +740,18 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
                 ) : (
                   filteredSections.map((sec) => {
                     const classCount = data.schedules.filter(
-                      (s) => s.sectionId === sec.id || s.sectionName === sec.sectionName
+                      (s) => s.sectionId === sec.id || s.sectionName === sec.name
                     ).length;
                     const instructorsCount = data.schedules.filter(
-                      (s) => (s.sectionId === sec.id || s.sectionName === sec.sectionName) && Boolean(s.facultyName)
+                      (s) => (s.sectionId === sec.id || s.sectionName === sec.name) && Boolean(s.facultyName)
                     ).length;
                     const roomsCount = data.schedules.filter(
-                      (s) => (s.sectionId === sec.id || s.sectionName === sec.sectionName) && Boolean(s.roomName)
+                      (s) => (s.sectionId === sec.id || s.sectionName === sec.name) && Boolean(s.roomName)
                     ).length;
 
                     return (
-                      <tr key={sec.id || sec.sectionName} className="hover:bg-slate-50/80 transition">
-                        <td className="px-4 py-2.5 font-bold text-slate-800">{sec.sectionName}</td>
+                      <tr key={sec.id || sec.name} className="hover:bg-slate-50/80 transition">
+                        <td className="px-4 py-2.5 font-bold text-slate-800">{sec.name}</td>
                         <td className="px-4 py-2.5 text-slate-600">Year {sec.yearLevel || 1}</td>
                         <td className="px-4 py-2.5 text-right tabular-nums font-black text-slate-800">{classCount}</td>
                         <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-slate-600">{instructorsCount}</td>
@@ -910,30 +905,23 @@ export default function Reports() {
         data.schedules.forEach((s) => {
           if (s.roomName) roomMap.set(s.roomName, (roomMap.get(s.roomName) || 0) + 1);
         });
-        const rList = data.rooms && data.rooms.length > 0 ? data.rooms : Array.from(roomMap.keys()).map((code) => ({ id: 0, roomCode: code, building: 'Main', roomType: 'Lecture Room' }));
+        const rList = reportRooms(data);
         rList.forEach((r) => {
-          const count = roomMap.get(r.roomCode) || 0;
-          csvLines.push([`"${r.roomCode}"`, `"${r.building || 'Main Campus'}"`, `"${r.roomType || 'Lecture Room'}"`, `"${count}"`, `"${count > 0 ? 'In Use' : 'Available'}"`].join(','));
+          const count = roomMap.get(r.name) || 0;
+          csvLines.push([`"${r.name}"`, `"${r.building || 'Main Campus'}"`, `"${r.roomType || 'Lecture Room'}"`, `"${count}"`, `"${count > 0 ? 'In Use' : 'Available'}"`].join(','));
         });
       } else if (kind === 'curriculum') {
         csvLines.push(['Course Code', 'Course Title', 'Lecture Hours', 'Lab Hours', 'Total Units', 'Scheduled Classes'].join(','));
-        const cList = data.subjects && data.subjects.length > 0 ? data.subjects : Array.from(new Set(data.schedules.map((s) => s.courseCode || s.subjectCode).filter(Boolean))).map((code) => ({
-          id: 0,
-          subjectCode: code!,
-          subjectName: data.schedules.find((s) => (s.courseCode || s.subjectCode) === code)?.courseName || code!,
-          lectureHours: 3,
-          labHours: 0,
-          units: 3,
-        }));
+        const cList = reportCourses(data);
         cList.forEach((c) => {
-          const scheduledCount = data.schedules.filter((s) => (s.courseCode || s.subjectCode) === c.subjectCode).length;
-          csvLines.push([`"${c.subjectCode}"`, `"${c.subjectName}"`, `"${c.lectureHours ?? 3}"`, `"${c.labHours ?? 0}"`, `"${c.units ?? 3}"`, `"${scheduledCount}"`].join(','));
+          const scheduledCount = data.schedules.filter((s) => (s.courseCode || s.subjectCode) === c.code).length;
+          csvLines.push([`"${c.code}"`, `"${c.name}"`, `"${c.lectureHours ?? 3}"`, `"${c.labHours ?? 0}"`, `"${c.units ?? 3}"`, `"${scheduledCount}"`].join(','));
         });
       } else if (kind === 'approval') {
         csvLines.push(['Section Name', 'Year Level', 'Classes Scheduled', 'Status'].join(','));
         data.sections.forEach((sec) => {
-          const count = data.schedules.filter((s) => s.sectionId === sec.id || s.sectionName === sec.sectionName).length;
-          csvLines.push([`"${sec.sectionName}"`, `"Year ${sec.yearLevel || 1}"`, `"${count}"`, '"VPAA Approved"'].join(','));
+          const count = data.schedules.filter((s) => s.sectionId === sec.id || s.sectionName === sec.name).length;
+          csvLines.push([`"${sec.name}"`, `"Year ${sec.yearLevel || 1}"`, `"${count}"`, '"VPAA Approved"'].join(','));
         });
       }
 
@@ -953,7 +941,7 @@ export default function Reports() {
     }
   };
 
-  const departments = overview?.departments ?? [];
+  const departments = useMemo(() => overview?.departments ?? [], [overview]);
   const query = search.trim().toLowerCase();
   const reportGroups = departments.map((department) => ({ department, rows: rowsFor(department, kind) }));
   const availableCount = reportGroups.reduce((total, group) => total + group.rows.filter((row) => row.count > 0).length, 0);

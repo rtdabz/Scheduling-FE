@@ -26,11 +26,10 @@ export interface LoadLine {
   totalUnits: number;
   totalHours: number;
   band?: LoadBand;
-  overridden?: boolean;
   conflictTimes?: string[];
 }
 
-export type LoadBand = "basic" | "overload" | "probono";
+export type LoadBand = "basic" | "overload" | "over_limit";
 
 const formatTimeRange = (startTime: string, endTime: string): string => {
   return `${formatTime12h(startTime)} – ${formatTime12h(endTime)}`;
@@ -67,7 +66,6 @@ export const buildLoadLines = (schedules: ScheduleItem[]): LoadLine[] => {
       .join("");
 
     const times = [...new Set(sorted.map((m) => formatTimeRange(m.startTime, m.endTime)))];
-    const overridden = sorted.some((meeting) => Boolean(meeting.facultyConflictOverride));
     const clashing = [...new Set(sorted.filter(clashes).map((m) => formatTimeRange(m.startTime, m.endTime)))];
 
     return {
@@ -81,8 +79,7 @@ export const buildLoadLines = (schedules: ScheduleItem[]): LoadLine[] => {
         laboratoryUnits: first.laboratoryUnits ?? 0,
         totalUnits: first.totalUnits ?? (first.lectureUnits ?? 0) + (first.laboratoryUnits ?? 0),
         totalHours: sorted.reduce((sum, meeting) => sum + hoursOf(meeting), 0),
-        overridden,
-        conflictTimes: clashing.length > 0 ? clashing : overridden ? times : [],
+        conflictTimes: clashing,
       },
       dayIndex: first.dayIndex,
       startSlot: first.startSlot,
@@ -135,7 +132,7 @@ export const classifyLoad = (faculty: Faculty, schedules: ScheduleItem[]): Class
       overloadAssigned += line.totalUnits;
       overload.push({ ...line, band: "overload" });
     } else {
-      overload.push({ ...line, band: "probono" });
+      overload.push({ ...line, band: "over_limit" });
     }
   });
 

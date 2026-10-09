@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import api from '../lib/api';
 import { isLiveConnected } from '../lib/liveSocket';
+import { notificationLink } from '../lib/notificationLink';
+import { getStoredUserRole } from '../lib/storedUser';
 import { useLiveRefresh } from './useLiveRefresh';
 import type { ActivityFeedItem } from '../components/overview';
 
@@ -173,16 +175,19 @@ export function useSystemNotifications(limit = 8, pollMs = 15000): UseSystemNoti
     void refresh().catch(() => undefined);
   });
 
-  const feedItems = useMemo<ActivityFeedItem[]>(() => notifications.map((notification) => ({
-    id: notification.id,
-    type: notification.type,
-    title: notification.title,
-    action: buildActionText(notification),
-    timestamp: formatTimestamp(notification.created_at),
-    remarks: notification.remarks ?? undefined,
-    isUnread: notification.read_at === null || notification.read_at === undefined,
-    href: typeof notification.metadata?.link === 'string' ? notification.metadata.link : undefined,
-  })), [notifications]);
+  const feedItems = useMemo<ActivityFeedItem[]>(() => {
+    const role = getStoredUserRole();
+    return notifications.map((notification) => ({
+      id: notification.id,
+      type: notification.type,
+      title: notification.title,
+      action: buildActionText(notification),
+      timestamp: formatTimestamp(notification.created_at),
+      remarks: notification.remarks ?? undefined,
+      isUnread: notification.read_at === null || notification.read_at === undefined,
+      href: notificationLink(notification.type, role, notification.metadata),
+    }));
+  }, [notifications]);
 
   return {
     feedItems,

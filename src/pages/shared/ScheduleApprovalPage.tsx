@@ -457,14 +457,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     };
   }, [inPackage, printSource, rawSchedules, viewEntry, viewSnapshotLoading, viewSnapshotSchedules]);
 
-  const viewScheduleIds = useMemo(() => {
-    if (!viewEntry) return [];
-    const allowed = new Set(scheduleStatusesForSubmission(viewEntry.submissionStatus));
-    return rawSchedules
-      .filter((schedule) => inPackage(viewEntry, schedule) && allowed.has(schedule.status))
-      .map((schedule) => String(schedule.id));
-  }, [inPackage, rawSchedules, viewEntry]);
-
   const viewEntryKey = viewEntry?.entryKey ?? null;
   const reportViewConflicts = useCallback((open: number) => {
     if (viewEntryKey !== null) setViewCheck({ entryKey: viewEntryKey, open });
@@ -756,7 +748,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
           ariaLabel="Schedule submissions"
           emptyTitle={loadError ? 'The queue could not be loaded.' : 'No schedules found.'}
           emptyDescription={loadError ? 'Use Retry above to load it again.' : 'Adjust your filters and try again.'}
-          cellClassName={(columnId) => (['sections', 'subjectsScheduled', 'submittedAt', 'deanReviewedAt', 'status', 'revisionStatus', 'actions'].includes(columnId) ? 'whitespace-nowrap' : '')}
+          cellClassName={(columnId) => (['status', 'revisionStatus', 'actions'].includes(columnId) ? 'whitespace-nowrap' : '')}
         />
       </div>
 
@@ -775,7 +767,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
               <PreApprovalCheck
                 departmentId={viewEntry.id}
                 sectionIds={viewEntry.workflowSectionIds}
-                scheduleIds={viewScheduleIds}
                 onOpenConflicts={reportViewConflicts}
               />
             </>

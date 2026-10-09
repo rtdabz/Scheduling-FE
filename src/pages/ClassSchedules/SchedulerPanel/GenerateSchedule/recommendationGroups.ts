@@ -1,6 +1,7 @@
 import {
   isApplicableRecommendation,
   isYearLevelAdjustment,
+  recommendationSelection,
   type GenerationAdjustment,
   type GenerationAttempt,
   type GenerationBottleneck,
@@ -38,7 +39,14 @@ export type GroupedRecommendations = {
 
 export const APPLY_ALL_RECOMMENDATION_ID = "apply-all";
 
-const impactRank: Record<string, number> = { low: 0, medium: 1, high: 2 };
+// Stored generation runs can predate selection contract v1. Retain this adapter
+// until those results and older backend responses no longer need to be displayed.
+const legacyImpactRank: Record<string, number> = { low: 0, medium: 1, high: 2 };
+const legacyPriority = (option: RecommendationOption): number =>
+  Number(option.triedAlone) * 3 + (legacyImpactRank[option.recommendation.impact] ?? 1);
+
+const selectionPriority = (option: RecommendationOption): number =>
+  recommendationSelection(option.recommendation)?.priority ?? legacyPriority(option);
 
 const unique = <T,>(values: T[]): T[] => Array.from(new Set(values));
 
@@ -52,13 +60,14 @@ function optionText(recommendation: GenerationRecommendation): Omit<Recommendati
   const apply = (label: string, effect: string) => ({ label, action: `Apply ${label}`, effect });
   const verb = (label: string, effect: string) => ({ label, action: label, effect });
 
+  if (find(recommendation, "enable_balanced_split") || find(recommendation, "set_integrated_hybrid")) return apply(recommendation.title, recommendation.suggested_adjustment);
   if (isRoomCapacityOption(recommendation)) return apply(recommendation.title, recommendation.suggested_adjustment);
 
   const mode = find(recommendation, "set_delivery_mode");
   const pattern = find(recommendation, "set_pattern");
   const day = find(recommendation, "add_preferred_day");
 
-  if (find(recommendation, "enable_hybrid_split")) return apply("Hybrid", "One meeting online, one on campus.");
+  if (find(recommendation, "enable_hybrid_split")) return apply("Hybrid Split", "One meeting online, one on campus. Generate again to check both meetings.");
   if (mode?.value === "online") {
     return recommendation.id.startsWith("recommend-online-split-")
       ? apply("Online (All)", "Both meetings online, so no room is needed.")
@@ -67,7 +76,7 @@ function optionText(recommendation: GenerationRecommendation): Omit<Recommendati
   if (mode?.value === "on-site") return apply("On-site", "Meets on campus.");
   if (mode) return apply("Automatic mode", "The generator picks on-site or online.");
   if (find(recommendation, "disable_minor_split")) return apply("Regular", "One full-length meeting instead of two.");
-  if (find(recommendation, "disable_hybrid_split")) return apply("Split (on-site)", "Both meetings on campus.");
+  if (find(recommendation, "disable_hybrid_split")) return apply("Split On-site", "Both meetings on campus.");
   if (pattern?.value) return apply(pattern.value, `Meets on the ${pattern.value} days.`);
   if (find(recommendation, "clear_pattern")) return apply("Auto days", "The generator picks the two days.");
   if (find(recommendation, "disable_lecture_lab_split")) return apply("Single block", "Lecture and lab meet together, not as two sessions.");
@@ -91,7 +100,7 @@ export function describeOption(
     effect: classes.length > 1 && !yearLevel && !isRoomCapacityOption(recommendation)
       ? `${text.effect} (${classes.length} courses)`
       : text.effect,
-    triedAlone: attempts.some(
+    triedAlone: recommendationSelection(recommendation)?.tried_alone ?? attempts.some(
       (attempt) => `strategy-${attempt.strategy}` === recommendation.id && attempt.outcome === "failed",
     ),
   };
@@ -168,9 +177,7 @@ export function groupRecommendations(
     : null;
   const ordered = [...groups.values()].map((group) => {
     const options = [...group.options].sort(
-      (left, right) =>
-        Number(left.triedAlone) - Number(right.triedAlone)
-        || (impactRank[left.recommendation.impact] ?? 1) - (impactRank[right.recommendation.impact] ?? 1),
+      (left, right) => selectionPriority(left) - selectionPriority(right),
     );
     const repeatsHeadline = group.key === bottleneckKey || group.reason === bottleneck?.detected_cause;
     return { ...group, options, reason: repeatsHeadline ? "" : group.reason };
@@ -180,30 +187,12 @@ export function groupRecommendations(
   return { groups: ordered, manual: [...manual.values()], resolved };
 }
 
-const decision = (adjustment: GenerationAdjustment): string => {
-  switch (adjustment.type) {
-    case "set_pattern":
-    case "clear_pattern":
-      return "pattern";
-    case "set_delivery_mode":
-    case "enable_hybrid_split":
-    case "set_hybrid_split":
-    case "disable_hybrid_split":
-      return "delivery";
-    case "disable_minor_split":
-    case "disable_lecture_lab_split":
-      return "shape";
-    default:
-      return adjustment.type;
-  }
-};
-
 export function combineRecommendations(recommendations: GenerationRecommendation[]): GenerationRecommendation {
   const decided = new Set<string>();
   const adjustments: GenerationAdjustment[] = [];
   for (const recommendation of recommendations) {
     for (const adjustment of recommendation.adjustments) {
-      const key = `${decision(adjustment)}|${adjustment.section_id}|${adjustment.course_id}`;
+      const key = `${adjustment.type}|${adjustment.section_id}|${adjustment.course_id}|${adjustment.value ?? ""}`;
       if (decided.has(key)) continue;
       decided.add(key);
       adjustments.push(adjustment);

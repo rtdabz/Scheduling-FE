@@ -501,9 +501,12 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
           expect.objectContaining({
             section_configs: [
               expect.objectContaining({
-                delivery_modes_by_course_id: { 20: "online" },
+                delivery_modes_by_course_id: {},
               }),
             ],
+            selected_adjustments: [expect.objectContaining({
+              type: "set_delivery_mode", section_id: 10, course_id: 20, value: "online",
+            })],
           }),
         ),
       );
@@ -515,6 +518,83 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
             url === "/schedule-recommendations/generation-runs/run-1/cancel",
         ),
       ).toBe(false);
+    },
+  );
+
+  it.each([
+    { type: "add_preferred_day", value: "Tuesday", action: "Add Tuesday", applyAll: false },
+    { type: "enable_friday_saturday_split", value: null, action: "Allow Fri + Sat", applyAll: false },
+    { type: "add_preferred_day", value: "Tuesday", action: "Add Tuesday", applyAll: true },
+    { type: "enable_friday_saturday_split", value: null, action: "Allow Fri + Sat", applyAll: true },
+  ] as const)(
+    "applies $type after a selected-sections run (Apply all: $applyAll)",
+    async ({ type, value, action, applyAll }) => {
+      const draftKey = "wicars.year-level-wizard.v5.2.1";
+      const twoSections = [sections[0], { ...sections[0], id: "11", name: "BSIT 1B" }];
+      localStorage.setItem(draftKey, JSON.stringify({
+        step: 3, yearLevel: 1, activeSectionId: "10", targetSectionIds: ["10"],
+        setupDraft: { completed: true, preferredDays: ["Monday", "Wednesday"] },
+      }));
+      const yearLevelAdjustment = { type, section_id: 10, course_id: 0, value, section_name: "", course_code: "" };
+      const courseAdjustment = { type: "set_delivery_mode", section_id: 10, course_id: 20, value: "online", section_name: "BSIT 1A", course_code: "IT 101" };
+      const recommendation = {
+        id: type === "add_preferred_day" ? "add-preferred-day-tuesday" : "strategy-allow_friday_saturday_split",
+        title: action, detected_cause: "The run needs more available days.", suggested_adjustment: "Generate again.",
+        section_id: null, section_name: null, course_id: null, course_code: null, impact: "medium",
+        adjustments: [yearLevelAdjustment],
+      };
+      const report = {
+        error_code: "year_level_generation_failed", stage: "search", message: "No complete timetable was found.",
+        bottleneck: null, attempts: [],
+        recommendations: [recommendation, ...(applyAll ? [{
+          ...recommendation, id: "delivery-online-10-20", title: "Move IT 101 online",
+          section_id: 10, section_name: "BSIT 1A", course_id: 20, course_code: "IT 101",
+          adjustments: [courseAdjustment],
+        }] : [])],
+      };
+      const originalGet = get.getMockImplementation();
+      get.mockImplementation((url: string) => {
+        if (url === "/schedule-recommendations/generation-runs/run-1") {
+          return Promise.resolve({ data: { run_id: "run-1", status: "failed", result: report } });
+        }
+        if (url === "/schedule-recommendations/generation-runs/run-2") {
+          return Promise.resolve({ data: { run_id: "run-2", status: "queued" } });
+        }
+        return originalGet?.(url);
+      });
+      let queuedRuns = 0;
+      post.mockImplementation((url: string) => url === "/schedule-recommendations/year-level-preview/queue"
+        ? Promise.resolve({ data: { run_id: `run-${++queuedRuns}` } })
+        : Promise.reject(new Error(`Unexpected POST ${url}`)));
+      renderWorkflow(<YearLevelGenerateScheduleWorkflow
+        onClose={vi.fn()} sections={twoSections} courses={courses} activeSemester={activeSemester}
+        departmentId={2} existingSchedules={[]} onAccepted={vi.fn()}
+      />);
+      fireEvent.click(await screen.findByRole("button", { name: /^Generate$/ }));
+      const apply = await screen.findByRole("button", { name: applyAll ? /^Apply all/ : `${action} to Year level` });
+      const originalPayload = structuredClone(post.mock.calls[0][1]);
+      expect(originalPayload.section_ids).toEqual([10]);
+      expect(originalPayload.section_configs).toHaveLength(1);
+      expect(originalPayload.section_configs[0]).toMatchObject({
+        section_id: 10, allowed_days: ["Monday", "Wednesday"],
+        allow_friday_saturday_split: false, delivery_modes_by_course_id: {},
+      });
+      const originalOtherConfig = JSON.parse(localStorage.getItem(draftKey) ?? "{}").configs["11"];
+      expect(originalOtherConfig).toBeDefined();
+      fireEvent.click(apply);
+      await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+      expect(post).toHaveBeenLastCalledWith("/schedule-recommendations/year-level-preview/queue", expect.objectContaining({
+        ...originalPayload, selected_adjustments: applyAll ? [yearLevelAdjustment, courseAdjustment] : [yearLevelAdjustment],
+      }));
+      await waitFor(() => {
+        const saved = JSON.parse(localStorage.getItem(draftKey) ?? "{}");
+        expect(saved.targetSectionIds).toEqual(["10"]);
+        expect(saved.configs["11"]).toEqual(originalOtherConfig);
+        expect(saved.setupDraft.preferredDays).toEqual(type === "add_preferred_day"
+          ? ["Monday", "Tuesday", "Wednesday"] : ["Monday", "Wednesday"]);
+        expect(saved.setupDraft.courseDefaults.allowFridaySaturdaySplit).toBe(type === "enable_friday_saturday_split");
+        expect(saved.configs["10"].modesByCourseId["20"]).toBe(applyAll ? "online" : "automatic");
+      });
     },
   );
 

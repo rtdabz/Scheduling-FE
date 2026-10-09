@@ -738,7 +738,7 @@ describe("SetupCoursesStep", () => {
       expect(apply().disabled).toBe(true);
 
       fireEvent.click(screen.getByRole("checkbox", { name: "Monday" }));
-      expect(screen.getByRole("alert").textContent).toContain("Tick at least two days");
+    expect(screen.getByRole("alert").textContent).toContain("Pick at least two days");
       expect(apply().disabled).toBe(true);
 
       fireEvent.click(screen.getByRole("checkbox", { name: "Wednesday" }));

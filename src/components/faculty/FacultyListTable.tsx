@@ -21,7 +21,6 @@ export interface FacultyListRow {
   max_units: number;
   overload_units: number;
   deload_units: number;
-  probono_units: number;
   assigned_units: number;
   department: { department_code?: string | null; department_name?: string | null; logo?: string | null } | null;
   profile_picture?: string | null;
@@ -47,7 +46,6 @@ const workloadStatus = (f: FacultyListRow) => f.status === 'inactive' ? UNAVAILA
   maxUnits: f.max_units,
   deloadUnits: f.deload_units,
   overloadUnits: f.overload_units,
-  probonoUnits: f.probono_units,
 })];
 
 const tooltipClass = 'absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap';
@@ -153,7 +151,6 @@ export default function FacultyListTable<T extends FacultyListRow>({
               maxUnits={f.max_units}
               deloadUnits={f.deload_units}
               overloadUnits={f.overload_units}
-              probonoUnits={f.probono_units}
             />
           </div>
         );

@@ -15,6 +15,7 @@ export type UnplacedCourse = {
   reason: string;
   shape?: "split" | "online_split" | null;
   meetings: DraftMeeting[];
+  consecutive_rule?: { day_count: number; preferred_start_day?: string | null; meeting_days?: string[] | null } | null;
 };
 
 export type DraftOption = {
@@ -92,6 +93,7 @@ export async function fetchDraftReview({
         reason: course.reason,
         shape: course.shape ?? null,
         meetings: course.meetings,
+        ...(course.consecutive_rule ? { consecutive_rule: course.consecutive_rule } : {}),
       })),
     },
   );

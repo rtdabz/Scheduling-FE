@@ -99,7 +99,7 @@ export default function DataTable<T>({
 
   return (
     <div className={`${surface} ${className}`}>
-      <div className={`${scrollClassName.includes('overflow-') ? '' : 'overflow-x-auto'} ${scrollClassName}`}>
+      <div className={`${scrollClassName.includes('overflow-') ? '' : 'max-lg:overflow-x-auto'} ${scrollClassName}`}>
         <table className={`w-full min-w-full border-collapse text-left ${tableClassName}`} aria-label={ariaLabel} aria-busy={isLoading || undefined}>
           <thead id={headerId} className="sticky top-0 z-10 bg-gray-50/95">
             {table.getHeaderGroups().map((headerGroup) => (
@@ -116,7 +116,7 @@ export default function DataTable<T>({
                       colSpan={header.colSpan}
                       aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : canSort ? 'none' : undefined}
                       style={header.column.columnDef.size !== undefined ? { width: header.getSize() } : undefined}
-                      className={`whitespace-nowrap ${headPad} text-[10px] font-extrabold uppercase tracking-wider text-gray-500 ${alignClass(meta?.align)} ${meta?.headerClassName ?? ''}`}
+                      className={`${headPad} text-[10px] font-extrabold uppercase tracking-wider text-gray-500 ${alignClass(meta?.align)} ${meta?.headerClassName ?? ''}`}
                     >
                       {header.isPlaceholder ? null : canSort ? (
                         <button
@@ -173,7 +173,7 @@ export default function DataTable<T>({
                       key={cell.id}
                       onClick={meta?.stopRowClick ? (event) => event.stopPropagation() : undefined}
                       onKeyDown={meta?.stopRowClick ? (event) => event.stopPropagation() : undefined}
-                      className={`whitespace-nowrap ${cellPad} align-middle text-xs font-semibold text-gray-700 ${alignClass(meta?.align)} ${meta?.cellClassName ?? ''} ${cellClassName?.(cell.column.id) ?? ''} ${cellIndex === 0 ? 'relative' : ''}`}
+                      className={`break-words ${cellPad} align-middle [&_.rounded-full]:whitespace-nowrap text-xs font-semibold text-gray-700 ${alignClass(meta?.align)} ${meta?.cellClassName ?? ''} ${cellClassName?.(cell.column.id) ?? ''} ${cellIndex === 0 ? 'relative' : ''}`}
                     >
                       {cellIndex === 0 && (
                         <div className="absolute left-0 top-0 bottom-0 w-[2.5px] bg-[#C9952A] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />

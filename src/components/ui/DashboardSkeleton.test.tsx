@@ -75,12 +75,12 @@ describe('DashboardSkeleton', () => {
     it('leaves out the panels a read-only account does not see', () => {
       const full = render(<DashboardSkeleton variant="secretary" secretaryLayout={fullLayout} />);
       expect(full.container.querySelectorAll('.xl\\:col-span-4')).toHaveLength(3);
-      expect(full.container.querySelector('.timetable-grid-root')).toBeTruthy();
+      expect(full.container.querySelector('[data-skeleton="timetable"]')).toBeTruthy();
       cleanup();
 
       const limited = render(<DashboardSkeleton variant="secretary" secretaryLayout={{ ...fullLayout, showDraftingProgress: false, showFacultyAssignment: false, showTimetable: false }} />);
       expect(limited.container.querySelectorAll('.xl\\:col-span-4')).toHaveLength(1);
-      expect(limited.container.querySelector('.timetable-grid-root')).toBeNull();
+      expect(limited.container.querySelector('[data-skeleton="timetable"]')).toBeNull();
     });
   });
 });

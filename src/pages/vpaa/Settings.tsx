@@ -25,6 +25,7 @@ import DataTable from '../../components/ui/DataTable';
 import api from '../../lib/api';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
+import { publishLiveTopics } from '../../lib/liveUpdates';
 import { operatingHoursError, timeInputMinutes, toApiTime, toTimeInputValue } from '../../lib/operatingHours';
 import {
   academicYearError,
@@ -343,6 +344,7 @@ export default function Settings() {
       await api.patch<{ semester: ApiSemester }>(`/semesters/${id}/activate`);
 
       clearDataCache();
+      publishLiveTopics(['settings']);
       setSemesters(prev => rememberSemesters(prev.map(t => ({ ...t, is_active: t.id === id }))));
 
       await fetchActivationHistory();
