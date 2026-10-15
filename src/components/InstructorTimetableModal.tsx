@@ -14,6 +14,8 @@ import {
   buildGanttDays,
   buildTimeWindow,
   findOverlaps,
+  withCalendarDepartments,
+  type CalendarDepartment,
   type CalendarSchedule,
   type StandardHours,
 } from "../pages/vpaa/calendar/ganttLayout";
@@ -106,6 +108,7 @@ export default function InstructorTimetableModal({
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [records, setRecords] = useState<ApiScheduleRecord[]>([]);
+  const [departments, setDepartments] = useState<CalendarDepartment[]>([]);
   const [selectedSchedule, setSelectedSchedule] = useState<CalendarSchedule | null>(null);
 
   useEffect(() => {
@@ -120,11 +123,15 @@ export default function InstructorTimetableModal({
       }
 
       try {
-        const res = await api.get<ApiScheduleRecord[]>("/schedules", {
-          params: { faculty_id: facultyId, semester_id: "active", per_page: 1000 },
-        });
+        const [res, departmentRes] = await Promise.all([
+          api.get<ApiScheduleRecord[]>("/schedules", {
+            params: { faculty_id: facultyId, semester_id: "active", per_page: 1000 },
+          }),
+          api.get<CalendarDepartment[]>("/departments").catch(() => ({ data: [] })),
+        ]);
         if (!isMounted) return;
 
+        setDepartments(Array.isArray(departmentRes.data) ? departmentRes.data : []);
         setRecords((res.data ?? []).filter(
           (s) => s.faculty_id !== null && Number(s.faculty_id) === Number(facultyId)
         ));
@@ -142,7 +149,7 @@ export default function InstructorTimetableModal({
     };
   }, [isOpen, facultyId]);
 
-  const ganttSchedules = useMemo(() => records.map(toCalendarSchedule), [records]);
+  const ganttSchedules = useMemo(() => withCalendarDepartments(records.map(toCalendarSchedule), departments), [records, departments]);
   const ganttDays = useMemo(() => buildGanttDays(ganttSchedules, "none", ALL_DAYS), [ganttSchedules]);
   const ganttStandardHours = useMemo<StandardHours>(() => {
     const opening = gridOpeningMinutes();

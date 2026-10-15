@@ -10,6 +10,7 @@ interface CurriculumArchiveModalProps {
   isOpen: boolean;
   onClose: () => void;
   curriculumList: Curriculum[];
+  canRestore: (curriculum: Curriculum) => boolean;
   onRestore: (id: number, status: 'deactivated') => Promise<void>;
 }
 
@@ -18,6 +19,7 @@ export default function CurriculumArchiveModal({
   onClose,
   curriculumList,
   onRestore,
+  canRestore,
 }: CurriculumArchiveModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [hiddenIds, setHiddenIds] = useState<number[]>([]);
@@ -71,19 +73,19 @@ export default function CurriculumArchiveModal({
       header: 'Actions',
       enableSorting: false,
       meta: { align: 'right', cellClassName: 'whitespace-nowrap' },
-      cell: ({ row }) => (
+      cell: ({ row }) => canRestore(row.original) ? (
         <button
           type="button"
           onClick={() => handleRestoreClick(row.original.id)}
           className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#4e0a10]/10 hover:bg-[#4e0a10] hover:text-white text-[#4e0a10] text-[10px] font-bold uppercase rounded-lg border border-[#4e0a10]/20 transition-all duration-200 cursor-pointer disabled:opacity-50"
-          title="Restore to Draft"
+          title="Restore to Deactivated"
         >
           <RotateCcw size={11} />
           <span>Restore</span>
         </button>
-      ),
+      ) : null,
     },
-  ], [handleRestoreClick]);
+  ], [handleRestoreClick, canRestore]);
 
   const table = useDataTable({
     data: archivedCurriculumList,

@@ -39,6 +39,7 @@ import { curriculumLifecycleBadge } from '../../types/curriculum';
 import { curriculumService } from '../../services/curriculum/curriculumService';
 import { printCurriculum } from '../../lib/curriculumPrintable';
 import { useToast } from '../../context/ToastContext';
+import { canAuthorCurriculum } from '../../lib/curriculumAccess';
 import { hasStoredCapability } from '../../lib/storedUser';
 import CurriculumReviewPage from './CurriculumReviewPage';
 
@@ -216,6 +217,7 @@ function CurriculumManagePage() {
         cell: ({ row }) => {
           const item = row.original;
           const curriculumPath = curriculumPathFor(item.id);
+          const canAuthor = canManageCurriculum && canAuthorCurriculum(item);
           return (
             <div className="flex items-center gap-1.5 whitespace-nowrap">
               <TableActionButton
@@ -226,7 +228,7 @@ function CurriculumManagePage() {
               >
                 <Eye size={15} />
               </TableActionButton>
-              {canManageCurriculum && (
+              {canAuthor && (
                 <TableActionButton
                   label="Add Courses"
                   variant="success"
@@ -245,7 +247,7 @@ function CurriculumManagePage() {
               >
                 <Printer size={15} className={printingCurriculumId === item.id ? 'animate-pulse' : ''} />
               </TableActionButton>
-              {canManageCurriculum && (
+              {canAuthor && (
                 <>
                   <TableActionButton
                     label="Edit Curriculum"
@@ -448,7 +450,7 @@ function CurriculumManagePage() {
               <CurriculumCard
                 key={item.id}
                 curriculum={item}
-                canEdit={canManageCurriculum}
+                canEdit={canManageCurriculum && canAuthorCurriculum(item)}
                 onView={setViewCurriculumId}
                 onEdit={(c) => {
                   setEditingCurriculum(c);
@@ -503,6 +505,7 @@ function CurriculumManagePage() {
         onClose={() => setIsArchiveOpen(false)}
         curriculumList={rawCurriculumList}
         onRestore={handleStatusChange}
+        canRestore={canAuthorCurriculum}
       />
 
       <ConfirmModal

@@ -6,7 +6,8 @@ import { BookOpen } from 'lucide-react';
 import CurriculumHeader from '../../components/curriculum/CurriculumHeader';
 import SemesterCard from '../../components/curriculum/SemesterCard';
 import { useCurriculumDetail } from '../../hooks/curriculum/useCurriculumDetail';
-import { getStoredUserRole, hasStoredCapability } from '../../lib/storedUser';
+import { canAuthorCurriculum } from '../../lib/curriculumAccess';
+import { getStoredUserRole } from '../../lib/storedUser';
 
 export default function CurriculumDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -15,8 +16,6 @@ export default function CurriculumDetailPage() {
   const [selectedSemester, setSelectedSemester] = useState(1);
 
   const userRole = getStoredUserRole() || 'user';
-  const canManageCurriculum = hasStoredCapability('curriculum.manage');
-  const canEditCourses = canManageCurriculum && searchParams.get('mode') === 'edit';
 
   const {
     curriculum,
@@ -36,6 +35,8 @@ export default function CurriculumDetailPage() {
     handleEditCourse,
     handleRemoveCourse,
   } = useCurriculumDetail(id);
+
+  const canEditCourses = canAuthorCurriculum(curriculum) && searchParams.get('mode') === 'edit';
 
   const selectedCurriculumSemester = currentYearSemesters.find((semester) => semester.semester === selectedSemester) ?? currentYearSemesters[0];
 

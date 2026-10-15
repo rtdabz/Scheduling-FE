@@ -19,6 +19,9 @@ const slot = (day: string, startSlot: number): AvailableSlot => ({
 const slots = [slot("Monday", 0), slot("Wednesday", 4), slot("Saturday", 2)];
 
 const props = (overrides: Partial<PlacementAlternativesProps> = {}): PlacementAlternativesProps => ({
+  onClose: () => undefined,
+  courseLabel: "IT 101",
+  meetingTypeLabel: "Lecture",
   availableSlots: slots,
   availableSlotRooms: [{ room_id: 10, room_code: "IT 105", room_type: "lecture", mode: "on-site", slot_count: 3 }],
   visibleSlots: slots,
@@ -102,5 +105,62 @@ describe("PlacementAlternatives", () => {
     render(<PlacementAlternatives {...props({ slotsError: "Suggestions are unavailable right now." })} />);
 
     expect(screen.getByText("Suggestions are unavailable right now.")).toBeTruthy();
+  });
+
+  it("opens as a dialog and closes from its close button or backdrop", () => {
+    const onClose = vi.fn();
+    render(<PlacementAlternatives {...props({ onClose })} />);
+
+    const dialog = screen.getByRole("dialog", { name: "Suggested Alternatives" });
+    expect(within(dialog).getByText(/for IT 101/)).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close suggested alternatives" }));
+
+    fireEvent.click(dialog);
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Close suggested alternatives" }));
+    fireEvent.click(dialog.parentElement as HTMLElement);
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows each option's day, time, room and meeting type", () => {
+    render(<PlacementAlternatives {...props({ meetingTypeLabel: "Laboratory Meeting" })} />);
+
+    const best = within(screen.getByRole("list", { name: "Best matches" }));
+    expect(best.getByText("Mon")).toBeTruthy();
+    expect(best.getByText(/^7 AM – /)).toBeTruthy();
+    expect(best.getByText("IT 105")).toBeTruthy();
+    expect(best.getByText("Laboratory Meeting")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: /Weekdays/ }));
+    const list = within(screen.getByRole("region", { name: "Valid placements" }));
+    expect(list.getAllByText("Laboratory Meeting")).toHaveLength(2);
+    expect(list.getAllByText("IT 105")).toHaveLength(2);
+  });
+
+  it("offers the meeting filter for two-meeting classes", () => {
+    const onSlotMeetingChange = vi.fn();
+    render(<PlacementAlternatives {...props({
+      showsMeetingSwitch: true,
+      firstMeetingTitle: "Laboratory Meeting",
+      secondMeetingTitle: "Lecture Meeting",
+      onSlotMeetingChange,
+    })} />);
+
+    expect(screen.getByRole("button", { name: "Laboratory Meeting" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Lecture Meeting" }));
+    expect(onSlotMeetingChange).toHaveBeenCalledWith("second");
+  });
+
+  it("shows both days and the rooms of a shared-time split", () => {
+    render(<PlacementAlternatives {...props({
+      splitPairStarts: [{ startSlot: 4, endSlot: 7, roomLabel: "IT 105 | Online" }],
+      secondMode: "online",
+    })} />);
+
+    const pairs = within(screen.getByRole("region", { name: "Valid split times" }));
+    expect(pairs.getByText("Mon + Wed")).toBeTruthy();
+    expect(pairs.getByText("IT 105 | Online")).toBeTruthy();
+    expect(pairs.getByText("Split · both meetings")).toBeTruthy();
+    expect(pairs.getByText("F2F | Online")).toBeTruthy();
   });
 });

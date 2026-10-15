@@ -338,19 +338,14 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
                         aria-expanded={expanded}
                         title={item.isLocked ? `Locked: Requires permission` : item.label}
                       >
-                        <div className={`flex items-center min-w-0 ${isOpen ? 'gap-3' : ''}`}>
-                          <div className="relative flex items-center justify-center w-5 h-5 shrink-0">
-                            {item.icon && <item.icon size={18} className="flex-shrink-0" aria-hidden="true" />}
-                            {!isOpen && showNotif && (
-                              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#C9952A] opacity-75" />
-                                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#C9952A] ring-1.5 ring-[#4e0a10]" />
-                              </span>
-                            )}
-                          </div>
-                          <span className={`whitespace-nowrap text-sm font-medium transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-w-[210px] opacity-100 ml-3' : 'max-w-0 opacity-0 ml-0 pointer-events-none'}`}>
-                            {item.label}
-                          </span>
+                        <div className="relative flex items-center justify-center w-5 h-5 shrink-0">
+                          {item.icon && <item.icon size={18} className="flex-shrink-0" aria-hidden="true" />}
+                          {!isOpen && showNotif && (
+                            <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#C9952A] opacity-75" />
+                              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#C9952A] ring-1.5 ring-[#4e0a10]" />
+                            </span>
+                          )}
                         </div>
                         <span className={`whitespace-nowrap text-sm font-medium transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-w-[210px] opacity-100 ml-3' : 'max-w-0 opacity-0 ml-0 pointer-events-none'}`}>
                           {item.label}

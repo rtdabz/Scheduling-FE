@@ -21,6 +21,7 @@ import {
   buildGanttDays,
   buildTimeWindow,
   findOverlaps,
+  type CalendarDepartment,
   type CalendarSchedule,
   type GroupBy,
   type StandardHours,
@@ -45,6 +46,7 @@ interface Schedule {
   sectionName: string;
   departmentName: string;
   departmentCode: string;
+  department?: CalendarDepartment | null;
   subjectCode: string;
   subjectName: string;
   subjectCategory: SubjectCategory;
@@ -211,7 +213,7 @@ const toCalendarSchedule = (schedule: Schedule): CalendarSchedule => {
     end_time: to24h(schedule.endTime),
     meeting_type: schedule.meetingType ?? null,
     mode: schedule.mode,
-    department: { id: 0, department_code: schedule.departmentCode, department_name: schedule.departmentName },
+    department: schedule.department ?? { id: 0, department_code: schedule.departmentCode, department_name: schedule.departmentName },
     room_id: toNumberOrNull(schedule.roomId),
     room: schedule.roomId ? { id: Number(schedule.roomId), room_code: schedule.roomName } : null,
     faculty_id: toNumberOrNull(schedule.facultyId),
@@ -248,7 +250,7 @@ export default function DeanScheduleViewer() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [schedulesTruncated, setSchedulesTruncated] = useState(cachedDeanSchedulesData?.schedulesTruncated ?? false);
   const [reloadKey, setReloadKey] = useState(0);
-  const liveRevision = useLiveRevision(['schedules', 'sections', 'approvals']);
+  const liveRevision = useLiveRevision(['schedules', 'sections', 'approvals', 'departments']);
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
   const [serverConflicts, setServerConflicts] = useState<ScheduleConflict[]>([]);
 
@@ -266,6 +268,7 @@ export default function DeanScheduleViewer() {
           active_semester: Semester | null;
           sections: RawSection[];
           schedules: RawSchedule[];
+          departments?: CalendarDepartment[];
           schedules_truncated?: boolean;
         }>('/initial-data', { params: { schedule_limit: 2000 } });
         const semester = response.data.active_semester;
@@ -292,6 +295,7 @@ export default function DeanScheduleViewer() {
           rawSchedules = rawSchedules.filter((s) => Number(s.department_id) === Number(userDeptId));
         }
 
+        const departmentsById = new Map((response.data.departments ?? []).map(department => [department.id, department]));
         const mappedSchedules: Schedule[] = rawSchedules.map((item) => {
           let roomName = "";
           if (item.room) {
@@ -310,6 +314,7 @@ export default function DeanScheduleViewer() {
             sectionName: item.section?.section_name ?? "",
             departmentName: item.department?.department_name ?? userDeptName,
             departmentCode: item.department?.department_code ?? "",
+            department: departmentsById.get(Number(item.department_id)) ?? null,
             subjectCode: item.course?.course_code ?? item.subject?.subject_code ?? "",
             subjectName: item.course?.course_name ?? item.subject?.subject_name ?? "",
             subjectCategory: (item.course?.course_category ?? item.subject?.subject_category ?? "major") as SubjectCategory,

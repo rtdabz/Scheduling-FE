@@ -40,7 +40,7 @@ export default function SessionAlternatives({ payload, disabled, requiredDay, on
     }
   };
 
-  return <section className="rounded-xl border border-slate-200 bg-white p-4">
+  return <section className="rounded-xl border border-[#E2D9D0] bg-white p-4 shadow-sm">
     <button type="button" disabled={disabled || busy} onClick={() => void load()}
       className="rounded-lg border border-[#c9952a]/40 bg-[#fff8e8] px-3 py-2 text-xs font-bold text-[#7a4c08] disabled:opacity-50">
       {busy ? "Checking session alternatives..." : "Check session alternatives"}

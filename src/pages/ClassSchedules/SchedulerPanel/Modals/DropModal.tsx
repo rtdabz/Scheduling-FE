@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarPlus, CheckCircle2, Clock, Info, Lightbulb, MapPin, Sparkles, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, CalendarPlus, CheckCircle2, Clock, Info, Lightbulb, Loader2, MapPin, Save, Sparkles, X } from "lucide-react";
 import { DAYS, getCategoryStyles, slotToTimeStr } from "../constants";
 import api from "../../../../lib/api";
+import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
 import { laboratoryServesLecture, requiredRoomTypeForMeeting } from "../hooks/useConflict";
 import { FIXED_SPLIT_PATTERNS, FULL_DAY_NAMES, parsePreferredPattern, slotCount, slotToTime24h, timeToSlotUnclamped } from "../../../../lib/timeGrid";
 import { isLabMeetingRoomType } from "../../../../lib/labRoomPolicy";
@@ -188,7 +189,8 @@ export default function DropModal({
   const availableDays = DAYS;
   const hasBoth = dropSubject && Number(dropSubject.lectureHours ?? 0) > 0 && Number(dropSubject.labHours ?? 0) > 0;
   const hasLaboratoryUnits = Number(dropSubject?.labHours ?? 0) > 0;
-  const [areRecommendationsRequested, setAreRecommendationsRequested] = useState(false);
+  const [alternativesFor, setAlternativesFor] = useState<DropContext | null>(null);
+  const isAlternativesOpen = alternativesFor !== null && alternativesFor === dropContext;
   const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
   const [bestMatches, setBestMatches] = useState<AvailableSlot[]>([]);
   const [pairSlots, setPairSlots] = useState<AvailableSlot[] | null>(null);
@@ -201,9 +203,11 @@ export default function DropModal({
   const [slotRequestKey, setSlotRequestKey] = useState<string | null>(null);
 
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const viewAlternativesButtonRef = useRef<HTMLButtonElement>(null);
   const canUseRecommendations = canGenerateSchedule;
   const hasConflict = !!modalConflict;
-  const shouldShowRecommendations = canUseRecommendations && (hasConflict || areRecommendationsRequested);
+  const hasSaveError = !!modalValidationError;
+  const shouldShowAlternatives = canUseRecommendations && hasConflict;
   const isTwoMeetingPattern = modalIsHybrid || modalSplitEnabled;
   if (slotMeeting !== "first" && (!isTwoMeetingPattern || modalDay2Duration <= 0)) {
     setSlotMeeting("first");
@@ -318,7 +322,7 @@ export default function DropModal({
     modalDay1Index, modalDay2Index, modalDay1StartSlot, modalDay2StartSlot, modalDay1Duration, modalDay2Duration, schedules, manualSchedulingSettings]);
 
   const requestKey = JSON.stringify(availableSlotsPayload);
-  const activeRequestKey = shouldShowRecommendations && availableSlotsPayload ? requestKey : null;
+  const activeRequestKey = shouldShowAlternatives && availableSlotsPayload ? requestKey : null;
   if (slotRequestKey !== activeRequestKey) {
     setSlotRequestKey(activeRequestKey);
     setIsSlotsLoading(activeRequestKey !== null);
@@ -334,7 +338,7 @@ export default function DropModal({
 
   useEffect(() => {
     const payload = JSON.parse(requestKey) as typeof availableSlotsPayload;
-    if (!shouldShowRecommendations || !payload) return;
+    if (!shouldShowAlternatives || !payload) return;
 
     let active = true;
     const controller = new AbortController();
@@ -368,7 +372,7 @@ export default function DropModal({
       window.clearTimeout(timerId);
     };
   // The serialized dependency includes every meeting fact without object-identity refetches.
-  }, [shouldShowRecommendations, requestKey]);
+  }, [shouldShowAlternatives, requestKey]);
 
   const visibleSlots = useMemo(
     () => (roomFilter === ALL_ROOMS
@@ -377,8 +381,20 @@ export default function DropModal({
     [availableSlots, roomFilter],
   );
 
+  const pairRoomLabel = (slot: AvailableSlot): string => {
+    const rows = slot.group_rows ?? [];
+    if (rows.length === 0) return slot.room_code;
+    return rows.map((row, index) => {
+      if (row.mode === "online") return "Online";
+      if (row.mode === "field") return "Field";
+      if (row.room_id == null) return index === 0 ? slot.room_code : "Room TBA";
+      return rooms.find((room) => String(room.id) === String(row.room_id))?.name
+        ?? (index === 0 ? slot.room_code : `Room ${row.room_id}`);
+    }).join(" | ");
+  };
+
   const splitPairStarts = isSameTimePair && modalDay2Duration > 0
-    ? (pairSlots ?? []).map((slot) => ({ startSlot: slot.start_slot, endSlot: slot.end_slot }))
+    ? (pairSlots ?? []).map((slot) => ({ startSlot: slot.start_slot, endSlot: slot.end_slot, roomLabel: pairRoomLabel(slot) }))
     : null;
 
   const applySplitPairStart = (startSlot: number): void => {
@@ -396,21 +412,27 @@ export default function DropModal({
     if (!dropContext || !dropSubject) return;
 
     const frameId = window.requestAnimationFrame(() => {
-      setAreRecommendationsRequested(false);
       closeButtonRef.current?.focus();
     });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [dropContext, dropSubject]);
+
+  useEffect(() => {
+    if (!dropContext || !dropSubject) return;
+
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key !== "Escape") return;
+      if (isAlternativesOpen) {
+        setAlternativesFor(null);
+        viewAlternativesButtonRef.current?.focus();
+      } else {
         setDropContext(null);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.cancelAnimationFrame(frameId);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [dropContext, dropSubject, setDropContext]);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [dropContext, dropSubject, isAlternativesOpen, setDropContext]);
 
   useEffect(() => {
     if (!dropSubject || modalIsHybrid || !hasLaboratoryUnits || modalClassMode !== "online") return;
@@ -764,32 +786,60 @@ export default function DropModal({
     isForcedDay: modalForceDayEnabled,
   });
 
+  const isEditing = dropContext.isRescheduling;
+  const HeaderIcon = isEditing ? CalendarClock : CalendarPlus;
+  const dialogTitle = isEditing ? "Edit Class Schedule" : "Manual Class Placement";
+  const dialogDescription = isEditing
+    ? "Change the meeting details, check the result, then save your changes."
+    : "Check the meeting details, adjust only what you need, then place the class.";
+  const confirmLabel = isEditing ? "Save Changes" : "Place on Timetable";
+  const readyLabel = isEditing ? "Ready to save changes" : "Ready to add to the timetable";
+
+  const hasAlternativePartner = isTwoMeetingPattern && modalDay2Duration > 0;
+  const alternativesMeetingType = modalRun
+    ? `Each day · ${modalRun.dayCount}-day run`
+    : hasAlternativePartner
+      ? modalIsHybrid
+        ? isSecondSlotMeeting ? secondMeetingTitle : firstMeetingTitle
+        : `${hasLaboratoryUnits ? "Laboratory" : "Lecture"} · ${isSecondSlotMeeting ? "2nd" : "1st"} meeting`
+      : hasBoth ? "Lecture + Lab" : hasLaboratoryUnits ? "Laboratory" : "Lecture";
+  const alternativesCount = splitPairStarts ? splitPairStarts.length : availableSlots.length;
+  const alternativesCountLabel = `${alternativesCount}${!splitPairStarts && areSlotsTruncated ? "+" : ""}`;
+  const alternativesAriaLabel = isSlotsLoading
+    ? "View Alternatives, checking valid options"
+    : slotsError
+      ? "View Alternatives, suggestions unavailable"
+      : `View Alternatives, ${alternativesCountLabel} valid ${alternativesCount === 1 ? "option" : "options"}`;
+
+  const closeAlternatives = () => {
+    setAlternativesFor(null);
+    viewAlternativesButtonRef.current?.focus();
+  };
+
   return (
+    <>
     <div
       className="fixed inset-0 z-50 flex min-h-screen items-center justify-center bg-slate-950/55 p-2 sm:p-4"
       onClick={(e) => { if (e.target === e.currentTarget) setDropContext(null); }}
     >
-      <div className={`flex max-h-[94vh] w-full max-w-[96vw] flex-col gap-3 xl:flex-row xl:items-stretch ${
-        shouldShowRecommendations
-          ? "2xl:max-w-[1540px]"
-          : isTwoMeetingPattern ? "2xl:max-w-[1400px]" : "2xl:max-w-6xl"
-      }`}>
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="placement-modal-title"
         aria-describedby="placement-modal-desc"
-        className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+        className={`flex max-h-[94vh] w-full flex-col overflow-hidden rounded-2xl bg-[#F7F4F0] shadow-2xl animate-in fade-in zoom-in-95 duration-200 ${
+          isTwoMeetingPattern ? "max-w-6xl" : "max-w-4xl"
+        }`}
       >
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+        <div className="flex shrink-0 items-start justify-between gap-3 bg-[#5A1220] px-5 py-4 text-white">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#4e0a10]/[0.07] text-[#4e0a10]">
-              <CalendarPlus className="h-5 w-5" />
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white">
+              <HeaderIcon className="h-5 w-5" />
             </span>
             <div className="min-w-0">
-              <h3 id="placement-modal-title" className="text-base font-black leading-tight text-slate-900">Review Class Placement</h3>
-              <p id="placement-modal-desc" className="mt-0.5 text-xs text-slate-500">
-                Check the suggested meeting, adjust only what you need, then place it.
+              <h3 id="placement-modal-title" className="text-base font-black leading-tight">{dialogTitle}</h3>
+              <p id="placement-modal-desc" className="mt-0.5 text-xs text-white/75">
+                {dialogDescription}
               </p>
             </div>
           </div>
@@ -798,7 +848,7 @@ export default function DropModal({
             type="button"
             onClick={() => setDropContext(null)}
             aria-label="Close placement dialog"
-            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+            className="rounded-lg p-1.5 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
           >
             <X className="h-4 w-4" />
           </button>
@@ -813,7 +863,7 @@ export default function DropModal({
                 {modalConflict}
               </p>
               <p className="mt-0.5 text-xs text-red-600">
-                Choose another room, day or time, change the class mode{canUseRecommendations ? ", or use one of the suggested alternatives" : ""}.
+                Choose another room, day or time, change the class mode{canUseRecommendations ? ", or open View Alternatives" : ""}.
               </p>
             </div>
           </div>
@@ -821,16 +871,16 @@ export default function DropModal({
 
         <form
           onSubmit={handleModalConfirm}
-          className="flex-1 space-y-4 overflow-y-auto bg-slate-50/60 px-5 py-4"
+          className="flex-1 space-y-4 overflow-y-auto px-5 py-4"
         >
-          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <section className="overflow-hidden rounded-xl border border-[#E2D9D0] bg-white shadow-sm">
             <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-center">
               <div className="flex min-w-0 items-start gap-3 lg:w-[34%]">
-                <span aria-hidden="true" className={`mt-1 h-10 w-1 shrink-0 rounded-full ${dropSubject.category === "major" ? "bg-[#4e0a10]" : "bg-[#c9952a]"}`} />
+                <span aria-hidden="true" className={`mt-1 h-10 w-1 shrink-0 rounded-full ${dropSubject.category === "major" ? "bg-[#5A1220]" : "bg-[#c9952a]"}`} />
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <p className="text-lg font-black leading-tight text-slate-900">{dropSubject.code}</p>
-                    <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-600">
+                    <span className="rounded-md bg-[#F7F4F0] px-1.5 py-0.5 text-[11px] font-bold text-slate-600">
                       {dropSubject.units} units
                     </span>
                     <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-black tracking-wider ${dropStyles.typeBadge}`}>
@@ -843,7 +893,7 @@ export default function DropModal({
 
               <dl className="grid flex-1 grid-cols-1 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-[1fr_1fr_auto] sm:items-center lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
                 <div className="flex min-w-0 items-start gap-2.5">
-                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#5A1220]/50" />
                   <div className="min-w-0">
                     <dt className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Room & delivery</dt>
                     <dd className="truncate text-sm font-bold text-slate-800">{recommendedRoomLabel}</dd>
@@ -851,7 +901,7 @@ export default function DropModal({
                   </div>
                 </div>
                 <div className="flex min-w-0 items-start gap-2.5">
-                  <Clock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                  <Clock className="mt-0.5 h-4 w-4 shrink-0 text-[#5A1220]/50" />
                   <div className="min-w-0">
                     <dt className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Schedule</dt>
                     <dd className="truncate text-sm font-bold text-slate-800">{isTwoMeetingPattern || currentRun ? patternLabel : DAYS[modalDay1Index]}</dd>
@@ -862,18 +912,18 @@ export default function DropModal({
                   hasConflict ? "bg-red-50 text-red-700 ring-red-200" : "bg-emerald-50 text-emerald-700 ring-emerald-200"
                 }`}>
                   {hasConflict ? <AlertTriangle className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                  {hasConflict ? "Schedule issue" : "Ready to place"}
+                  {hasConflict ? "Schedule issue" : isEditing ? "Ready to save" : "Ready to place"}
                 </span>
               </dl>
             </div>
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white p-4">
+          <section className="rounded-xl border border-[#E2D9D0] bg-white p-4 shadow-sm">
             <h4 id="meeting-pattern-label" className="mb-2 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Meeting pattern</h4>
             <div
               role="radiogroup"
               aria-labelledby="meeting-pattern-label"
-              className="flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1"
+              className="flex flex-wrap gap-1 rounded-lg bg-[#F7F4F0] p-1"
             >
               {meetingShapeOptions.map((option) => {
                 const checked = option.value === meetingShape;
@@ -885,8 +935,8 @@ export default function DropModal({
                     aria-checked={checked}
                     title={option.hint}
                     onClick={() => handleMeetingShapeChange(option.value)}
-                    className={`min-w-[7rem] flex-1 rounded-md px-3 py-1.5 text-xs font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4e0a10]/40 ${
-                      checked ? "bg-white text-[#4e0a10] shadow-sm ring-1 ring-[#4e0a10]/20" : "text-slate-600 hover:bg-white/60 hover:text-slate-800"
+                    className={`min-w-[7rem] flex-1 rounded-md px-3 py-1.5 text-xs font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220]/40 ${
+                      checked ? "bg-[#5A1220] text-white shadow-sm" : "text-slate-600 hover:bg-white hover:text-slate-900"
                     }`}
                   >
                     {option.label}
@@ -909,7 +959,7 @@ export default function DropModal({
                       value={modalRun.dayCount}
                       disabled={!setModalConsecutiveDays || Boolean(preferredRun)}
                       onChange={(event) => handleConsecutiveDaysChange(Number(event.target.value))}
-                      className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/15 disabled:cursor-not-allowed disabled:bg-slate-50"
+                      className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-[#5A1220] focus:ring-2 focus:ring-[#5A1220]/15 disabled:cursor-not-allowed disabled:bg-slate-50"
                     >
                       {Array.from(
                         { length: Math.max(maxConsecutiveDays, modalRun.dayCount) - MIN_CONSECUTIVE_DAYS + 1 },
@@ -931,7 +981,7 @@ export default function DropModal({
                     <select
                       value={isIntegratedOnSite ? "onsite" : "hybrid"}
                       onChange={(event) => handleIntegratedDeliveryChange(event.target.value as "onsite" | "hybrid")}
-                      className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/15"
+                      className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-[#5A1220] focus:ring-2 focus:ring-[#5A1220]/15"
                     >
                       <option value="onsite">On-Site — lecture and laboratory on campus</option>
                       <option value="hybrid">Hybrid — online lecture, on-site laboratory</option>
@@ -947,7 +997,7 @@ export default function DropModal({
                       setModalPreferredPattern(pattern);
                       setModalDay1Index(firstDay);
                       setModalDay2Index(secondDay);
-                    }} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/15">
+                    }} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-[#5A1220] focus:ring-2 focus:ring-[#5A1220]/15">
                       {Object.entries(FIXED_SPLIT_PATTERNS).map(([value, { label }]) => (
                         <option key={value} value={value}>{label}</option>
                       ))}
@@ -960,7 +1010,7 @@ export default function DropModal({
                     <select
                       value={splitDelivery}
                       onChange={(event) => handleSplitDeliveryChange(event.target.value as SplitDelivery)}
-                      className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/15"
+                      className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-[#5A1220] focus:ring-2 focus:ring-[#5A1220]/15"
                     >
                       <option value="onsite">On-Site — both meetings on campus</option>
                       {offersHybridSplit && <option value="hybrid">Hybrid — one meeting online, one on campus</option>}
@@ -1086,22 +1136,10 @@ export default function DropModal({
           )}
 
           {!hasConflict && (
-            <section className="rounded-xl border border-slate-200 bg-white p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
-                  <Sparkles className="h-4 w-4 shrink-0 text-[#c9952a]" />
-                  <h4 className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Placement review</h4>
-                </div>
-                {canUseRecommendations && !areRecommendationsRequested && (
-                  <button
-                    type="button"
-                    onClick={() => setAreRecommendationsRequested(true)}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#c9952a]/40 bg-[#fff8e8] px-3 text-xs font-bold text-[#7a4c08] transition-colors hover:bg-[#fdf0d2]"
-                  >
-                    <Lightbulb className="h-3.5 w-3.5" />
-                    Find better options
-                  </button>
-                )}
+            <section className="rounded-xl border border-[#E2D9D0] bg-white p-4 shadow-sm">
+              <div className="flex min-w-0 items-center gap-2">
+                <Sparkles className="h-4 w-4 shrink-0 text-[#c9952a]" />
+                <h4 className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Placement review</h4>
               </div>
               {qualityNotes.length === 0 ? (
                 <p className="mt-2 flex items-center gap-2 text-sm text-emerald-700">
@@ -1115,7 +1153,7 @@ export default function DropModal({
                       <li
                         key={note.id}
                         className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs leading-snug ${
-                          note.tone === "warning" ? "bg-amber-50 text-amber-900" : "bg-slate-50 text-slate-700"
+                          note.tone === "warning" ? "bg-amber-50 text-amber-900" : "bg-[#F7F4F0] text-slate-700"
                         }`}
                       >
                         {note.tone === "warning"
@@ -1125,23 +1163,44 @@ export default function DropModal({
                       </li>
                     ))}
                   </ul>
-                  <p className="mt-2 text-[11px] text-slate-400">These are preferences, not conflicts. You can still place the class as it is.</p>
+                  <p className="mt-2 text-[11px] text-slate-400">These are preferences, not conflicts. These preferences do not block saving.</p>
                 </>
               )}
             </section>
           )}
         </form>
 
-        <div className="flex shrink-0 flex-col gap-3 border-t border-slate-200 bg-white px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
-          <p className={`flex items-center gap-2 text-sm font-bold ${hasConflict ? "text-red-700" : "text-emerald-700"}`}>
-            {hasConflict ? <AlertTriangle className="h-4 w-4 shrink-0" /> : <CheckCircle2 className="h-4 w-4 shrink-0" />}
+        <div className="flex shrink-0 flex-col gap-3 border-t border-[#E2D9D0] bg-white px-5 py-3.5 md:flex-row md:items-center md:justify-between">
+          <p className={`flex items-center gap-2 text-sm font-bold ${hasConflict || hasSaveError ? "text-red-700" : "text-emerald-700"}`}>
+            {hasConflict || hasSaveError ? <AlertTriangle className="h-4 w-4 shrink-0" /> : <CheckCircle2 className="h-4 w-4 shrink-0" />}
             {hasConflict
               ? "Resolve the schedule issue to continue"
+              : hasSaveError
+              ? "Review the save error and try again"
               : modalWasConflicted
-              ? <><span className="rounded-md bg-emerald-600 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white">Resolved</span> Conflict cleared. Ready to add to the timetable</>
-              : "Ready to add to the timetable"}
+              ? <><span className="rounded-md bg-emerald-600 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white">Resolved</span> Conflict cleared. {readyLabel}</>
+              : readyLabel}
           </p>
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {shouldShowAlternatives && (
+              <button
+                ref={viewAlternativesButtonRef}
+                type="button"
+                onClick={() => setAlternativesFor(dropContext)}
+                aria-haspopup="dialog"
+                aria-expanded={isAlternativesOpen}
+                aria-label={alternativesAriaLabel}
+                className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#c9952a]/50 bg-[#fff8e8] px-3.5 text-sm font-bold text-[#7a4c08] transition-colors hover:bg-[#fdf0d2]"
+              >
+                <Lightbulb className="h-4 w-4" />
+                View Alternatives
+                {!slotsError && (
+                  <span aria-hidden="true" className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-[#5A1220] px-1.5 text-[11px] font-black tabular-nums text-white">
+                    {isSlotsLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : alternativesCountLabel}
+                  </span>
+                )}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setDropContext(null)}
@@ -1153,53 +1212,61 @@ export default function DropModal({
               type="button"
               onClick={(e) => handleModalConfirm(e as unknown as React.FormEvent)}
               disabled={isDisabled}
-              className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#4e0a10] px-5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#3a0809] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
+              className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#5A1220] px-5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#4a0f1a] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
             >
               {isModalLoading ? (
-                <><LoadingSpinner className="h-4 w-4" /> Placing...</>
+                <><LoadingSpinner className="h-4 w-4" /> {isEditing ? "Saving..." : "Placing..."}</>
               ) : hasConflict ? (
                 "Fix Conflict to Continue"
               ) : (
-                <><CalendarPlus className="h-4 w-4" /> Place on Timetable</>
+                <>{isEditing ? <Save className="h-4 w-4" /> : <CalendarPlus className="h-4 w-4" />} {confirmLabel}</>
               )}
             </button>
           </div>
         </div>
       </div>
-
-      {shouldShowRecommendations && (
-        <PlacementAlternatives
-          availableSlots={availableSlots}
-          availableSlotRooms={availableSlotRooms}
-          visibleSlots={visibleSlots}
-          isSlotsLoading={isSlotsLoading}
-          slotsError={slotsError}
-          areSlotsTruncated={areSlotsTruncated}
-          roomFilter={roomFilter}
-          onRoomFilterChange={setRoomFilter}
-          onApplySlot={applyAvailableSlot}
-          requestedDay={requestedDay}
-          bestMatches={bestMatches}
-          isSlotApplied={(slot) => slot.day === requestedDay
-            && slot.start_slot === requestedStartSlot
-            && slotRoomKey(slot) === requestedRoomKey}
-          forcedDayName={forcedDayName}
-          splitPairStarts={splitPairStarts}
-          onApplySplitPairStart={applySplitPairStart}
-          firstDayIndex={modalDay1Index}
-          secondDayIndex={modalDay2Index}
-          firstMode={modalClassMode}
-          secondMode={modalDay2ClassMode}
-          splitStartSlot={modalDay1StartSlot}
-          showsMeetingSwitch={isTwoMeetingPattern && modalDay2Duration > 0}
-          slotMeeting={slotMeeting}
-          onSlotMeetingChange={(meeting) => { setSlotMeeting(meeting); setRoomFilter(ALL_ROOMS); }}
-          firstMeetingTitle={firstMeetingTitle}
-          secondMeetingTitle={secondMeetingTitle}
-        />
-      )}
-      </div>
     </div>
+
+    {shouldShowAlternatives && isAlternativesOpen && (
+      <PlacementAlternatives
+        onClose={closeAlternatives}
+        courseLabel={dropSubject.code}
+        meetingTypeLabel={alternativesMeetingType}
+        availableSlots={availableSlots}
+        availableSlotRooms={availableSlotRooms}
+        visibleSlots={visibleSlots}
+        isSlotsLoading={isSlotsLoading}
+        slotsError={slotsError}
+        areSlotsTruncated={areSlotsTruncated}
+        roomFilter={roomFilter}
+        onRoomFilterChange={setRoomFilter}
+        onApplySlot={(slot) => {
+          applyAvailableSlot(slot);
+          closeAlternatives();
+        }}
+        requestedDay={requestedDay}
+        bestMatches={bestMatches}
+        isSlotApplied={(slot) => slot.day === requestedDay
+          && slot.start_slot === requestedStartSlot
+          && slotRoomKey(slot) === requestedRoomKey}
+        forcedDayName={forcedDayName}
+        splitPairStarts={splitPairStarts}
+        onApplySplitPairStart={(startSlot) => {
+          applySplitPairStart(startSlot);
+          closeAlternatives();
+        }}
+        firstDayIndex={modalDay1Index}
+        secondDayIndex={modalDay2Index}
+        firstMode={modalClassMode}
+        secondMode={modalDay2ClassMode}
+        splitStartSlot={modalDay1StartSlot}
+        showsMeetingSwitch={hasAlternativePartner}
+        slotMeeting={slotMeeting}
+        onSlotMeetingChange={(meeting) => { setSlotMeeting(meeting); setRoomFilter(ALL_ROOMS); }}
+        firstMeetingTitle={firstMeetingTitle}
+        secondMeetingTitle={secondMeetingTitle}
+      />
+    )}
+    </>
   );
 }
-import LoadingSpinner from "../../../../components/ui/LoadingSpinner";

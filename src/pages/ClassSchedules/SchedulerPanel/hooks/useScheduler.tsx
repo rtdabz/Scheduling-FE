@@ -71,7 +71,7 @@ import { configureLabRoomType, roomTypeSatisfies } from "../../../../lib/labRoom
 import { getStoredUser, hasStoredCapability } from "../../../../lib/storedUser";
 import { buildPreferredPattern, consecutiveDayCount, fixedSplitPatternForDays, FULL_DAY_NAMES, parsePreferredPattern, slotCount } from "../../../../lib/timeGrid";
 import { isHybridSplitEligible, savedMeetingPairShape } from "../schedulingConfigurationEligibility";
-import { resolveManualOperationStatus } from "../manualScheduleOperation";
+import { resolveManualOperationStatus, validateManualMeetingRooms } from "../manualScheduleOperation";
 import {
   consecutiveDayRuns,
   consecutivePattern,
@@ -1875,23 +1875,24 @@ export const useScheduler = () => {
       return duration === getCourseSlotPlan(subject).laboratorySlots
         || duration === laboratoryComponentSlots(subject, manualSchedulingSettings);
     };
-    const missingFirstRoom = modalClassMode === "on-site" && !modalRoomId;
-    const missingSecondRoom = !modalRun
-      && modalPreferredPattern
-      && modalDay2Duration > 0
-      && modalDay2ClassMode === "on-site"
-      && !modalDay2RoomId;
-    const invalidTba = modalRun
-      ? modalRoomId === "tba" && Number(subject?.labHours ?? 0) <= 0
-      : (modalRoomId === "tba" && !isLabMeeting(modalDay1Duration, true))
-        || (modalDay2RoomId === "tba" && !isLabMeeting(modalDay2Duration, false));
-    if (missingFirstRoom || missingSecondRoom || invalidTba) {
-      setModalValidationError(invalidTba
-        ? "Room TBA is allowed only for a laboratory meeting."
-        : "Please select a room for every on-site meeting.");
+    const roomError = validateManualMeetingRooms(
+      {
+        mode: modalClassMode, roomId: modalRoomId, duration: modalDay1Duration,
+        isLaboratory: modalRun ? Number(subject?.labHours ?? 0) > 0 : isLabMeeting(modalDay1Duration, true),
+      },
+      {
+        mode: modalDay2ClassMode, roomId: modalDay2RoomId, duration: modalDay2Duration,
+        isLaboratory: isLabMeeting(modalDay2Duration, false),
+      },
+      modalPreferredPattern,
+      Boolean(modalRun),
+    );
+    if (roomError) {
+      setModalValidationError(roomError);
       return;
     }
     if (modalConflict) return;
+    setModalValidationError("");
     handleConfirmSchedule(e);
   };
 

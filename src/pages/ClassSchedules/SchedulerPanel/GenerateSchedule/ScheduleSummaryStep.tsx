@@ -191,6 +191,8 @@ export default function ScheduleSummaryStep({
         onFocusClass={focusClass}
       />
 
+      {attention}
+
       {recommendations.length > 0 && !attention && (
         <section className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
           <RecommendationList
@@ -202,7 +204,7 @@ export default function ScheduleSummaryStep({
         </section>
       )}
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
         <div className="flex min-h-[24rem] min-w-0 flex-1 flex-col gap-3 lg:min-h-0">
           <section className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
             <div className="flex flex-wrap items-end gap-2">
@@ -303,11 +305,6 @@ export default function ScheduleSummaryStep({
             ]}
           />
         </div>
-        {attention && (
-          <aside className="flex max-h-[70vh] min-h-0 flex-col empty:hidden lg:max-h-none lg:w-[26rem] lg:shrink-0 xl:w-[30rem]">
-            {attention}
-          </aside>
-        )}
       </div>
     </div>
   );

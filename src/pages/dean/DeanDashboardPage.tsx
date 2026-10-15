@@ -30,7 +30,7 @@ import DashboardMetricCard, { type DashboardMetricTone } from '../../components/
 import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
 import DashboardGantt from '../vpaa/calendar/DashboardGantt';
 import ScheduleDetailModal from '../vpaa/calendar/ScheduleDetailModal';
-import { buildStandardHours, DEFAULT_STANDARD_HOURS, findOverlaps, type CalendarSchedule, type StandardHours } from '../vpaa/calendar/ganttLayout';
+import { buildStandardHours, DEFAULT_STANDARD_HOURS, findOverlaps, withCalendarDepartments, type CalendarDepartment, type CalendarSchedule, type StandardHours } from '../vpaa/calendar/ganttLayout';
 import type { TimeGridConfigInput } from '../../lib/timeGrid';
 import InstructorWorkloadChart from '../../components/scheduling/InstructorWorkloadChart';
 import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
@@ -63,8 +63,8 @@ interface Submission {
   sections?:Array<{ id:number; pivot?:{ state?:'included'|'withdrawn' }|null }>|null;
   submitter?:{ name?:string }|null;
 }
-interface Overview { faculties:Faculty[]; rooms:Room[]; sections:Section[]; subjects:Subject[]; schedules:Schedule[]; submissions?:Submission[]; activeSemester:Semester|null; standardHours?:StandardHours; schedulesTruncated?:boolean }
-interface InitialData { faculties?:Faculty[]; rooms?:Room[]; sections?:Section[]; subjects?:Subject[]; courses?:Subject[]; schedules?:Schedule[]; schedule_submissions?:Submission[]; active_semester?:Semester; time_grid?:TimeGridConfigInput; schedules_truncated?:boolean }
+interface Overview { faculties:Faculty[]; rooms:Room[]; sections:Section[]; subjects:Subject[]; schedules:Schedule[]; departments?:CalendarDepartment[]; submissions?:Submission[]; activeSemester:Semester|null; standardHours?:StandardHours; schedulesTruncated?:boolean }
+interface InitialData { faculties?:Faculty[]; rooms?:Room[]; sections?:Section[]; subjects?:Subject[]; courses?:Subject[]; schedules?:Schedule[]; departments?:CalendarDepartment[]; schedule_submissions?:Submission[]; active_semester?:Semester; time_grid?:TimeGridConfigInput; schedules_truncated?:boolean }
 
 type Tone = DashboardMetricTone;
 
@@ -114,7 +114,7 @@ interface Package {
   submittedBy:string;
 }
 
-const DASHBOARD_LIVE_TOPICS = ['schedules', 'approvals', 'assignments', 'sections', 'rooms', 'faculty', 'courses', 'users'] as const;
+const DASHBOARD_LIVE_TOPICS = ['schedules', 'approvals', 'assignments', 'sections', 'rooms', 'faculty', 'courses', 'users', 'departments'] as const;
 
 export default function DeanDashboardPage() {
   const navigate = useNavigate();
@@ -134,6 +134,7 @@ export default function DeanDashboardPage() {
   const [sections, setSections] = useState<Section[]>(cached?.sections ?? []);
   const [subjects, setSubjects] = useState<Subject[]>(cached?.subjects ?? []);
   const [schedules, setSchedules] = useState<Schedule[]>(cached?.schedules ?? []);
+  const [departments, setDepartments] = useState<CalendarDepartment[]>(cached?.departments ?? []);
   const [submissions, setSubmissions] = useState<Submission[]>(cached?.submissions ?? []);
   const [semester, setSemester] = useState<Semester | null>(cached?.activeSemester ?? null);
   const [standardHours, setStandardHours] = useState<StandardHours>(cached?.standardHours ?? DEFAULT_STANDARD_HOURS);
@@ -167,6 +168,7 @@ export default function DeanDashboardPage() {
             sections: Array.isArray(data.sections) ? data.sections : [],
             subjects: Array.isArray(data.subjects) ? data.subjects : (Array.isArray(data.courses) ? data.courses : []),
             schedules: Array.isArray(data.schedules) ? data.schedules : [],
+            departments: Array.isArray(data.departments) ? data.departments : [],
             submissions: Array.isArray(data.schedule_submissions) ? data.schedule_submissions : [],
             activeSemester: data.active_semester || null,
             standardHours: buildStandardHours(data.time_grid?.opening_time, data.time_grid?.closing_time, data.time_grid?.slot_minutes),
@@ -180,6 +182,7 @@ export default function DeanDashboardPage() {
         setSections(overview.sections);
         setSubjects(overview.subjects);
         setSchedules(overview.schedules);
+        setDepartments(overview.departments ?? []);
         setSubmissions(overview.submissions ?? []);
         setSemester(overview.activeSemester);
         setStandardHours(overview.standardHours ?? DEFAULT_STANDARD_HOURS);
@@ -408,7 +411,7 @@ export default function DeanDashboardPage() {
     });
   }, [visibleSchedules, yearFilter, sectionFilter, facultyFilter, roomFilter, searchQuery, yearBySection]);
 
-  const calendarSchedules = useMemo<CalendarSchedule[]>(() => visibleSchedules.map(item => ({
+  const calendarSchedules = useMemo<CalendarSchedule[]>(() => withCalendarDepartments(visibleSchedules.map(item => ({
     ...item,
     course_id: item.course_id ?? item.course?.id ?? item.subject_id,
     room: item.room?.id ? { id: item.room.id, room_code: item.room.room_code ?? '', building: item.room.building } : null,
@@ -416,7 +419,7 @@ export default function DeanDashboardPage() {
     faculty: item.faculty?.id ? { id: item.faculty.id, first_name: item.faculty.first_name, last_name: item.faculty.last_name } : null,
     mode: item.mode?.toLowerCase().includes('online') || item.room?.room_type?.toLowerCase().includes('online') ? 'online'
       : item.mode?.toLowerCase().includes('field') || item.room?.room_type?.toLowerCase().includes('field') ? 'field' : 'on-site',
-  })), [visibleSchedules]);
+  })), departments), [visibleSchedules, departments]);
   const calendarById = useMemo(() => new Map(calendarSchedules.map(item => [item.id, item])), [calendarSchedules]);
   const timetableCalendar = useMemo(
     () => timetableSchedules.map(item => calendarById.get(item.id)).filter((item): item is CalendarSchedule => Boolean(item)),

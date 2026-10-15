@@ -29,6 +29,7 @@ import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { useLiveRefresh } from '../../hooks/useLiveRefresh';
+import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import { apiErrorMessage } from '../../lib/apiError';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import InstructorTimetableButton from '../../components/InstructorTimetableButton';
@@ -398,6 +399,7 @@ export default function Faculty() {
 
     try {
       const res = await api.delete<{ released_schedule_count?: number }>(`/faculties/${id}`);
+      invalidateCacheGroups('faculty', 'departments', 'assignments', 'schedules', 'dashboards');
       setFaculties(prev => {
         const nextFaculties = prev.filter(f => f.id !== id);
         setCachedData<FacultyPageData>(facultyCacheKey, { faculties: nextFaculties, departments, programs });
@@ -408,8 +410,8 @@ export default function Faculty() {
       if (released > 0) {
         toast.warning(
           'Archived',
-          `Instructor removed. ${released} approved meeting${released === 1 ? '' : 's'} `
-            + `${released === 1 ? 'is' : 'are'} now unassigned and need${released === 1 ? 's' : ''} a new instructor.`
+          `Instructor archived. Assignments for ${released} approved meeting${released === 1 ? '' : 's'} `
+            + 'are preserved for restoration and hidden while the instructor is archived.'
         );
       } else {
         toast.success('Archived', 'Instructor archived successfully');
@@ -504,6 +506,7 @@ export default function Faculty() {
     try {
       if (isEditMode && editingId !== null) {
         const res = await api.put<ApiFacultyMember>(`/faculties/${editingId}`, payload);
+        invalidateCacheGroups('faculty', 'departments', 'assignments', 'schedules', 'dashboards');
         const updatedFaculty = mapApiFaculty(res.data);
         setFaculties(prev => {
           const nextFaculties = prev.map(f => f.id === editingId ? updatedFaculty : f);
@@ -513,6 +516,7 @@ export default function Faculty() {
         toast.success('Updated', 'Instructor updated successfully');
       } else {
         const res = await api.post<ApiFacultyMember>('/faculties', payload);
+        invalidateCacheGroups('faculty', 'departments', 'assignments', 'schedules', 'dashboards');
         const createdFaculty = mapApiFaculty(res.data);
         setFaculties(prev => {
           const nextFaculties = [createdFaculty, ...prev];
@@ -1379,6 +1383,7 @@ export default function Faculty() {
           faculty={loadEditorFaculty}
           onClose={() => setLoadEditorFaculty(null)}
           onSaved={(updated) => {
+            invalidateCacheGroups('faculty', 'departments', 'assignments', 'schedules', 'dashboards');
             const fresh = mapApiFaculty(updated as ApiFacultyMember);
             setFaculties(prev => {
               const nextFaculties = prev.map(f => (f.id === fresh.id ? fresh : f));

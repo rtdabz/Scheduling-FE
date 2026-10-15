@@ -32,7 +32,7 @@ import {
 import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
 import DashboardGantt from '../vpaa/calendar/DashboardGantt';
 import ScheduleDetailModal from '../vpaa/calendar/ScheduleDetailModal';
-import { buildStandardHours, DEFAULT_STANDARD_HOURS, findOverlaps, type CalendarSchedule, type StandardHours } from '../vpaa/calendar/ganttLayout';
+import { buildStandardHours, DEFAULT_STANDARD_HOURS, findOverlaps, withCalendarDepartments, type CalendarDepartment, type CalendarSchedule, type StandardHours } from '../vpaa/calendar/ganttLayout';
 import type { TimeGridConfigInput } from '../../lib/timeGrid';
 import InstructorWorkloadChart from '../../components/scheduling/InstructorWorkloadChart';
 import { DEAN_REQUIRED_MESSAGE, useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
@@ -53,8 +53,8 @@ interface Section { id:number; section_name:string; department_id?:number|null }
 interface Faculty { id:number; first_name:string; last_name:string; max_units:number; assigned_units?:number; deload_units?:number; profile_picture?:string|null; department_id:number }
 interface Subject { id:number; subject_code:string; subject_name:string; department_id?:number|null }
 interface Semester { id:number; status:string }
-interface Overview { schedules:Schedule[]; rooms:Room[]; sections:Section[]; faculties:Faculty[]; subjects:Subject[]; activeSemester:Semester|null; standardHours?:StandardHours }
-interface InitialData { schedules?:Schedule[]; rooms?:Room[]; sections?:Section[]; faculties?:Faculty[]; subjects?:Subject[]; courses?:Subject[]; active_semester?:Semester; time_grid?:TimeGridConfigInput }
+interface Overview { schedules:Schedule[]; departments?:CalendarDepartment[]; rooms:Room[]; sections:Section[]; faculties:Faculty[]; subjects:Subject[]; activeSemester:Semester|null; standardHours?:StandardHours }
+interface InitialData { schedules?:Schedule[]; departments?:CalendarDepartment[]; rooms?:Room[]; sections?:Section[]; faculties?:Faculty[]; subjects?:Subject[]; courses?:Subject[]; active_semester?:Semester; time_grid?:TimeGridConfigInput }
 
 type Tone = 'brand' | 'info' | 'good' | 'warn' | 'alert' | 'accent';
 
@@ -95,7 +95,7 @@ interface SecretaryDashboardPageProps {
   role?: 'secretary' | 'program_head';
 }
 
-const DASHBOARD_LIVE_TOPICS = ['schedules', 'approvals', 'assignments', 'sections', 'rooms', 'faculty', 'courses', 'curriculum'] as const;
+const DASHBOARD_LIVE_TOPICS = ['schedules', 'approvals', 'assignments', 'sections', 'rooms', 'faculty', 'courses', 'curriculum', 'departments'] as const;
 
 export default function SecretaryDashboardPage({ role = 'secretary' }: SecretaryDashboardPageProps) {
   const navigate = useNavigate();
@@ -135,6 +135,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
   const liveRevision = useLiveRevision(DASHBOARD_LIVE_TOPICS);
   const [submitting, setSubmitting] = useState(false);
   const [schedules, setSchedules] = useState<Schedule[]>(cached?.schedules ?? []);
+  const [departments, setDepartments] = useState<CalendarDepartment[]>(cached?.departments ?? []);
   const [rooms, setRooms] = useState<Room[]>(cached?.rooms ?? []);
   const [sections, setSections] = useState<Section[]>(cached?.sections ?? []);
   const [faculties, setFaculties] = useState<Faculty[]>(cached?.faculties ?? []);
@@ -160,6 +161,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
           const { data = {} } = await api.get<InitialData>('/initial-data');
           return {
             schedules: Array.isArray(data.schedules) ? data.schedules : [],
+            departments: Array.isArray(data.departments) ? data.departments : [],
             rooms: Array.isArray(data.rooms) ? data.rooms : [],
             sections: Array.isArray(data.sections) ? data.sections : [],
             faculties: Array.isArray(data.faculties) ? data.faculties : [],
@@ -171,6 +173,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
 
         if (!active) return;
         setSchedules(overview.schedules);
+        setDepartments(overview.departments ?? []);
         setRooms(overview.rooms);
         setSections(overview.sections);
         setFaculties(overview.faculties);
@@ -218,14 +221,14 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     [schedules, semesterId, sectionIds, departmentId],
   );
 
-  const calendarSchedules = useMemo<CalendarSchedule[]>(() => visibleSchedules.map(item => ({
+  const calendarSchedules = useMemo<CalendarSchedule[]>(() => withCalendarDepartments(visibleSchedules.map(item => ({
     ...item,
     course_id: item.course_id ?? item.course?.id ?? item.subject_id,
     room: item.room?.id ? { id: item.room.id, room_code: item.room.room_code ?? '', building: item.room.building } : null,
     section: item.section?.id ? { id: item.section.id, section_name: item.section.section_name ?? '' } : null,
     faculty: item.faculty?.id ? { id: item.faculty.id, first_name: item.faculty.first_name, last_name: item.faculty.last_name } : null,
     mode: deliveryOf(item),
-  })), [visibleSchedules]);
+  })), departments), [visibleSchedules, departments]);
   const timelineOverlaps = useMemo(() => findOverlaps(calendarSchedules), [calendarSchedules]);
 
   useEffect(() => {
