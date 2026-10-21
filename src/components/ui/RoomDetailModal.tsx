@@ -64,11 +64,13 @@ interface RoomDetailModalProps {
   highlightSlots?: LinkedSlot[];
 }
 
+const EMPTY_SCHEDULES: Schedule[] = [];
+
 const fetchRoomSchedules = (roomId: number) => api.get<Schedule[]>('/schedules', {
   params: { room_id: roomId, semester_id: 'active', per_page: 1000 },
 });
 
-export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMode = 'list', className = '', initialRoom = null, initialSchedules = [], initialSchedulesComplete = true, highlightSlots }: RoomDetailModalProps) {
+export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMode = 'list', className = '', initialRoom = null, initialSchedules = EMPTY_SCHEDULES, initialSchedulesComplete = true, highlightSlots }: RoomDetailModalProps) {
   const [room, setRoom] = useState<Room | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -93,6 +95,7 @@ export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMo
       return;
     }
 
+    let active = true;
     const user = getStoredUser();
     const roomsCacheKey = `page:rooms:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
     const cachedRoomsData = getCachedData<{ rooms?: Room[]; schedules?: Schedule[] }>(roomsCacheKey);
@@ -105,7 +108,7 @@ export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMo
       cachedSchedules = cachedRoomsData.schedules || [];
     }
 
-    if (cachedRoom) {
+    if (cachedRoom && initialSchedulesComplete) {
       setRoom(cachedRoom);
       setSchedules(cachedSchedules);
       setIsLoading(false);
@@ -116,13 +119,14 @@ export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMo
             api.get<Room>(`/rooms/${roomId}`),
             fetchRoomSchedules(roomId),
           ]);
+          if (!active) return;
           setRoom(roomRes.data);
           setSchedules(schedulesRes.data);
         } catch {
         }
       };
-      fetchRoomBackground();
-      return;
+      void fetchRoomBackground();
+      return () => { active = false; };
     }
 
     const fetchRoom = async () => {
@@ -133,15 +137,17 @@ export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMo
           api.get<Room>(`/rooms/${roomId}`),
           fetchRoomSchedules(roomId),
         ]);
+        if (!active) return;
         setRoom(roomRes.data);
         setSchedules(schedulesRes.data);
       } catch {
-        onCloseRef.current();
+        if (active) onCloseRef.current();
       } finally {
-        setIsLoading(false);
+        if (active) setIsLoading(false);
       }
     };
-    fetchRoom();
+    void fetchRoom();
+    return () => { active = false; };
   }, [roomId, isOpen, initialRoom, initialSchedules, initialSchedulesComplete]);
 
   if (!isOpen) return null;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getCurriculumPrintSections, getPrintableProgramTitle } from './curriculumPrintable';
+import { getCurriculumPrintSections, getPrintableProgramTitle, getCurriculumPdfFilename } from './curriculumPrintable';
 import type { Curriculum, CurriculumSemester } from '../types/curriculum';
 
 const curriculum: Curriculum = {
@@ -17,6 +17,9 @@ const curriculum: Curriculum = {
 };
 
 describe('curriculum printable layout', () => {
+  it('names the PDF using the curriculum code and effective school year', () => {
+    expect(getCurriculumPdfFilename(curriculum)).toBe('curriculum-CMO-25-2026-2027.pdf');
+  });
   it('creates all four year sections and preserves empty semesters', () => {
     const semesters: CurriculumSemester[] = [{
       year_level: 2,

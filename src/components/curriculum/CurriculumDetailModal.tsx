@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import { curriculumService } from '../../services/curriculum/curriculumService';
-import { buildCurriculumPdf } from '../../lib/curriculumPrintable';
+import { buildCurriculumPdf, getCurriculumPdfFilename } from '../../lib/curriculumPrintable';
+import { createPdfPreview } from '../../lib/pdfPreview';
 import type { Curriculum, Program } from '../../types/curriculum';
 
 interface CurriculumDetailModalProps {
@@ -30,7 +31,7 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, programs =
   useEffect(() => {
     if (!isOpen || !curriculumId) return undefined;
     let cancelled = false;
-    let objectUrl: string | null = null;
+    let release: (() => void) | undefined;
 
     curriculumService.getCurriculumFull(curriculumId)
       .then(async (detail) => {
@@ -42,8 +43,13 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, programs =
           program: programs.find((program) => program.id === detail.curriculum.program_id) ?? null,
         });
         if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setPdf({ url: objectUrl, failed: false });
+        const preview = await createPdfPreview(blob, getCurriculumPdfFilename(detail.curriculum));
+        if (cancelled) {
+          preview.dispose();
+          return;
+        }
+        release = preview.dispose;
+        setPdf({ url: preview.url, failed: false });
       })
       .catch(() => {
         if (!cancelled) setPdf({ url: null, failed: true });
@@ -51,7 +57,7 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, programs =
 
     return () => {
       cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      release?.();
       setCurriculum(null);
       setPdf({ url: null, failed: false });
     };

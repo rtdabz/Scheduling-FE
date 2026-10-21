@@ -19,6 +19,8 @@ import { BASIC_LINE_COUNT, classifyLoad } from "./teachingLoadRows";
 import { drawSheet } from "./teachingLoadSheet";
 import { formPageSize } from "./teachingLoadForm";
 import { facultyNameParts } from "./teachingLoadName";
+import { buildExportFilename } from "../../../lib/exportFile";
+import { openPdfPreview } from "../../../lib/pdfPreview";
 
 interface TeachingLoadProps {
   faculties: Faculty[];
@@ -32,9 +34,6 @@ interface TeachingLoadProps {
   selectedSectionId: string;
   selectedFacultyId?: string;
 }
-
-const PRINT_DEBOUNCE_MS = 1500;
-let lastTeachingLoadPrintAt = 0;
 
 const DESIGNATION_LABELS: Record<FacultyAdministrativePost, string> = {
   dean: "Department Dean",
@@ -84,18 +83,23 @@ export default function TeachingLoad({
   const handlePrint = async () => {
     if (isPrintingRef.current) return;
     isPrintingRef.current = true;
-
-    const { default: JsPDF } = await import("jspdf");
-
-    Promise.all([
-      loadImage(assetUrl(tccLogo)),
-      loadImage(assetUrl(municipalLogo)),
-      fetchInstitutionSettings(),
-    ])
-      .then(([logoImg, muniImg, settings]) => generatePdf(JsPDF, logoImg, muniImg, settings))
-      .finally(() => {
-        isPrintingRef.current = false;
-      });
+    const preview = openPdfPreview();
+    try {
+      const [{ default: JsPDF }, logoImg, muniImg, settings] = await Promise.all([
+        import("jspdf"),
+        loadImage(assetUrl(tccLogo)),
+        loadImage(assetUrl(municipalLogo)),
+        fetchInstitutionSettings(),
+      ]);
+      const result = generatePdf(JsPDF, logoImg, muniImg, settings);
+      if (result) await preview.show(result.blob, result.filename);
+      else preview.close();
+    } catch {
+      preview.close();
+      toast.error("Print Failed", "Could not generate teaching load PDF.");
+    } finally {
+      isPrintingRef.current = false;
+    }
   };
 
   const generatePdf = (
@@ -200,19 +204,21 @@ export default function TeachingLoad({
     }
 
     if (doc === null) return;
-    const blobUrl = URL.createObjectURL(doc.output("blob"));
-    window.open(blobUrl, "_blank");
+    const departmentIds = [...new Set(targetFaculties.map((faculty) => faculty.departmentId))];
+    const department = departmentIds.length === 1
+      ? departments.find((entry) => Number(entry.id) === Number(departmentIds[0]))
+      : null;
+    return {
+      blob: doc.output("blob"),
+      filename: buildExportFilename('pdf', 'teaching-load',
+        targetFaculties.length === 1 ? facultyNameParts(targetFaculties[0]).fullName
+          : department?.department_code || (departmentIds.length > 1 ? 'all-departments' : 'department'),
+        activeSemester?.academic_year, activeSemester?.semester),
+    };
   };
 
   useEffect(() => {
     if (isTeachingLoadOpen) {
-      const now = Date.now();
-      if (now - lastTeachingLoadPrintAt < PRINT_DEBOUNCE_MS) {
-        setIsTeachingLoadOpen(false);
-        return;
-      }
-
-      lastTeachingLoadPrintAt = now;
       handlePrint();
       setIsTeachingLoadOpen(false);
     }

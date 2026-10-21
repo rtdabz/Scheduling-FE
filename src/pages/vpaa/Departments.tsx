@@ -69,8 +69,6 @@ const getDepartmentColor = (name: string) => {
 
 const CODE_MAX_LENGTH = 20;
 
-const SPECIALIZED_PROFILE_LABEL = 'Specialized rooms';
-
 const FACULTY_PAGE_SIZE = 8;
 
 interface Department {
@@ -83,7 +81,6 @@ interface Department {
   facultyCount: number;
   sectionsCount: number;
   logo?: string | null;
-  schedulingProfile: 'standard' | 'laboratory_enabled';
   createdAt: string;
   programs: Program[];
 }
@@ -106,7 +103,6 @@ interface ApiDepartment {
   department_code: string;
   department_name: string;
   logo?: string | null;
-  scheduling_profile?: 'standard' | 'laboratory_enabled';
   created_at: string;
   faculties_count?: number;
   sections_count?: number;
@@ -187,7 +183,7 @@ export default function Departments() {
   const userDeptCode = user?.department?.department_code ?? null;
   const userDeptName = user?.department?.department_name ?? null;
 
-  const departmentsCacheKey = 'page:departments:v3';
+  const departmentsCacheKey = 'page:departments:v4';
   const cachedDepartmentsData = getCachedData<DepartmentsPageData>(departmentsCacheKey);
   const [departments, setDepartments] = useState<Department[]>(cachedDepartmentsData?.departments ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(departmentsCacheKey));
@@ -226,7 +222,6 @@ export default function Departments() {
   const [logo, setLogo] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [nameError, setNameError] = useState('');
   const [codeError, setCodeError] = useState('');
   const [newProgram, setNewProgram] = useState({ major: '', code: '', name: '' });
@@ -369,7 +364,6 @@ export default function Departments() {
     facultyCount: department.faculties_count ?? 0,
     sectionsCount: department.sections_count ?? 0,
     logo: department.logo || null,
-    schedulingProfile: department.scheduling_profile ?? 'standard',
     createdAt: department.created_at,
     programs: department.programs ?? [],
   });
@@ -575,28 +569,6 @@ export default function Departments() {
     setIsModalOpen(true);
   };
 
-  const toggleSpecializedRooms = async (dept: Department) => {
-    const nextProfile = dept.schedulingProfile === 'laboratory_enabled' ? 'standard' : 'laboratory_enabled';
-    setIsSavingProfile(true);
-    try {
-      const response = await api.patch<ApiDepartment>(`/departments/${dept.id}`, { scheduling_profile: nextProfile });
-      const saved = mapDepartment(response.data);
-      setDepartments(prev => {
-        const nextDepartments = prev.map(entry => (entry.id === dept.id ? saved : entry));
-        setCachedData<DepartmentsPageData>(departmentsCacheKey, { departments: nextDepartments });
-        return nextDepartments;
-      });
-      setSelectedDeptForDetail(current => (current && current.id === dept.id ? { ...current, schedulingProfile: saved.schedulingProfile } : current));
-      toast.success('Success', nextProfile === 'laboratory_enabled'
-        ? `${dept.name} can now use specialized rooms.`
-        : `${dept.name} now uses standard scheduling.`);
-    } catch (err) {
-      toast.error('Error', apiErrorMessage(err, 'Failed to update the scheduling profile.'));
-    } finally {
-      setIsSavingProfile(false);
-    }
-  };
-
   const archiveProgram = async (program: Program) => {
     if (!selectedDeptForDetail) return;
     const confirmed = await confirm({
@@ -665,21 +637,6 @@ export default function Departments() {
         accessorKey: 'name',
         header: 'Department Name',
         cell: info => <span className="font-bold text-gray-800 whitespace-nowrap block" title={info.getValue() as string}>{info.getValue() as string}</span>
-      },
-      {
-        accessorKey: 'schedulingProfile',
-        header: () => <span className="whitespace-nowrap">Scheduling Profile</span>,
-        meta: { cellClassName: 'whitespace-nowrap' },
-        cell: info => {
-          const profile = info.getValue() as Department['schedulingProfile'];
-          return (
-            <span className={`inline-block whitespace-nowrap px-2 py-1 rounded-full text-[10px] font-bold uppercase border ${profile === 'laboratory_enabled'
-              ? 'bg-amber-50 border-amber-200 text-amber-800'
-              : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
-              {profile === 'laboratory_enabled' ? SPECIALIZED_PROFILE_LABEL : 'Standard'}
-            </span>
-          );
-        },
       },
       {
         accessorKey: 'dean',
@@ -1286,42 +1243,6 @@ export default function Departments() {
                       </div>
                     ))}
                   </section>
-
-                  {(() => {
-                    const specialized = selectedDeptForDetail.schedulingProfile === 'laboratory_enabled';
-                    return (
-                      <section className="flex items-center justify-between gap-4 rounded-xl border border-slate-200/80 bg-white px-3 py-2.5 shadow-sm">
-                        <div className="min-w-0">
-                          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Scheduling profile</p>
-                          <p className="text-sm font-semibold text-gray-800">
-                            {specialized ? SPECIALIZED_PROFILE_LABEL : 'Standard scheduling'}
-                          </p>
-                          <p className="text-[11px] leading-4 text-gray-500">
-                            {specialized
-                              ? 'Can use laboratories and other specialized rooms.'
-                              : 'Classes use regular lecture rooms only.'}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={specialized}
-                          aria-label="Use specialized rooms"
-                          disabled={!canManageDepartments || isSavingProfile}
-                          onClick={() => toggleSpecializedRooms(selectedDeptForDetail)}
-                          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer ${
-                            specialized ? 'bg-[#4e0a10]' : 'bg-gray-300'
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-                              specialized ? 'translate-x-5' : 'translate-x-0.5'
-                            }`}
-                          />
-                        </button>
-                      </section>
-                    );
-                  })()}
 
                   <section className="space-y-2">
                     <div className="flex items-center gap-2">

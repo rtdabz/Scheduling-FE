@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Calendar, Printer, X, CheckCircle2 } from "lucide-react";
 import api from "../lib/api";
+import { buildExportFilename } from "../lib/exportFile";
+import { openPdfPreview } from "../lib/pdfPreview";
 import { useToast } from "../context/ToastContext";
-import { getCachedData } from "../lib/dataCache";
 import { gridOpeningMinutes, slotCount, slotMinutes } from "../lib/timeGrid";
 import Skeleton from "./ui/Skeleton";
 import { scheduleLocationLabel } from "../lib/scheduleLocation";
@@ -106,7 +107,10 @@ export default function InstructorTimetableModal({
   onClose,
 }: InstructorTimetableModalProps) {
   const { toast } = useToast();
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadedFacultyId, setLoadedFacultyId] = useState<number | null>(null);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const printingRef = useRef(false);
   const [records, setRecords] = useState<ApiScheduleRecord[]>([]);
   const [departments, setDepartments] = useState<CalendarDepartment[]>([]);
   const [selectedSchedule, setSelectedSchedule] = useState<CalendarSchedule | null>(null);
@@ -117,10 +121,9 @@ export default function InstructorTimetableModal({
     let isMounted = true;
 
     const fetchFacultySchedules = async () => {
-      const cached = getCachedData<ApiScheduleRecord[]>("global:schedules");
-      if (!cached) {
-        setLoading(true);
-      }
+      setLoading(true);
+      setLoadedFacultyId(null);
+      setRecords([]);
 
       try {
         const [res, departmentRes] = await Promise.all([
@@ -131,11 +134,13 @@ export default function InstructorTimetableModal({
         ]);
         if (!isMounted) return;
 
+        setLoadedFacultyId(facultyId);
         setDepartments(Array.isArray(departmentRes.data) ? departmentRes.data : []);
         setRecords((res.data ?? []).filter(
           (s) => s.faculty_id !== null && Number(s.faculty_id) === Number(facultyId)
         ));
       } catch {
+        if (!isMounted) return;
         toast.error("Error", "Failed to load instructor timetable.");
       } finally {
         if (isMounted) setLoading(false);
@@ -147,7 +152,7 @@ export default function InstructorTimetableModal({
     return () => {
       isMounted = false;
     };
-  }, [isOpen, facultyId]);
+  }, [isOpen, facultyId, toast]);
 
   const ganttSchedules = useMemo(() => withCalendarDepartments(records.map(toCalendarSchedule), departments), [records, departments]);
   const ganttDays = useMemo(() => buildGanttDays(ganttSchedules, "none", ALL_DAYS), [ganttSchedules]);
@@ -162,8 +167,10 @@ export default function InstructorTimetableModal({
   const ganttOverlaps = useMemo(() => findOverlaps(ganttSchedules), [ganttSchedules]);
 
   const handlePrintTimetable = async () => {
-    if (!facultyName) return;
-
+    if (!facultyName || loading || loadedFacultyId !== facultyId || printingRef.current || records.length === 0) return;
+    printingRef.current = true;
+    setIsPrinting(true);
+    const preview = openPdfPreview();
     try {
       const pdfSchedules: InstructorTimetableMeeting[] = records.map((s) => ({
         courseCode: s.course?.course_code ?? s.subject?.course_code ?? s.subject?.subject_code ?? "SUBJECT",
@@ -185,9 +192,13 @@ export default function InstructorTimetableModal({
         schedules: pdfSchedules,
       });
 
-      window.open(URL.createObjectURL(blob), "_blank");
+      await preview.show(blob, buildExportFilename('pdf', 'instructor-timetable', facultyName));
     } catch {
+      preview.close();
       toast.error("Print Failed", "Could not generate instructor timetable PDF.");
+    } finally {
+      printingRef.current = false;
+      setIsPrinting(false);
     }
   };
 
@@ -216,11 +227,11 @@ export default function InstructorTimetableModal({
             <button
               type="button"
               onClick={handlePrintTimetable}
-              disabled={loading || records.length === 0}
+              disabled={loading || loadedFacultyId !== facultyId || isPrinting || records.length === 0}
               className="bg-[#4e0a10] hover:bg-[#C9952A] text-white px-4 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>Print Timetable</span>
+              <span>{isPrinting ? "Preparing..." : "Print Timetable"}</span>
             </button>
             <button
               type="button"

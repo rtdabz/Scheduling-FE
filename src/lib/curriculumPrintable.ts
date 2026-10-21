@@ -2,6 +2,11 @@ import type jsPDF from 'jspdf';
 import tccLogo from '../assets/logo.jpg';
 import municipalLogo from '../assets/municipal-logo.png';
 import type { Curriculum, CurriculumSemester, Program } from '../types/curriculum';
+import { buildExportFilename } from './exportFile';
+import { openPdfPreview } from './pdfPreview';
+
+export const getCurriculumPdfFilename = (curriculum: Curriculum): string =>
+  buildExportFilename('pdf', 'curriculum', curriculum.code, curriculum.effective_school_year);
 
 interface PrintCurriculumOptions {
   curriculum: Curriculum;
@@ -384,20 +389,12 @@ export const buildCurriculumPdf = async (options: PrintCurriculumOptions): Promi
   (await loadCurriculumPdf(options, false)).output('blob');
 
 export const printCurriculum = async (options: PrintCurriculumOptions): Promise<void> => {
-  const previewWindow = window.open('', '_blank');
+  const preview = openPdfPreview();
   try {
     const doc = await loadCurriculumPdf(options, true);
-    const blobUrl = URL.createObjectURL(doc.output('blob'));
-
-    if (previewWindow) {
-      previewWindow.location.href = blobUrl;
-    } else {
-      doc.save(`${options.curriculum.code}-curriculum.pdf`);
-    }
-
-    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+    await preview.show(doc.output('blob'), getCurriculumPdfFilename(options.curriculum));
   } catch (error) {
-    previewWindow?.close();
+    preview.close();
     throw error;
   }
 };

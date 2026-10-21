@@ -172,11 +172,16 @@ export default function InstructorTeachingLoadButton({ facultyId }: InstructorTe
   const { toast } = useToast();
 
   const loadTeachingData = async () => {
-    const response = await api.get<InitialTeachingLoadData>("/initial-data", { params: { schedule_limit: 2000 } });
-    if (response.data.schedules_truncated) {
-      toast.warning("Incomplete Data", "This department has more class meetings than can be loaded at once, so the printout may be missing classes.");
+    const [response, scheduleResponse] = await Promise.all([
+      api.get<InitialTeachingLoadData>("/initial-data", { params: { schedule_limit: 2000 } }),
+      api.get<ApiScheduleRecord[]>("/schedules", {
+        params: { faculty_id: facultyId, semester_id: "active", per_page: 1000 },
+      }),
+    ]);
+    if (scheduleResponse.data.length >= 1000) {
+      throw new Error("The instructor schedule response may be incomplete.");
     }
-    return response.data;
+    return { ...response.data, schedules: scheduleResponse.data };
   };
   const [loadingAction, setLoadingAction] = useState<"load" | null>(null);
   const isLoading = loadingAction !== null;

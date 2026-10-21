@@ -60,7 +60,8 @@ describe('Reports directory', () => {
     const createObjectURL = vi.fn<(blob: Blob) => string>(() => 'blob:report');
     const NativeURL = URL;
     vi.stubGlobal('URL', class extends NativeURL { static createObjectURL = createObjectURL; });
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    let downloadedName = '';
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { downloadedName = this.download; });
     render(<Reports />);
     await screen.findByText('CIT Class Schedule');
     fireEvent.click(screen.getByRole('tab', { name: new RegExp(tab) }));
@@ -74,6 +75,7 @@ describe('Reports directory', () => {
     expect(dialog.queryByRole('cell', { name: code })).toBeNull();
     fireEvent.click(dialog.getByRole('button', { name: /Export CSV/ }));
     await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1));
+    expect(downloadedName).toBe(`${label.replace(/\s+/g, '-')}.csv`);
     const blob = createObjectURL.mock.calls[0][0];
     const csv = await new Promise<string>((resolve) => {
       const reader = new FileReader();

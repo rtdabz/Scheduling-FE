@@ -1,4 +1,5 @@
 import { getPhilippineNowParts } from '../../lib/philippineTime';
+import { buildExportFilename, printWithTitle } from '../../lib/exportFile';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
@@ -642,16 +643,21 @@ export default function Rooms() {
 
   useEffect(() => {
     if (!isDetailModalOpen || !printAfterOpen) return;
-    let attempts = 0;
+    const startedAt = performance.now();
     let frameId = 0;
     const printWhenReady = () => {
       const grid = document.querySelector('.room-timetable-modal .timetable-grid-root');
-      if (grid || attempts >= 120) {
+      if (grid) {
         document.body.classList.add('room-timetable-printing');
-        window.print();
+        const room = rooms.find((entry) => entry.id === selectedRoomIdForDetail);
+        printWithTitle(buildExportFilename('pdf', 'room-timetable', room?.room_code || selectedRoomIdForDetail));
         return;
       }
-      attempts += 1;
+      if (performance.now() - startedAt >= 15000) {
+        setPrintAfterOpen(false);
+        toast.error('Print Failed', 'The room timetable is not ready. Try opening the room again.');
+        return;
+      }
       frameId = window.requestAnimationFrame(printWhenReady);
     };
     frameId = window.requestAnimationFrame(printWhenReady);
@@ -667,7 +673,7 @@ export default function Rooms() {
       window.removeEventListener('afterprint', afterPrint);
       document.body.classList.remove('room-timetable-printing');
     };
-  }, [isDetailModalOpen, printAfterOpen]);
+  }, [isDetailModalOpen, printAfterOpen, rooms, selectedRoomIdForDetail, toast]);
 
   const roomGuideSteps = useMemo(() => [
     { element: '#rooms-filters select', action: 'select' as const, taskHint: 'Change a room filter to continue.', title: 'Find a room', description: 'Search buildings by name, or room codes inside a building. Use the type filter to narrow the list.', side: 'bottom' as const },
@@ -1344,6 +1350,7 @@ export default function Rooms() {
         key={linkedHighlight?.seq ?? 0}
         isOpen={isDetailModalOpen}
         onClose={() => {
+          setPrintAfterOpen(false);
           setIsDetailModalOpen(false);
           setSelectedRoomIdForDetail(null);
         }}

@@ -93,7 +93,6 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
   );
   const generatorDepartmentLogoUrl = generatorDepartment?.logo ?? null;
   const { reloadSchedulingSettings } = scheduler;
-  const generatorLaboratoryEnabled = generatorDepartment?.scheduling_profile !== 'standard';
 
   const assignDepartmentId = selectedSection?.departmentId ?? null;
   const ownDepartmentSchedules = useMemo(() => {
@@ -200,7 +199,6 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
               activeSemester={scheduler.activeSemester}
               departmentId={generatorDepartmentId}
               departmentLogoUrl={generatorDepartmentLogoUrl}
-              laboratoryEnabled={generatorLaboratoryEnabled}
               existingSchedules={scheduler.schedules}
               onAccepted={scheduler.handleAcceptedRecommendation}
               onSectionsChanged={scheduler.refreshData}

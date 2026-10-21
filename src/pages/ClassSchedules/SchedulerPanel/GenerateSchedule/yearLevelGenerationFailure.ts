@@ -167,7 +167,6 @@ const preflightTitles: Record<string, string> = {
   invalid_course_duration: "Correct the course duration",
   missing_lecture_room: "Provide an available lecture room",
   missing_laboratory_room: "Provide an available laboratory room",
-  department_profile_mismatch: "Align the department scheduling profile",
   invalid_department_setting: "Disable the conflicting department setting",
 };
 

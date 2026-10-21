@@ -121,7 +121,6 @@ export default function SetupCoursesStep({
   customizedCourseIds = [],
   onCustomizedChange,
   defaultsOpen = false,
-  laboratoryEnabled = true,
   onDefaultsClose,
   actionsDisabled,
 }: {
@@ -150,7 +149,6 @@ export default function SetupCoursesStep({
   customizedCourseIds?: string[];
   onCustomizedChange?: (courseIds: string[]) => void;
   defaultsOpen?: boolean;
-  laboratoryEnabled?: boolean;
   onDefaultsClose?: () => void;
   actionsDisabled: boolean;
 }) {
@@ -254,6 +252,11 @@ export default function SetupCoursesStep({
 
   const excluded = useMemo(() => new Set(excludedCourseIds), [excludedCourseIds]);
   const customized = useMemo(() => new Set(customizedCourseIds), [customizedCourseIds]);
+  const laboratoryEnabled = courses.some((course) =>
+    !excluded.has(course.id)
+    && !isConfiguredFieldCourse(course, fieldCourseCodes)
+    && (Number(course.labHours ?? 0) > 0 || course.roomTypeRequired === "laboratory"),
+  );
 
   const applyDefaultsToCourses = (nextDefaults: CourseDefaults, nextCustomized: Set<string>) => {
     const working: Record<string, CourseSetupConfig> = { ...configs };

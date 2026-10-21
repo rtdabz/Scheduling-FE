@@ -42,7 +42,6 @@ const apiDepartment = (over: Record<string, unknown> & { id: number }) => ({
   department_code: 'CED',
   department_name: 'College of Education',
   logo: null,
-  scheduling_profile: 'standard' as const,
   created_at: '2026-06-01T00:00:00.000000Z',
   faculties_count: 4,
   sections_count: 7,
@@ -57,7 +56,6 @@ const departments = [
     department_code: 'CIT',
     department_name: 'College of Information Technology',
     logo: LOGO,
-    scheduling_profile: 'laboratory_enabled',
   }),
 ];
 
@@ -85,6 +83,7 @@ describe('Departments management identifies departments by logo', () => {
     render(<Departments />);
 
     expect(await screen.findByText('Logo')).toBeTruthy();
+    expect(screen.queryByText('Scheduling Profile')).toBeNull();
     expect(screen.queryByText('Code')).toBeNull();
     expect(screen.queryByText('CED')).toBeNull();
     expect(screen.queryByText('CIT')).toBeNull();
@@ -98,31 +97,18 @@ describe('Departments management identifies departments by logo', () => {
     expect(screen.getByLabelText('College of Education — no logo uploaded')).toBeTruthy();
   });
 
-  it('shows the code and a specialized-rooms toggle in the detail modal', async () => {
+  it('shows the department details without a scheduling profile', async () => {
     render(<Departments />);
 
     fireEvent.click(await screen.findByText('College of Information Technology'));
 
     expect(screen.getByText('CIT')).toBeTruthy();
-    expect(screen.getAllByText('Specialized rooms').length).toBeGreaterThan(0);
-    expect(screen.getByRole('switch', { name: 'Use specialized rooms' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.queryByText(/Scheduling profile/i)).toBeNull();
+    expect(screen.queryByRole('switch', { name: 'Use specialized rooms' })).toBeNull();
   });
 });
 
-describe('Departments scheduling profile toggle', () => {
-  it('saves the profile straight from the detail modal', async () => {
-    render(<Departments />);
-
-    fireEvent.click(await screen.findByText('College of Education'));
-    fireEvent.click(screen.getByRole('switch', { name: 'Use specialized rooms' }));
-
-    await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
-    expect(patch.mock.calls[0][0]).toBe('/departments/1');
-    expect(patch.mock.calls[0][1]).toEqual({ scheduling_profile: 'laboratory_enabled' });
-    await waitFor(() =>
-      expect(screen.getByRole('switch', { name: 'Use specialized rooms' }).getAttribute('aria-checked')).toBe('true'));
-  });
-
+describe('Departments scheduling profile removal', () => {
   it('is no longer on the create form', async () => {
     render(<Departments />);
 

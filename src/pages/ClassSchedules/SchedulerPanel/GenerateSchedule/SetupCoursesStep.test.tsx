@@ -116,6 +116,38 @@ describe("SetupCoursesStep", () => {
     expect(screen.getByText(/of 2 Courses included/).textContent).toContain("1");
   });
 
+  it("shows lab defaults only when an included course needs a lab, preserving saved defaults", () => {
+    const props = {
+      courses: mockCourses,
+      sections: mockSections,
+      configs: mockConfigs,
+      onConfigChange: vi.fn(),
+      settings: null,
+      defaults: { lectureMinutes: 120, laboratoryMinutes: 180, allowFridaySaturdaySplit: false },
+      defaultsOpen: true,
+      actionsDisabled: false,
+    };
+    const { rerender } = render(<SetupCoursesStep {...props} />);
+    expect((screen.getByLabelText("Laboratory Duration") as HTMLInputElement).value).toBe("3");
+
+    rerender(<SetupCoursesStep {...props} excludedCourseIds={["c2"]} />);
+    expect(screen.queryByLabelText("Laboratory Duration")).toBeNull();
+    expect(screen.queryByLabelText("Default LAB Room Requirement")).toBeNull();
+    expect(screen.getByLabelText("Lecture Duration")).toBeTruthy();
+
+    rerender(<SetupCoursesStep {...props} />);
+    expect((screen.getByLabelText("Laboratory Duration") as HTMLInputElement).value).toBe("3");
+  });
+
+  it("recognizes a required laboratory room even without lab hours", () => {
+    render(<SetupCoursesStep
+      courses={[{ ...mockCourses[0], roomTypeRequired: "laboratory" }]}
+      sections={mockSections} configs={mockConfigs} onConfigChange={vi.fn()}
+      settings={null} defaultsOpen actionsDisabled={false}
+    />);
+    expect(screen.getByLabelText("Laboratory Duration")).toBeTruthy();
+  });
+
   it("applies the Default Lecture Duration to every course without its own settings", () => {
     const onConfigChange = vi.fn();
     const onDefaultsChange = vi.fn();

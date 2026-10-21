@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { X, Check } from 'lucide-react';
 import LoadingSpinner from '../ui/LoadingSpinner';
-import { buildSchedulePdf, type SchedulePdfInput } from '../../pages/ClassSchedules/SchedulerPanel/schedulePdf';
+import { buildSchedulePdf, getSchedulePdfFilename, type SchedulePdfInput } from '../../pages/ClassSchedules/SchedulerPanel/schedulePdf';
+import { createPdfPreview } from '../../lib/pdfPreview';
 
 type PreviewStatus = 'pending' | 'approved' | 'rejected';
 
@@ -30,12 +31,17 @@ export default function ScheduleApprovalPreviewModal({
   useEffect(() => {
     if (!open || !printInput) return undefined;
     let cancelled = false;
-    let objectUrl: string | null = null;
+    let release: (() => void) | undefined;
     buildSchedulePdf(printInput)
-      .then((blob) => {
+      .then(async (blob) => {
         if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setPdf({ url: objectUrl, failed: false });
+        const preview = await createPdfPreview(blob, getSchedulePdfFilename(printInput));
+        if (cancelled) {
+          preview.dispose();
+          return;
+        }
+        release = preview.dispose;
+        setPdf({ url: preview.url, failed: false });
       })
       .catch(() => {
         if (!cancelled) setPdf({ url: null, failed: true });
@@ -43,7 +49,7 @@ export default function ScheduleApprovalPreviewModal({
 
     return () => {
       cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      release?.();
       setPdf({ url: null, failed: false });
     };
   }, [open, printInput]);

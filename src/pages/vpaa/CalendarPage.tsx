@@ -16,6 +16,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import api from '../../lib/api';
+import { buildExportFilename, printWithTitle } from '../../lib/exportFile';
 import Skeleton from '../../components/ui/Skeleton';
 import SearchInput from '../../components/ui/SearchInput';
 import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
@@ -386,7 +387,7 @@ export default function VpaaCalendarPage() {
             {allCollapsed ? <ChevronsUpDown className="h-3.5 w-3.5" /> : <ChevronsDownUp className="h-3.5 w-3.5" />}
             {allCollapsed ? 'Expand days' : 'Collapse days'}
           </ToolButton>
-          <ToolButton onClick={() => window.print()} label="Print calendar"><Printer className="h-3.5 w-3.5" />Print</ToolButton>
+          <ToolButton onClick={() => printWithTitle(buildExportFilename('pdf', 'master-calendar', data.semester?.academic_year, data.semester?.semester))} label="Print calendar"><Printer className="h-3.5 w-3.5" />Print</ToolButton>
           <span className="flex items-center gap-1 text-[11px] text-slate-500"><Clock className="h-3 w-3" />Standard hours {standardHoursLabel}</span>
         </div>
       )}

@@ -13,6 +13,7 @@ import {
   type PrintMeetingGroup,
 } from "./printScheduleFormat";
 import { registerSystemPdfFonts } from "./fonts/systemPdfFonts";
+import { buildExportFilename } from "../../../lib/exportFile";
 
 export interface SchedulePdfInput {
   sections: Section[];
@@ -23,6 +24,22 @@ export interface SchedulePdfInput {
   activeSemester: Semester | null;
   printAllSections?: boolean;
 }
+
+export const getSchedulePdfFilename = (input: SchedulePdfInput): string => {
+  const activeSection = input.sections.find((section) => section.id === input.selectedSectionId);
+  const sections = input.activeSemester
+    ? input.sections.filter((section) => Number(section.semesterId) === Number(input.activeSemester?.id))
+    : input.sections;
+  const departmentIds = !input.printAllSections && activeSection
+    ? [activeSection.departmentId]
+    : [...new Set(sections.map((section) => section.departmentId))];
+  const department = departmentIds.length === 1
+    ? input.departments.find((entry) => Number(entry.id) === Number(departmentIds[0]))
+    : null;
+  return buildExportFilename('pdf', 'class-schedule',
+    department?.department_code || department?.department_name || (departmentIds.length > 1 ? 'all-departments' : 'department'),
+    input.activeSemester?.academic_year, input.activeSemester?.semester);
+};
 
 interface AutoTableDocument extends jsPDF {
   lastAutoTable: {

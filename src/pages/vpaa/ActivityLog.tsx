@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import axios from 'axios';
 import { ChevronLeft, ChevronRight, ClipboardList, Download, Filter, RefreshCw, X } from 'lucide-react';
 import api from '../../lib/api';
+import { buildExportFilename, downloadFile } from '../../lib/exportFile';
+import { PHILIPPINE_TIME_ZONE } from '../../lib/philippineTime';
 import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
 import type { ColumnDef } from '@tanstack/react-table';
 import DataTable from '../../components/ui/DataTable';
@@ -238,14 +240,11 @@ export default function ActivityLog() {
         params: { export: 'csv', ...Object.fromEntries(Object.entries(applied).filter(([, value]) => value)) },
         responseType: 'blob',
       });
-      const url = URL.createObjectURL(response.data);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `vpaa-activity-log-${new Date().toISOString().slice(0, 10)}.csv`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      const timestamp = new Intl.DateTimeFormat('sv-SE', {
+        timeZone: PHILIPPINE_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+      }).format(new Date());
+      downloadFile(response.data, buildExportFilename('csv', 'vpaa-activity-log', timestamp));
     } catch {
       setError('Unable to export the activity log.');
     }

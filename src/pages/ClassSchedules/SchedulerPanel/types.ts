@@ -35,7 +35,6 @@ export interface Department {
   department_code: string;
   logo?: string | null;
   sunday_online_only_enabled?: boolean | number | null;
-  scheduling_profile?: 'standard' | 'laboratory_enabled';
 }
 
 export interface Semester {

@@ -143,7 +143,6 @@ interface Props {
   activeSemester: Semester | null;
   departmentId: number | null;
   departmentLogoUrl?: string | null;
-  laboratoryEnabled?: boolean;
   existingSchedules: ScheduleItem[];
   onAccepted: (schedules?: ApiScheduleRecord[]) => void | Promise<void>;
   onSectionsChanged?: () => void | Promise<void>;
@@ -213,7 +212,6 @@ export default function YearLevelGenerateScheduleWorkflow({
   activeSemester,
   departmentId,
   departmentLogoUrl,
-  laboratoryEnabled = true,
   existingSchedules,
   onAccepted,
   onSectionsChanged,
@@ -1644,7 +1642,6 @@ export default function YearLevelGenerateScheduleWorkflow({
                     setSetupDraft((current) => ({ ...current, customizedCourseIds }))
                   }
                   defaultsOpen={defaultsOpen}
-                  laboratoryEnabled={laboratoryEnabled}
                   onDefaultsClose={() => setDefaultsOpen(false)}
                   actionsDisabled={generating || loadingSettings}
                 />

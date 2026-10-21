@@ -34,6 +34,7 @@ import type { Room, Course } from '../ClassSchedules/SchedulerPanel/types';
 import type { SchedulerCacheData } from '../ClassSchedules/SchedulerPanel/hooks/initialDataMapper';
 import { getDeptBadgeStyles } from '../../lib/departmentTheme';
 import api from '../../lib/api';
+import { buildExportFilename, downloadFile } from '../../lib/exportFile';
 import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
 import { getStoredUser } from '../../lib/storedUser';
 import {
@@ -926,13 +927,7 @@ export default function Reports() {
       }
 
       const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.setAttribute('href', url);
-      link.setAttribute('download', `${row.label.replace(/[^a-zA-Z0-9]/g, '_')}_${kind}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      downloadFile(blob, buildExportFilename('csv', row.label, data.activeSemester?.academic_year, data.activeSemester?.semester));
       toast.success('Export Complete', `${row.label} data exported to CSV.`);
     } catch {
       toast.error('Export Failed', 'Could not export CSV data.');
