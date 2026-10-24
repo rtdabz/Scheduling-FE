@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useId, type MouseEvent, type ReactNode } from 'react';
 import { X } from 'lucide-react';
+import { useModalScrollLock } from '../../hooks/useModalScrollLock';
 
 export interface ModalProps {
   isOpen: boolean;
@@ -14,6 +15,7 @@ export interface ModalProps {
   closeOnEscape?: boolean;
   showCloseButton?: boolean;
   className?: string;
+  inert?: boolean;
 }
 
 const sizeClasses: Record<NonNullable<ModalProps['size']>, string> = {
@@ -36,6 +38,7 @@ export default function Modal({
   closeOnEscape = true,
   showCloseButton = true,
   className = '',
+  inert = false,
 }: ModalProps) {
   const titleId = useId();
   const descriptionId = useId();
@@ -51,15 +54,7 @@ export default function Modal({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [closeOnEscape, isOpen, onClose]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [isOpen]);
+  useModalScrollLock(isOpen);
 
   if (!isOpen) return null;
 
@@ -76,7 +71,9 @@ export default function Modal({
       <section
         className={`flex max-h-[calc(100dvh-1rem)] w-full ${sizeClasses[size]} flex-col overflow-hidden rounded-xl bg-[#F7F4F0] animate-in zoom-in-95 duration-200 sm:max-h-[calc(100vh-2rem)] ${className}`}
         role="dialog"
-        aria-modal="true"
+        inert={inert || undefined}
+        aria-hidden={inert || undefined}
+        aria-modal={inert ? undefined : true}
         aria-labelledby={title ? titleId : undefined}
         aria-describedby={description ? descriptionId : undefined}
       >

@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ColumnDef } from '@tanstack/react-table';
 import { GitCompare } from 'lucide-react';
-import DataTable from '../ui/DataTable';
 import LoadingSpinner from '../ui/LoadingSpinner';
-import Modal from '../ui/Modal';
-import { useDataTable } from '../ui/useDataTable';
+import ScheduleChangesModal, { type ScheduleChangeDetailRow } from './ScheduleChangesModal';
 import api from '../../lib/api';
 import { formatTime12h } from '../../lib/timeGrid';
 
@@ -55,16 +52,7 @@ const previousLabel = (status: string): string => (
   status === 'rejected_by_dean' || status === 'rejected_by_vpaa' ? 'returned' : 'recalled'
 );
 
-interface DiffDetailRow {
-  key: string;
-  section: string;
-  change: string;
-  classLabel: string;
-  before: string;
-  after: string;
-}
-
-const toDetailRows = (sections: SectionDiff[]): DiffDetailRow[] => sections.flatMap((section) => (
+const toDetailRows = (sections: SectionDiff[]): ScheduleChangeDetailRow[] => sections.flatMap((section) => (
   section.changes.map((change, index) => ({
     key: `${section.section_id}-${index}`,
     section: section.section_name ?? 'Section',
@@ -75,48 +63,11 @@ const toDetailRows = (sections: SectionDiff[]): DiffDetailRow[] => sections.flat
   }))
 ));
 
-const detailColumns: ColumnDef<DiffDetailRow>[] = [
-  { accessorKey: 'section', header: 'Section', meta: { cellClassName: 'whitespace-nowrap' } },
-  { accessorKey: 'change', header: 'Change', meta: { cellClassName: 'whitespace-nowrap' } },
-  { accessorKey: 'classLabel', header: 'Class', meta: { cellClassName: 'whitespace-nowrap' } },
-  { accessorKey: 'before', header: 'Before' },
-  { accessorKey: 'after', header: 'After' },
-];
-
-function DiffDetailsModal({ sections, isOpen, onClose }: { sections: SectionDiff[]; isOpen: boolean; onClose: () => void }) {
-  const data = useMemo(() => toDetailRows(sections), [sections]);
-  const table = useDataTable<DiffDetailRow>({
-    data,
-    columns: detailColumns,
-    pageSize: 25,
-    getRowId: (row) => row.key,
-  });
-
-  return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      size="xl"
-      title="Changes from the previous version"
-      description="Every class that differs from the recalled or returned version. Instructor changes are not listed."
-    >
-      <DataTable
-        table={table}
-        variant="embedded"
-        density="compact"
-        totalLabel="changes"
-        ariaLabel="Changes from the previous version"
-        emptyTitle="No class changes."
-        emptyDescription="This version has the same classes as the one before it."
-      />
-    </Modal>
-  );
-}
-
 export default function RevisionDiffPanel({ submissionId }: { submissionId: number }) {
   const [sections, setSections] = useState<SectionDiff[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const detailRows = useMemo(() => toDetailRows(sections ?? []), [sections]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -158,7 +109,7 @@ export default function RevisionDiffPanel({ submissionId }: { submissionId: numb
           </button>
         )}
       </div>
-      <DiffDetailsModal sections={sections} isOpen={detailsOpen} onClose={() => setDetailsOpen(false)} />
+      <ScheduleChangesModal data={detailRows} isOpen={detailsOpen} onClose={() => setDetailsOpen(false)} />
       {sections.map((section) => (
         <div key={section.section_id} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
           <p className="font-bold text-slate-800">

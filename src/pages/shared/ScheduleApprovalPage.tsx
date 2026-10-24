@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Eye, X } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Eye } from 'lucide-react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -12,14 +13,17 @@ import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import TableActionButton from '../../components/ui/TableActionButton';
 import DataTable from '../../components/ui/DataTable';
 import ConfirmModal from '../../components/ui/ConfirmModal';
+import RoomTransferRequests from '../../components/rooms/RoomTransferRequests';
 import LoadErrorBanner from '../../components/ui/LoadErrorBanner';
 import TruncatedDataNotice from '../../components/ui/TruncatedDataNotice';
 import ScheduleApprovalPreviewModal from '../../components/scheduling/ScheduleApprovalPreviewModal';
+import ScheduleRejectionModal from '../../components/scheduling/ScheduleRejectionModal';
 import PreApprovalCheck from '../../components/scheduling/PreApprovalCheck';
 import RevisionChangesPanel from '../../components/scheduling/RevisionChangesPanel';
 import RevisionDiffPanel from '../../components/scheduling/RevisionDiffPanel';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
+import { recoveryError, roomTransferDetailChanges, type RoomTransferRequest } from '../../lib/roomRecovery';
 import { programLabel } from '../../lib/programLabel';
 import { publishLiveTopics } from '../../lib/liveUpdates';
 import { getStoredUser } from '../../lib/storedUser';
@@ -46,7 +50,7 @@ export type ApprovalStage = 'dean' | 'vpaa';
 
 type Mode = 'on-site' | 'online' | 'field';
 type QueueTab = 'pending' | 'approved' | 'withdrawn' | 'rejected';
-type RequestType = 'approval' | 'withdrawal' | 'revision';
+type RequestType = 'approval' | 'withdrawal' | 'revision' | 'room_transfer';
 
 interface ScheduleApproval {
   id: number;
@@ -65,6 +69,7 @@ interface ScheduleApproval {
   revisionStatus: RevisionStatus;
   workflowSectionIds: string[];
   sectionCount: number;
+  transfer?: RoomTransferRequest;
 }
 
 interface RawDepartment {
@@ -169,7 +174,7 @@ const isPendingFor = (stage: ApprovalStage, status: ApprovalDisplayStatus) => (s
 
 const matchesQueueTab = (stage: ApprovalStage, entry: ScheduleApproval, tab: QueueTab): boolean => {
   if (tab === 'withdrawn') return entry.requestType === 'withdrawal';
-  if (tab === 'pending') return entry.requestType === 'approval' && isPendingFor(stage, entry.status);
+  if (tab === 'pending') return (entry.requestType === 'approval' || entry.requestType === 'room_transfer') && isPendingFor(stage, entry.status);
   if (tab === 'approved') {
     return stage === 'dean'
       ? ['approved_by_dean', 'conditionally_approved', 'approved'].includes(entry.status)
@@ -241,6 +246,7 @@ interface ApprovalQueueCache {
 
 export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }) {
   const { toast, confirm } = useToast();
+  const [params, setParams] = useSearchParams();
   const user = useMemo(() => getStoredUser(), []);
   const scopeDepartmentId = stage === 'dean' ? user?.department_id ?? null : null;
 
@@ -254,10 +260,14 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isTruncated, setIsTruncated] = useState(cached?.isTruncated ?? false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [transfers, setTransfers] = useState<RoomTransferRequest[]>([]);
+  const [transfersLoading, setTransfersLoading] = useState(true);
+  const [transfersError, setTransfersError] = useState('');
 
   const [selectedQueueTab, setSelectedQueueTab] = useState<QueueTab>('pending');
   const [selectedDepartmentId, setSelectedDepartmentId] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState<'all' | ApprovalDisplayStatus>('all');
+  const [selectedRequestType, setSelectedRequestType] = useState<'all' | 'schedule' | 'room_transfer'>('all');
   const [sorting, setSorting] = useState<SortingState>([]);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
 
@@ -274,6 +284,15 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
   const [isRejecting, setIsRejecting] = useState(false);
 
   const liveRevision = useLiveRevision(['approvals', 'schedules']);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void api.get<{ transfers: RoomTransferRequest[] }>('/room-recovery/transfers', { signal: controller.signal })
+      .then(({ data }) => { if (!controller.signal.aborted) { setTransfers(data.transfers ?? []); setTransfersError(''); } })
+      .catch(error => { if (!controller.signal.aborted) setTransfersError(recoveryError(error)); })
+      .finally(() => { if (!controller.signal.aborted) setTransfersLoading(false); });
+    return () => controller.abort();
+  }, [liveRevision, reloadKey, stage, scopeDepartmentId]);
 
   useEffect(() => {
     let active = true;
@@ -375,6 +394,35 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
   }, [cacheKey, liveRevision, reloadKey, scopeDepartmentId, stage, toast]);
 
   const refresh = useCallback(() => setReloadKey((key) => key + 1), []);
+  const closeTransfer = useCallback(() => {
+    setViewEntry(null);
+    setParams(current => { const next = new URLSearchParams(current); next.delete('room_transfer'); return next; }, { replace: true });
+  }, [setParams]);
+  const transferReviewed = useCallback(() => { closeTransfer(); refresh(); }, [closeTransfer, refresh]);
+
+  const queueEntries = useMemo<ScheduleApproval[]>(() => [...entries, ...transfers.map((transfer): ScheduleApproval => {
+    const changes = roomTransferDetailChanges(transfer);
+    const sections = [...new Set(changes.map(change => change.section))];
+    return {
+      id: transfer.department_id ?? Number(departments.find(department => department.department_name === transfer.department)?.id ?? 0),
+      submissionId: 0,
+      entryKey: `room-transfer:${transfer.id}`,
+      department: transfer.department,
+      program: '—',
+      section: sections.join(', '),
+      sectionCount: sections.length,
+      subjectsScheduled: new Set(changes.map(change => change.course)).size,
+      submittedBy: transfer.submitted_by,
+      submittedAt: transfer.submitted_at,
+      deanReviewedAt: transfer.dean_reviewed_at ?? null,
+      status: transfer.status === 'pending_dean' ? 'submitted' : transfer.status === 'pending_vpaa' ? 'approved_by_dean' : transfer.status === 'rejected_by_vpaa' ? 'rejected' : transfer.status,
+      submissionStatus: transfer.status,
+      requestType: 'room_transfer',
+      revisionStatus: 'initial',
+      workflowSectionIds: [],
+      transfer,
+    };
+  })], [entries, transfers, departments]);
 
   const resetPage = () => setPagination((prev) => ({ ...prev, pageIndex: 0 }));
 
@@ -382,12 +430,13 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     setSelectedQueueTab('pending');
     setSelectedDepartmentId('all');
     setSelectedStatus('all');
+    setSelectedRequestType('all');
     resetPage();
   };
 
   const tabEntries = useMemo(
-    () => entries.filter((entry) => matchesQueueTab(stage, entry, selectedQueueTab)),
-    [entries, selectedQueueTab, stage],
+    () => queueEntries.filter((entry) => matchesQueueTab(stage, entry, selectedQueueTab)),
+    [queueEntries, selectedQueueTab, stage],
   );
 
   const statusOptions = useMemo(
@@ -398,12 +447,18 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
   const filteredData = useMemo(() => tabEntries.filter((entry) => (
     (selectedDepartmentId === 'all' || String(entry.id) === selectedDepartmentId)
     && (selectedStatus === 'all' || entry.status === selectedStatus)
-  )), [selectedDepartmentId, selectedStatus, tabEntries]);
+    && (selectedRequestType === 'all' || (selectedRequestType === 'room_transfer' ? !!entry.transfer : !entry.transfer))
+  )), [selectedDepartmentId, selectedStatus, selectedRequestType, tabEntries]);
+
+  useEffect(() => {
+    const lastPage = Math.max(0, Math.ceil(filteredData.length / pagination.pageSize) - 1);
+    if (pagination.pageIndex > lastPage) setPagination(previous => ({ ...previous, pageIndex: lastPage }));
+  }, [filteredData.length, pagination.pageIndex, pagination.pageSize]);
 
   const queueCounts = useMemo(() => QUEUE_TABS.reduce<Record<QueueTab, number>>((counts, tab) => {
-    counts[tab.id] = entries.filter((entry) => matchesQueueTab(stage, entry, tab.id)).length;
+    counts[tab.id] = queueEntries.filter((entry) => matchesQueueTab(stage, entry, tab.id)).length;
     return counts;
-  }, { pending: 0, approved: 0, withdrawn: 0, rejected: 0 }), [entries, stage]);
+  }, { pending: 0, approved: 0, withdrawn: 0, rejected: 0 }), [queueEntries, stage]);
 
   const inPackage = useCallback((entry: ScheduleApproval, schedule: RawSchedule) => (
     Number(schedule.department_id) === entry.id
@@ -411,7 +466,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
   ), []);
 
   useEffect(() => {
-    if (!viewEntry || !CLOSED_SUBMISSION_STATUSES.has(viewEntry.submissionStatus)) return undefined;
+    if (!viewEntry || viewEntry.transfer || !CLOSED_SUBMISSION_STATUSES.has(viewEntry.submissionStatus)) return undefined;
     let active = true;
     const { submissionId } = viewEntry;
     api.get<SubmissionSnapshotResponse>(`/schedule-submissions/${submissionId}/snapshot`)
@@ -430,13 +485,13 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     return () => { active = false; };
   }, [toast, viewEntry]);
 
-  const viewIsClosed = viewEntry !== null && CLOSED_SUBMISSION_STATUSES.has(viewEntry.submissionStatus);
+  const viewIsClosed = viewEntry !== null && !viewEntry.transfer && CLOSED_SUBMISSION_STATUSES.has(viewEntry.submissionStatus);
   const viewSnapshotLoaded = viewSnapshot !== null && viewSnapshot.submissionId === viewEntry?.submissionId;
   const viewSnapshotLoading = viewIsClosed && !viewSnapshotLoaded;
   const viewSnapshotSchedules = viewIsClosed && viewSnapshotLoaded ? viewSnapshot.schedules : null;
 
   const printInput = useMemo<SchedulePdfInput | null>(() => {
-    if (!viewEntry || !printSource || viewSnapshotLoading) return null;
+    if (!viewEntry || viewEntry.transfer || !printSource || viewSnapshotLoading) return null;
     const allowed = new Set(scheduleStatusesForSubmission(viewEntry.submissionStatus));
     const scheduleIds = new Set(rawSchedules
       .filter((schedule) => inPackage(viewEntry, schedule) && allowed.has(schedule.status))
@@ -565,6 +620,11 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
 
   const columns = useMemo<ColumnDef<ScheduleApproval>[]>(() => [
     {
+      accessorKey: 'requestType',
+      header: 'Request Type',
+      cell: ({ row }) => <div><span className="whitespace-nowrap rounded-full bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-800">{row.original.transfer ? 'Room Transfer' : 'Schedule Approval'}</span>{row.original.transfer && <p className="mt-1 text-xs text-gray-500">{row.original.transfer.semester_label}</p>}</div>,
+    },
+    {
       accessorKey: 'department',
       header: 'Department',
       cell: (info) => <span className="font-bold text-gray-800">{info.getValue() as string}</span>,
@@ -623,6 +683,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       accessorKey: 'revisionStatus',
       header: 'Revision',
       cell: (info) => {
+        if (info.row.original.transfer) return <span className="text-gray-500">—</span>;
         const revision = info.getValue() as RevisionStatus;
         const badgeClass = `px-2.5 py-0.5 rounded-full text-[11px] font-bold ring-1 ring-inset uppercase tracking-wider ${REVISION_STATUS_BADGE[revision]}`;
         return revision === 'modified' ? (
@@ -667,7 +728,9 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
   });
 
   const selectClass = 'px-3.5 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors';
-  const viewPending = viewEntry !== null && viewEntry.requestType === 'approval' && isPendingFor(stage, viewEntry.status);
+  const viewPending = viewEntry !== null && !viewEntry.transfer && viewEntry.requestType === 'approval' && isPendingFor(stage, viewEntry.status);
+  const viewTransferId = viewEntry ? viewEntry.transfer?.id : params.get('room_transfer');
+  const viewTransfer = transfers.find(transfer => transfer.id === viewTransferId);
 
   return (
     <div className="relative">
@@ -693,7 +756,10 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       </div>
 
       <div id="schedule-approval-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 mb-6">
-        <div className="flex flex-col sm:flex-row gap-3 flex-1">
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap flex-1">
+          <select aria-label="Request Type" value={selectedRequestType} onChange={event => { setSelectedRequestType(event.target.value as typeof selectedRequestType); resetPage(); }} className={selectClass}>
+            <option value="all">All Request Types</option><option value="schedule">Schedule Approval</option><option value="room_transfer">Room Transfer</option>
+          </select>
           {stage === 'vpaa' && (
             <select
               aria-label="Department"
@@ -733,6 +799,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       {loadError && (
         <LoadErrorBanner message={`${loadError} The queue below may be empty or out of date.`} onRetry={refresh} className="mb-4" />
       )}
+      {transfersError && <LoadErrorBanner message={`Room transfers could not be refreshed: ${transfersError} Regular schedule approvals remain available.`} onRetry={refresh} className="mb-4" />}
 
       {isTruncated && !loadError && (
         <TruncatedDataNotice className="mb-4">
@@ -743,16 +810,19 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       <div id="schedule-approval-list">
         <DataTable
           table={table}
-          isLoading={isLoading}
-          totalLabel="schedules"
+          isLoading={isLoading || transfersLoading}
+          totalLabel="requests"
           ariaLabel="Schedule submissions"
+          scrollClassName="overflow-x-auto"
+          scrollAriaLabel="Approval requests scroll area"
           emptyTitle={loadError ? 'The queue could not be loaded.' : 'No schedules found.'}
           emptyDescription={loadError ? 'Use Retry above to load it again.' : 'Adjust your filters and try again.'}
           cellClassName={(columnId) => (['status', 'revisionStatus', 'actions'].includes(columnId) ? 'whitespace-nowrap' : '')}
         />
       </div>
 
-      {viewEntry && (
+      {viewTransfer && <RoomTransferRequests transfers={[viewTransfer]} stage={stage} onClose={closeTransfer} onReviewed={transferReviewed} />}
+      {viewEntry && !viewEntry.transfer && (
         <ScheduleApprovalPreviewModal
           open
           title={`${entryLabel(viewEntry)} Schedule${viewSnapshotSchedules ? ' (as submitted)' : ''}`}
@@ -810,59 +880,11 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       </ConfirmModal>
 
       {rejectEntry && (
-        <div role="dialog" aria-modal="true" aria-labelledby="reject-schedule-title" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-5 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
-              <h3 id="reject-schedule-title" className="text-lg font-bold text-gray-800 font-display">Return Schedule for Revision</h3>
-              <button
-                type="button"
-                aria-label="Close"
-                disabled={isRejecting}
-                onClick={() => setRejectEntry(null)}
-                className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer disabled:opacity-50"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <p className="text-xs text-gray-500 leading-relaxed">
-                Please provide a reason for returning the schedule for <strong>{entryLabel(rejectEntry)}</strong>.
-              </p>
-              <div>
-                <label htmlFor="reject-reason" className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                  Reason <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  id="reject-reason"
-                  rows={4}
-                  value={rejectReason}
-                  onChange={(e) => { setRejectReason(e.target.value); setRejectError(''); }}
-                  placeholder="Explain what needs to change..."
-                  className={`w-full px-3 py-2 border rounded-xl focus:ring-2 outline-none text-xs bg-white resize-none transition-all ${rejectError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'}`}
-                />
-                {rejectError && <p className="text-xs text-red-500 mt-1 font-semibold">{rejectError}</p>}
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  disabled={isRejecting}
-                  onClick={() => setRejectEntry(null)}
-                  className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-xs font-semibold cursor-pointer bg-white disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={isRejecting}
-                  onClick={() => { void confirmReject(); }}
-                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors text-xs font-semibold cursor-pointer disabled:opacity-50"
-                >
-                  {isRejecting ? 'Returning...' : 'Confirm Return'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ScheduleRejectionModal open title="Return Schedule for Revision"
+          description={<>Please provide a reason for returning the schedule for <strong>{entryLabel(rejectEntry)}</strong>.</>}
+          reason={rejectReason} error={rejectError} isSubmitting={isRejecting}
+          onReasonChange={value => { setRejectReason(value); setRejectError(''); }}
+          onClose={() => setRejectEntry(null)} onConfirm={() => { void confirmReject(); }} />
       )}
     </div>
   );

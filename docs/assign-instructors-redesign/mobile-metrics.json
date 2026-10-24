@@ -1,0 +1,54 @@
+{
+  "height": 844,
+  "scrollY": 0,
+  "rects": [
+    {
+      "class": "assign-modal-overlay",
+      "top": 0,
+      "height": 844,
+      "scroll": 844,
+      "client": 844,
+      "overflow": "visible"
+    },
+    {
+      "class": "assign-modal",
+      "top": 8,
+      "height": 828,
+      "scroll": 828,
+      "client": 828,
+      "overflow": "hidden"
+    },
+    {
+      "class": "assign-modal-header",
+      "top": 8,
+      "height": 56,
+      "scroll": 56,
+      "client": 56,
+      "overflow": "visible"
+    },
+    {
+      "class": "assign-progress",
+      "top": 64,
+      "height": 40,
+      "scroll": 39,
+      "client": 39,
+      "overflow": "visible"
+    },
+    {
+      "class": "assign-modal-body",
+      "top": 104,
+      "height": 641,
+      "scroll": 1771,
+      "client": 641,
+      "overflow": "auto"
+    },
+    {
+      "class": "assign-modal-footer",
+      "top": 745,
+      "height": 91,
+      "scroll": 90,
+      "client": 90,
+      "overflow": "visible"
+    }
+  ]
+}

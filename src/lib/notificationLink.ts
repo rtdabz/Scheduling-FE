@@ -73,6 +73,20 @@ export const notificationLink = (
   role: string,
   metadata?: Record<string, unknown> | null,
 ): string | undefined => {
+  if ((type === 'room_transfer_submitted' && role === 'dean') || (type === 'room_transfer_dean_approved' && role === 'vpaa')) {
+    const query = typeof metadata?.plan_id === 'string' ? `?room_transfer=${encodeURIComponent(metadata.plan_id)}` : '';
+    return `${role === 'dean' ? '/dean' : ''}/schedules/approval${query}#schedule-approval-list`;
+  }
+  if ((type === 'room_transfer_approved' || type === 'room_transfer_rejected') && (role === 'secretary' || role === 'program_head')) {
+    const params = new URLSearchParams({ recovery: 'open' });
+    if (typeof metadata?.plan_id === 'string') params.set('room_transfer', metadata.plan_id);
+    return `/${role}/schedule-management?${params}`;
+  }
+  if ((type === 'room_recovery' || type === 'room_recovery_applied') && (role === 'secretary' || role === 'program_head')) {
+    const id = Number(metadata?.recovery_case_id);
+    const semester = Number(metadata?.semester_id);
+    return `/${role}/schedule-management?recovery=${Number.isInteger(id) && id > 0 ? id : 'open'}${Number.isInteger(semester) && semester > 0 ? `&recovery_semester=${semester}` : ''}`;
+  }
   if (role !== 'vpaa' && role !== 'dean' && role !== 'secretary' && role !== 'program_head') return undefined;
   const page = pageFor(type, role);
   if (!page) return undefined;

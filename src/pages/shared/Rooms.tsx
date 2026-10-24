@@ -21,12 +21,17 @@ import {
   Plus,
   Archive,
   AlertTriangle,
+  Ban,
+  CheckCircle2,
 } from 'lucide-react';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import RoomDetailModal from '../../components/ui/RoomDetailModal';
+import RoomRecoveryActions from '../../components/rooms/RoomRecoveryActions';
+import { recoveryError } from '../../lib/roomRecovery';
+import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import TruncatedDataNotice from '../../components/ui/TruncatedDataNotice';
 import { getStoredUser } from '../../lib/storedUser';
@@ -128,6 +133,7 @@ const mapApiRoom = (r: ApiRoom): Room => ({
 });
 
 export default function Rooms() {
+  const roomRevision = useLiveRevision(['rooms', 'schedules']);
   const { toast } = useToast();
   const user = getStoredUser();
   const roomsCacheKey = `page:rooms:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}:${user?.program_id ?? 'all'}`;
@@ -224,6 +230,8 @@ export default function Rooms() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [recoveryRoomId, setRecoveryRoomId] = useState('');
+  const [saveError, setSaveError] = useState('');
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [idToDelete, setIdToDelete] = useState<number | null>(null);
 
@@ -289,11 +297,12 @@ export default function Rooms() {
       }
     };
     void fetchData();
-  }, [roomsCacheKey, toast]);
+  }, [roomsCacheKey, toast, roomRevision]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
+    setSaveError('');
 
     let hasError = false;
     const trimmedBuilding = building.trim();
@@ -351,7 +360,7 @@ export default function Rooms() {
         building: trimmedBuilding,
         room_type: (!selectedBuilding && !isEditMode) ? 'lecture' : roomType,
         allow_lecture_usage: (selectedBuilding || isEditMode) && roomType === 'laboratory' && allowLectureUsage,
-        status,
+        ...(!isEditMode ? { status } : {}),
         department_id: isVpaa ? (departmentId ? parseInt(departmentId) : null) : (departmentId ? parseInt(departmentId) : (user?.department_id ? Number(user.department_id) : null))
       };
 
@@ -387,20 +396,23 @@ export default function Rooms() {
       setIsEditMode(false);
       setEditingId(null);
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { message?: string } } };
-      const message = err?.response?.data?.message || 'Failed to save room';
-      toast.error('Error', message);
+      const err = error as { response?: { status?: number } };
+      if (err.response?.status === 422) {
+        setSaveError(recoveryError(error));
+      } else {
+        toast.error('Error', recoveryError(error));
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleEditClick = (room: Room) => {
+    setSaveError('');
     setRoomCode(room.room_code);
     setBuilding(room.building || '');
     setRoomType(room.room_type);
     setAllowLectureUsage(room.room_type === 'laboratory' && room.allow_lecture_usage);
-    setStatus(room.status);
     setDepartmentId(room.department_id ? room.department_id.toString() : '');
     setCodeError('');
     setBuildingError('');
@@ -683,6 +695,12 @@ export default function Rooms() {
 
   return (
     <div id="rooms-page" className="space-y-6">
+      <RoomRecoveryActions key={recoveryRoomId} rooms={rooms} room={recoveryRoomId} onRoomChange={setRecoveryRoomId} onAvailabilityChanged={(id, nextStatus, message) => {
+        const nextRooms = rooms.map(room => room.id === id ? { ...room, status: nextStatus } : room);
+        setRooms(nextRooms);
+        setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeSemester, schedulesTruncated });
+        toast.success(nextStatus === 'available' ? 'Room available' : 'Room unavailable', message);
+      }} />
       <div id="rooms-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans">
         <SearchInput
           value={globalFilter}
@@ -748,6 +766,7 @@ export default function Rooms() {
               id="rooms-add-button"
               onClick={() => {
                 setIsEditMode(false);
+                setSaveError('');
                 setEditingId(null);
                 setRoomCode('');
                 setBuilding(selectedBuilding || '');
@@ -999,7 +1018,12 @@ export default function Rooms() {
                           <Clock size={12} />
                           <span>Today's Status</span>
                         </div>
-                        {liveStatus.status === 'occupied' ? (
+                        {room.status === 'not available' ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-700">
+                            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                            Unavailable
+                          </span>
+                        ) : liveStatus.status === 'occupied' ? (
                           <div className="flex items-center gap-2">
                             <span className="relative flex h-2 w-2">
                               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -1033,6 +1057,17 @@ export default function Rooms() {
                           <Archive size={13} />
                           <span>Archive</span>
                         </button>
+                        {!['online', 'field'].includes(room.room_type) && (
+                          <button
+                            title={room.status === 'available' ? 'Mark Unavailable' : 'Mark Available'}
+                            aria-label={room.status === 'available' ? 'Mark Unavailable' : 'Mark Available'}
+                            onClick={() => setRecoveryRoomId(String(room.id))}
+                            className={`flex min-w-0 items-center gap-1 rounded-xl border px-2 py-1.5 text-xs font-semibold transition-colors ${room.status === 'available' ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'}`}
+                          >
+                            {room.status === 'available' ? <Ban size={13} className="shrink-0" /> : <CheckCircle2 size={13} className="shrink-0" />}
+                            <span className="truncate">{room.status === 'available' ? 'Mark Unavailable' : 'Mark Available'}</span>
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1051,6 +1086,7 @@ export default function Rooms() {
               onEdit={handleEditClick}
               onArchive={(room) => { void triggerDeleteConfirmation(room.id); }}
               onPrint={handlePrintRoom}
+              onAvailabilityChange={(room) => setRecoveryRoomId(String(room.id))}
             />
           )}
         </div>
@@ -1075,6 +1111,7 @@ export default function Rooms() {
               </button>
             </div>
             <form id="room-form" onSubmit={handleSubmit} noValidate className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
+              {saveError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{saveError}</p>}
               {liveRoomCodeDuplicate && (selectedBuilding || isEditMode) && (
                 <div className="flex items-center gap-2.5 p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-700 animate-in fade-in">
                   <AlertTriangle size={16} className="shrink-0 text-red-600" />
@@ -1147,7 +1184,7 @@ export default function Rooms() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className={`grid ${isEditMode ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
                 {(selectedBuilding || isEditMode) && (
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
@@ -1170,11 +1207,12 @@ export default function Rooms() {
                   </div>
                 )}
 
-                <div className={(selectedBuilding || isEditMode) ? "" : "col-span-2"}>
+                {!isEditMode && <div className={selectedBuilding ? "" : "col-span-2"}>
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
                     Status <span className="text-red-500">*</span>
                   </label>
                   <select
+                    aria-label="Room status"
                     value={status}
                     onChange={(e) => setStatus(e.target.value as 'available' | 'not available')}
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
@@ -1182,7 +1220,7 @@ export default function Rooms() {
                     <option value="available">Available</option>
                     <option value="not available">Not Available</option>
                   </select>
-                </div>
+                </div>}
               </div>
 
               {(selectedBuilding || isEditMode) && roomType === 'laboratory' && (

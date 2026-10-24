@@ -1,6 +1,5 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BookOpen, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Info, Layers3, ListChecks, Pencil, Plus, Save, Search, Scale, SlidersHorizontal, UserCheck, UserRound, Users, X } from 'lucide-react';
-import { flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import type { ColumnDef } from "@tanstack/react-table";
 import DataTable from "../../../../components/ui/DataTable";
 import { useDataTable } from "../../../../components/ui/useDataTable";
@@ -11,9 +10,9 @@ import { useToast } from "../../../../context/ToastContext";
 import { facultyEligibilityForSubject } from "../facultyEligibility";
 import { AVAILABILITY_WARNING_TITLE, isAvailabilityWarning } from "../../../../lib/availabilityWindows";
 import { LOAD_TIER_BADGE_CLASSES, LOAD_TIER_LABELS, basicLoadOf, loadTierForUnits, type LoadAllowances, type LoadTier } from "../../../../lib/facultyLoad";
-import WizardProgressStepper from "../GenerateSchedule/WizardProgressStepper";
-import EmploymentBadge, { employmentLabel } from "../EmploymentBadge";
+import { employmentLabel } from "../EmploymentBadge";
 import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
+import './AutoAssignModal.css';
 
 /* eslint-disable react-hooks/set-state-in-effect */
 
@@ -66,9 +65,9 @@ interface QueuedAssignment {
 }
 
 const steps = [
-  { id: 1, title: "Build Assignment List" },
-  { id: 2, title: "Review Assignments" },
-  { id: 3, title: "Confirm & Save" },
+  { id: 1, title: "Build list" },
+  { id: 2, title: "Review" },
+  { id: 3, title: "Confirm & save" },
 ];
 
 const overlaps = (left: ScheduleItem, right: ScheduleItem): boolean =>
@@ -172,9 +171,9 @@ const modesLabel = (group: SectionGroup): string => [...new Set(group.schedules.
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 const STEP_HELP: Record<number, string> = {
-  1: "Pick an instructor, tick sections of a course, then add them to the list. Repeat for other courses or instructors.",
-  2: "Check each instructor's load and remove anything that should not be assigned.",
-  3: "Nothing is saved until you click Save Assignments.",
+  1: "Add sections to the list, then review.",
+  2: "Check loads and remove assignments as needed.",
+  3: "Save to apply these assignments.",
 };
 
 export default function AutoAssignModal({
@@ -205,6 +204,43 @@ export default function AutoAssignModal({
   const [courseId, setCourseId] = useState("");
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [assignments, setAssignments] = useState<QueuedAssignment[]>([]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const dialog = dialogRef.current;
+    const previousFocus = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const controls = () => Array.from(dialog?.querySelectorAll<HTMLElement>('button:not(:disabled):not([tabindex="-1"]), input:not(:disabled), select:not(:disabled), summary, [tabindex="0"]') ?? []).filter(element => !element.closest('[inert]'));
+    const timer = window.setTimeout(() => (controls()[0] ?? dialog)?.focus(), 0);
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || Array.from(document.querySelectorAll('[role="dialog"], [role="alertdialog"]')).at(-1) !== dialog) return;
+      const elements = controls();
+      const first = elements[0]; const last = elements[elements.length - 1];
+      if (!first) { event.preventDefault(); dialog?.focus(); }
+      else if (event.shiftKey && (document.activeElement === first || !dialog?.contains(document.activeElement))) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || !dialog?.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', trapFocus);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('keydown', trapFocus);
+      document.body.style.overflow = previousOverflow;
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && facultyActionSlotId !== 'bulk' && Array.from(document.querySelectorAll('[role="dialog"], [role="alertdialog"]')).at(-1) === dialogRef.current) {
+        event.preventDefault(); event.stopPropagation(); onClose();
+      }
+    };
+    document.addEventListener('keydown', dismiss);
+    return () => document.removeEventListener('keydown', dismiss);
+  }, [facultyActionSlotId, isOpen, onClose]);
 
   const groups = useMemo<SectionGroup[]>(() => {
     const map = new Map<string, SectionGroup>();
@@ -536,27 +572,25 @@ export default function AutoAssignModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/50 p-2 sm:items-center" onClick={(event) => event.target === event.currentTarget && !isSaving && onClose()}>
-      <div role="dialog" aria-modal="true" aria-labelledby="auto-assign-title" className="flex min-h-[calc(100dvh-1rem)] w-full max-w-none flex-col overflow-hidden rounded-lg bg-white shadow-2xl sm:h-[calc(100vh-16px)] sm:min-h-0 sm:w-[calc(100vw-16px)]">
-        <header className="flex shrink-0 items-center gap-3 bg-[#4e0a10] px-4 py-3 sm:px-5">
+    <div className="assign-modal-overlay" onClick={(event) => event.target === event.currentTarget && !isSaving && onClose()}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="auto-assign-title" aria-describedby="auto-assign-description" tabIndex={-1} className="assign-modal">
+        <header className="assign-modal-header">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white"><UserCheck className="h-5 w-5" /></span>
           <div className="min-w-0 flex-1">
             <h2 id="auto-assign-title" className="truncate text-base font-black text-white sm:text-lg">Assign Instructors</h2>
-            <p className="truncate text-xs font-semibold text-white/70">{steps[step - 1].title} &middot; Step {step} of {steps.length}</p>
+            <p id="auto-assign-description" className="sr-only">{steps[step - 1].title}. Step {step} of {steps.length}. Nothing is saved until you confirm.</p>
           </div>
           <button type="button" onClick={onClose} disabled={isSaving} aria-label="Close auto-assign" className="rounded-lg bg-white/10 p-2 text-white transition hover:bg-white/20 disabled:opacity-50"><X className="h-5 w-5" /></button>
         </header>
 
-        <div className="shrink-0 bg-white px-3 py-2.5 sm:px-4">
-          <WizardProgressStepper currentStep={step} steps={steps} ariaLabel="Auto-assign instructor steps" />
-        </div>
+        <nav className="assign-progress" aria-label="Auto-assign instructor steps"><ol>{steps.map(item => <li key={item.id} aria-current={step === item.id ? 'step' : undefined} data-complete={step > item.id}><span className="assign-step-number" aria-hidden="true">{step > item.id ? <Check size={13} /> : item.id}</span><span>{item.title}</span></li>)}</ol><span className="assign-step-count" aria-hidden="true">Step {step} of 3</span></nav>
 
-        <main className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden bg-parchment p-3 sm:p-4 lg:overflow-hidden">
+        <main className="assign-modal-body" aria-busy={isSaving} inert={isSaving}>
           {step === 1 && (
-            <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[400px_minmax(0,1fr)]">
+            <div className="assign-columns">
               <InstructorList faculties={faculties} departmentId={departmentId} facultyId={facultyId} facultyLoads={facultyLoads} onSelect={selectFaculty} allowExternalInstructors={allowExternalInstructors} />
-              <section className="flex min-h-[420px] min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
-                <div className="grid shrink-0 gap-3 border-b border-slate-100 p-3 sm:grid-cols-[180px_minmax(0,1fr)]">
+              <section aria-label="Course and sections" className="assign-course-panel">
+                <div className="assign-course-filters">
                   <SelectField label="Year level" value={yearLevel} onChange={selectYearLevel} options={[{ value: "1", label: "1st Year" }, { value: "2", label: "2nd Year" }, { value: "3", label: "3rd Year" }, { value: "4", label: "4th Year" }]} placeholder="Select year level" />
                   <SelectField label="Course" value={courseId} onChange={selectCourse} options={courseOptions.map((course) => {
                     const programs = courseProgramLabels.get(course.id);
@@ -564,19 +598,16 @@ export default function AutoAssignModal({
                   })} placeholder="Select course" />
                 </div>
                 <SectionTable groups={courseGroups} selectedKeys={selectedKeys} getIssue={getIssue} getConflict={getConflict} getConflictMeetings={getConflictMeetings} clashPartners={clashPartners} onToggle={toggleGroup} onSelectAll={selectAllGroups} selectAllChecked={allSelectableGroupsSelected} selectAllDisabled={selectableCourseGroupKeys.length === 0} onRemove={onRemoveAssignment ? removeClassAssignment : undefined} removalBlockedReason={removalBlockedReason} busy={isSaving} />
-                <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50/70 px-3 py-2.5">
+                <div className="assign-selection-actions" data-selected={selectedGroups.length > 0}>
                   {selectedFaculty ? (
-                    <div className="mr-auto min-w-0 text-xs text-slate-600">
-                      <span className="font-bold text-slate-900">{selectedFaculty.name}</span>
-                      <EmploymentBadge type={selectedFaculty.employmentType} className="ml-2" />
-                      <span className="mx-1.5 text-slate-300">|</span>
-                      <span className="font-semibold tabular-nums">{currentLoad}{selectedUnits > 0 && <span className="text-[#4e0a10]"> + {selectedUnits}</span>} / {projectedLoad.ceiling} units</span>
-                      <span className={`ml-2 inline-flex rounded border px-1.5 py-0.5 text-[10px] font-bold ${projectedLoad.badgeClass}`}>{projectedLoad.label}</span>
+                    <div className="min-w-0 flex-1 text-xs text-slate-600" role="status">
+                      <p className="assign-selected-title">{selectedGroups.length ? `${plural(selectedGroups.length, 'section')} selected` : 'Select available sections'}</p>
+                      <p>{selectedFaculty.name} · Projected load <strong className="tabular-nums">{currentLoad + selectedUnits} / {projectedLoad.ceiling} units</strong>{projectedLoad.tier !== 'basic' && ` · ${projectedLoad.label}`}</p>
                     </div>
                   ) : (
                     <p className="mr-auto text-xs font-semibold text-slate-500">Select an instructor to see which sections they can take.</p>
                   )}
-                  <button type="button" onClick={addToAssignmentList} disabled={selectedGroups.length === 0} className="inline-flex items-center gap-1.5 rounded-lg bg-[#4e0a10] px-3.5 py-2 text-xs font-bold text-white transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:opacity-40">
+                  <button type="button" onClick={addToAssignmentList} disabled={selectedGroups.length === 0} className="assign-button assign-button-primary">
                     <Plus className="h-3.5 w-3.5" /> {selectedGroups.length ? `Add ${plural(selectedGroups.length, "section")} to list` : "Add to list"}
                   </button>
                 </div>
@@ -586,36 +617,37 @@ export default function AutoAssignModal({
 
           {step === 2 && <ReviewAssignments assignments={checkedAssignments} faculties={faculties} facultyLoads={facultyLoads} onRemove={removeAssignment} />}
 
-          {step === 3 && <ConfirmAssignments assignments={checkedAssignments}faculties={faculties} facultyLoads={facultyLoads} onEdit={() => setStep(2)} />}
+          {step === 3 && <ConfirmAssignments assignments={checkedAssignments} faculties={faculties} facultyLoads={facultyLoads} blocked={hasBlockedAssignments} onEdit={() => setStep(2)} />}
         </main>
 
-        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-5">
+        <footer className="assign-modal-footer">
+          <p role="status" className="sr-only">{isSaving ? 'Saving assignments…' : ''}</p>
           {step === 3 ? (
             <ConfirmValidationSummary assignments={checkedAssignments}faculties={faculties} facultyLoads={facultyLoads} />
           ) : step === 1 && assignments.length > 0 ? (
-            <p className="flex min-w-0 flex-1 items-center gap-2 truncate text-xs font-bold text-[#4e0a10]">
+            <p role="status" className="assign-pending-summary">
               <ListChecks className="h-4 w-4 shrink-0" />
-              {plural(assignments.length, "section")} on the list for {plural(new Set(assignments.map((assignment) => assignment.facultyId)).size, "instructor")}
+              {plural(assignments.length, "section")} pending · {plural(new Set(assignments.map((assignment) => assignment.facultyId)).size, "instructor")}
             </p>
           ) : (
-            <p className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-500">{STEP_HELP[step]}</p>
+            <p className="assign-footer-help">{STEP_HELP[step]}</p>
           )}
-          <div className="flex shrink-0 items-center gap-2">
-            <button type="button" onClick={() => step > 1 ? setStep((current) => current - 1) : onClose()} disabled={isSaving} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+          <div className="assign-footer-buttons">
+            <button type="button" onClick={() => step > 1 ? setStep((current) => current - 1) : onClose()} disabled={isSaving} className="assign-button assign-button-secondary">
               {step > 1 ? <><ChevronLeft className="h-4 w-4" /> Back</> : "Cancel"}
             </button>
             {step === 1 && (
-              <button type="button" onClick={() => setStep(2)} disabled={assignments.length === 0} className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:opacity-50">
+              <button type="button" onClick={() => setStep(2)} disabled={assignments.length === 0} className="assign-button assign-button-primary">
                 Review {assignments.length > 0 && `(${assignments.length})`} <ChevronRight className="h-4 w-4" />
               </button>
             )}
             {step === 2 && (
-              <button type="button" onClick={() => setStep(3)} disabled={assignments.length === 0} className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:opacity-50">
+              <button type="button" onClick={() => setStep(3)} disabled={assignments.length === 0} className="assign-button assign-button-primary">
                 Continue <ChevronRight className="h-4 w-4" />
               </button>
             )}
             {step === 3 && (
-              <button type="button" onClick={saveAssignments} disabled={isSaving || assignments.length === 0 || hasBlockedAssignments} className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-5 py-2 text-sm font-black text-white transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:opacity-50">
+              <button type="button" onClick={saveAssignments} disabled={isSaving || assignments.length === 0 || hasBlockedAssignments} className="assign-button assign-button-primary">
                 {isSaving ? <LoadingSpinner className="h-4 w-4" /> : <Save className="h-4 w-4" />} {isSaving ? "Saving..." : "Save Assignments"}
               </button>
             )}
@@ -686,60 +718,8 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
       : searchedFaculties.filter((faculty) => faculty.employmentType === employment),
     [employment, searchedFaculties],
   );
-  const showEmploymentHeadings = employment === "all"
-    && new Set(matchingFaculties.map(employmentRank)).size > 1;
-  const columns = useMemo<ColumnDef<Faculty>[]>(() => [
-    {
-      id: "instructorCard",
-      cell: ({ row }) => {
-        const faculty = row.original;
-        const load = facultyLoads.get(faculty.id) ?? 0;
-        const display = loadDisplay(faculty, load);
-        const selected = faculty.id === facultyId;
-        return (
-          <button
-            type="button"
-            onClick={() => onSelect(faculty.id)}
-            aria-pressed={selected}
-            style={{ contentVisibility: "auto", containIntrinsicSize: "84px" }}
-            className={`grid w-full grid-cols-[minmax(0,1fr)_120px_20px] items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${
-              selected
-                ? "border-[#4e0a10]/40 bg-[#4e0a10]/[0.04] ring-1 ring-[#4e0a10]/20"
-                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
-            }`}
-          >
-            <span className="flex min-w-0 items-center gap-3">
-              {faculty.profilePicture ? (
-                  <img src={faculty.profilePicture} alt={faculty.name} loading="lazy" decoding="async" className="h-10 w-10 shrink-0 rounded-full border border-slate-200 object-cover" />
-              ) : (
-                <ProfileAvatar className="h-10 w-10 shrink-0 rounded-full" iconClassName="h-5 w-5" />
-              )}
-              <span className="min-w-0">
-                <span className="block break-words text-sm font-black leading-5 text-slate-900">{faculty.name}</span>
-                <span className="mt-0.5 flex items-center gap-1.5 text-xs font-medium text-slate-500">
-                  <span className={`h-1.5 w-1.5 rounded-full ${faculty.status === "inactive" ? "bg-slate-300" : "bg-emerald-500"}`} />
-                  {faculty.status === "inactive" ? "Inactive" : "Active"}
-                  <EmploymentBadge type={faculty.employmentType} />
-                  {tab === "external" && <span className="truncate text-slate-400">· {faculty.departmentCode ?? faculty.departmentName ?? "External"}</span>}
-                </span>
-              </span>
-            </span>
-            <span className="block min-w-0">
-              <span className="flex justify-between gap-2 text-[11px] text-slate-500"><span>Load</span><span className="whitespace-nowrap font-bold tabular-nums text-slate-800">{load} / {display.ceiling}</span></span>
-              <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${display.barClass}`} style={{ width: `${display.percentage}%` }} /></span>
-              {display.tier !== "basic" && <span className={`mt-1.5 inline-flex rounded border px-1.5 py-0.5 text-[10px] font-bold ${display.badgeClass}`}>{display.label}</span>}
-            </span>
-            <span className={`flex h-5 w-5 items-center justify-center rounded-full ${selected ? "bg-[#4e0a10] text-white" : "border border-slate-200 text-transparent"}`}><Check className="h-3 w-3" /></span>
-          </button>
-        );
-      },
-    },
-  ], [facultyId, facultyLoads, onSelect, tab]);
-
-  const table = useReactTable({ data: matchingFaculties, columns, getCoreRowModel: getCoreRowModel() });
-
   return (
-    <aside className="flex max-h-[420px] min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white lg:max-h-none">
+    <aside aria-label="Instructor selection" className="assign-instructor-panel">
       <div className="flex shrink-0 items-center gap-2 px-3 pb-2 pt-3 text-sm font-black text-slate-900">
         <Users className="h-4 w-4 text-[#4e0a10]" /> Instructor
         <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">
@@ -764,6 +744,7 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
                 return value === "department" ? isDepartmentInstructor : !isDepartmentInstructor;
               })?.id) ?? "");
             }}
+            aria-pressed={tab === value}
             className={`-mb-px border-b-2 px-3 py-2 text-xs font-bold transition-colors ${tab === value ? "border-[#4e0a10] text-[#4e0a10]" : "border-transparent text-slate-400 hover:text-slate-700"}`}
           >
             {label}
@@ -792,7 +773,7 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
           type="search"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search instructor, department, program"
+          placeholder="Search instructors"
           aria-label="Search instructors to assign"
           className="h-9 w-full rounded-lg border border-slate-200 pl-8 pr-8 text-xs outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/25"
         />
@@ -820,36 +801,26 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
                 : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
             }`}
           >
-            {label}
+            {label}{' '}
             <span className={`tabular-nums ${employment === value ? "text-white/75" : "text-slate-400"}`}>{employmentCounts[value]}</span>
           </button>
         ))}
       </div>
-      <div className="min-h-0 flex-1 overscroll-contain overflow-y-auto overflow-x-hidden px-3 pb-2" style={{ contain: "layout paint" }}>
-        <table className="w-full table-fixed border-separate border-spacing-y-2">
-          <tbody>
-            {table.getRowModel().rows.map((row, index, rows) => {
-              const rank = employmentRank(row.original);
-              const startsGroup = showEmploymentHeadings && (index === 0 || employmentRank(rows[index - 1].original) !== rank);
-              return (
-                <Fragment key={row.id}>
-                  {startsGroup && (
-                    <tr>
-                      <td className="px-1 pt-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        {employmentLabel(row.original.employmentType) ?? "No employment type"}
-                      </td>
-                    </tr>
-                  )}
-                  <tr>
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
-                    ))}
-                  </tr>
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="assign-instructor-scroll" role="region" aria-label="Instructors" tabIndex={0}>
+        <ul className="assign-instructor-list">
+          {matchingFaculties.map((faculty) => {
+            const load = facultyLoads.get(faculty.id) ?? 0;
+            const display = loadDisplay(faculty, load);
+            return <li key={faculty.id}>
+              <button type="button" onClick={() => onSelect(faculty.id)} aria-pressed={faculty.id === facultyId} className="assign-instructor-option" style={{ contentVisibility: 'auto', containIntrinsicSize: '100px' }}>
+                <span aria-hidden="true"><ProfileAvatar src={faculty.profilePicture} alt="" className="h-8 w-8 shrink-0 rounded-full" iconClassName="h-4 w-4" /></span>
+                <span className="assign-instructor-identity"><span className="assign-instructor-name">{faculty.name}</span><span className="assign-instructor-meta">{employmentLabel(faculty.employmentType) ?? 'Employment not recorded'} · {faculty.status === 'inactive' ? 'Inactive' : 'Active'}{tab === 'external' && ` · ${faculty.departmentCode ?? faculty.departmentName ?? 'External'}`}</span></span>
+                <span className="assign-instructor-check" aria-hidden="true">{faculty.id === facultyId && <Check size={16} />}</span>
+                <span className="assign-instructor-load"><span>Teaching load <strong>{load} / {display.ceiling} units</strong></span><span className="assign-load-track" aria-hidden="true"><span className={display.barClass} style={{width: `${display.percentage}%`}} /></span>{display.tier !== 'basic' && <span className="assign-load-notice">{display.label}</span>}</span>
+              </button>
+            </li>;
+          })}
+        </ul>
         {matchingFaculties.length === 0 && (
           <p className="px-3 py-8 text-center text-xs font-semibold text-slate-500">
             {query && searchedFaculties.length === 0 && visibleFaculties.length > 0
@@ -872,28 +843,21 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, getConflict
   const columns = useMemo<ColumnDef<SectionGroup>[]>(() => [
     {
       id: "selected",
-      header: "",
-      size: 48,
+      header: () => <span className="sr-only">Select</span>,
+      size: 44,
       enableSorting: false,
+      meta: { stopRowClick: true },
       cell: ({ row }) => {
-        const alreadyAssigned = !!row.original.assignedFacultyId || !!getIssue(row.original)?.startsWith("Queued");
-        const selected = alreadyAssigned || selectedKeys.includes(row.original.key);
+        const selected = selectedKeys.includes(row.original.key);
         return (
-          <span className={`flex h-5 w-5 items-center justify-center rounded border ${
-            alreadyAssigned
-              ? "border-slate-400 bg-slate-400 text-white"
-              : selected
-                ? "border-[#4e0a10] bg-[#4e0a10] text-white"
-                : "border-slate-300 bg-white"
-          }`}>
-            {selected && <Check className="h-3 w-3" />}
-          </span>
+          <label className="assign-section-checkbox"><input type="checkbox" aria-label={`Select ${row.original.courseCode} ${row.original.sectionName}`} aria-describedby={`assignment-availability-${row.original.key}`} checked={selected} disabled={busy || Boolean(getIssue(row.original)) || (!selected && Boolean(getConflict(row.original)))} onChange={() => onToggle(row.original)} /></label>
         );
       },
     },
     {
       accessorKey: "sectionName",
       header: "Section",
+      size: 110,
       cell: ({ row }) => <span className="text-sm font-bold text-slate-800">{row.original.sectionName}</span>,
     },
     {
@@ -903,13 +867,12 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, getConflict
       cell: ({ row }) => {
         const clashing = getIssue(row.original) ? new Set<string>() : getConflictMeetings(row.original);
         return (
-          <span className="whitespace-nowrap text-xs font-medium text-slate-600">
-            {scheduleEntries(row.original).map((entry, index) => {
+          <span className="assign-section-meetings">
+            {scheduleEntries(row.original).map((entry) => {
               const partners = [...new Set(entry.scheduleIds.flatMap((id) => clashPartners.get(id) ?? []))];
               const red = partners.length > 0 || entry.scheduleIds.some((id) => clashing.has(id));
               return (
-                <span key={entry.label}>
-                  {index > 0 && " | "}
+                <span key={entry.label} className="assign-section-meeting">
                   {red
                     ? <span className="rounded bg-rose-100 px-1 py-0.5 font-bold text-rose-700 ring-1 ring-rose-200" title={partners.length ? `Conflicts with ${partners.join(", ")}` : "Conflicts for this instructor"}>{entry.label}</span>
                     : entry.label}
@@ -923,6 +886,7 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, getConflict
     {
       accessorKey: "units",
       header: "Units",
+      size: 56,
       cell: ({ row }) => <span className="text-sm font-bold text-slate-700">{row.original.units}</span>,
     },
     {
@@ -934,31 +898,31 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, getConflict
         const conflict = issue ? null : getConflict(row.original);
         if (conflict) {
           return (
-            <span className="inline-flex min-w-0 flex-col gap-0.5 text-xs font-semibold text-orange-700" title={conflict}>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-orange-500" />
+            <div id={`assignment-availability-${row.original.key}`} className="assign-availability">
+              <span className="assign-status assign-status-conflict"><AlertTriangle size={13} aria-hidden="true" />
                 {isAvailabilityWarning(conflict) ? AVAILABILITY_WARNING_TITLE : "Conflict"}
               </span>
-              <span className="whitespace-nowrap text-[11px] font-medium text-orange-600/90">{conflict}</span>
-            </span>
+              <details className="assign-conflict-details" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}><summary>View reason<span className="sr-only"> for {row.original.sectionName}</span></summary><p>{conflict}</p></details>
+            </div>
           );
         }
         const blocks = issue ? [] : [...new Set(row.original.schedules.flatMap((schedule) => clashPartners.get(schedule.id) ?? []))];
         return (
-          <span className="inline-flex min-w-0 flex-col gap-0.5">
-            <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${issue ? "text-slate-500" : "text-emerald-700"}`}>
-              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${issue ? "bg-amber-400" : "bg-emerald-500"}`} />
-              {issue ?? "Available"}
+          <div id={`assignment-availability-${row.original.key}`} className="assign-availability">
+            <span className={`assign-status ${issue ? 'assign-status-neutral' : 'assign-status-available'}`}>
+              {issue ? <Info size={13} aria-hidden="true" /> : <CheckCircle2 size={13} aria-hidden="true" />}
+              {issue ? row.original.assignedFacultyId ? 'Assigned' : issue.startsWith('Queued') ? 'On list' : 'Unavailable' : 'Available'}
             </span>
-            {blocks.length > 0 && <span className="whitespace-nowrap text-[11px] font-medium text-rose-600">Conflicts with {blocks.join(", ")}</span>}
-          </span>
+            {issue && <span className="assign-status-detail">{issue.replace(/^Assigned Instructor: /, '')}</span>}
+            {blocks.length > 0 && <span className="assign-status-detail text-rose-700">Conflicts with {blocks.join(", ")}</span>}
+          </div>
         );
       },
     },
-    {
+    ...(onRemove ? [{
       id: "actions",
-      header: "Actions",
-      size: 96,
+      header: () => <span className="sr-only">Actions</span>,
+      size: 56,
       enableSorting: false,
       meta: { align: "right" as const, stopRowClick: true },
       cell: ({ row }: { row: { original: SectionGroup } }) => {
@@ -978,8 +942,8 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, getConflict
           </div>
         );
       },
-    } satisfies ColumnDef<SectionGroup>,
-  ], [busy, clashPartners, getConflict, getConflictMeetings, getIssue, onRemove, removalBlockedReason, selectedKeys]);
+    } satisfies ColumnDef<SectionGroup>] : []),
+  ], [busy, clashPartners, getConflict, getConflictMeetings, getIssue, onRemove, onToggle, removalBlockedReason, selectedKeys]);
 
   const table = useDataTable({
     data: groups,
@@ -989,14 +953,15 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, getConflict
   });
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <section aria-label="Section selection" className="assign-section-panel">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2.5"><div className="flex items-center gap-2 text-sm font-black text-slate-900"><Layers3 className="h-4 w-4 text-[#4e0a10]" /> Sections <span className="text-xs font-semibold text-slate-400">{groups.length}</span></div><div className="flex items-center gap-3">{selectedKeys.length > 0 && <span className="rounded-full bg-[#4e0a10]/10 px-2.5 py-0.5 text-[11px] font-bold text-[#4e0a10]">{selectedKeys.length} selected</span>}<label className={`inline-flex items-center gap-1.5 text-xs font-bold ${selectAllDisabled ? "cursor-not-allowed text-slate-400" : "cursor-pointer text-slate-700"}`}><input type="checkbox" checked={selectAllChecked} onChange={onSelectAll} disabled={selectAllDisabled} className="h-4 w-4 rounded border-slate-300 accent-[#4e0a10]" /> Select all available</label></div></div>
       {groups.length === 0 ? <div className="flex flex-1 flex-col items-center justify-center gap-1 p-6 text-center"><Layers3 className="h-6 w-6 text-slate-300" /><p className="text-sm font-semibold text-slate-600">No sections to assign</p><p className="text-xs text-slate-500">Pick another course or year level.</p></div> : (
         <DataTable
           table={table}
           variant="embedded"
           className="flex min-h-0 flex-1 flex-col"
-          scrollClassName="min-h-0 flex-1 overflow-auto"
+          scrollClassName="assign-section-scroll"
+          tableClassName="assign-sections-table"
           ariaLabel="Sections"
           onRowClick={onToggle}
           rowClassName={(group) => (getIssue(group)
@@ -1051,8 +1016,8 @@ function ReviewAssignments({ assignments, faculties, facultyLoads, onRemove }: {
   }
 
   return (
-    <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[320px_minmax(0,1fr)]">
-      <aside className="flex max-h-[420px] min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white lg:max-h-none">
+    <div className="assign-columns assign-review-columns">
+      <aside aria-label="Queued instructors" className="assign-review-instructors">
         <div className="flex shrink-0 items-center gap-2 px-3 pb-2 pt-3">
           <Users className="h-4 w-4 text-[#4e0a10]" />
           <h4 className="text-sm font-black text-slate-900">Instructors</h4>
@@ -1110,8 +1075,8 @@ function ReviewAssignments({ assignments, faculties, facultyLoads, onRemove }: {
         const display = loadDisplay(faculty, load);
         const name = faculty?.name ?? items[0].facultyName;
         return (
-          <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <div className="grid shrink-0 gap-4 border-b border-slate-100 p-4 sm:grid-cols-[minmax(0,1fr)_220px_auto] sm:items-center">
+          <section aria-label="Queued sections" className="assign-course-panel">
+            <div className="assign-review-heading">
               <div className="flex min-w-0 items-center gap-3">
                 {faculty?.profilePicture ? <img src={faculty.profilePicture} alt="" className="h-12 w-12 shrink-0 rounded-full border border-slate-200 object-cover" /> : <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-400"><UserRound className="h-6 w-6" /></span>}
                 <div className="min-w-0">
@@ -1141,7 +1106,7 @@ function ReviewAssignments({ assignments, faculties, facultyLoads, onRemove }: {
 
             <p className="flex shrink-0 items-start gap-2 border-t border-slate-100 bg-slate-50/70 px-4 py-2.5 text-xs text-slate-600">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-              Loads can go past Basic Load up to the overload allowance. Sections past that limit cannot be added.
+              Basic Load plus overload allowance is the maximum teaching load.
             </p>
           </section>
         );
@@ -1156,7 +1121,7 @@ function ConflictCountBadge({ items, large = false }: { items: QueuedAssignment[
   const count = items.filter((item) => item.conflict).length;
   if (count === 0) return null;
   return (
-    <span className={`inline-flex w-fit items-center gap-1 border border-orange-200 bg-orange-50 font-bold text-orange-700 ${large ? "rounded-md px-2 py-1 text-xs" : "rounded px-1.5 py-0.5 text-[10px]"}`}>
+      <span className={`inline-flex w-fit items-center gap-1 border border-red-200 bg-red-50 font-bold text-red-700 ${large ? "rounded-md px-2 py-1 text-xs" : "rounded px-1.5 py-0.5 text-[10px]"}`}>
       <AlertTriangle className={large ? "h-3.5 w-3.5" : "h-3 w-3"} /> {plural(count, "conflict")}
     </span>
   );
@@ -1172,7 +1137,7 @@ function AssignmentItemsTable({ items, onRemove, showTotal = false, className, s
       cell: ({ row }) => (
         <>
           <p className="text-sm font-black text-slate-900">{row.original.courseCode}</p>
-          <p className="whitespace-nowrap text-xs font-medium text-slate-500">{row.original.courseName}</p>
+          <p className="assign-course-name">{row.original.courseName}</p>
         </>
       ),
     },
@@ -1231,6 +1196,7 @@ function AssignmentItemsTable({ items, onRemove, showTotal = false, className, s
       density="compact"
       className={className}
       scrollClassName={scrollClassName}
+      tableClassName="assign-review-table"
       ariaLabel="Queued assignments"
       emptyTitle="No sections on the list."
       emptyDescription=""
@@ -1238,7 +1204,7 @@ function AssignmentItemsTable({ items, onRemove, showTotal = false, className, s
   );
 }
 
-function ConfirmAssignments({ assignments, faculties, facultyLoads, onEdit }: { assignments: QueuedAssignment[]; faculties: Faculty[]; facultyLoads: Map<string, number>; onEdit: () => void }) {
+function ConfirmAssignments({ assignments, faculties, facultyLoads, blocked, onEdit }: { assignments: QueuedAssignment[]; faculties: Faculty[]; facultyLoads: Map<string, number>; blocked: boolean; onEdit: () => void }) {
   const groups = [...new Set(assignments.map((assignment) => assignment.facultyId))].map((facultyId) => ({
     facultyId,
     faculty: faculties.find((item) => item.id === facultyId),
@@ -1254,16 +1220,16 @@ function ConfirmAssignments({ assignments, faculties, facultyLoads, onEdit }: { 
     : [...current, facultyId]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
-      <section className="grid shrink-0 gap-3 rounded-xl border border-slate-200 bg-white p-4 lg:grid-cols-[minmax(240px,1.2fr)_repeat(4,minmax(0,1fr))] lg:items-center">
+    <div className="assign-confirm-content">
+      <section className="assign-confirm-summary">
         <div className="flex items-start gap-3">
-          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${overloaded.length ? "bg-red-50 text-red-600" : "bg-emerald-100 text-emerald-700"}`}>
-            {overloaded.length ? <AlertTriangle className="h-5 w-5" /> : <CheckCircle2 className="h-5 w-5" />}
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${blocked ? 'bg-red-50 text-red-700' : overloaded.length ? 'bg-amber-50 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}>
+            {blocked || overloaded.length ? <AlertTriangle className="h-5 w-5" /> : <CheckCircle2 className="h-5 w-5" />}
           </span>
           <div>
-            <h3 className="text-base font-black text-slate-900">Ready to save</h3>
+            <h3 className="text-base font-black text-slate-900">{blocked ? 'Resolve issues before saving' : 'Ready to save'}</h3>
             <p className="mt-0.5 text-xs leading-5 text-slate-600">
-              {overloaded.length
+              {blocked ? assignments.some(assignment => assignment.conflict) ? 'Remove conflicting assignments before saving.' : 'Teaching load exceeds the unit limit.' : overloaded.length
                 ? "Some loads go past Basic Load and use the overload allowance."
                 : "Every instructor stays within Basic Load."}
             </p>
@@ -1333,7 +1299,7 @@ function ConfirmValidationSummary({ assignments, faculties, facultyLoads }: { as
   const totalUnits = assignments.reduce((total, assignment) => total + assignment.units, 0);
   return (
     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 text-xs font-semibold text-slate-600">
-      <span className={`flex items-center gap-1.5 ${overloadCount ? "text-red-600" : ""}`}>
+      <span className={`flex items-center gap-1.5 ${overloadCount ? "text-amber-800" : ""}`}>
         {overloadCount ? <AlertTriangle className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5 text-emerald-600" />}
         {overloadCount ? `${plural(overloadCount, "instructor")} past Basic Load` : "All within Basic Load"}
       </span>
@@ -1350,8 +1316,8 @@ function ConfirmValidationSummary({ assignments, faculties, facultyLoads }: { as
 
 function ConfirmMetric({ icon, value, label, warn = false }: { icon: React.ReactNode; value: string | number; label: string; warn?: boolean }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
-      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${warn ? "bg-amber-100 text-amber-700" : "bg-white text-[#4e0a10]"}`}>{icon}</span>
+    <div className="assign-confirm-metric">
+      <span className={warn ? 'text-amber-800' : 'text-primary'} aria-hidden="true">{icon}</span>
       <div className="min-w-0">
         <p className={`truncate text-base font-black tabular-nums ${warn ? "text-amber-700" : "text-slate-900"}`}>{value}</p>
         <p className="truncate text-[11px] font-semibold text-slate-500">{label}</p>

@@ -1,0 +1,32 @@
+{
+  "checks": [
+    "One shared approval table and no separate transfer section",
+    "Mixed pending queue includes regular approvals",
+    "Request type filter excludes regular rows",
+    "Shared pagination includes room transfers",
+    "No axe violations in dean-details",
+    "Room details exclude online classes",
+    "Detail pagination counts only 15 physical meetings",
+    "Dean confirmation preserves schedules and forwards to VPAA",
+    "No transfer mutation before confirmation",
+    "Cancelling keeps transfer details open",
+    "Approval updates the shared pending count once",
+    "Closing nested confirmation restores page scrolling",
+    "Rejection requires a reason",
+    "Rejected details are read-only with recorded reason",
+    "Department filter includes transfer requests",
+    "VPAA confirms final application",
+    "Queue has no page overflow at 390",
+    "No axe violations in details-390",
+    "Details traps keyboard focus at 390",
+    "Queue has no page overflow at 768",
+    "No axe violations in details-768",
+    "Details traps keyboard focus at 768",
+    "Queue has no page overflow at 1440",
+    "No axe violations in details-1440",
+    "Details traps keyboard focus at 1440",
+    "Notification links open the shared request details",
+    "No browser console errors or runtime exceptions"
+  ],
+  "errors": []
+}

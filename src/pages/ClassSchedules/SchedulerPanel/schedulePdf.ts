@@ -23,6 +23,9 @@ export interface SchedulePdfInput {
   users: UserSummary[];
   activeSemester: Semester | null;
   printAllSections?: boolean;
+  transferPreview?: {
+    changes: { scheduleId: string; room: boolean; day: boolean; time: boolean }[];
+  };
 }
 
 export const getSchedulePdfFilename = (input: SchedulePdfInput): string => {
@@ -93,6 +96,7 @@ export async function buildSchedulePdf({
   users,
   activeSemester,
   printAllSections = false,
+  transferPreview,
 }: SchedulePdfInput): Promise<Blob> {
   const activeSection = sections.find((section) => section.id === selectedSectionId);
   const activeDepartment = departments.find((department) => Number(department.id) === Number(activeSection?.departmentId));
@@ -315,6 +319,8 @@ export async function buildSchedulePdf({
 
   currentY += 6;
 
+  const proposedChanges = new Map(transferPreview?.changes.map(change => [change.scheduleId, change]) ?? []);
+
   let previousProgramId: number | null | undefined;
   targetSections.forEach((section) => {
     const sectionProgramId = section.programId ?? null;
@@ -409,6 +415,10 @@ export async function buildSchedulePdf({
       const item = group.first;
       const isAdditionalMeeting = filledRows[index - 1]?.key === itemKey;
       const subjectMeetingCount = groupsBySubject.get(itemKey)?.length ?? 1;
+      const changes = group.scheduleIds.map(id => proposedChanges.get(id)).filter(change => change !== undefined);
+      const changedCell = (content: string, changed: boolean) => ({ content,
+        styles: { halign: "center" as const, valign: "middle" as const,
+          ...(changed ? { fillColor: [255, 242, 204] as [number, number, number], textColor: [123, 12, 23] as [number, number, number], fontStyle: "bold" as const } : {}) } });
 
       return [
         ...(isAdditionalMeeting ? [] : [
@@ -438,12 +448,9 @@ export async function buildSchedulePdf({
             styles: { halign: "center" as const, valign: "middle" as const }
           }
         ]),
-        group.dayLabel,
-        group.timeLabel,
-        {
-          content: group.room,
-          styles: { halign: "center" as const, valign: "middle" as const }
-        }
+        changedCell(group.dayLabel, changes.some(change => change.day)),
+        changedCell(group.timeLabel, changes.some(change => change.time)),
+        changedCell(group.room, changes.some(change => change.room))
       ];
     });
 

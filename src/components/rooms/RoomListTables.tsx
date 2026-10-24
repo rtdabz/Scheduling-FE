@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Building2, Eye, Pencil, Printer, Archive } from 'lucide-react';
+import { Building2, Eye, Pencil, Printer, Archive, Ban, CheckCircle2 } from 'lucide-react';
 import DataTable from '../ui/DataTable';
 import { useDataTable } from '../ui/useDataTable';
 import TableActionButton from '../ui/TableActionButton';
@@ -119,6 +119,7 @@ export function RoomsTable<T extends RoomListRow>({
   onEdit,
   onArchive,
   onPrint,
+  onAvailabilityChange,
 }: {
   rooms: T[];
   getRoomStatusToday: (roomId: number) => RoomTodayStatus;
@@ -127,6 +128,7 @@ export function RoomsTable<T extends RoomListRow>({
   onEdit: (room: T) => void;
   onArchive: (room: T) => void;
   onPrint?: (room: T) => void;
+  onAvailabilityChange: (room: T) => void;
 }) {
   const hasActions = canManage || Boolean(onPrint);
 
@@ -212,6 +214,12 @@ export function RoomsTable<T extends RoomListRow>({
               <TableActionButton label="Archive Room" variant="archive" onClick={() => onArchive(row.original)}>
                 <Archive size={15} />
               </TableActionButton>
+              {!['online', 'field'].includes(row.original.room_type) && (
+                <TableActionButton label={row.original.status === 'available' ? 'Mark Unavailable' : 'Mark Available'} variant={row.original.status === 'available' ? 'danger' : 'success'} className="w-auto gap-1.5 px-3 text-xs font-semibold" onClick={() => onAvailabilityChange(row.original)}>
+                  {row.original.status === 'available' ? <Ban size={15} /> : <CheckCircle2 size={15} />}
+                  <span>{row.original.status === 'available' ? 'Mark Unavailable' : 'Mark Available'}</span>
+                </TableActionButton>
+              )}
             </>
           )}
         </div>

@@ -1,0 +1,230 @@
+[
+  {
+    "role": "table",
+    "name": "Sections"
+  },
+  {
+    "role": "row",
+    "name": ""
+  },
+  {
+    "role": "row",
+    "name": ""
+  },
+  {
+    "role": "row",
+    "name": ""
+  },
+  {
+    "role": "row",
+    "name": ""
+  },
+  {
+    "role": "row",
+    "name": ""
+  },
+  {
+    "role": "row",
+    "name": ""
+  },
+  {
+    "role": "row",
+    "name": ""
+  },
+  {
+    "role": "row",
+    "name": ""
+  },
+  {
+    "role": "cell",
+    "name": "Select IT 101 BSIT 1A"
+  },
+  {
+    "role": "cell",
+    "name": "BSIT 1A"
+  },
+  {
+    "role": "cell",
+    "name": "Monday 08:00-09:30 Thursday 08:00-09:30"
+  },
+  {
+    "role": "cell",
+    "name": "Units: 3"
+  },
+  {
+    "role": "cell",
+    "name": "Available"
+  },
+  {
+    "role": "cell",
+    "name": ""
+  },
+  {
+    "role": "cell",
+    "name": "Select IT 101 BSIT 1B"
+  },
+  {
+    "role": "cell",
+    "name": "BSIT 1B"
+  },
+  {
+    "role": "cell",
+    "name": "Tuesday 10:00-11:30"
+  },
+  {
+    "role": "cell",
+    "name": "Units: 3"
+  },
+  {
+    "role": "cell",
+    "name": "Available"
+  },
+  {
+    "role": "cell",
+    "name": ""
+  },
+  {
+    "role": "cell",
+    "name": "Select IT 101 BSIT 1C"
+  },
+  {
+    "role": "cell",
+    "name": "BSIT 1C"
+  },
+  {
+    "role": "cell",
+    "name": "Monday 09:00-10:30"
+  },
+  {
+    "role": "cell",
+    "name": "Units: 3"
+  },
+  {
+    "role": "cell",
+    "name": "Conflict View reason for BSIT 1C"
+  },
+  {
+    "role": "cell",
+    "name": ""
+  },
+  {
+    "role": "cell",
+    "name": "Select IT 101 BSIT 1D"
+  },
+  {
+    "role": "cell",
+    "name": "BSIT 1D"
+  },
+  {
+    "role": "cell",
+    "name": "Wednesday 13:00-14:30"
+  },
+  {
+    "role": "cell",
+    "name": "Units: 3"
+  },
+  {
+    "role": "cell",
+    "name": "Available"
+  },
+  {
+    "role": "cell",
+    "name": ""
+  },
+  {
+    "role": "cell",
+    "name": "Select IT 101 BSIT 1E"
+  },
+  {
+    "role": "cell",
+    "name": "BSIT 1E"
+  },
+  {
+    "role": "cell",
+    "name": "Friday 08:00-09:30"
+  },
+  {
+    "role": "cell",
+    "name": "Units: 3"
+  },
+  {
+    "role": "cell",
+    "name": "Assigned Maria Christina Villanueva from CCS"
+  },
+  {
+    "role": "cell",
+    "name": "Remove instructor from IT 101 BSIT 1E"
+  },
+  {
+    "role": "cell",
+    "name": "Select IT 101 BSIT 1F"
+  },
+  {
+    "role": "cell",
+    "name": "BSIT 1F"
+  },
+  {
+    "role": "cell",
+    "name": "Thursday 10:00-11:30"
+  },
+  {
+    "role": "cell",
+    "name": "Units: 3"
+  },
+  {
+    "role": "cell",
+    "name": "Available"
+  },
+  {
+    "role": "cell",
+    "name": ""
+  },
+  {
+    "role": "cell",
+    "name": "Select IT 101 BSIT 1G"
+  },
+  {
+    "role": "cell",
+    "name": "BSIT 1G"
+  },
+  {
+    "role": "cell",
+    "name": "Friday 13:00-14:30"
+  },
+  {
+    "role": "cell",
+    "name": "Units: 3"
+  },
+  {
+    "role": "cell",
+    "name": "Available"
+  },
+  {
+    "role": "cell",
+    "name": ""
+  },
+  {
+    "role": "columnheader",
+    "name": "Select"
+  },
+  {
+    "role": "columnheader",
+    "name": "Sort by Section"
+  },
+  {
+    "role": "columnheader",
+    "name": "Schedule"
+  },
+  {
+    "role": "columnheader",
+    "name": "Sort by Units"
+  },
+  {
+    "role": "columnheader",
+    "name": "Sort by Availability"
+  },
+  {
+    "role": "columnheader",
+    "name": "Actions"
+  }
+]

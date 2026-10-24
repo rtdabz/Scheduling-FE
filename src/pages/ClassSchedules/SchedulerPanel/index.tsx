@@ -1,4 +1,5 @@
 import TopBar from "./TopBar";
+import RoomReassignmentPanel from "../../../components/rooms/RoomReassignmentPanel";
 import CourseBank, { isCourseBankAvailable } from "./CourseBank";
 import TimetableGrid from "./TimetableGrid";
 import DropModal from "./Modals/DropModal";
@@ -13,6 +14,7 @@ import AutoAssignModal from "./Modals/AutoAssignModal";
 import ResolveConflictModal from "./Modals/ResolveConflictModal";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useScheduler } from "./hooks/useScheduler";
 import { useWorkflowGuide } from "../../../hooks/useWorkflowGuide";
 import YearLevelGenerateScheduleWorkflow from "./GenerateSchedule/YearLevelGenerateScheduleWorkflow";
@@ -25,6 +27,7 @@ interface SchedulerPanelProps {
 
 export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPanelProps) {
   const scheduler = useScheduler();
+  const [, setSearchParams] = useSearchParams();
   const plottingGuideSteps = useMemo(() => [
     { element: '#schedule-builder-section button[aria-haspopup="listbox"]', action: "click" as const, taskHint: "Open the section picker and choose a section.", title: "Choose a section", description: "Select a section to load its courses and timetable.", side: "bottom" as const, align: "start" as const },
     { element: "#schedule-builder-generate button", action: "click" as const, skipIfMissing: true, taskHint: "Click Generate to continue.", title: "Generate a schedule", description: "Open the generator to build a whole year level at once. It has its own step-by-step guide, and this one waits here until you close it.", side: "bottom" as const, align: "end" as const },
@@ -59,29 +62,14 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
   const [isConflictsOpen, setIsConflictsOpen] = useState(false);
   // The class whose Conflict badge was clicked; null opens on the first conflict.
   const [conflictsFocusId, setConflictsFocusId] = useState<number | null>(null);
-  // The dialog opens by itself whenever the open count goes up -- on the first
-  // load with conflicts, and when a save adds one -- so nobody has to look for
-  // it. Adjusted during render rather than in an effect, as React recommends
-  // for state that follows a changing value.
-  const openConflictCount = scheduler.conflictCounts?.open ?? null;
-  const [seenOpenConflictCount, setSeenOpenConflictCount] = useState<number | null>(null);
-  if (openConflictCount !== seenOpenConflictCount) {
-    setSeenOpenConflictCount(openConflictCount);
-    if (
-      (scheduler.canUpdateSchedule || scheduler.canAssignInstructor)
-      && openConflictCount !== null
-      && openConflictCount > (seenOpenConflictCount ?? 0)
-    ) {
-      setConflictsFocusId(null);
-      setIsConflictsOpen(true);
-    }
-  }
+  const [pendingRoomTransferCount, setPendingRoomTransferCount] = useState(0);
 
-  useEffect(() => {
-    if (autoAssignOnOpen && scheduler.schedules.length > 0) {
-      setIsAutoAssignOpen(true);
-    }
-  }, [autoAssignOnOpen, scheduler.schedules.length]);
+  const autoAssignReady = autoAssignOnOpen && scheduler.schedules.length > 0;
+  const [wasAutoAssignReady, setWasAutoAssignReady] = useState(false);
+  if (autoAssignReady !== wasAutoAssignReady) {
+    setWasAutoAssignReady(autoAssignReady);
+    if (autoAssignReady) setIsAutoAssignOpen(true);
+  }
 
   const isCourseBankOpen =
     !scheduler.isWideView && isCourseBankAvailable(scheduler.isPhase2Active, scheduler.currentStatus);
@@ -144,10 +132,16 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
     <div className="flex flex-col gap-4 w-full text-slate-800 antialiased">
       <TopBar
         {...scheduler}
+        pendingRoomTransferCount={pendingRoomTransferCount}
         onPrint={() => scheduler.setIsPrintModalOpen(true)}
-        onOpenConflicts={scheduler.activeSemester ? () => {
-          setConflictsFocusId(null);
-          setIsConflictsOpen(true);
+        onOpenRoomTransfer={scheduler.activeSemester ? () => {
+          setSearchParams(current => {
+            const next = new URLSearchParams(current);
+            next.set('recovery', 'open');
+            next.set('recovery_semester', String(scheduler.activeSemester!.id));
+            next.delete('recovery_room');
+            return next;
+          });
         } : undefined}
         onGenerateYearLevel={scheduler.canGenerateSchedule ? () => setIsGeneratorOpen(true) : undefined}
         onResetSchedules={scheduler.handleClearAll}
@@ -155,6 +149,10 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         onAutoAssign={scheduler.canAssignInstructor ? () => setIsAutoAssignOpen(true) : undefined}
         onClearInstructors={scheduler.canAssignInstructor ? () => { setClearInstructorScope(scheduler.clearableSectionInstructorCount > 0 ? "section" : "department"); setIsClearInstructorConfirmOpen(true); } : undefined}
       />
+      <RoomReassignmentPanel semesterId={Number(scheduler.activeSemester?.id) || undefined} onPendingCountChange={setPendingRoomTransferCount} onTransferred={() => {
+        void scheduler.refreshSchedules();
+        scheduler.refreshConflictCounts();
+      }} />
 
       {scheduler.canUpdateSchedule && !scheduler.ownsSelectedProgram && (
         <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">

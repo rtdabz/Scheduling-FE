@@ -30,6 +30,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
+import RoomRecoveryAlerts from '../../components/rooms/RoomRecoveryAlerts';
 import DashboardGantt from '../vpaa/calendar/DashboardGantt';
 import ScheduleDetailModal from '../vpaa/calendar/ScheduleDetailModal';
 import { buildStandardHours, DEFAULT_STANDARD_HOURS, findOverlaps, withCalendarDepartments, type CalendarDepartment, type CalendarSchedule, type StandardHours } from '../vpaa/calendar/ganttLayout';
@@ -432,6 +433,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
   }
 
   return <div id="dashboard-overview" className="space-y-4 pb-8 text-slate-800">
+    {canViewSchedules && <RoomRecoveryAlerts />}
     {(loadError || statusError) && <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
       <AlertTriangle className="h-4 w-4 shrink-0"/>
       <span className="flex-1">{loadError || statusError}</span>

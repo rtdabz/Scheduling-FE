@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { useSearchParams } from 'react-router-dom';
+import RoomRecoveryAlerts from '../../components/rooms/RoomRecoveryAlerts';
 import {
   ArrowLeft,
   Building2,
@@ -665,6 +666,7 @@ export default function RoomRequests() {
 
   return (
     <div className="space-y-6">
+      <RoomRecoveryAlerts />
       {filterBar}
 
       {selectedDepartment ? (

@@ -1,6 +1,6 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, GraduationCap, Printer, RotateCcw, Send, ShieldAlert, UserCheck, UserMinus } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, DoorOpen, GraduationCap, Printer, RotateCcw, Send, UserCheck, UserMinus } from "lucide-react";
 import { yearLevelLabel } from "./constants";
 import type { DepartmentSectionProgress, ScheduleItem, SectionDoneCandidate, Section, WithdrawalStage } from "./types";
 import Skeleton from "../../../components/ui/Skeleton";
@@ -50,8 +50,8 @@ interface TopBarProps {
   canWithdrawSubmission: boolean;
   isWithdrawingSubmission: boolean;
   onPrint: () => void;
-  onOpenConflicts?: () => void;
-  conflictCounts?: { open: number; resolved: number } | null;
+  onOpenRoomTransfer?: () => void;
+  pendingRoomTransferCount?: number;
   onGenerateYearLevel?: () => void;
   onResetSchedules?: () => void;
   canResetSchedules?: boolean;
@@ -259,8 +259,8 @@ export default function TopBar({
   canWithdrawSubmission,
   isWithdrawingSubmission,
   onPrint,
-  onOpenConflicts,
-  conflictCounts = null,
+  onOpenRoomTransfer,
+  pendingRoomTransferCount = 0,
   onGenerateYearLevel,
   onResetSchedules,
   canResetSchedules = false,
@@ -613,40 +613,22 @@ export default function TopBar({
             </>
           )}</>}
           <span aria-hidden="true" className="mx-0.5 hidden h-6 w-px bg-slate-200 sm:block" />
-          {!isLoading && onOpenConflicts && (() => {
-            const open = conflictCounts?.open ?? 0;
-            const resolved = conflictCounts?.resolved ?? 0;
-            const tone = open > 0
-              ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
-              : resolved > 0
-                ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
-                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50";
-
-            return (
+          {!isLoading && onOpenRoomTransfer && (
               <button
-                id="schedule-builder-conflicts"
+                id="schedule-builder-room-transfer"
                 type="button"
-                onClick={onOpenConflicts}
-                title={open > 0
-                  ? "Classes on the saved timetable that clash, and how earlier ones were resolved"
-                  : "No open conflicts. See resolved conflicts and check classes against the current rules"}
-                className={`${toolButtonClass} ${tone}`}
+                onClick={onOpenRoomTransfer}
+                aria-haspopup="dialog"
+                aria-label="Room Transfer"
+                aria-describedby={pendingRoomTransferCount > 0 ? 'schedule-builder-room-transfer-count' : undefined}
+                title="Review schedules needing a room and transfer them to suitable rooms"
+                className={`${toolButtonClass} border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50`}
               >
-                {open > 0 ? <ShieldAlert className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                <span>Conflicts</span>
-                {open > 0 && (
-                  <span className="rounded-full bg-red-600 px-1.5 text-[10px] font-black leading-4 text-white">
-                    {open} open
-                  </span>
-                )}
-                {resolved > 0 && (
-                  <span className="rounded-full bg-emerald-600 px-1.5 text-[10px] font-black leading-4 text-white">
-                    {resolved} resolved
-                  </span>
-                )}
+                <DoorOpen className="h-3.5 w-3.5" />
+                <span>Room Transfer</span>
+                {pendingRoomTransferCount > 0 && <span id="schedule-builder-room-transfer-count" role="status" aria-label="Pending room transfers" className="inline-flex min-w-5 items-center justify-center rounded-full bg-primary px-1.5 py-0.5 text-[11px] font-bold leading-4 text-white">{pendingRoomTransferCount}<span className="sr-only"> pending room transfers</span></span>}
               </button>
-            );
-          })()}
+          )}
           {isLoading ? <Skeleton className="h-9 w-20 rounded-lg" /> : (
             <button
               type="button"

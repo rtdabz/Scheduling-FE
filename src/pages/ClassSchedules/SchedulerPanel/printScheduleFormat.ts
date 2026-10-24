@@ -30,6 +30,7 @@ const DAY_SHORT_CODES: Record<string, string> = {
 
 export type PrintMeetingGroup = {
   first: ScheduleItem;
+  scheduleIds: string[];
   days: string[];
   dayLabel: string;
   timeLabel: string;
@@ -60,6 +61,7 @@ export const groupPrintMeetings = (
 
     return {
       first: meetings[0],
+      scheduleIds: meetings.map(meeting => meeting.id),
       days,
       dayLabel: days.length === 1
         ? days[0]

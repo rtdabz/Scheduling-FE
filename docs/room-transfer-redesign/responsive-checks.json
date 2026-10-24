@@ -1,0 +1,50 @@
+[
+  {
+    "width": 320,
+    "dialogWidth": 304,
+    "overlayOverflow": 0,
+    "horizontalOverflow": 0,
+    "ratio": 1,
+    "columns": "257px"
+  },
+  {
+    "width": 390,
+    "dialogWidth": 374,
+    "overlayOverflow": 0,
+    "horizontalOverflow": 0,
+    "ratio": 1,
+    "columns": "327px"
+  },
+  {
+    "width": 768,
+    "dialogWidth": 736,
+    "overlayOverflow": 0,
+    "horizontalOverflow": 0,
+    "ratio": 1,
+    "columns": "681px"
+  },
+  {
+    "width": 1024,
+    "dialogWidth": 992,
+    "overlayOverflow": 0,
+    "horizontalOverflow": 0,
+    "ratio": 1.5,
+    "columns": "559.188px 372.797px"
+  },
+  {
+    "width": 1440,
+    "dialogWidth": 1240,
+    "overlayOverflow": 0,
+    "horizontalOverflow": 0,
+    "ratio": 1.5,
+    "columns": "708px 472px"
+  },
+  {
+    "width": 1920,
+    "dialogWidth": 1240,
+    "overlayOverflow": 0,
+    "horizontalOverflow": 0,
+    "ratio": 1.5,
+    "columns": "708px 472px"
+  }
+]

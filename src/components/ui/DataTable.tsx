@@ -31,6 +31,7 @@ export interface DataTableProps<T> {
   loadingRows?: number;
   className?: string;
   scrollClassName?: string;
+  scrollAriaLabel?: string;
   tableClassName?: string;
   variant?: 'card' | 'embedded';
   density?: 'comfortable' | 'compact';
@@ -65,6 +66,7 @@ export default function DataTable<T>({
   loadingRows = 6,
   className = '',
   scrollClassName = '',
+  scrollAriaLabel,
   tableClassName = '',
   variant = 'card',
   density = 'comfortable',
@@ -99,7 +101,7 @@ export default function DataTable<T>({
 
   return (
     <div className={`${surface} ${className}`}>
-      <div className={`${scrollClassName.includes('overflow-') ? '' : 'max-lg:overflow-x-auto'} ${scrollClassName}`}>
+      <div role={scrollAriaLabel ? 'region' : undefined} aria-label={scrollAriaLabel} tabIndex={scrollAriaLabel ? 0 : undefined} className={`${scrollClassName.includes('overflow-') ? '' : 'max-lg:overflow-x-auto'} ${scrollClassName}`}>
         <table className={`w-full min-w-full border-collapse text-left ${tableClassName}`} aria-label={ariaLabel} aria-busy={isLoading || undefined}>
           <thead id={headerId} className="sticky top-0 z-10 bg-gray-50/95">
             {table.getHeaderGroups().map((headerGroup) => (

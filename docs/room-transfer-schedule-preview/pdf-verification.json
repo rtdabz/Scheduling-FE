@@ -1,0 +1,16 @@
+{
+  "regular_page_count_unchanged": true,
+  "regular_pdf_pixels_unchanged": true,
+  "regular_pdf_contains_online_class": true,
+  "regular_pdf_has_no_proposal_banner": true,
+  "dean_has_six_proposed_rooms": true,
+  "dean_has_correct_changed_day_time": true,
+  "dean_excludes_online": true,
+  "dean_contains_accurate_stage": true,
+  "dean_has_eight_changed_cells": true,
+  "vpaa_has_six_proposed_rooms": true,
+  "vpaa_has_correct_changed_day_time": true,
+  "vpaa_excludes_online": true,
+  "vpaa_contains_accurate_stage": true,
+  "vpaa_has_eight_changed_cells": true
+}
