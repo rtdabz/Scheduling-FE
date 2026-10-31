@@ -33,6 +33,18 @@ export default {
         text: '#1A1410',
         muted: '#7A6E67',
         border: '#E2D9D0',
+        // Dashboard status set: warm-leaning so it sits with maroon and gold
+        // rather than the stock Tailwind emerald/sky/violet mix.
+        stage: {
+          approved: '#4e0a10',
+          ready:    '#C9952A',
+          waiting:  '#4A6A8A',
+          returned: '#B4432F',
+          drafting: '#A89A8D',
+          idle:     '#E6DED5',
+          done:     '#3F7D58',
+          warnText: '#8A5A12',
+        },
       },
       keyframes: {
         float: {
@@ -72,6 +84,12 @@ export default {
           '0%':   { transform: 'scale(0.97)', opacity: '0' },
           '100%': { transform: 'scale(1)',    opacity: '1' },
         },
+        // The dashboard hero's stage bar fills once on load; it is the only
+        // unprompted motion on the page.
+        ledgerGrow: {
+          '0%':   { transform: 'scaleX(0)' },
+          '100%': { transform: 'scaleX(1)' },
+        },
       },
       animation: {
         float:        'float 8s ease-in-out infinite',
@@ -84,6 +102,7 @@ export default {
         stepInLeft:   'stepInLeft 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
         modalIn:      'modalIn 0.16s ease-out',
         dropdownIn:   'dropdownIn 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+        ledgerGrow:   'ledgerGrow 0.7s cubic-bezier(0.16, 1, 0.3, 1) both',
       },
     },
   },

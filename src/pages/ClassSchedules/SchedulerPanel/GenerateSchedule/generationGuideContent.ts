@@ -145,13 +145,15 @@ export const GENERATION_GUIDE: GuideChapter[] = [
           "For a course with laboratory units: whether it is scheduled as a lecture or as a laboratory, which decides the type of room it needs.",
       },
       {
-        term: "Custom Time Duration",
+        term: "Class Duration",
         meaning:
-          "How long the course meets each week. For a Split Session, this is the two meetings together.",
+          "How long the course meets each week: its Total Hours. For an imported curriculum these are the lecture and laboratory hours the curriculum recorded on import; otherwise they are the course's own lecture and laboratory hours. It cannot be changed here.",
         notes: [
-          "It cannot be longer than the course is allowed to meet in a week.",
-          "Each meeting must fill whole time slots.",
-          "Hybrid Split has a fixed length and cannot be changed.",
+          "Every shape's meetings add up to exactly the Total Hours.",
+          "For a Split Session, the two meetings share it equally.",
+          "For Integrated, the lecture and the laboratory each keep their own hours.",
+          "For Consecutive Days, the days share it equally, so the number of days must divide it evenly.",
+          "Hybrid Split has a fixed length of two 1.5-hour meetings.",
         ],
       },
       {

@@ -141,7 +141,7 @@ export const rollupDepartments = (
         case 'pending_vpaa': {
           pendingVpaaCount++;
           const handoff = submission?.dean_reviewed_at ?? submission?.submitted_at ?? null;
-          if (handoff && (!submittedAt || handoff > submittedAt)) submittedAt = handoff;
+          if (handoff && (!submittedAt || handoff < submittedAt)) submittedAt = handoff;
           if (submission?.approval_override) {
             hasOverride = true;
             overrideReason = submission.approval_override_reason ?? overrideReason;

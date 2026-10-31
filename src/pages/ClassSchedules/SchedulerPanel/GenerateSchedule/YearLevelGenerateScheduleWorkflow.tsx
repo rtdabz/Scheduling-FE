@@ -72,10 +72,9 @@ import {
   loadCachedData,
   setCachedData,
 } from "../../../../lib/dataCache";
-import type { LaboratoryDurationSettings } from "../courseSlotPlan";
+import { placeCourse, type SchedulingRoomSettings } from "../courseSlotPlan";
 import {
   EMPTY_COURSE_DEFAULTS,
-  formatHours,
   type ConsecutiveDayRule,
   type CourseDefaults,
   type PreferredRoomOption,
@@ -106,12 +105,10 @@ type SectionConfig = {
   hybridSplitCourseIds?: string[];
   gecSplitPatternsByCourseId: Record<string, GecSplitPattern>;
   modesByCourseId: Record<string, CourseMode>;
-  durationMinutesByCourseId?: Record<string, number>;
   preferredRoomsByCourseId?: Record<string, string>;
-  componentMinutesByCourseId?: Record<string, { lecture: number; laboratory: number }>;
 };
 
-type SettingsResponse = LaboratoryDurationSettings & {
+type SettingsResponse = SchedulingRoomSettings & {
   forced_day_rules?: ForcedDayRule[];
   consecutive_day_rules?: ConsecutiveDayRule[];
   forced_day_courses?: ConstraintCourse[];
@@ -413,7 +410,8 @@ export default function YearLevelGenerateScheduleWorkflow({
   const scopedCourses = useMemo(() => {
     const source = curriculumCourses ?? courses;
 
-    return source.filter(
+    // Each course carries the class minutes the year level's curriculum recorded on import.
+    return source.map((course) => placeCourse(course, yearLevelCurriculumId)).filter(
       (course) =>
         Number(course.yearLevel) === yearLevel &&
         (!activeSemester || course.semester === activeSemester.semester) &&
@@ -433,6 +431,7 @@ export default function YearLevelGenerateScheduleWorkflow({
     departmentId,
     settings?.field_course_codes,
     yearLevel,
+    yearLevelCurriculumId,
   ]);
   const yearLevelGenerationAllowed = useMemo(
     () =>
@@ -646,18 +645,8 @@ export default function YearLevelGenerateScheduleWorkflow({
             ),
             ...(existing?.modesByCourseId ?? {}),
           },
-          durationMinutesByCourseId: Object.fromEntries(
-            Object.entries(existing?.durationMinutesByCourseId ?? {}).filter(([id]) =>
-              scopedCourses.some((course) => course.id === id),
-            ),
-          ),
           preferredRoomsByCourseId: Object.fromEntries(
             Object.entries(existing?.preferredRoomsByCourseId ?? {}).filter(([id]) =>
-              scopedCourses.some((course) => course.id === id),
-            ),
-          ),
-          componentMinutesByCourseId: Object.fromEntries(
-            Object.entries(existing?.componentMinutesByCourseId ?? {}).filter(([id]) =>
               scopedCourses.some((course) => course.id === id),
             ),
           ),
@@ -1006,16 +995,6 @@ export default function YearLevelGenerateScheduleWorkflow({
                     mode !== "automatic" && !excludedCourseIdSet.has(id),
                 )
                 .map(([id, mode]) => [Number(id), mode]),
-            ),
-            duration_minutes_by_course_id: Object.fromEntries(
-              Object.entries(config.durationMinutesByCourseId ?? {}).map(
-                ([id, minutes]) => [Number(id), minutes],
-              ),
-            ),
-            component_minutes_by_course_id: Object.fromEntries(
-              Object.entries(config.componentMinutesByCourseId ?? {}).map(
-                ([id, minutes]) => [Number(id), minutes],
-              ),
             ),
             preferred_rooms_by_course_id: Object.fromEntries(
               Object.entries(config.preferredRoomsByCourseId ?? {}).map(
@@ -1417,14 +1396,8 @@ export default function YearLevelGenerateScheduleWorkflow({
     (settings?.preferred_room_options ?? []).map((room) => [String(room.id), room.room_code]),
   );
   const reviewCourseRows = includedCourses.map((course) => {
-    const customMinutes = targetSections
-      .map((section) => configs[section.id]?.durationMinutesByCourseId?.[course.id])
-      .find((minutes): minutes is number => typeof minutes === "number");
     const preferredRoomId = targetSections
       .map((section) => configs[section.id]?.preferredRoomsByCourseId?.[course.id])
-      .find(Boolean);
-    const components = targetSections
-      .map((section) => configs[section.id]?.componentMinutesByCourseId?.[course.id])
       .find(Boolean);
     const integratedOnSite = targetSections.some(
       (section) => configs[section.id]?.modesByCourseId?.[course.id] === "on-site",
@@ -1446,11 +1419,6 @@ export default function YearLevelGenerateScheduleWorkflow({
         targetSections.every((section) =>
           (configs[section.id]?.gecSplitCourseIds ?? []).includes(course.id),
         ),
-      customDuration: components
-        ? `Lecture ${formatHours(components.lecture / 60)} ${integratedOnSite ? "F2F" : "Online"} · Lab ${formatHours(components.laboratory / 60)} F2F`
-        : customMinutes
-          ? `${formatHours(customMinutes / 60)} / week`
-          : null,
       preferredRoom: preferredRoomId ? roomCodeByOptionId.get(preferredRoomId) ?? null : null,
     };
   });
@@ -1919,7 +1887,7 @@ const generatorGuideSteps: WorkflowGuideStep[] = [
 
 const helpText: Record<Step, string> = {
   1: "Pick the year level and curriculum, then choose the Preferred Days.",
-  2: "Set each course's split and hybrid delivery. Use Configure for its duration, Required Day and Preferred Room.",
+  2: "Set each course's split and hybrid delivery. Duration follows the course's Total Hours; use Configure for its Required Day and Preferred Room.",
   3: "Check every selection, then generate. Nothing is saved until you apply the result.",
   4: "Review the generated timetable, then save it as draft schedules.",
 };

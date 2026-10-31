@@ -228,6 +228,7 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
                               <p className="transfer-available"><CheckCircle2 size={14} aria-hidden="true" />Available for this schedule</p>
                             </div>
                             {sameTime && <p className="transfer-meta">Day and time unchanged</p>}
+                            {row.day === 'Sunday' && before.day !== 'Sunday' && <p className="transfer-meta">Moves to Sunday. If Sunday classes are off for your department, final approval turns them on.</p>}
                           </>}
                         </div>;
                       })}

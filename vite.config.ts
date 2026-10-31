@@ -8,6 +8,11 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    // Loaded only through dynamic import(), so the dev server would otherwise discover them mid-session,
+    // re-bundle, and fail the in-flight import with "504 Outdated Optimize Dep".
+    optimizeDeps: {
+      include: ['jspdf', 'jspdf-autotable', 'pusher-js', 'papaparse', 'read-excel-file/browser', 'mammoth', 'pdfjs-dist'],
+    },
     build: {
       rollupOptions: {
         output: {

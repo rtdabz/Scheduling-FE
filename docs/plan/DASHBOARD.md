@@ -11,10 +11,13 @@
 - [[coding_standards]]
 - [[print_download_review]] — Print/download inventory, filename conventions, verification, and prioritized export improvements.
 - [[performance]]
+- [Dashboard role review](reports/dashboard_role_review.md) — VPAA, Dean, and Secretary content priorities, redundancy findings, verification limits, and per-finding implementation status.
 
 ## Architecture & Decisions
 
 - [[decisions]]
+- [Dashboard integration plan](dashboard_integration_plan.md) — Role-specific content, metric definitions, and acceptance checks; Phases 1–2 implemented 2026-10-30, authenticated UI checks and backend contract sign-off outstanding.
+- [[curriculum_document_import_plan]] — Implemented reviewed curriculum import (PDF/CSV/XLSX/DOCX), classification rules, and conversion settings; Phase 2 scheduling integration deferred (see section 16).
 - [[scheduling_profile_removal_plan]] ? Completed course-driven replacement of the department Scheduling Profile and verification record.
 - [[room_request_implementation_plan]] — Planned phases for Room Request authorization, scheduling integrity, reliable responses, and frontend correctness.
 - [[recommendation_engine_integration_plan]] — Completed shared engine integration, session policy, phase evidence, compatibility boundaries, and verification matrix.

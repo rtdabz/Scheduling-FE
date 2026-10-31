@@ -23,9 +23,6 @@ export interface SchedulePdfInput {
   users: UserSummary[];
   activeSemester: Semester | null;
   printAllSections?: boolean;
-  transferPreview?: {
-    changes: { scheduleId: string; room: boolean; day: boolean; time: boolean }[];
-  };
 }
 
 export const getSchedulePdfFilename = (input: SchedulePdfInput): string => {
@@ -96,7 +93,6 @@ export async function buildSchedulePdf({
   users,
   activeSemester,
   printAllSections = false,
-  transferPreview,
 }: SchedulePdfInput): Promise<Blob> {
   const activeSection = sections.find((section) => section.id === selectedSectionId);
   const activeDepartment = departments.find((department) => Number(department.id) === Number(activeSection?.departmentId));
@@ -137,11 +133,13 @@ export async function buildSchedulePdf({
   const printedProgramIds = Array.from(new Set(targetSections.map((section) => section.programId ?? null)));
   const singleProgramId = printedProgramIds.length === 1 ? printedProgramIds[0] : null;
   const singleProgramTitle = singleProgramId !== null && targetSections[0] ? programTitleOf(targetSections[0]) : null;
-  const programHead = singleProgramId !== null
-    ? users.find((user) => user.role?.toLowerCase() === "program_head" && Number(user.program_id) === Number(singleProgramId))
-    : undefined;
-  const preparer = programHead ?? byRole("secretary");
-  const preparerRole = preparer?.role?.toLowerCase() === "secretary" ? "Department Secretary" : "Program Head";
+  // The official schedule is prepared by the Program Head of each printed program, whoever entered it.
+  const preparedByName = printedProgramIds
+    .map((programId) => programId === null ? undefined
+      : users.find((user) => user.role?.toLowerCase() === "program_head" && Number(user.program_id) === Number(programId)))
+    .map((head) => head?.name?.trim().toUpperCase())
+    .filter((name): name is string => Boolean(name))
+    .join(" / ");
   const departmentLogoUrl = activeDepartment?.logo || null;
   const departmentTitle = (() => {
     const name = printAllSections ? "ALL DEPARTMENTS" : (activeDepartment?.department_name?.trim() || "INFORMATION TECHNOLOGY");
@@ -159,8 +157,8 @@ export async function buildSchedulePdf({
 
   const signatories = buildSignatories(
     settings,
-    preparer?.name?.trim().toUpperCase() ?? "",
-    preparerRole,
+    preparedByName,
+    "Program Head",
     byRole("dean")?.name?.trim().toUpperCase() ?? "",
     users.find((user) => user.role?.toLowerCase() === "vpaa")?.name?.trim().toUpperCase() ?? "",
   );
@@ -319,8 +317,6 @@ export async function buildSchedulePdf({
 
   currentY += 6;
 
-  const proposedChanges = new Map(transferPreview?.changes.map(change => [change.scheduleId, change]) ?? []);
-
   let previousProgramId: number | null | undefined;
   targetSections.forEach((section) => {
     const sectionProgramId = section.programId ?? null;
@@ -415,10 +411,6 @@ export async function buildSchedulePdf({
       const item = group.first;
       const isAdditionalMeeting = filledRows[index - 1]?.key === itemKey;
       const subjectMeetingCount = groupsBySubject.get(itemKey)?.length ?? 1;
-      const changes = group.scheduleIds.map(id => proposedChanges.get(id)).filter(change => change !== undefined);
-      const changedCell = (content: string, changed: boolean) => ({ content,
-        styles: { halign: "center" as const, valign: "middle" as const,
-          ...(changed ? { fillColor: [255, 242, 204] as [number, number, number], textColor: [123, 12, 23] as [number, number, number], fontStyle: "bold" as const } : {}) } });
 
       return [
         ...(isAdditionalMeeting ? [] : [
@@ -448,9 +440,12 @@ export async function buildSchedulePdf({
             styles: { halign: "center" as const, valign: "middle" as const }
           }
         ]),
-        changedCell(group.dayLabel, changes.some(change => change.day)),
-        changedCell(group.timeLabel, changes.some(change => change.time)),
-        changedCell(group.room, changes.some(change => change.room))
+        group.dayLabel,
+        group.timeLabel,
+        {
+          content: group.room,
+          styles: { halign: "center" as const, valign: "middle" as const }
+        }
       ];
     });
 

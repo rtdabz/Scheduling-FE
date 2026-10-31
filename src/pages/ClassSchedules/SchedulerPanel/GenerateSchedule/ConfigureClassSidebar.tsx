@@ -3,7 +3,7 @@ import { BookOpen, CheckCircle2, FlaskConical, MapPin } from "lucide-react";
 import SlideOverPanel from "./SlideOverPanel";
 import type { Course, Section } from "../types";
 import { DAYS } from "../constants";
-import { SLOT_MINUTES, type LaboratoryDurationSettings } from "../courseSlotPlan";
+import { consecutiveMeetingSlots, getCourseSlotPlan, slotsToHours } from "../courseSlotPlan";
 import type {
   ClassComponent,
   CourseClassConfig,
@@ -14,13 +14,9 @@ import {
   asRegularClass,
   compatibleRoomOptions,
   DEFAULT_CONSECUTIVE_DAYS,
-  defaultDurationMinutes,
   durationShape,
   formatHours,
-  hybridLaboratoryMinutes,
   isConsecutive as isConsecutiveConfig,
-  isIntegratedShape,
-  maxDurationMinutes,
   meetingParts,
   MIN_CONSECUTIVE_DAYS,
   runFrom,
@@ -28,15 +24,11 @@ import {
   teachingWeek,
 } from "./courseClassConfig";
 
-const SINGLE_PRESETS = [1, 1.5, 2, 3, 4, 5];
-const MEETING_PRESETS = [1, 1.5, 2, 2.5];
-
 interface ConfigureClassSidebarProps {
   course: Course;
   sections: Section[];
   initialConfig: CourseClassConfig;
   isFieldCourse: boolean;
-  labSettings?: LaboratoryDurationSettings | null;
   roomOptions: PreferredRoomOption[];
   sundayClassesEnabled?: boolean;
   preferredDays?: string[];
@@ -147,76 +139,11 @@ function Chip({
   );
 }
 
-function HoursInput({
-  id,
-  value,
-  max,
-  disabled,
-  invalid,
-  ariaLabel,
-  placeholder,
-  onChange,
-}: {
-  id: string;
-  value: number | "";
-  max?: number;
-  disabled: boolean;
-  invalid: boolean;
-  ariaLabel: string;
-  placeholder?: string;
-  onChange: (value: number | "") => void;
-}) {
-  return (
-    <div
-      className={`flex h-9 min-w-0 flex-1 items-center overflow-hidden rounded-lg border bg-white focus-within:ring-1 ${
-        invalid
-          ? "border-rose-400 focus-within:ring-rose-500"
-          : "border-slate-300 focus-within:border-[#4e0a10] focus-within:ring-[#4e0a10]"
-      }`}
-    >
-      <input
-        id={id}
-        type="number"
-        step="0.5"
-        min="0.5"
-        max={max}
-        value={value}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value === "" ? "" : parseFloat(e.target.value))}
-        placeholder={placeholder}
-        aria-label={ariaLabel}
-        aria-invalid={invalid ? true : undefined}
-        className="w-full min-w-0 px-2.5 text-xs font-bold text-slate-800 focus:outline-hidden"
-      />
-      <span className="border-l border-slate-200 bg-slate-100 px-2 py-2 text-[11px] font-black text-slate-600">
-        hrs
-      </span>
-    </div>
-  );
-}
-
-function ResetLink({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
-  return (
-    <>
-      {" "}
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={onClick}
-        className="font-bold text-[#4e0a10] hover:underline"
-      >
-        Reset
-      </button>
-    </>
-  );
-}
-
 export default function ConfigureClassSidebar({
   course,
   sections,
   initialConfig,
   isFieldCourse,
-  labSettings,
   roomOptions,
   sundayClassesEnabled = true,
   preferredDays = [],
@@ -257,7 +184,9 @@ export default function ConfigureClassSidebar({
       ? `Untick ${daysOutsidePreferred.join(", ")}: the Preferred Days are ${preferredDays.join(", ")}.`
       : meetingDays.length === 1
         ? "Pick at least two days."
-        : null;
+        : meetingDays.length >= MIN_CONSECUTIVE_DAYS && consecutiveMeetingSlots(course, meetingDays.length) === null
+          ? `${course.code}'s ${formatHours(slotsToHours(getCourseSlotPlan(course).totalSlots))} a week cannot be shared equally by ${meetingDays.length} days. Tick a number of days that divides its Total Hours evenly.`
+          : null;
   const meetingDaysMissing = isConsecutive && meetingDays.length === 0;
 
   const dayOffered = (day: string) =>
@@ -269,44 +198,6 @@ export default function ConfigureClassSidebar({
       : [...meetingDays, day];
     setMeetingDays(week.filter((item) => ticked.includes(item)));
   };
-
-  const perMeeting = shape === "split" ? 2 : 1;
-  const editableDuration = shape === "single" || shape === "split";
-  const defaultMinutes = defaultDurationMinutes(course);
-  const maxMinutes = maxDurationMinutes(course, shape, labSettings);
-  const [hours, setHours] = useState<number | "">(
-    initialConfig.durationMinutes / 60 / perMeeting,
-  );
-  const durationMinutes = typeof hours === "number" ? Math.round(hours * 60 * perMeeting) : 0;
-  const durationError = editableDuration
-    ? hours === "" || durationMinutes <= 0
-      ? "Enter a duration."
-      : (hours * 60) % SLOT_MINUTES !== 0
-        ? "Use whole half-hours, e.g. 1.5 or 2."
-        : durationMinutes > maxMinutes
-          ? `${course.code} carries at most ${formatHours(maxMinutes / 60)} ${isConsecutive ? "a day" : "a week"}.`
-          : null
-    : null;
-
-  const hybridDefaults = hybridLaboratoryMinutes(course, labSettings);
-  const [lectureHours, setLectureHours] = useState<number | "">(
-    initialConfig.lectureMinutes !== undefined ? initialConfig.lectureMinutes / 60 : "",
-  );
-  const [laboratoryHours, setLaboratoryHours] = useState<number | "">(
-    initialConfig.laboratoryMinutes !== undefined ? initialConfig.laboratoryMinutes / 60 : "",
-  );
-  const minutesOr = (value: number | "", fallback: number) =>
-    typeof value === "number" ? Math.round(value * 60) : fallback;
-  const lectureMinutes = minutesOr(lectureHours, hybridDefaults.lecture);
-  const laboratoryMinutes = minutesOr(laboratoryHours, hybridDefaults.laboratory);
-  const componentError =
-    !isIntegratedShape(shape)
-      ? null
-      : lectureMinutes <= 0 || laboratoryMinutes <= 0
-        ? "A lecture or laboratory length must be more than 0 hours."
-        : lectureMinutes % SLOT_MINUTES !== 0 || laboratoryMinutes % SLOT_MINUTES !== 0
-          ? "Use whole half-hours, e.g. 1.5 or 2."
-          : null;
 
   const [requiredDay, setRequiredDay] = useState<string>(initialConfig.requiredDay ?? "");
   const requiredDayCollapsesShape = requiredDay !== "" && shape !== "single";
@@ -342,7 +233,7 @@ export default function ConfigureClassSidebar({
   };
 
   const handleApply = () => {
-    if (durationError || componentError || meetingDaysError || meetingDaysMissing) return;
+    if (meetingDaysError || meetingDaysMissing) return;
     const config: CourseClassConfig = {
       ...initialConfig,
       component: meetsInField
@@ -350,28 +241,23 @@ export default function ConfigureClassSidebar({
         : configType === "integrated" || !hasLaboratory
           ? "lecture"
           : component,
-      durationMinutes: editableDuration ? durationMinutes : initialConfig.durationMinutes,
       consecutiveDays: isConsecutive ? meetingDays.length : null,
       preferredStartDay: isConsecutive ? meetingDays[0] : null,
       meetingDays: isConsecutive ? meetingDays : null,
-      ...(isIntegratedShape(shape)
-        ? {
-            lectureMinutes: lectureHours === "" ? undefined : lectureMinutes,
-            laboratoryMinutes: laboratoryHours === "" ? undefined : laboratoryMinutes,
-          }
-        : {}),
       requiredDay: isConsecutive ? null : requiredDay || null,
       preferredRoomId: preferredRoomId || null,
       sectionScope,
       selectedSectionIds:
         sectionScope === "all" ? sections.map((s) => s.id) : selectedSectionIds,
     };
-    onSave(requiredDayCollapsesShape ? asRegularClass(config, course) : config);
+    onSave(requiredDayCollapsesShape ? asRegularClass(config) : config);
   };
 
-  const presets = (shape === "split" ? MEETING_PRESETS : SINGLE_PRESETS).filter(
-    (preset) => preset * 60 * perMeeting <= maxMinutes,
-  );
+  const plan = getCourseSlotPlan(course);
+  const totalHours = slotsToHours(plan.totalSlots);
+  const parts = isConsecutive && daysChosen && !meetingDaysError
+    ? meetingParts({ ...initialConfig, consecutiveDays: meetingDays.length }, course)
+    : meetingParts({ ...initialConfig, consecutiveDays: null }, course);
   const roomLabel = (room: PreferredRoomOption) =>
     `${room.room_code}${room.building ? ` · ${room.building}` : ""}`;
 
@@ -413,8 +299,6 @@ export default function ConfigureClassSidebar({
             type="button"
             disabled={
               disabled ||
-              durationError !== null ||
-              componentError !== null ||
               meetingDaysError !== null ||
               meetingDaysMissing
             }
@@ -457,100 +341,21 @@ export default function ConfigureClassSidebar({
         </ConfigSection>
       )}
 
-      <ConfigSection
-        label="Custom Time Duration"
-        htmlFor={editableDuration ? "configure-duration-hours" : undefined}
-        aside={`Default ${formatHours(defaultMinutes / 60)}`}
-      >
-        {editableDuration ? (
-          <>
-            <div className="flex items-center gap-1.5">
-              <HoursInput
-                id="configure-duration-hours"
-                value={hours}
-                max={maxMinutes / 60 / perMeeting}
-                disabled={disabled}
-                invalid={durationError !== null}
-                ariaLabel={shape === "split" ? "Meeting duration in hours" : "Duration in hours"}
-                onChange={setHours}
-              />
-              {presets.map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => setHours(preset)}
-                  className={`h-9 rounded-lg border px-2 text-xs font-bold transition ${
-                    hours === preset
-                      ? "border-[#4e0a10] bg-[#4e0a10] text-white"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                  }`}
-                >
-                  {preset}
-                </button>
-              ))}
-            </div>
-            <Hint error={durationError}>
-              {isConsecutive
-                ? `${formatHours(durationMinutes / 60)} straight on each ${daysChosen ? `of the ${meetingDays.length} days` : "meeting day"}, same time each day · max ${formatHours(maxMinutes / 60)} a day.`
-                : shape === "split"
-                  ? `Two ${initialConfig.delivery === "online" ? "online " : ""}meetings of ${formatHours(durationMinutes / 120)} · max ${formatHours(maxMinutes / 60)} a week.`
-                  : `Max ${formatHours(maxMinutes / 60)} a week.`}
-              {durationMinutes !== defaultMinutes && (
-                <ResetLink disabled={disabled} onClick={() => setHours(defaultMinutes / 60 / perMeeting)} />
-              )}
-            </Hint>
-          </>
-        ) : isIntegratedShape(shape) ? (
-          <>
-            <div className="grid grid-cols-2 gap-2">
-              {(
-                [
-                  { key: "lecture", label: "Lecture", mode: shape === "hybrid-laboratory" ? "Online" : "F2F", value: lectureHours, set: setLectureHours, fallback: hybridDefaults.lecture },
-                  { key: "laboratory", label: "Laboratory", mode: "F2F", value: laboratoryHours, set: setLaboratoryHours, fallback: hybridDefaults.laboratory },
-                ] as const
-              ).map((part) => (
-                <div key={part.key}>
-                  <label
-                    htmlFor={`configure-${part.key}-hours`}
-                    className="mb-1 block text-[11px] font-bold text-slate-600"
-                  >
-                    {part.label} · {part.mode}
-                  </label>
-                  <HoursInput
-                    id={`configure-${part.key}-hours`}
-                    value={part.value}
-                    disabled={disabled}
-                    invalid={componentError !== null}
-                    ariaLabel={`${part.label} duration in hours`}
-                    placeholder={`${part.fallback / 60} (default)`}
-                    onChange={part.set}
-                  />
-                </div>
-              ))}
-            </div>
-            <Hint error={componentError}>
-              {`Leave blank for the course's own length (${formatHours(hybridDefaults.lecture / 60)} lecture, ${formatHours(hybridDefaults.laboratory / 60)} laboratory).`}
-              {(lectureHours !== "" || laboratoryHours !== "") && (
-                <ResetLink
-                  disabled={disabled}
-                  onClick={() => {
-                    setLectureHours("");
-                    setLaboratoryHours("");
-                  }}
-                />
-              )}
-            </Hint>
-          </>
-        ) : (
-          <Note tone="slate">
-            Hybrid Split · two separate sessions:{" "}
-            {meetingParts(initialConfig, course, labSettings)
-              .map((part) => `${formatHours(part.minutes / 60)} ${part.mode}`)
-              .join(" + ")}
-            {" "}(fixed)
-          </Note>
-        )}
+      <ConfigSection label="Class Duration" aside={`Total ${formatHours(totalHours)} / week`}>
+        <Note tone="slate">
+          {shape === "hybrid-split" ? "Hybrid Split · " : ""}
+          {isConsecutive && parts.length > 1
+            ? `${formatHours(parts[0].minutes / 60)} on each of the ${parts.length} days`
+            : parts
+                .map((part) => `${formatHours(part.minutes / 60)}${part.label === "Class" ? "" : ` ${part.label.toLowerCase()}`}${part.mode ? ` ${part.mode}` : ""}`)
+                .join(" + ")}
+        </Note>
+        <Hint error={null}>
+          {`From the course's Total Hours (${[
+            plan.lectureSlots > 0 && `${formatHours(slotsToHours(plan.lectureSlots))} lecture`,
+            plan.laboratorySlots > 0 && `${formatHours(slotsToHours(plan.laboratorySlots))} laboratory`,
+          ].filter(Boolean).join(" + ")}${typeof course.lectureMinutes === "number" || typeof course.laboratoryMinutes === "number" ? ", as the curriculum recorded on import" : ""}). The meetings always add up to it.`}
+        </Hint>
       </ConfigSection>
 
       {shape === "single" && (

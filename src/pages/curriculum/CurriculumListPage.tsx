@@ -16,6 +16,7 @@ import {
   BookOpen,
   BookPlus,
   Printer,
+  FileUp,
 } from 'lucide-react';
 import {
   useReactTable,
@@ -385,6 +386,17 @@ function CurriculumManagePage() {
                 <Archive size={15} />
                 <span>Archive</span>
               </button>
+              {userRole !== 'vpaa' && (
+                <button
+                  id="curriculum-import-button"
+                  onClick={() => navigate(`/${userRole}/curriculum/import`)}
+                  className="border border-[#5A1220] text-[#5A1220] hover:bg-[#5A1220]/5 px-5 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
+                  title="Import a curriculum from a PDF, CSV, XLSX, or DOCX file"
+                >
+                  <FileUp size={15} />
+                  <span>Import</span>
+                </button>
+              )}
               <button
                 id="curriculum-create-button"
                 onClick={() => {

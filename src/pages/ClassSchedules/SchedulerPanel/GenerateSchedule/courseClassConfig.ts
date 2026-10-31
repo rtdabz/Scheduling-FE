@@ -5,13 +5,10 @@ import {
 } from "../schedulingConfigurationEligibility";
 import {
   getCourseSlotPlan,
-  laboratoryComponentSlots,
   SLOT_MINUTES,
-  type LaboratoryDurationSettings,
 } from "../courseSlotPlan";
 import { DAYS } from "../constants";
 import { isLabMeetingRoomType } from "../../../../lib/labRoomPolicy";
-import { slotCount } from "../../../../lib/timeGrid";
 import type { CourseSetupConfig } from "./SetupCoursesStep";
 
 export type ClassConfiguration = "regular" | "split" | "integrated";
@@ -31,9 +28,6 @@ export interface CourseClassConfig {
   component: ClassComponent;
   delivery: DeliveryMode;
   hybridType?: "split" | "laboratory";
-  durationMinutes: number;
-  lectureMinutes?: number;
-  laboratoryMinutes?: number;
   requiredDay: string | null;
   consecutiveDays?: number | null;
   preferredStartDay?: string | null;
@@ -63,25 +57,18 @@ export function durationShape(
 export const isIntegratedShape = (shape: DurationShape): boolean =>
   shape === "integrated-onsite" || shape === "hybrid-laboratory";
 
-export const isDurationEditable = (shape: DurationShape): boolean =>
-  shape === "single" || shape === "split";
-
 export const isConsecutive = (
   config: Pick<CourseClassConfig, "configuration" | "consecutiveDays">,
 ): boolean =>
   config.configuration === "regular" && (config.consecutiveDays ?? 0) >= MIN_CONSECUTIVE_DAYS;
 
-export function asRegularClass(config: CourseClassConfig, course: Course): CourseClassConfig {
+export function asRegularClass(config: CourseClassConfig): CourseClassConfig {
   if (config.configuration === "regular") return config;
   return {
     ...config,
     configuration: "regular",
     delivery: config.delivery === "hybrid" ? "onsite" : config.delivery,
     hybridType: undefined,
-    durationMinutes:
-      durationShape(config) === "split" ? config.durationMinutes : defaultDurationMinutes(course),
-    lectureMinutes: undefined,
-    laboratoryMinutes: undefined,
   };
 }
 
@@ -250,113 +237,26 @@ export function consecutiveSummary(
     : `${dayCount} consecutive days`;
 }
 
-export function defaultDurationMinutes(course: Course): number {
-  return getCourseSlotPlan(course).singleBlockSlots * SLOT_MINUTES;
+/** The course's Total Hours a week, in minutes. */
+export function requiredDurationMinutes(course: Course): number {
+  return getCourseSlotPlan(course).totalSlots * SLOT_MINUTES;
 }
 
-export function maxDurationMinutes(
-  course: Course,
-  shape: DurationShape,
-  labSettings?: LaboratoryDurationSettings | null,
-): number {
-  const ceiling = courseCeilingMinutes(course, shape, labSettings);
-  if (shape === "split" || shape === "hybrid-split") return ceiling;
-  return Math.max(ceiling, slotCount() * SLOT_MINUTES);
-}
-
-function courseCeilingMinutes(
-  course: Course,
-  shape: DurationShape,
-  labSettings?: LaboratoryDurationSettings | null,
-): number {
+export function hybridLaboratoryMinutes(course: Course): { lecture: number; laboratory: number } {
   const plan = getCourseSlotPlan(course);
-  const units = plan.singleBlockSlots * SLOT_MINUTES;
-  if (shape === "split" || shape === "hybrid-split") return units;
-
-  const laboratory =
-    Number(course.labHours ?? 0) > 0
-      ? laboratoryComponentSlots(course, labSettings) * SLOT_MINUTES
-      : 0;
-  return Math.max(units, plan.lectureSlots * SLOT_MINUTES + laboratory);
-}
-
-export function hybridLaboratoryMinutes(
-  course: Course,
-  labSettings?: LaboratoryDurationSettings | null,
-): { lecture: number; laboratory: number } {
   return {
-    lecture: getCourseSlotPlan(course).lectureSlots * SLOT_MINUTES,
-    laboratory: laboratoryComponentSlots(course, labSettings) * SLOT_MINUTES,
+    lecture: plan.lectureSlots * SLOT_MINUTES,
+    laboratory: plan.laboratorySlots * SLOT_MINUTES,
   };
 }
 
 export interface CourseDefaults {
-  lectureMinutes: number | null;
-  laboratoryMinutes: number | null;
   allowFridaySaturdaySplit: boolean;
 }
 
 export const EMPTY_COURSE_DEFAULTS: CourseDefaults = {
-  lectureMinutes: null,
-  laboratoryMinutes: null,
   allowFridaySaturdaySplit: false,
 };
-
-const meetsAsLaboratory = (course: Course): boolean =>
-  Number(course.labHours ?? 0) > 0 || course.roomTypeRequired === "laboratory";
-
-export function applyCourseDefaults(
-  config: CourseClassConfig,
-  course: Course,
-  defaults: CourseDefaults,
-  labSettings?: LaboratoryDurationSettings | null,
-): { config: CourseClassConfig; applied: boolean; skipped: boolean } {
-  if (config.component === "field") return { config, applied: false, skipped: false };
-  const shape = durationShape(config);
-
-  if (isIntegratedShape(shape)) {
-    const own = hybridLaboratoryMinutes(course, labSettings);
-    const wanted = defaults.lectureMinutes !== null || defaults.laboratoryMinutes !== null;
-    const lecture = defaults.lectureMinutes ?? own.lecture;
-    const laboratory = defaults.laboratoryMinutes ?? own.laboratory;
-    const fits = [lecture, laboratory].every((minutes) => minutes > 0 && minutes % SLOT_MINUTES === 0);
-    return {
-      config: {
-        ...config,
-        lectureMinutes: fits && lecture !== own.lecture ? lecture : undefined,
-        laboratoryMinutes: fits && laboratory !== own.laboratory ? laboratory : undefined,
-      },
-      applied: wanted && fits,
-      skipped: wanted && !fits,
-    };
-  }
-
-  if (!isDurationEditable(shape)) return { config, applied: false, skipped: false };
-  const wanted = meetsAsLaboratory(course) ? defaults.laboratoryMinutes : defaults.lectureMinutes;
-  const perMeeting = shape === "split" ? 2 : 1;
-  const fits =
-    wanted !== null &&
-    wanted > 0 &&
-    wanted <= courseCeilingMinutes(course, shape, labSettings) &&
-    wanted % (SLOT_MINUTES * perMeeting) === 0;
-  return {
-    config: { ...config, durationMinutes: fits ? wanted : defaultDurationMinutes(course) },
-    applied: fits,
-    skipped: wanted !== null && !fits,
-  };
-}
-
-export function integratedHybridMinutes(
-  config: Pick<CourseClassConfig, "lectureMinutes" | "laboratoryMinutes">,
-  course: Course,
-  labSettings?: LaboratoryDurationSettings | null,
-): { lecture: number; laboratory: number } {
-  const defaults = hybridLaboratoryMinutes(course, labSettings);
-  return {
-    lecture: config.lectureMinutes ?? defaults.lecture,
-    laboratory: config.laboratoryMinutes ?? defaults.laboratory,
-  };
-}
 
 export interface MeetingPart {
   label: string;
@@ -364,17 +264,14 @@ export interface MeetingPart {
   mode?: "Online" | "F2F";
 }
 
-export function meetingParts(
-  config: CourseClassConfig,
-  course: Course,
-  labSettings?: LaboratoryDurationSettings | null,
-): MeetingPart[] {
+export function meetingParts(config: CourseClassConfig, course: Course): MeetingPart[] {
+  const required = requiredDurationMinutes(course);
   switch (durationShape(config)) {
     case "split": {
       const mode = config.delivery === "online" ? "Online" : undefined;
       return [
-        { label: "Meeting 1", minutes: config.durationMinutes / 2, mode },
-        { label: "Meeting 2", minutes: config.durationMinutes / 2, mode },
+        { label: "Meeting 1", minutes: required / 2, mode },
+        { label: "Meeting 2", minutes: required / 2, mode },
       ];
     }
     case "hybrid-split":
@@ -384,32 +281,30 @@ export function meetingParts(
       ];
     case "integrated-onsite":
     case "hybrid-laboratory": {
-      const { lecture, laboratory } = integratedHybridMinutes(config, course, labSettings);
+      const { lecture, laboratory } = hybridLaboratoryMinutes(course);
       return [
         { label: "Lecture", minutes: lecture, mode: config.delivery === "hybrid" ? "Online" : "F2F" },
         { label: "Laboratory", minutes: laboratory, mode: "F2F" },
       ];
     }
-    default:
-      return isConsecutive(config)
-        ? Array.from({ length: config.consecutiveDays ?? DEFAULT_CONSECUTIVE_DAYS }, (_, index) => ({
-            label: `Day ${index + 1}`,
-            minutes: config.durationMinutes,
-            mode: config.delivery === "online" ? ("Online" as const) : undefined,
-          }))
-        : [{ label: "Class", minutes: config.durationMinutes }];
+    default: {
+      if (!isConsecutive(config)) return [{ label: "Class", minutes: required }];
+      // The days share the Total Hours equally; none repeats it.
+      const dayCount = config.consecutiveDays ?? DEFAULT_CONSECUTIVE_DAYS;
+      return Array.from({ length: dayCount }, (_, index) => ({
+        label: `Day ${index + 1}`,
+        minutes: required / dayCount,
+        mode: config.delivery === "online" ? ("Online" as const) : undefined,
+      }));
+    }
   }
 }
 
 const describePart = (part: MeetingPart): string =>
   `${formatHours(part.minutes / 60)}${part.mode ? ` ${part.mode}` : ""}`;
 
-export function durationLabel(
-  config: CourseClassConfig,
-  course: Course,
-  labSettings?: LaboratoryDurationSettings | null,
-): string {
-  const parts = meetingParts(config, course, labSettings);
+export function durationLabel(config: CourseClassConfig, course: Course): string {
+  const parts = meetingParts(config, course);
   if (isConsecutive(config) && parts.length > 0) {
     return `${parts.length} days × ${describePart(parts[0])}`;
   }
@@ -491,20 +386,11 @@ export function inferInitialCourseClassConfig(
   else if (isAnyHybridSplit) narrowTo(sectionsWithHybridSplit);
 
   const targets = sections.filter((s) => selectedSectionIds.includes(s.id));
-  const savedMinutes = targets
-    .map((s) => configs[s.id]?.durationMinutesByCourseId?.[course.id])
-    .find((minutes): minutes is number => typeof minutes === "number" && minutes > 0);
   const savedRoom = targets
     .map((s) => configs[s.id]?.preferredRoomsByCourseId?.[course.id])
     .find((roomId): roomId is string => Boolean(roomId));
-  const savedComponents = targets
-    .map((s) => configs[s.id]?.componentMinutesByCourseId?.[course.id])
-    .find(Boolean);
 
   const shared = {
-    durationMinutes: savedMinutes ?? defaultDurationMinutes(course),
-    lectureMinutes: savedComponents?.lecture,
-    laboratoryMinutes: savedComponents?.laboratory,
     requiredDay,
     preferredRoomId: savedRoom ?? null,
     sectionScope,
@@ -571,7 +457,6 @@ export function syncCourseConfigToSectionConfigs(
   sections: Section[],
   configs: Record<string, CourseSetupConfig>,
   onConfigChange: (sectionId: string, change: Partial<CourseSetupConfig>) => void,
-  labSettings?: LaboratoryDurationSettings | null,
 ): void {
   const courseId = course.id;
   const targetSectionIds = new Set(
@@ -579,19 +464,6 @@ export function syncCourseConfigToSectionConfigs(
       ? sections.map((s) => s.id)
       : courseConfig.selectedSectionIds,
   );
-  const customMinutes =
-    isDurationEditable(durationShape(courseConfig)) &&
-    courseConfig.durationMinutes !== defaultDurationMinutes(course)
-      ? courseConfig.durationMinutes
-      : null;
-  const hybridDefaults = hybridLaboratoryMinutes(course, labSettings);
-  const chosenComponents = integratedHybridMinutes(courseConfig, course, labSettings);
-  const customComponents =
-    isIntegratedShape(durationShape(courseConfig)) &&
-    (chosenComponents.lecture !== hybridDefaults.lecture ||
-      chosenComponents.laboratory !== hybridDefaults.laboratory)
-      ? chosenComponents
-      : null;
 
   for (const section of sections) {
     const isTarget = targetSectionIds.has(section.id);
@@ -600,9 +472,7 @@ export function syncCourseConfigToSectionConfigs(
     const currentGecSplit = current?.gecSplitCourseIds ?? [];
     const currentHybridSplit = current?.hybridSplitCourseIds ?? [];
     const currentModes = current?.modesByCourseId ?? {};
-    const currentDurations = current?.durationMinutesByCourseId ?? {};
     const currentRooms = current?.preferredRoomsByCourseId ?? {};
-    const currentComponents = current?.componentMinutesByCourseId ?? {};
 
     const without = (ids: string[]) => ids.filter((id) => id !== courseId);
     const withCourse = (ids: string[]) => Array.from(new Set([...ids, courseId]));
@@ -611,12 +481,8 @@ export function syncCourseConfigToSectionConfigs(
     let nextGecSplit = without(currentGecSplit);
     let nextHybridSplit = without(currentHybridSplit);
     const nextModes = { ...currentModes };
-    const nextDurations = { ...currentDurations };
     const nextRooms = { ...currentRooms };
-    const nextComponents = { ...currentComponents };
-    delete nextDurations[courseId];
     delete nextRooms[courseId];
-    delete nextComponents[courseId];
 
     if (isTarget) {
       if (courseConfig.configuration === "split") {
@@ -625,8 +491,6 @@ export function syncCourseConfigToSectionConfigs(
       } else if (courseConfig.configuration === "integrated") {
         nextSplit = withCourse(currentSplit);
       }
-      if (customMinutes !== null) nextDurations[courseId] = customMinutes;
-      if (customComponents !== null) nextComponents[courseId] = customComponents;
       if (courseConfig.preferredRoomId) nextRooms[courseId] = courseConfig.preferredRoomId;
     }
 
@@ -639,9 +503,7 @@ export function syncCourseConfigToSectionConfigs(
       !sameIds(nextGecSplit, currentGecSplit) ||
       !sameIds(nextHybridSplit, currentHybridSplit) ||
       JSON.stringify(nextModes) !== JSON.stringify(currentModes) ||
-      JSON.stringify(nextDurations) !== JSON.stringify(currentDurations) ||
-      JSON.stringify(nextRooms) !== JSON.stringify(currentRooms) ||
-      JSON.stringify(nextComponents) !== JSON.stringify(currentComponents);
+      JSON.stringify(nextRooms) !== JSON.stringify(currentRooms);
 
     if (changed) {
       onConfigChange(section.id, {
@@ -649,9 +511,7 @@ export function syncCourseConfigToSectionConfigs(
         gecSplitCourseIds: nextGecSplit,
         hybridSplitCourseIds: nextHybridSplit,
         modesByCourseId: nextModes,
-        durationMinutesByCourseId: nextDurations,
         preferredRoomsByCourseId: nextRooms,
-        componentMinutesByCourseId: nextComponents,
       });
     }
   }

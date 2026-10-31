@@ -31,7 +31,6 @@ export type ReviewCourseRow = {
   hybrid: boolean;
   integratedOnSite?: boolean;
   split: boolean;
-  customDuration?: string | null;
   preferredRoom?: string | null;
 };
 
@@ -212,12 +211,6 @@ const planColumns: ColumnDef<PlanRow>[] = [
             {row.consecutive}
           </Tag>
         )}
-        {row.customDuration && (
-          <Tag tone="bg-rose-100 text-rose-900">
-            <Clock3 className="h-2.5 w-2.5" />
-            {row.customDuration}
-          </Tag>
-        )}
         {row.preferredRoom && !row.field && (
           <Tag tone="bg-slate-200 text-slate-800">
             <DoorOpen className="h-2.5 w-2.5" />
@@ -228,7 +221,6 @@ const planColumns: ColumnDef<PlanRow>[] = [
           !row.hybrid &&
           !row.split &&
           !row.consecutive &&
-          !row.customDuration &&
           (!row.preferredRoom || row.field) &&
           row.forcedDays.length === 0 && (
           <span className="text-[11px] font-semibold text-slate-400">Standard</span>
@@ -420,7 +412,6 @@ export default function ReviewGenerateStep({
       row.split ||
       Boolean(row.consecutive) ||
       row.field ||
-      Boolean(row.customDuration) ||
       Boolean(row.preferredRoom) ||
       row.forcedDays.length > 0,
   ).length;

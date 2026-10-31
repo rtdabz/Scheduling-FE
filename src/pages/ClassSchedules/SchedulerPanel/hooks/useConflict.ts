@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DeliveryMode, Department, Faculty, Room, RoomType, ScheduleItem, Section, Subject } from "../types";
 import { getSubjectTotalSlots } from "../types";
-import { getCourseSlotPlan, laboratoryComponentSlots, SLOT_MINUTES, type LaboratoryDurationSettings } from "../courseSlotPlan";
+import { getCourseSlotPlan, SLOT_MINUTES } from "../courseSlotPlan";
 import { buildPreferredPattern, closingTimeLabel, consecutiveDayCount, fieldEndMinutes, formatTime12h, FULL_DAY_NAMES, gridOpeningMinutes, isFixedSplitPattern, parsePreferredPattern, slotCount, slotMinutes, timeToSlotUnclamped } from "../../../../lib/timeGrid";
 import { describeWindow, roomGrantFits } from "../../../../lib/roomRequests";
 import { isLabMeetingRoomType, labRoomTypes } from "../../../../lib/labRoomPolicy";
@@ -21,7 +21,6 @@ interface UseConflictParams {
   faculties: Faculty[];
   fieldCourseAssignmentEnabled?: boolean;
   fieldCourseCodes?: string[];
-  laboratoryDurationSettings?: LaboratoryDurationSettings | null;
   sundayClassesEnabled?: boolean;
 }
 
@@ -335,7 +334,6 @@ export const useConflict = ({
   faculties,
   fieldCourseAssignmentEnabled = false,
   fieldCourseCodes = [],
-  laboratoryDurationSettings = null,
   sundayClassesEnabled = true,
 }: UseConflictParams) => {
   const conflictedMap = useMemo(
@@ -475,11 +473,7 @@ export const useConflict = ({
       }
     }
     if (subject) {
-      const plan = getCourseSlotPlan(subject);
-      const ceilingSlots = Math.max(
-        plan.singleBlockSlots,
-        plan.lectureSlots + (Number(subject.labHours ?? 0) > 0 ? laboratoryComponentSlots(subject, laboratoryDurationSettings) : 0)
-      );
+      const ceilingSlots = getCourseSlotPlan(subject).totalSlots;
       if (ceilingSlots > 0) {
         const ignored = excludeScheduleId
           ? new Set(Array.isArray(excludeScheduleId) ? excludeScheduleId : [excludeScheduleId])
@@ -548,7 +542,7 @@ export const useConflict = ({
       }
     }
     return null;
-  }, [faculties, subjects, sections, schedules, rooms, departments, fieldCourseAssignmentEnabled, fieldCourseCodes, laboratoryDurationSettings, sundayClassesEnabled]);
+  }, [faculties, subjects, sections, schedules, rooms, departments, fieldCourseAssignmentEnabled, fieldCourseCodes, sundayClassesEnabled]);
 
   const checkFacultyConflict = useCallback((facultyId: string, scheduleId: string): string | null => {
     const target = schedules.find((s) => s.id === scheduleId);

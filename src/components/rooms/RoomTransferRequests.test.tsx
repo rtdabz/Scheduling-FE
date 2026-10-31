@@ -27,7 +27,7 @@ describe('Room transfer VPAA review', () => {
     render(<MemoryRouter><RoomTransferRequests stage="vpaa" transfers={[many]} onClose={close} /></MemoryRouter>);
     const dialog = screen.getByRole('dialog', { name: 'Room Transfer Request Details' });
     expect(within(dialog).queryByRole('table')).toBeNull();
-    expect(within(dialog).getByText('27 schedules affected')).toBeTruthy();
+    expect(within(dialog).getByText('27 schedules affected · 1 linked online session')).toBeTruthy();
     expect(within(dialog).getByText('SCI1 · A')).toBeTruthy();
     expect(within(dialog).queryByText('SCI3 · A')).toBeNull();
     const viewDetails = within(dialog).getByRole('button', { name: 'View Details' });
@@ -42,7 +42,7 @@ describe('Room transfer VPAA review', () => {
     expect(within(changes).queryByText('SCI26')).toBeNull();
     fireEvent.click(within(changes).getByRole('button', { name: /next/i }));
     expect(within(changes).getByText('SCI27')).toBeTruthy();
-    expect(within(changes).queryByText('SCI28')).toBeNull();
+    expect(within(changes).getByText('SCI28 (linked online session)')).toBeTruthy();
     expect(within(changes).getAllByText('Monday 8:00 AM–9:00 AM, Lab 1, on-site')).toHaveLength(2);
     expect(within(changes).getAllByText('Monday 8:00 AM–9:00 AM, Lab 2, on-site')).toHaveLength(2);
     fireEvent.keyDown(document, { key: 'Escape' });
@@ -64,7 +64,7 @@ describe('Room transfer VPAA review', () => {
   it('shows the original and proposed placements before approval', async () => {
     review();
     expect(await screen.findByText(/^Pending VPAA Approval/)).toBeTruthy();
-    expect(screen.getByText(/Current at submission: Lab 1/)).toBeTruthy();
+    expect(screen.getByText(/Original: Lab 1/)).toBeTruthy();
     expect(screen.getByText(/Proposed: Lab 2/)).toBeTruthy();
     expect(api.post).not.toHaveBeenCalled();
   });
@@ -145,7 +145,7 @@ describe('Room transfer VPAA review', () => {
     expect(await screen.findByText(/^Pending VPAA Approval ·/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull();
-    expect(screen.getByText(/Current at submission: Lab 1/)).toBeTruthy();
+    expect(screen.getByText(/Original: Lab 1/)).toBeTruthy();
   });
 
   it.each([['dean', 'pending_vpaa'], ['vpaa', 'pending_dean']] as const)('hides controls for %s when the request is %s', async (stage, status) => {
@@ -163,6 +163,20 @@ describe('Room transfer VPAA review', () => {
     expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull();
     expect(api.get).not.toHaveBeenCalled();
+  });
+
+  it('warns reviewers when final approval enables Sunday classes', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: { transfers: [{ ...transfer, status: 'pending_dean', enables_sunday: true }] } });
+    review('dean');
+    expect(await screen.findByText('Final approval also enables Sunday classes for Science.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(screen.getByText(/forward it to the VPAA\? Existing schedules will remain unchanged\. This transfer moves classes to Sunday, so final approval also enables Sunday classes for Science\./)).toBeTruthy();
+  });
+
+  it('lists transfers applied before the approval workflow as approved history', () => {
+    render(<MemoryRouter><RoomTransferRequests transfers={[{ ...transfer, status: 'applied' }]} /></MemoryRouter>);
+    expect(screen.getByText(/^Applied \(before approval workflow\) ·/)).toBeTruthy();
+    expect(screen.queryByText(/Final approval also enables Sunday/)).toBeNull();
   });
 
   it('offers a retry if requests cannot be loaded', async () => {

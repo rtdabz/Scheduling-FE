@@ -9,7 +9,6 @@ const renderSidebar = (props: Partial<Parameters<typeof CourseDefaultsSidebar>[0
   render(
     <CourseDefaultsSidebar
       defaults={EMPTY_COURSE_DEFAULTS}
-      summarize={() => ({ applied: 0, skipped: 0 })}
       customizedCount={0}
       onResetCustomized={vi.fn()}
       disabled={false}

@@ -252,33 +252,17 @@ describe("DropModal Integrated configuration", () => {
     expect(roomSelect.value).toBe("lecture-room");
   });
 
-  it("lets the user set the Integrated lecture and laboratory lengths", async () => {
+  it("fixes the Integrated lecture and laboratory at the course's own hours", async () => {
     render(<HybridModalHarness modalConflict="Room conflict" />);
 
     fireEvent.click(screen.getByRole("radio", { name: /Integrated/i }));
 
-    // Typed in hours.
-    const duration = (meeting: string) =>
-      screen.getByRole("spinbutton", { name: `${meeting} duration` }) as HTMLInputElement;
-    // The course's own lengths to begin with -- three hours of laboratory for
-    // its one laboratory unit, two of lecture for its two lecture units --
-    // rather than a fixed 3 + 2 the user cannot move.
-    expect(duration("Laboratory Meeting").value).toBe("3");
-    expect(duration("Lecture Meeting").value).toBe("2");
-    // Each session is the user's own length: no unit-derived week caps the
-    // pair, so the lecture grows past the 2 h its units give while the
-    // laboratory keeps its 3 h.
-    fireEvent.change(duration("Lecture Meeting"), { target: { value: "3" } });
-
-    expect(duration("Lecture Meeting").value).toBe("3");
-    expect(duration("Laboratory Meeting").value).toBe("3");
-
-    fireEvent.change(duration("Laboratory Meeting"), { target: { value: "4" } });
-
-    expect(duration("Laboratory Meeting").value).toBe("4");
-    // The length chosen is what the suggestions are asked for; without it
-    // every option comes back in the shape the user has just changed.
-    await waitFor(() => expect(slotCalls().at(-1)?.[1]).toMatchObject({ duration_slots: 8 }));
+    // Two lecture hours and one laboratory hour, read as recorded and not editable.
+    expect(screen.queryByRole("spinbutton", { name: /duration/ })).toBeNull();
+    expect((screen.getByLabelText("Laboratory Meeting end time") as HTMLInputElement).value).not.toBe("");
+    expect(screen.getByText("1 hrs")).toBeTruthy();
+    expect(screen.getByText("2 hrs")).toBeTruthy();
+    await waitFor(() => expect(slotCalls().at(-1)?.[1]).toMatchObject({ duration_slots: 2 }));
   });
 
   it("recalculates recommendations from the latest displayed schedule state", async () => {
@@ -579,7 +563,7 @@ describe("DropModal manual placement support", () => {
 
     // A later response, rather than the loading transition, invalidates the filter.
     mockRecommendationApi([slots[0]], [rooms[0]]);
-    fireEvent.change(screen.getByRole("spinbutton", { name: "Meeting duration" }), { target: { value: "2" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Meeting start time" }), { target: { value: "2" } });
     await waitFor(() => expect(slotCalls()).toHaveLength(3));
     await screen.findByRole("region", { name: "Valid placements" });
     expect(filter().options).toHaveLength(2);
@@ -888,35 +872,13 @@ describe("DropModal Consecutive Days", () => {
     expect((within(startDay).getByRole("option", { name: "Thursday (Thursday–Saturday)" }) as HTMLOptionElement).disabled).toBe(false);
   });
 
-  it("takes whole and half hours from one hour up, by typing or stepping", () => {
+  it("holds a single meeting at the course's Total Hours", () => {
     render(<HybridModalHarness lectureOnly />);
 
-    const duration = () => screen.getByRole("spinbutton", { name: "Meeting duration" }) as HTMLInputElement;
-    const endTime = () => (screen.getByLabelText("Meeting end time") as HTMLInputElement).value;
-    // A 3-unit lecture opens at its full 3 hours (8 AM start).
-    expect(duration().value).toBe("3");
-
-    fireEvent.change(duration(), { target: { value: "2" } });
-    expect(endTime()).toMatch(/^10(:00)? AM$/);
-
-    // Letters never get in.
-    fireEvent.change(duration(), { target: { value: "2h" } });
-    expect(duration().value).toBe("2");
-
-    // Not a half hour: snapped to the nearest one when the box is left.
-    fireEvent.change(duration(), { target: { value: "4.25" } });
-    fireEvent.blur(duration());
-    expect(duration().value).toBe("4.5");
-
-    // Under an hour: raised to one.
-    fireEvent.change(duration(), { target: { value: "0.5" } });
-    fireEvent.blur(duration());
-    expect(duration().value).toBe("1");
-    expect((screen.getByRole("button", { name: "Shorten Meeting by 30 minutes" }) as HTMLButtonElement).disabled).toBe(true);
-
-    fireEvent.click(screen.getByRole("button", { name: "Lengthen Meeting by 30 minutes" }));
-    expect(duration().value).toBe("1.5");
-    expect(endTime()).toMatch(/^9:30 AM$/);
+    // A 3-hour lecture meets its full 3 hours from the 8 AM start, with no duration to edit.
+    expect(screen.queryByRole("spinbutton", { name: "Meeting duration" })).toBeNull();
+    expect((screen.getByLabelText("Meeting end time") as HTMLInputElement).value).toMatch(/^11(:00)? AM$/);
+    expect(screen.getByText("3 hrs")).toBeTruthy();
   });
 
   it("turns a single meeting into a run of the chosen length, and back", () => {
@@ -968,7 +930,7 @@ describe("explicit session enhancements", () => {
   it("stages an Integrated Hybrid with independent lecture and lab times", async () => {
     const rows = [
       { day: "Monday", start_time: "10:00", end_time: "12:00", mode: "online", room_id: null, meeting_type: "lecture" },
-      { day: "Wednesday", start_time: "07:00", end_time: "10:00", mode: "on-site", room_id: 2, meeting_type: "laboratory" },
+      { day: "Wednesday", start_time: "07:00", end_time: "08:00", mode: "on-site", room_id: 2, meeting_type: "laboratory" },
     ];
     vi.mocked(api.post).mockResolvedValue({ data: { recommendations: [{ id: "integrated", label: "Integrated Hybrid", summary: "Lecture online, laboratory on-site", reasons: [], rows }], placements: [], best_matches: [], placement_rooms: [] } });
     render(<HybridModalHarness />);
@@ -979,8 +941,8 @@ describe("explicit session enhancements", () => {
     expect(screen.getByRole("radio", { name: /Integrated/i }).getAttribute("aria-checked")).toBe("true");
     expect((screen.getByLabelText("First meeting day") as HTMLSelectElement).value).toBe("2");
     expect((screen.getByLabelText("Second meeting day") as HTMLSelectElement).value).toBe("0");
-    expect((screen.getByRole("spinbutton", { name: "Laboratory Meeting duration" }) as HTMLInputElement).value).toBe("3");
-    expect((screen.getByRole("spinbutton", { name: "Lecture Meeting duration" }) as HTMLInputElement).value).toBe("2");
+    expect((screen.getByLabelText("Laboratory Meeting end time") as HTMLInputElement).value).toMatch(/^8(:00)? AM$/);
+    expect((screen.getByLabelText("Lecture Meeting end time") as HTMLInputElement).value).toMatch(/^12(:00)? PM$/);
     expect((screen.getByRole("combobox", { name: /Delivery mode/i }) as HTMLSelectElement).value).toBe("hybrid");
     expect((screen.getByLabelText("Laboratory Meeting start time") as HTMLSelectElement).value).toBe("0");
     expect((screen.getByLabelText("Lecture Meeting start time") as HTMLSelectElement).value).toBe("6");

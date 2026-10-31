@@ -32,18 +32,18 @@ const toDatum = (instructor: InstructorWorkload): WorkloadDatum => {
 
 export default function InstructorWorkloadChart({ instructors }: { instructors: InstructorWorkload[] }) {
   if (!instructors.length) {
-    return <p className="mt-3 py-3 text-center text-[11px] italic text-slate-400">No instructors available to this department.</p>;
+    return <p className="py-4 text-center text-[13px] text-muted">No instructors available to this department.</p>;
   }
 
   return (
-    <ul className="mt-3 min-w-0 space-y-3">
+    <ul className="min-w-0 space-y-3.5">
       {instructors.map(toDatum).map((row) => (
         <li key={row.id} className="flex min-w-0 items-center gap-2.5">
-          <ProfileAvatar src={row.photo} className="h-7 w-7 shrink-0 rounded-full border border-slate-200" iconClassName="h-4 w-4" />
+          <ProfileAvatar src={row.photo} className="h-8 w-8 shrink-0 rounded-full border border-border" iconClassName="h-4 w-4" />
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline justify-between gap-2">
-              <span className="min-w-0 truncate text-[11px] font-semibold text-slate-700" title={row.name}>{row.name}</span>
-              <span className="shrink-0 whitespace-nowrap text-[10px] font-semibold tabular-nums text-slate-500">{row.units}</span>
+              <span className="min-w-0 truncate text-[13px] font-semibold text-text" title={row.name}>{row.name}</span>
+              <span className="shrink-0 whitespace-nowrap text-[12px] tabular-nums text-muted">{row.units}</span>
             </div>
             <div
               role="progressbar"
@@ -51,9 +51,9 @@ export default function InstructorWorkloadChart({ instructors }: { instructors: 
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={row.progress}
-              className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-200"
+              className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-stage-idle"
             >
-              <div className="h-full rounded-full bg-[#16a36a]" style={{ width: `${row.progress}%` }} />
+              <div className={`h-full rounded-full ${row.progress >= 100 ? 'bg-stage-done' : 'bg-accent'}`} style={{ width: `${row.progress}%` }} />
             </div>
           </div>
         </li>

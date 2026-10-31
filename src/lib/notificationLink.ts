@@ -73,7 +73,8 @@ export const notificationLink = (
   role: string,
   metadata?: Record<string, unknown> | null,
 ): string | undefined => {
-  if ((type === 'room_transfer_submitted' && role === 'dean') || (type === 'room_transfer_dean_approved' && role === 'vpaa')) {
+  if ((type === 'room_transfer_submitted' && role === 'dean') || (type === 'room_transfer_dean_approved' && role === 'vpaa')
+    || ((type === 'room_transfer_approved' || type === 'room_transfer_rejected') && role === 'dean')) {
     const query = typeof metadata?.plan_id === 'string' ? `?room_transfer=${encodeURIComponent(metadata.plan_id)}` : '';
     return `${role === 'dean' ? '/dean' : ''}/schedules/approval${query}#schedule-approval-list`;
   }

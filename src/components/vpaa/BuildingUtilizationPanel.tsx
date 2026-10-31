@@ -1,115 +1,75 @@
-import { Bar, BarChart, LabelList, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import { Panel } from './DashboardPrimitives';
+import { EmptyNote } from '../dashboard/Ledger';
+import { BarRow } from '../dashboard/Analytics';
+import { STAGE } from '../../lib/dashboardStage';
 import { grouped } from '../../lib/dashboardFormat';
 import type { VpaaInsights } from '../../lib/vpaaInsights';
 
-const COLUMNS = 'minmax(0,1.3fr) minmax(0,1fr) 64px 72px';
-
-const barFill = (utilization: number) => {
-  if (utilization >= 85) return '#e11d48';
-  if (utilization >= 65) return '#f59e0b';
-  return '#16a36a';
-};
-
+/**
+ * A summary of campus room use: booked hours overall and per building, and the
+ * rooms nobody uses. Room-by-room detail lives in Reports. One bar colour only:
+ * no utilization threshold is an agreed institutional limit.
+ */
 export default function BuildingUtilizationPanel({
   insights,
-  loading,
-  onOpenRooms,
+  state,
+  onRetry,
+  onOpenDetails,
   className = '',
 }: {
-  insights: VpaaInsights;
-  loading: boolean;
-  onOpenRooms: () => void;
+  insights: VpaaInsights | null;
+  state: 'loading' | 'ready' | 'error';
+  onRetry: () => void;
+  onOpenDetails: () => void;
   className?: string;
 }) {
-  const { utilization } = insights;
+  const utilization = insights?.utilization;
+  const used = utilization?.buildings.filter(row => row.rooms_in_use > 0 || row.meetings > 0) ?? [];
+  const idle = utilization?.buildings.filter(row => row.rooms_in_use === 0 && row.meetings === 0) ?? [];
 
   return (
     <Panel
-      title="Room Utilisation by Building"
-      subtitle="Share of campus operating hours each building is booked for."
-      action="View all rooms"
-      onAction={onOpenRooms}
-      className={`flex flex-col ${className}`}
+      title="Room use"
+      subtitle="Share of operating hours that rooms are booked."
+      action="Open reports"
+      onAction={onOpenDetails}
+      className={className}
     >
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Figure label="Rooms" value={grouped(utilization.rooms_total)} />
-        <Figure label="In use" value={grouped(utilization.rooms_in_use)} />
-        <Figure label="Idle" value={grouped(utilization.idle_room_count)} />
-        <Figure label="Avg. load" value={`${utilization.average_utilization}%`} />
-      </div>
-
-      {loading && <p className="mt-4 py-6 text-center text-xs italic text-slate-400">Measuring room usage…</p>}
-
-      {!loading && utilization.buildings.length === 0 && (
-        <p className="mt-4 py-6 text-center text-xs italic text-slate-400">No rooms are configured yet.</p>
-      )}
-
-      {!loading && utilization.buildings.length > 0 && (
-        <div className="-mx-1 mt-3 overflow-x-auto px-1 sm:overflow-x-visible">
-          <div className="min-w-[380px] sm:min-w-0">
-            <div
-              className="grid gap-2 border-b border-slate-100 pb-2 text-[10px] font-bold uppercase tracking-wide text-slate-400"
-              style={{ gridTemplateColumns: COLUMNS }}
-            >
-              <span>Building</span>
-              <span>Utilisation</span>
-              <span className="text-right">Rooms</span>
-              <span className="text-right">Classes</span>
-            </div>
-            <ul className="divide-y divide-slate-100">
-              {utilization.buildings.map(row => (
-                <li key={row.building} className="grid items-center gap-2 py-2" style={{ gridTemplateColumns: COLUMNS }}>
-                  <b className="truncate text-[12px] text-slate-700" title={row.building}>{row.building}</b>
-                  <span className="h-6 min-w-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={[{ value: row.utilization, label: `${row.utilization}%` }]}
-                        layout="vertical"
-                        margin={{ top: 4, right: 38, left: 0, bottom: 4 }}
-                      >
-                        <XAxis type="number" domain={[0, 100]} hide />
-                        <YAxis type="category" hide />
-                        <Bar
-                          dataKey="value"
-                          fill={barFill(row.utilization)}
-                          radius={[5, 5, 5, 5]}
-                          barSize={9}
-                          background={{ fill: '#e2e8f0', radius: 5 }}
-                        >
-                          <LabelList dataKey="label" position="right" offset={7} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </span>
-                  <span className="text-right text-[11px] font-semibold tabular-nums text-slate-500">
-                    {grouped(row.rooms_in_use)} / {grouped(row.rooms)}
-                  </span>
-                  <span className="text-right text-[11px] font-semibold tabular-nums text-slate-500">{grouped(row.meetings)}</span>
-                </li>
-              ))}
-            </ul>
+      {state === 'loading' ? <EmptyNote>Measuring room use…</EmptyNote>
+        : state === 'error' || !utilization ? (
+          <div role="status" className="flex flex-wrap items-center gap-3 rounded-md bg-accent/10 px-3 py-2.5 text-[12px] text-stage-warnText">
+            <span className="flex-1">Room use could not be loaded.</span>
+            <button type="button" onClick={onRetry} className="focus-ring rounded font-semibold underline-offset-4 hover:underline">Retry</button>
           </div>
-        </div>
-      )}
-
-      {!loading && utilization.idle_rooms.length > 0 && (
-        <p className="mt-3 border-t border-slate-100 pt-2.5 text-[11px] font-semibold leading-relaxed text-slate-500">
-          <b className="text-slate-700">Unused this semester:</b>{' '}
-          {utilization.idle_rooms.map(room => room.room_code).join(', ')}
-          {utilization.idle_room_count > utilization.idle_rooms.length &&
-            ` +${utilization.idle_room_count - utilization.idle_rooms.length} more`}
-        </p>
-      )}
+        ) : utilization.rooms_total === 0 ? <EmptyNote>No rooms are set up yet.</EmptyNote> : (
+          <>
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <b className="text-[26px] font-semibold leading-none tabular-nums text-primary">{utilization.average_utilization}%</b>
+              <span className="text-[13px] text-muted">
+                average booked · {grouped(utilization.rooms_in_use)} of {grouped(utilization.rooms_total)} rooms in use
+              </span>
+            </div>
+            {used.length > 0 && <ul className="mt-4 space-y-3">
+              {used.map(row => (
+                <BarRow
+                  key={row.building}
+                  label={row.building}
+                  sublabel={`${row.rooms_in_use} of ${row.rooms} rooms`}
+                  value={row.utilization}
+                  valueLabel={`${row.utilization}% booked`}
+                  color={STAGE.approved}
+                  title={`${row.rooms_in_use} of ${row.rooms} rooms in use, ${row.meetings} classes`}
+                />
+              ))}
+            </ul>}
+            {(idle.length > 0 || utilization.idle_room_count > 0) && (
+              <div className="mt-4 space-y-1 border-t border-border pt-2.5 text-[12px] leading-relaxed text-muted">
+                {idle.length > 0 && <p>No classes in {idle.map(row => row.building).join(', ')}.</p>}
+                {utilization.idle_room_count > 0 && <p>{grouped(utilization.idle_room_count)} {utilization.idle_room_count === 1 ? 'room is' : 'rooms are'} unused this semester.</p>}
+              </div>
+            )}
+          </>
+        )}
     </Panel>
-  );
-}
-
-function Figure({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border border-slate-100 bg-slate-50/60 p-2 text-center">
-      <b className="block text-base leading-none tabular-nums text-primary">{value}</b>
-      <span className="mt-1 block truncate text-[10px] font-bold uppercase tracking-wide text-slate-500" title={label}>{label}</span>
-    </div>
   );
 }

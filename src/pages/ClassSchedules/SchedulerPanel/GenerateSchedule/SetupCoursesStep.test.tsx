@@ -2,8 +2,6 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import SetupCoursesStep from "./SetupCoursesStep";
 import type { Course, Section } from "../types";
-import { formatHours } from "./courseClassConfig";
-import { slotCount } from "../../../../lib/timeGrid";
 
 describe("SetupCoursesStep", () => {
   afterEach(cleanup);
@@ -116,27 +114,24 @@ describe("SetupCoursesStep", () => {
     expect(screen.getByText(/of 2 Courses included/).textContent).toContain("1");
   });
 
-  it("shows lab defaults only when an included course needs a lab, preserving saved defaults", () => {
+  it("shows the LAB room default only when an included course needs a lab", () => {
     const props = {
       courses: mockCourses,
       sections: mockSections,
       configs: mockConfigs,
       onConfigChange: vi.fn(),
       settings: null,
-      defaults: { lectureMinutes: 120, laboratoryMinutes: 180, allowFridaySaturdaySplit: false },
       defaultsOpen: true,
       actionsDisabled: false,
     };
     const { rerender } = render(<SetupCoursesStep {...props} />);
-    expect((screen.getByLabelText("Laboratory Duration") as HTMLInputElement).value).toBe("3");
+    expect(screen.getByLabelText("Default LAB Room Requirement")).toBeTruthy();
+    // Default Settings no longer set class lengths.
+    expect(screen.queryByLabelText("Lecture Duration")).toBeNull();
+    expect(screen.queryByLabelText("Laboratory Duration")).toBeNull();
 
     rerender(<SetupCoursesStep {...props} excludedCourseIds={["c2"]} />);
-    expect(screen.queryByLabelText("Laboratory Duration")).toBeNull();
     expect(screen.queryByLabelText("Default LAB Room Requirement")).toBeNull();
-    expect(screen.getByLabelText("Lecture Duration")).toBeTruthy();
-
-    rerender(<SetupCoursesStep {...props} />);
-    expect((screen.getByLabelText("Laboratory Duration") as HTMLInputElement).value).toBe("3");
   });
 
   it("recognizes a required laboratory room even without lab hours", () => {
@@ -145,64 +140,7 @@ describe("SetupCoursesStep", () => {
       sections={mockSections} configs={mockConfigs} onConfigChange={vi.fn()}
       settings={null} defaultsOpen actionsDisabled={false}
     />);
-    expect(screen.getByLabelText("Laboratory Duration")).toBeTruthy();
-  });
-
-  it("applies the Default Lecture Duration to every course without its own settings", () => {
-    const onConfigChange = vi.fn();
-    const onDefaultsChange = vi.fn();
-    render(
-      <SetupCoursesStep
-        courses={mockCourses}
-        sections={mockSections}
-        configs={mockConfigs}
-        onConfigChange={onConfigChange}
-        settings={null}
-        onDefaultsChange={onDefaultsChange}
-        defaultsOpen
-        actionsDisabled={false}
-      />,
-    );
-
-    // Opened from the gear in the wizard header; a draft until Apply.
-    fireEvent.change(screen.getByLabelText("Lecture Duration"), { target: { value: "2" } });
-    fireEvent.click(screen.getByRole("button", { name: /Apply Defaults/ }));
-
-    expect(onDefaultsChange).toHaveBeenCalledWith(expect.objectContaining({ lectureMinutes: 120 }));
-    // IT 101 is a three-unit lecture course: 2h fits. IT 103 meets as a
-    // laboratory and keeps its own length. Both sections get it at once.
-    for (const sectionId of ["s1", "s2"]) {
-      expect(onConfigChange).toHaveBeenCalledWith(
-        sectionId,
-        expect.objectContaining({ durationMinutesByCourseId: { c1: 120 } }),
-      );
-    }
-  });
-
-  it("leaves a course with its own Configure settings out of the defaults", () => {
-    const onConfigChange = vi.fn();
-    render(
-      <SetupCoursesStep
-        courses={mockCourses}
-        sections={mockSections}
-        configs={mockConfigs}
-        onConfigChange={onConfigChange}
-        settings={null}
-        customizedCourseIds={["c1"]}
-        defaultsOpen
-        actionsDisabled={false}
-      />,
-    );
-
-    // Opened from the gear in the wizard header; a draft until Apply.
-    fireEvent.change(screen.getByLabelText("Lecture Duration"), { target: { value: "2" } });
-    fireEvent.click(screen.getByRole("button", { name: /Apply Defaults/ }));
-
-    expect(onConfigChange).not.toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ durationMinutesByCourseId: { c1: 120 } }),
-    );
-    expect(screen.getByText("Custom")).toBeDefined();
+    expect(screen.getByLabelText("Default LAB Room Requirement")).toBeTruthy();
   });
 
   it("renders the table with Regular, Split, Integrated checkboxes and Delivery Mode dropdown", () => {
@@ -290,18 +228,14 @@ describe("SetupCoursesStep", () => {
       gecSplitCourseIds: ["c1"],
       hybridSplitCourseIds: [],
       modesByCourseId: { c1: "on-site" },
-      durationMinutesByCourseId: {},
       preferredRoomsByCourseId: {},
-      componentMinutesByCourseId: {},
     });
     expect(onConfigChange).toHaveBeenCalledWith("s2", {
       splitCourseIds: [],
       gecSplitCourseIds: ["c1"],
       hybridSplitCourseIds: [],
       modesByCourseId: { c1: "on-site" },
-      durationMinutesByCourseId: {},
       preferredRoomsByCourseId: {},
-      componentMinutesByCourseId: {},
     });
 
     // IT 101 dropdown should now offer On-Site | Hybrid | Online
@@ -347,9 +281,7 @@ describe("SetupCoursesStep", () => {
       gecSplitCourseIds: [],
       hybridSplitCourseIds: [],
       modesByCourseId: { c2: "on-site" },
-      durationMinutesByCourseId: {},
       preferredRoomsByCourseId: {},
-      componentMinutesByCourseId: {},
     });
 
     // Hybrid moves only the lecture online: the on-site mode is dropped.
@@ -361,9 +293,7 @@ describe("SetupCoursesStep", () => {
       gecSplitCourseIds: [],
       hybridSplitCourseIds: [],
       modesByCourseId: {},
-      durationMinutesByCourseId: {},
       preferredRoomsByCourseId: {},
-      componentMinutesByCourseId: {},
     });
   });
 
@@ -395,13 +325,11 @@ describe("SetupCoursesStep", () => {
     expect(screen.queryByText("Class Component")).toBeNull();
     expect(screen.queryByRole("button", { name: /Laboratory Only/i })).toBeNull();
 
-    // Verify Custom Time Duration has number-only input prefilled with hours and hrs addon
-    expect(screen.getByText(/Custom Time Duration/i)).toBeDefined();
-    const durationInput = screen.getByLabelText(/Duration in hours/i) as HTMLInputElement;
-    expect(durationInput).toBeDefined();
-    expect(durationInput.type).toBe("number");
-    expect(durationInput.value).toBe("3");
-    expect(screen.getAllByText("hrs").length).toBeGreaterThan(0);
+    // The class duration is the course's Total Hours, shown but not editable.
+    expect(screen.queryByText(/Custom Time Duration/i)).toBeNull();
+    expect(screen.queryByLabelText(/Duration in hours/i)).toBeNull();
+    expect(screen.getByText("Total 3h / week")).toBeDefined();
+    expect(screen.getByText(/From the course's Total Hours \(3h lecture\)/)).toBeDefined();
 
     // Select Selected Sections Only radio
     const selectedRadio = screen.getByLabelText(/Selected Sections Only/i);
@@ -418,7 +346,7 @@ describe("SetupCoursesStep", () => {
     { id: 8, room_code: "LAB 8", room_type: "laboratory", allow_lecture_usage: false },
   ];
 
-  it("applies an optional Required Day, Preferred Room and custom duration from Configure", () => {
+  it("applies an optional Required Day and Preferred Room from Configure", () => {
     const onConfigChange = vi.fn();
     const onRequiredDayChange = vi.fn();
 
@@ -446,17 +374,14 @@ describe("SetupCoursesStep", () => {
     expect(room.textContent).not.toContain("LAB 8");
     fireEvent.change(room, { target: { value: "7" } });
 
-    fireEvent.change(screen.getByLabelText(/Duration in hours/i), { target: { value: "2" } });
     fireEvent.click(screen.getByRole("button", { name: /Apply Configuration/i }));
 
     expect(onRequiredDayChange).toHaveBeenCalledWith("c1", "Saturday");
     for (const sectionId of ["s1", "s2"]) {
-      expect(onConfigChange).toHaveBeenCalledWith(sectionId, expect.objectContaining({
-        durationMinutesByCourseId: { c1: 120 },
-        preferredRoomsByCourseId: { c1: "7" },
-      }));
+      const change = onConfigChange.mock.calls.find(([id]) => id === sectionId)?.[1];
+      expect(change).toMatchObject({ preferredRoomsByCourseId: { c1: "7" } });
+      expect(change).not.toHaveProperty("durationMinutesByCourseId");
     }
-    expect(screen.getByText("2h")).toBeDefined();
   });
 
   it("holds a course with a Required Day to one Regular meeting", () => {
@@ -515,32 +440,7 @@ describe("SetupCoursesStep", () => {
     }
   });
 
-  it("refuses a duration longer than the teaching day", () => {
-    render(
-      <SetupCoursesStep
-        courses={mockCourses}
-        sections={mockSections}
-        configs={mockConfigs}
-        onConfigChange={vi.fn()}
-        settings={null}
-        actionsDisabled={false}
-      />,
-    );
-
-    fireEvent.click(screen.getAllByRole("button", { name: /configure/i })[0]);
-    // Eight hours straight is a valid single class; more than the day is not.
-    fireEvent.change(screen.getByLabelText(/Duration in hours/i), { target: { value: "8" } });
-    expect(screen.queryByRole("alert")).toBeNull();
-    fireEvent.change(screen.getByLabelText(/Duration in hours/i), { target: { value: "14" } });
-
-    expect(screen.getByRole("alert").textContent).toContain(`at most ${formatHours(slotCount() / 2)} a week`);
-    expect(
-      (screen.getByRole("button", { name: /Apply Configuration/i }) as HTMLButtonElement).disabled,
-    ).toBe(true);
-  });
-
-  it("lets the user set an Integrated Hybrid's lecture and laboratory lengths separately", () => {
-    const onConfigChange = vi.fn();
+  it("shows an Integrated course's lecture and laboratory hours, fixed", () => {
     render(
       <SetupCoursesStep
         courses={mockCourses}
@@ -549,7 +449,7 @@ describe("SetupCoursesStep", () => {
           s1: { ...mockConfigs.s1, splitCourseIds: ["c2"] },
           s2: { ...mockConfigs.s2, splitCourseIds: ["c2"] },
         }}
-        onConfigChange={onConfigChange}
+        onConfigChange={vi.fn()}
         settings={null}
         actionsDisabled={false}
       />,
@@ -557,29 +457,10 @@ describe("SetupCoursesStep", () => {
 
     fireEvent.click(screen.getAllByRole("button", { name: /configure/i })[1]);
 
-    // Blank means the course's own length: 2 lecture units, 1 laboratory unit.
-    const lecture = screen.getByLabelText(/Lecture duration in hours/i) as HTMLInputElement;
-    const laboratory = screen.getByLabelText(/Laboratory duration in hours/i) as HTMLInputElement;
-    expect(lecture.value).toBe("");
-    expect(lecture.placeholder).toBe("2 (default)");
-    expect(laboratory.value).toBe("");
-    expect(laboratory.placeholder).toBe("3 (default)");
-
-    fireEvent.change(lecture, { target: { value: "1.25" } });
-    expect(screen.getByRole("alert").textContent).toContain("whole half-hours");
-    expect((screen.getByRole("button", { name: /Apply Configuration/i }) as HTMLButtonElement).disabled).toBe(true);
-
-    // Past the old 5 h unit total, and used exactly; the laboratory stays blank.
-    fireEvent.change(lecture, { target: { value: "3" } });
-    fireEvent.click(screen.getByRole("button", { name: /Apply Configuration/i }));
-
-    for (const sectionId of ["s1", "s2"]) {
-      expect(onConfigChange).toHaveBeenCalledWith(sectionId, expect.objectContaining({
-        componentMinutesByCourseId: { c2: { lecture: 180, laboratory: 180 } },
-      }));
-    }
-    expect(screen.getByText(/Lecture 3h Online/)).toBeDefined();
-    expect(screen.getByText(/Laboratory 3h F2F/)).toBeDefined();
+    expect(screen.queryByLabelText(/Lecture duration in hours/i)).toBeNull();
+    expect(screen.queryByLabelText(/Laboratory duration in hours/i)).toBeNull();
+    expect(screen.getByText("2h lecture Online + 1h laboratory F2F")).toBeDefined();
+    expect(screen.getByText("Total 3h / week")).toBeDefined();
   });
 
   it("keeps Hybrid Split fixed", () => {
@@ -600,11 +481,11 @@ describe("SetupCoursesStep", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /configure/i })[0]);
 
     expect(screen.queryByLabelText(/Duration in hours/i)).toBeNull();
-    expect(screen.getByText(/Hybrid Split · two separate sessions/i)).toBeDefined();
+    expect(screen.getByText("Hybrid Split · 1.5h meeting 1 Online + 1.5h meeting 2 F2F")).toBeDefined();
   });
 
   describe("Consecutive Days", () => {
-    // Eight units: a Regular class of eight hours straight, met on each day.
+    // Eight Total Hours, shared equally by the days it meets.
     const clinical: Course = {
       id: "101",
       code: "NCM 101",
@@ -666,7 +547,7 @@ describe("SetupCoursesStep", () => {
       );
       expect(onRequiredDayChange).not.toHaveBeenCalled();
       expect(screen.getByText("2 days · Mon–Tue")).toBeDefined();
-      expect(screen.getByText("2 days × 8h")).toBeDefined();
+      expect(screen.getByText("2 days × 4h")).toBeDefined();
     });
 
     it("offers only the Preferred Days as meeting days and Required Days", () => {
@@ -698,7 +579,7 @@ describe("SetupCoursesStep", () => {
       }
     });
 
-    it("keeps the full class length on every day and takes the ticked meeting days", () => {
+    it("shares the Total Hours across the ticked days and refuses an uneven split", () => {
       const onConsecutiveDaysChange = vi.fn();
       const onConfigChange = vi.fn();
       render(
@@ -715,39 +596,39 @@ describe("SetupCoursesStep", () => {
 
       fireEvent.click(screen.getByRole("button", { name: /configure/i }));
       expect((screen.getByLabelText("Meet on several days a week") as HTMLInputElement).checked).toBe(true);
-      expect((screen.getByLabelText(/Duration in hours/i) as HTMLInputElement).value).toBe("8");
-      // No day-count chips: nothing is ticked for the user.
-      expect(screen.queryByRole("button", { name: "3 days" })).toBeNull();
-      expect(screen.getByText(/8h straight on each meeting day/)).toBeDefined();
-
+      expect(screen.queryByLabelText(/Duration in hours/i)).toBeNull();
       // Sunday classes are off, so the week ends on Saturday.
       expect(screen.queryByRole("checkbox", { name: "Sunday" })).toBeNull();
+
+      // Eight hours cannot be shared equally by three days.
       for (const day of ["Thursday", "Friday", "Saturday"]) {
         fireEvent.click(screen.getByRole("checkbox", { name: day }));
       }
-      // The ticked days set the number of days.
-      expect(screen.getByText(/8h straight on each of the 3 days/)).toBeDefined();
-      expect(screen.getByText(/Every section meets Thursday–Saturday/)).toBeDefined();
-      fireEvent.change(screen.getByLabelText(/Duration in hours/i), { target: { value: "6" } });
-      fireEvent.click(screen.getByRole("button", { name: /Apply Configuration/i }));
+      expect(screen.getByRole("alert").textContent).toContain("cannot be shared equally by 3 days");
+      const apply = screen.getByRole("button", { name: /Apply Configuration/i }) as HTMLButtonElement;
+      expect(apply.disabled).toBe(true);
+
+      fireEvent.click(screen.getByRole("checkbox", { name: "Saturday" }));
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.getByText("4h on each of the 2 days")).toBeDefined();
+      fireEvent.click(apply);
 
       expect(onConsecutiveDaysChange).toHaveBeenCalledWith(
         "101",
         [{
           course_id: 101,
           section_id: null,
-          day_count: 3,
+          day_count: 2,
           preferred_start_day: "Thursday",
-          meeting_days: ["Thursday", "Friday", "Saturday"],
+          meeting_days: ["Thursday", "Friday"],
         }],
         null,
       );
-      // The Custom Time Duration is each day's length.
-      expect(onConfigChange).toHaveBeenCalledWith("1", expect.objectContaining({
-        durationMinutesByCourseId: { "101": 360 },
-      }));
-      expect(screen.getByText("3 days × 6h")).toBeDefined();
-      expect(screen.getByText("3 days · Thu–Sat")).toBeDefined();
+      for (const [, change] of onConfigChange.mock.calls) {
+        expect(change).not.toHaveProperty("durationMinutesByCourseId");
+      }
+      expect(screen.getByText("2 days × 4h")).toBeDefined();
+      expect(screen.getByText("2 days · Thu–Fri")).toBeDefined();
     });
 
     it("takes days that are not back-to-back and needs at least two", () => {
@@ -774,9 +655,8 @@ describe("SetupCoursesStep", () => {
       expect(apply().disabled).toBe(true);
 
       fireEvent.click(screen.getByRole("checkbox", { name: "Wednesday" }));
-      fireEvent.click(screen.getByRole("checkbox", { name: "Friday" }));
       expect(screen.queryByRole("alert")).toBeNull();
-      expect(screen.getByText(/Every section meets Monday, Wednesday, Friday/)).toBeDefined();
+      expect(screen.getByText(/Every section meets Monday, Wednesday/)).toBeDefined();
       fireEvent.click(apply());
 
       expect(onConsecutiveDaysChange).toHaveBeenCalledWith(
@@ -784,13 +664,13 @@ describe("SetupCoursesStep", () => {
         [{
           course_id: 101,
           section_id: null,
-          day_count: 3,
+          day_count: 2,
           preferred_start_day: "Monday",
-          meeting_days: ["Monday", "Wednesday", "Friday"],
+          meeting_days: ["Monday", "Wednesday"],
         }],
         null,
       );
-      expect(screen.getByText("3 days · Mon, Wed, Fri")).toBeDefined();
+      expect(screen.getByText("2 days · Mon, Wed")).toBeDefined();
     });
 
     it("drops the rule when the class goes back to one meeting a week", () => {

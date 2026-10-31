@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { getCoreRowModel, getPaginationRowModel, useReactTable, type ColumnDef } from '@tanstack/react-table';
 import DataTable from '../ui/DataTable';
-import { ROOM_TRANSFER_STATUS_LABELS, roomTransferDetailChanges, type RoomTransferRequest } from '../../lib/roomRecovery';
+import { ROOM_TRANSFER_STATUS_LABELS, roomTransferClassLabel, roomTransferDetailChanges, type RoomTransferRequest } from '../../lib/roomRecovery';
 import { formatTime12h } from '../../lib/timeGrid';
 
 type Status = RoomTransferRequest['status'];
@@ -13,7 +13,7 @@ export default function RoomTransferSchedulesTable({ requests, loading = false }
   const rows = useMemo(() => requests.flatMap(request => roomTransferDetailChanges(request).map(change => ({ ...change, request }))), [requests]);
   const columns = useMemo<ColumnDef<ScheduleRow>[]>(() => [
     { id: 'class', header: 'Class / section', cell: ({ row: { original: row } }) => <div className="min-w-0 sm:min-w-36">
-      <p className="font-bold text-slate-900">{row.course} · {row.section}</p>
+      <p className="font-bold text-slate-900">{roomTransferClassLabel(row)}</p>
       <p className="mt-1 text-xs font-normal text-slate-600">{row.request.semester_label}</p>
       <p className="mt-1 text-xs font-normal text-slate-600">Request {row.request.id.slice(0, 8)}</p>
       <div className="mt-3 space-y-2 text-xs font-normal sm:hidden">

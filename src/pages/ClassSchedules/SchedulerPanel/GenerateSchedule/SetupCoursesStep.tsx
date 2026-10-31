@@ -23,7 +23,7 @@ import {
   isHybridSchedulingEligible,
   isOnlineSplitEligible,
 } from "../schedulingConfigurationEligibility";
-import type { LaboratoryDurationSettings } from "../courseSlotPlan";
+import type { SchedulingRoomSettings } from "../courseSlotPlan";
 import type { ColumnDef } from "@tanstack/react-table";
 import DataTable from "../../../../components/ui/DataTable";
 import { useDataTable } from "../../../../components/ui/useDataTable";
@@ -40,21 +40,17 @@ import type {
   PreferredRoomOption,
 } from "./courseClassConfig";
 import {
-  applyCourseDefaults,
   asRegularClass,
   consecutiveRulesForCourse,
   consecutiveSummary,
   isConsecutive,
   DEFAULT_CONSECUTIVE_DAYS,
   EMPTY_COURSE_DEFAULTS,
-  defaultDurationMinutes,
   durationLabel,
   durationShape,
   formatHours,
-  hybridLaboratoryMinutes,
   inferInitialCourseClassConfig,
   isIntegratedShape,
-  isDurationEditable,
   meetingParts,
   sameConsecutiveRules,
   syncCourseConfigToSectionConfigs,
@@ -66,14 +62,12 @@ export type CourseSetupConfig = {
   gecSplitCourseIds: string[];
   hybridSplitCourseIds?: string[];
   modesByCourseId?: Record<string, "automatic" | "on-site" | "online" | "field">;
-  durationMinutesByCourseId?: Record<string, number>;
   preferredRoomsByCourseId?: Record<string, string>;
-  componentMinutesByCourseId?: Record<string, { lecture: number; laboratory: number }>;
 };
 
 export type RequiredDayRule = { course_id: number; day: string };
 
-export type SetupCoursesSettings = LaboratoryDurationSettings & {
+export type SetupCoursesSettings = SchedulingRoomSettings & {
   field_course_codes?: string[];
   gec_split_schedule_override_enabled?: boolean;
   major_lecture_split_schedule_override_enabled?: boolean;
@@ -242,7 +236,7 @@ export default function SetupCoursesStep({
     (course: Course, config: CourseClassConfig): CourseClassConfig => {
       const requiredDay = isConsecutive(config) ? null : requiredDays.get(course.id) ?? null;
       return requiredDay
-        ? { ...asRegularClass(config, course), requiredDay }
+        ? { ...asRegularClass(config), requiredDay }
         : { ...config, requiredDay: null };
     },
     [requiredDays],
@@ -258,54 +252,12 @@ export default function SetupCoursesStep({
     && (Number(course.labHours ?? 0) > 0 || course.roomTypeRequired === "laboratory"),
   );
 
-  const applyDefaultsToCourses = (nextDefaults: CourseDefaults, nextCustomized: Set<string>) => {
-    const working: Record<string, CourseSetupConfig> = { ...configs };
-    const touched = new Set<string>();
-    const nextCourseConfigs = { ...courseConfigs };
-    for (const course of courses) {
-      if (nextCustomized.has(course.id)) continue;
-      const next = applyCourseDefaults(configFor(course), course, nextDefaults, settings).config;
-      nextCourseConfigs[course.id] = next;
-      syncCourseConfigToSectionConfigs(
-        course,
-        next,
-        sections,
-        working,
-        (sectionId, change) => {
-          working[sectionId] = { ...working[sectionId], ...change };
-          touched.add(sectionId);
-        },
-        settings,
-      );
-    }
-    setCourseConfigs(nextCourseConfigs);
-    for (const sectionId of touched) {
-      const merged = working[sectionId];
-      onConfigChange(sectionId, {
-        splitCourseIds: merged.splitCourseIds,
-        gecSplitCourseIds: merged.gecSplitCourseIds,
-        hybridSplitCourseIds: merged.hybridSplitCourseIds,
-        modesByCourseId: merged.modesByCourseId,
-        durationMinutesByCourseId: merged.durationMinutesByCourseId,
-        preferredRoomsByCourseId: merged.preferredRoomsByCourseId,
-        componentMinutesByCourseId: merged.componentMinutesByCourseId,
-      });
-    }
-  };
-
   const changeDefaults = (next: CourseDefaults) => {
     onDefaultsChange?.(next);
-    if (
-      next.lectureMinutes !== defaults.lectureMinutes ||
-      next.laboratoryMinutes !== defaults.laboratoryMinutes
-    ) {
-      applyDefaultsToCourses(next, customized);
-    }
   };
 
   const resetCustomized = () => {
     onCustomizedChange?.([]);
-    applyDefaultsToCourses(defaults, new Set());
   };
 
   const setIncluded = (courseIds: string[], include: boolean) => {
@@ -322,10 +274,7 @@ export default function SetupCoursesStep({
     changedConfig: CourseClassConfig,
     { fromConfigure = false }: { fromConfigure?: boolean } = {},
   ) => {
-    const ownSettings = fromConfigure || customized.has(course.id);
-    const updatedConfig = ownSettings
-      ? changedConfig
-      : applyCourseDefaults(changedConfig, course, defaults, settings).config;
+    const updatedConfig = changedConfig;
     if (fromConfigure && !customized.has(course.id)) {
       onCustomizedChange?.([...customizedCourseIds, course.id]);
     }
@@ -340,7 +289,6 @@ export default function SetupCoursesStep({
       sections,
       configs,
       onConfigChange,
-      settings,
     );
 
     const nextRules = consecutiveRulesForCourse(course.id, updatedConfig, sections);
@@ -359,20 +307,6 @@ export default function SetupCoursesStep({
       void onFieldCourseChange?.(course.code, nowField);
     }
   };
-
-  const withShapeDuration = (
-    course: Course,
-    current: CourseClassConfig,
-    next: CourseClassConfig,
-  ): CourseClassConfig =>
-    durationShape(next) === durationShape(current)
-      ? next
-      : {
-          ...next,
-          durationMinutes: defaultDurationMinutes(course),
-          lectureMinutes: undefined,
-          laboratoryMinutes: undefined,
-        };
 
   const handleSelectConfiguration = (
     course: Course,
@@ -395,18 +329,15 @@ export default function SetupCoursesStep({
       nextHybridType = nextDelivery === "hybrid" ? "laboratory" : undefined;
     }
 
-    updateCourseConfig(
-      course,
-      withShapeDuration(course, current, {
-        ...current,
-        configuration: targetConfigType,
-        delivery: nextDelivery,
-        hybridType: nextHybridType,
-        ...(targetConfigType === "regular" ? {} : { consecutiveDays: null, preferredStartDay: null, meetingDays: null }),
-        sectionScope: "all",
-        selectedSectionIds: sections.map((s) => s.id),
-      }),
-    );
+    updateCourseConfig(course, {
+      ...current,
+      configuration: targetConfigType,
+      delivery: nextDelivery,
+      hybridType: nextHybridType,
+      ...(targetConfigType === "regular" ? {} : { consecutiveDays: null, preferredStartDay: null, meetingDays: null }),
+      sectionScope: "all",
+      selectedSectionIds: sections.map((s) => s.id),
+    });
   };
 
   const handleDeliveryChange = (
@@ -434,14 +365,11 @@ export default function SetupCoursesStep({
           : undefined
       : undefined;
 
-    updateCourseConfig(
-      course,
-      withShapeDuration(course, current, {
-        ...current,
-        delivery: effectiveDelivery,
-        hybridType,
-      }),
-    );
+    updateCourseConfig(course, {
+      ...current,
+      delivery: effectiveDelivery,
+      hybridType,
+    });
   };
 
   const rows = useMemo<SetupCourseTableRow[]>(() => {
@@ -484,21 +412,7 @@ export default function SetupCoursesStep({
   ]);
 
   const includedCount = rows.filter((row) => row.included).length;
-  const summarizeDefaults = (candidate: CourseDefaults) =>
-    rows.reduce(
-      (summary, row) => {
-        if (!row.included || customized.has(row.course.id)) return summary;
-        const result = applyCourseDefaults(row.config, row.course, candidate, settings);
-        return {
-          applied: summary.applied + (result.applied ? 1 : 0),
-          skipped: summary.skipped + (result.skipped ? 1 : 0),
-        };
-      },
-      { applied: 0, skipped: 0 },
-    );
   const activeDefaults = [
-    defaults.lectureMinutes !== null ? `Lecture ${formatHours(defaults.lectureMinutes / 60)}` : null,
-    defaults.laboratoryMinutes !== null ? `Lab ${formatHours(defaults.laboratoryMinutes / 60)}` : null,
     defaults.allowFridaySaturdaySplit ? "Fri + Sat pairs" : null,
     laboratoryEnabled && labRoomType === "lecture" ? "Labs in classrooms" : null,
     laboratoryEnabled && labRoomType === "either" ? "Labs in lab or classroom" : null,
@@ -794,11 +708,6 @@ export default function SetupCoursesStep({
       meta: { align: "center" },
       cell: ({ row: { original: { config, course } } }) => {
         const shape = durationShape(config);
-        const hybridDefaults = hybridLaboratoryMinutes(course, settings);
-        const isCustom = isIntegratedShape(shape)
-          ? (config.lectureMinutes ?? hybridDefaults.lecture) !== hybridDefaults.lecture ||
-            (config.laboratoryMinutes ?? hybridDefaults.laboratory) !== hybridDefaults.laboratory
-          : isDurationEditable(shape) && config.durationMinutes !== defaultDurationMinutes(course);
         if (shape === "hybrid-split" || isIntegratedShape(shape)) {
           return (
             <span className="inline-flex flex-col items-center gap-0.5">
@@ -809,7 +718,7 @@ export default function SetupCoursesStep({
                     ? "Integrated Hybrid"
                     : "Integrated On-site"}
               </span>
-              {meetingParts(config, course, settings).map((part) => (
+              {meetingParts(config, course).map((part) => (
                 <span
                   key={part.label}
                   className="inline-flex items-center gap-1 text-[11px] font-black text-slate-800"
@@ -819,25 +728,13 @@ export default function SetupCoursesStep({
                   {formatHours(part.minutes / 60)} {part.mode}
                 </span>
               ))}
-              {isCustom && (
-                <span className="text-[9px] font-black uppercase tracking-wide text-[#4e0a10]">
-                  Custom
-                </span>
-              )}
             </span>
           );
         }
         return (
-          <span className="inline-flex flex-col items-center gap-0.5">
-            <span className="inline-flex items-center gap-1 text-xs font-black text-slate-800">
-              <Clock3 className="h-3 w-3 text-slate-400" />
-              {durationLabel(config, course, settings)}
-            </span>
-            {isCustom && (
-              <span className="text-[9px] font-black uppercase tracking-wide text-[#4e0a10]">
-                Custom
-              </span>
-            )}
+          <span className="inline-flex items-center gap-1 text-xs font-black text-slate-800">
+            <Clock3 className="h-3 w-3 text-slate-400" />
+            {durationLabel(config, course)}
           </span>
         );
       },
@@ -987,7 +884,6 @@ export default function SetupCoursesStep({
       {defaultsOpen && (
         <CourseDefaultsSidebar
           defaults={defaults}
-          summarize={summarizeDefaults}
           customizedCount={customizedCourseIds.length}
           laboratoryEnabled={laboratoryEnabled}
           labRoomType={labRoomType}
@@ -1008,7 +904,6 @@ export default function SetupCoursesStep({
           sections={sections}
           initialConfig={configuringRow.config}
           isFieldCourse={configuringRow.isField}
-          labSettings={settings}
           roomOptions={roomOptions}
           sundayClassesEnabled={settings?.sunday_classes_enabled ?? true}
           preferredDays={preferredDays}

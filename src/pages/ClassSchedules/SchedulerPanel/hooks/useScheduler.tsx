@@ -26,7 +26,7 @@ import type {
   WithdrawalStage
 } from "../types";
 import { DEAN_REQUIRED_MESSAGE } from "../../../../hooks/useDepartmentScheduleStatus";
-import { getCourseSlotPlan, laboratoryComponentSlots, sortSplitMeetingsForEdit, type LaboratoryDurationSettings } from "../courseSlotPlan";
+import { consecutiveMeetingSlots, laboratoryComponentSlots, placeCourse, sortSplitMeetingsForEdit, type SchedulingRoomSettings } from "../courseSlotPlan";
 import { buildSectionClearCandidates } from "../sectionClearCandidates";
 import { buildSectionFinalizeCandidates, buildSectionReassignCandidates } from "../sectionFinalizeCandidates";
 import { getSubjectTotalSlots } from "../types";
@@ -106,7 +106,7 @@ const relocatedRows = (data: ApiScheduleRecord & { moved_partners?: ApiScheduleR
 const SCHEDULER_SCHEDULE_LIMIT = 2000;
 const SCHEDULER_INITIAL_DATA_PARAMS = { schedule_limit: SCHEDULER_SCHEDULE_LIMIT };
 
-export interface ManualSchedulingSettings extends LaboratoryDurationSettings {
+export interface ManualSchedulingSettings extends SchedulingRoomSettings {
   lecture_lab_schedule_override_enabled?: boolean;
   gec_split_schedule_override_enabled?: boolean;
   major_lecture_split_schedule_override_enabled?: boolean;
@@ -251,7 +251,7 @@ export const useScheduler = () => {
   const canUseInitialCache = hasUsableSchedulerCache(cachedSchedulerData);
   const [rooms, setRooms] = useState<Room[]>(canUseInitialCache ? cachedSchedulerData.rooms : []);
   const [sections, setSections] = useState<Section[]>(canUseInitialCache ? cachedSchedulerData.sections : []);
-  const [subjects, setSubjects] = useState<Subject[]>(canUseInitialCache ? cachedSchedulerData.subjects : []);
+  const [rawSubjects, setSubjects] = useState<Subject[]>(canUseInitialCache ? cachedSchedulerData.subjects : []);
   const [faculties, setFaculties] = useState<Faculty[]>(canUseInitialCache ? cachedSchedulerData.faculties : []);
   const [activeSemester, setActiveSemester] = useState<Semester | null>(canUseInitialCache ? cachedSchedulerData.activeSemester : null);
   const [departments, setDepartments] = useState<Department[]>(canUseInitialCache ? cachedSchedulerData.departments : []);
@@ -330,7 +330,7 @@ export const useScheduler = () => {
         setSelectedSectionId(cachedData.sections[0].id);
       }
       setIsLoading(false);
-    } else if (subjects.length === 0) {
+    } else if (rawSubjects.length === 0) {
       setIsLoading(true);
     }
 
@@ -710,6 +710,11 @@ export const useScheduler = () => {
     () => sections.find((s) => s.id === selectedSectionId),
     [sections, selectedSectionId]
   );
+  // Courses carry the class minutes the selected section's curriculum recorded on import.
+  const subjects = useMemo(
+    () => rawSubjects.map((subject) => placeCourse(subject, selectedSection?.curriculumId)),
+    [rawSubjects, selectedSection?.curriculumId]
+  );
 
   const normalizeSemester = useCallback((sem?: string | null): string => {
     if (!sem) return "";
@@ -916,7 +921,6 @@ export const useScheduler = () => {
     faculties,
     fieldCourseAssignmentEnabled: fieldCourseAssignmentEnabled || effectiveFieldCourseCodes.length > 0,
     fieldCourseCodes: effectiveFieldCourseCodes,
-    laboratoryDurationSettings: manualSchedulingSettings,
     sundayClassesEnabled: manualSchedulingSettings?.sunday_classes_enabled ?? true,
   });
 
@@ -981,9 +985,7 @@ export const useScheduler = () => {
         )
       );
       const totalSlots = getSubjectTotalSlots(subject);
-
-      const plan = getCourseSlotPlan(subject);
-      const singleSlots = plan.singleBlockSlots || totalSlots;
+      const singleSlots = totalSlots;
       const splitDay2Slots = singleSlots;
       const forcedDay = manualSchedulingSettings?.forced_day_rules?.find(
         (rule) => Number(rule.course_id) === Number(subject?.id)
@@ -1030,7 +1032,7 @@ export const useScheduler = () => {
             existing.map((meeting) => meeting.meetingType),
           );
           setModalIsHybrid(isIntegrated);
-          const sorted = sortSplitMeetingsForEdit(existing, subject, isIntegrated, manualSchedulingSettings);
+          const sorted = sortSplitMeetingsForEdit(existing, subject, isIntegrated);
 
           if (sorted.length >= 2) {
             setModalSplitEnabled(isSplit);
@@ -1163,7 +1165,8 @@ export const useScheduler = () => {
           setModalDay1Duration(savedRun[0].durationSlots);
         } else {
           setModalDay1Index(runStartForDay(run, dropContext.dayIndex));
-          setModalDay1Duration(singleSlots);
+          // The days share the Total Hours equally.
+          setModalDay1Duration(consecutiveMeetingSlots(subject, run.dayCount) ?? singleSlots);
         }
       }
     } else {
@@ -1294,7 +1297,7 @@ export const useScheduler = () => {
       : [];
 
     const totalSlots = getSubjectTotalSlots(subject);
-    const singleSlots = getCourseSlotPlan(subject).singleBlockSlots || totalSlots;
+    const singleSlots = totalSlots;
     const courseId = dropContext.courseId ?? dropContext.subjectId ?? "";
     const patternDays = parsePreferredPattern(modalPreferredPattern);
 
@@ -1518,7 +1521,7 @@ export const useScheduler = () => {
     if (!section) return;
 
     const totalSlots = getSubjectTotalSlots(subject);
-    const singleSlots = getCourseSlotPlan(subject).singleBlockSlots || totalSlots;
+    const singleSlots = totalSlots;
 
     const d1 = modalDay1Duration;
     const d2 = modalPreferredPattern ? modalDay2Duration : 0;
@@ -1714,7 +1717,7 @@ export const useScheduler = () => {
       const existingRecords = dropContext.isRescheduling
         ? runDays
           ? [...courseMeetings].sort((left, right) => left.dayIndex - right.dayIndex)
-          : sortSplitMeetingsForEdit(courseMeetings, subject, modalIsHybrid, manualSchedulingSettings)
+          : sortSplitMeetingsForEdit(courseMeetings, subject, modalIsHybrid)
         : [];
 
       const sharedSplitGroupId = targetDays.length > 1
@@ -1872,8 +1875,7 @@ export const useScheduler = () => {
     const isLabMeeting = (duration: number, isFirstMeeting: boolean): boolean => {
       if (Number(subject?.labHours ?? 0) <= 0) return false;
       if (modalIsHybrid) return isFirstMeeting;
-      return duration === getCourseSlotPlan(subject).laboratorySlots
-        || duration === laboratoryComponentSlots(subject, manualSchedulingSettings);
+      return duration === laboratoryComponentSlots(subject);
     };
     const roomError = validateManualMeetingRooms(
       {
