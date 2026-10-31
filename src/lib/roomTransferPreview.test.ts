@@ -40,19 +40,35 @@ describe('roomTransferPreview', () => {
     expect(preview.sections[0]).toMatchObject({ id: '10', name: 'A', semesterId: 3 });
     expect(preview.users).toEqual(transfer.preview_users);
     expect(preview.sections[0].programId).toBe(7);
-    expect(preview.transferPreview?.changes).toEqual([{ scheduleId: '11', room: true, day: true, time: true }]);
     expect(transfer).toEqual(before);
   });
-  it('excludes online partners only from this PDF input and leaves stored request membership intact', () => {
+  it('prints the linked online session as Online with the moved meeting', () => {
     const transfer = request();
-    transfer.changes.push({ ...transfer.changes[0], schedule_id: 12, mode: 'online', preview_schedule: { ...transfer.changes[0].preview_schedule!, id: 12, mode: 'online' } });
-    transfer.schedule_ids.push(12);
-    expect(roomTransferPreview(transfer)?.allSchedules.map(row => row.id)).toEqual(['11']);
-    expect(transfer.schedule_ids).toEqual([11, 12]); expect(transfer.changes).toHaveLength(2);
+    const online = { room: 'Online', day: 'Friday', start_time: '13:00', end_time: '14:00' };
+    transfer.changes.push({ ...transfer.changes[0], schedule_id: 12, mode: 'online', before: online, after: online,
+      preview_schedule: { ...transfer.changes[0].preview_schedule!, id: 12, mode: 'online', room_id: null, room: null } });
+    const preview = roomTransferPreview(transfer)!;
+    expect(preview.allSchedules.map(row => [row.id, row.roomName, row.day])).toEqual([['11', 'Lab 2', 'Wednesday'], ['12', 'Online', 'Friday']]);
   });
-  it('recognizes unchanged time formatting and only highlights changed fields', () => {
-    const transfer = request(); transfer.changes[0].after = { ...transfer.changes[0].before, room: 'Lab 2', start_time: '08:00', end_time: '09:00' };
-    expect(roomTransferPreview(transfer)?.transferPreview?.changes[0]).toEqual({ scheduleId: '11', room: true, day: false, time: false });
+  it('prints every class of the affected sections like Schedule Approval, with the proposal applied', () => {
+    const transfer = request();
+    const proposedRow = transfer.changes[0].preview_schedule!;
+    const otherSection = { ...proposedRow.section, id: 20, section_name: 'B' };
+    transfer.preview_schedules = [
+      { ...proposedRow, day: 'Monday', room: { room_code: 'Lab 1' } },
+      { ...proposedRow, id: 13, course_id: 6, day: 'Tuesday', start_time: '13:00', end_time: '14:00', room_id: 9,
+        course: { course_code: 'MATH1', course_name: 'Math', lecture_hours: 1, lab_hours: 0, units: 1 }, room: { room_code: 'R9' } },
+      { ...proposedRow, id: 14, section_id: 20, section: otherSection, mode: 'online', room_id: null, room: null },
+    ];
+    const preview = roomTransferPreview(transfer)!;
+    expect(preview.allSchedules.map(row => [row.id, row.courseCode, row.roomName, row.day])).toEqual([
+      ['11', 'SCI101', 'Lab 2', 'Wednesday'], ['13', 'MATH1', 'R9', 'Tuesday'], ['14', 'SCI101', 'Online', 'Monday']]);
+    expect(preview.sections.map(section => section.name)).toEqual(['A', 'B']);
+    expect(preview.selectedSectionId).toBe('10');
+  });
+  it.each(['pending_dean', 'approved'] as const)('passes Schedule Approval PDF input without change highlighting (%s)', status => {
+    const transfer = request(); transfer.status = status;
+    expect(Object.keys(roomTransferPreview(transfer)!).sort()).toEqual(['activeSemester', 'allSchedules', 'departments', 'sections', 'selectedSectionId', 'users']);
   });
   it('does not fabricate missing academic information', () => {
     const transfer = request(); delete transfer.changes[0].preview_schedule;
@@ -62,11 +78,28 @@ describe('roomTransferPreview', () => {
     const transfer = request(); delete transfer.preview_users;
     expect(roomTransferPreview(transfer)?.users).toEqual([]);
   });
-  it('retains the changed-field highlights on approved records', () => {
-    const transfer = request(); transfer.status = 'approved';
-    expect(roomTransferPreview(transfer)?.transferPreview?.changes).toEqual([{ scheduleId: '11', room: true, day: true, time: true }]);
+  it('prints the full section timetable with its linked online session in the real PDF', async () => {
+    vi.stubGlobal('Image', class {
+      onerror: (() => void) | null = null;
+      constructor() { queueMicrotask(() => this.onerror?.()); }
+    });
+    const transfer = request();
+    const proposedRow = transfer.changes[0].preview_schedule!;
+    transfer.preview_schedules = [
+      { ...proposedRow, id: 12, mode: 'online', day: 'Friday', start_time: '13:00', end_time: '14:00', room_id: null, room: null },
+      { ...proposedRow, id: 13, course_id: 6, day: 'Tuesday', start_time: '15:00', end_time: '16:00', room_id: 9,
+        course: { course_code: 'MATH1', course_name: 'Mathematics', lecture_hours: 1, lab_hours: 0, units: 1 }, room: { room_code: 'R9' } },
+    ];
+    const blob = await buildSchedulePdf(roomTransferPreview(transfer)!);
+    const pdf = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = reject;
+      reader.readAsText(blob);
+    });
+    for (const text of ['SCI101', 'Lab 2', 'Online', 'MATH1', 'Mathematics', 'R9']) expect(pdf).toContain(`(${text}`);
   });
-  it.each([true, false])('prints the correct officials and placements in the real PDF (transfer: %s)', async isTransfer => {
+  it('prints the correct officials and placements in the real PDF', async () => {
     // Skip network images and use built-in fonts so the generated PDF text is inspectable.
     vi.stubGlobal('Image', class {
       onerror: (() => void) | null = null;
@@ -74,7 +107,6 @@ describe('roomTransferPreview', () => {
     });
     const transfer = request();
     const input = roomTransferPreview(transfer)!;
-    if (!isTransfer) delete input.transferPreview;
     const readPdf = async () => {
       const blob = await buildSchedulePdf(input);
       return new Promise<string>((resolve, reject) => {
@@ -94,10 +126,33 @@ describe('roomTransferPreview', () => {
     expect(pdf).not.toContain('Changed day, time and room values are highlighted.');
     expect(pdf).not.toContain('This document does not apply changes.');
     expect(pdf).not.toContain('(Department Secretary)');
+    // The Program Head prepares the official schedule even when the Secretary entered it.
     input.users = input.users.filter(user => user.role !== 'program_head');
-    const secretaryPdf = await readPdf();
-    expect(secretaryPdf).toContain('(DEPARTMENT STAFF)');
-    expect(secretaryPdf).toContain('(Department Secretary)');
-    expect(secretaryPdf).not.toContain('(PROGRAM LEAD)');
+    const withoutHead = await readPdf();
+    expect(withoutHead).toContain('(Program Head)');
+    expect(withoutHead).not.toContain('(DEPARTMENT STAFF)');
+    expect(withoutHead).not.toContain('(Department Secretary)');
+    expect(withoutHead).not.toContain('(PROGRAM LEAD)');
+  });
+  it('lists the Program Head of every printed program as preparer', async () => {
+    vi.stubGlobal('Image', class {
+      onerror: (() => void) | null = null;
+      constructor() { queueMicrotask(() => this.onerror?.()); }
+    });
+    const transfer = request();
+    const proposedRow = transfer.changes[0].preview_schedule!;
+    transfer.preview_schedules = [{ ...proposedRow, id: 15, section_id: 20,
+      section: { ...proposedRow.section, id: 20, section_name: 'B', program_id: 8 } }];
+    transfer.preview_users = [...transfer.preview_users!, { id: 5, name: 'Second Lead', role: 'program_head', department_id: 1, program_id: 8 }];
+    const blob = await buildSchedulePdf(roomTransferPreview(transfer)!);
+    const pdf = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = reject;
+      reader.readAsText(blob);
+    });
+    expect(pdf).toContain('(PROGRAM LEAD / SECOND LEAD)');
+    expect(pdf).toContain('(Program Head)');
+    expect(pdf).not.toContain('(DEPARTMENT STAFF)');
   });
 });

@@ -182,15 +182,33 @@ describe('Unified schedule and room transfer approval queue', () => {
     return screen.findByRole('dialog', { name: 'Room Transfer Request Details' });
   }
 
-  it.each(['dean', 'vpaa'] as const)('combines both request types in the %s table and filters online meetings only in transfer details', async stage => {
+  it.each(['dean', 'vpaa'] as const)('fills transfer rows in the %s table like schedule approvals', async stage => {
+    const request = transfer(`pending_${stage}`);
+    const section = { id: 10, section_name: 'IT-1A', semester_id: 1, semester: '1st' as const, year_level: 1, department_id: 1, program_id: 7,
+      program: { id: 7, code: 'BSIT', name: 'Information Technology', major: null } };
+    request.changes = request.changes.map(change => ({ ...change, preview_schedule: { id: change.schedule_id, semester_id: 1, section_id: 10, course_id: 5,
+      department_id: 1, room_id: null, status: 'faculty_assignment', day: change.after.day, start_time: change.after.start_time, end_time: change.after.end_time,
+      mode: change.mode === 'online' ? 'online' as const : 'on-site' as const, section } }));
+    queue(stage, [request]);
+    await waitFor(() => expect(within(mainTable()).getByText('Room Transfer')).toBeTruthy());
+    const cells = within(transferRow()).getAllByRole('cell').map(cell => cell.textContent);
+    expect(cells[0]).toBe('Room Transfer');
+    expect(cells[2]).toBe('BSIT');
+    expect(cells.at(-2)).toBe('Modified');
+    expect(transferRow().textContent).not.toContain('2026-2027 1st');
+    fireEvent.click(within(transferRow()).getByRole('button', { name: 'Modified' }));
+    expect(await screen.findByRole('dialog', { name: 'Room Transfer Request Details' })).toBeTruthy();
+  });
+
+  it.each(['dean', 'vpaa'] as const)('combines both request types in the %s table and lists linked online sessions in transfer details', async stage => {
     queue(stage);
     const details = await openTransfer();
     expect(screen.queryByRole('region', { name: 'Room transfer requests' })).toBeNull();
     expect(within(details).getByText('PHYSICAL-CLASS · IT-1A')).toBeTruthy();
-    expect(within(details).queryByText('ONLINE-CLASS · IT-1A')).toBeNull();
+    expect(within(details).getByText('ONLINE-CLASS · IT-1A · Linked online session')).toBeTruthy();
     expect(within(details).getByRole('region', { name: 'Changes Summary' }).textContent).toContain('R1');
     expect(within(details).getByRole('region', { name: 'Changes Summary' }).textContent).toContain('R2');
-    expect(within(details).getByText('1 schedule affected')).toBeTruthy();
+    expect(within(details).getByText('1 schedule affected · 1 linked online session')).toBeTruthy();
     expect(within(details).queryByRole('table')).toBeNull();
     fireEvent.click(within(details).getByRole('button', { name: 'Close preview' }));
     const regular = within(mainTable()).getAllByRole('row').find(row => row.textContent?.includes('Schedule Approval'))!;

@@ -1,5 +1,6 @@
 import { isFixedSplitPattern } from "../../../lib/timeGrid";
 import type { Course } from "./types";
+import { getCourseSlotPlan, SLOT_MINUTES } from "./courseSlotPlan";
 
 const normalizeCourseCode = (value: string): string =>
   value.trim().replace(/\s+/g, " ").toUpperCase();
@@ -65,7 +66,7 @@ export const isHybridSplitEligible = (
     minorEnabled: true,
     majorLectureEnabled: true,
   })
-  && Math.round(Number(course?.units ?? 0) * 60) === 2 * HYBRID_SPLIT_MEETING_MINUTES
+  && getCourseSlotPlan(course).totalSlots * SLOT_MINUTES === 2 * HYBRID_SPLIT_MEETING_MINUTES
   && Number(course?.lectureHours ?? 0) > 0
   && Number(course?.labHours ?? 0) === 0,
 );

@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
-import { ChevronRight, type LucideIcon } from 'lucide-react';
-import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
+import type { LucideIcon } from 'lucide-react';
 
 export interface Slice {
   key: string;
@@ -12,9 +11,9 @@ export interface Slice {
 export type PanelTone = 'brand' | 'alert' | 'warn';
 
 const TONE_TEXT: Record<PanelTone, string> = {
-  brand: 'text-primary',
-  alert: 'text-rose-600',
-  warn: 'text-amber-700',
+  brand: 'text-text',
+  alert: 'text-stage-returned',
+  warn: 'text-stage-warnText',
 };
 
 export function Panel({
@@ -25,6 +24,7 @@ export function Panel({
   children,
   action,
   onAction,
+  headerExtra,
   className = '',
 }: {
   title: string;
@@ -34,86 +34,49 @@ export function Panel({
   children: ReactNode;
   action?: string;
   onAction?: () => void;
+  headerExtra?: ReactNode;
   className?: string;
 }) {
   return (
-    <section className={`rounded-lg border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
-      <div className="mb-3 flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
+    <section className={`min-w-0 rounded-xl border border-border bg-white p-5 ${className}`}>
+      <header className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            <h2 className={`text-xs font-bold uppercase tracking-wide ${TONE_TEXT[tone]}`}>{title}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className={`font-sans text-[15px] font-semibold leading-snug ${TONE_TEXT[tone]}`}>{title}</h2>
             {badge != null && badge > 0 && (
-              <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold leading-none tabular-nums text-white">
-                {badge}
+              <span className="rounded-full bg-stage-returned px-2 py-0.5 text-[11px] font-bold leading-none tabular-nums text-white">
+                {badge.toLocaleString()}
               </span>
             )}
           </div>
-          {subtitle && <p className="mt-1 text-[11px] font-medium leading-tight text-slate-500">{subtitle}</p>}
+          {subtitle && <p className="mt-0.5 text-[13px] leading-snug text-muted">{subtitle}</p>}
         </div>
-        {action && (
-          <button
-            type="button"
-            onClick={onAction}
-            className="inline-flex shrink-0 items-center text-[11px] font-bold text-primary hover:underline"
-          >
-            {action}
-            <ChevronRight className="h-3.5 w-3.5" />
-          </button>
+        {(action || headerExtra) && (
+          <div className="flex shrink-0 items-center gap-3">
+            {action && (
+              <button
+                type="button"
+                onClick={onAction}
+                className="focus-ring rounded text-[13px] font-semibold text-primary underline-offset-4 hover:underline"
+              >
+                {action}
+              </button>
+            )}
+            {headerExtra}
+          </div>
         )}
-      </div>
+      </header>
       {children}
     </section>
   );
 }
 
-export function Donut({ slices, headline, caption }: { slices: Slice[]; headline: number | string; caption: string }) {
-  const filled = slices.filter(slice => slice.value > 0);
-  const rows: Slice[] = filled.length ? filled : [{ key: 'empty', label: 'No data', value: 1, color: '#e2e8f0' }];
-
+/** Column headings for the grid-based tables inside panels. */
+export function TableHead({ columns, children }: { columns: string; children: ReactNode }) {
   return (
-    <div className="relative mx-auto h-32 w-32">
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie
-            data={rows.map(slice => ({ name: slice.label, value: slice.value }))}
-            dataKey="value"
-            innerRadius="67%"
-            outerRadius="100%"
-            startAngle={90}
-            endAngle={-270}
-            paddingAngle={1}
-            stroke="#ffffff"
-            strokeWidth={3}
-          >
-            {rows.map(slice => <Cell key={slice.key} fill={slice.color} />)}
-          </Pie>
-        </PieChart>
-      </ResponsiveContainer>
-      <div className="absolute inset-[22%] flex flex-col items-center justify-center rounded-full bg-white text-center">
-        <b className="text-2xl leading-none text-primary">{headline}</b>
-        <span className="mt-1 px-1 text-[10px] font-semibold leading-tight text-slate-500">{caption}</span>
-      </div>
+    <div className="grid gap-3 border-b border-border pb-2 text-[12px] font-medium text-muted" style={{ gridTemplateColumns: columns }}>
+      {children}
     </div>
-  );
-}
-
-const share1 = (part: number, total: number) => (total > 0 ? ((part / total) * 100).toFixed(1) : '0.0');
-
-export function DonutLegend({ slices, total }: { slices: Slice[]; total: number }) {
-  return (
-    <ul className="min-w-0 space-y-2">
-      {slices.map(slice => (
-        <li key={slice.key} className="flex items-start gap-2">
-          <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: slice.color }} />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[11px] font-bold leading-tight text-slate-700" title={slice.label}>{slice.label}</div>
-            <div className="mt-0.5 text-[11px] font-semibold tabular-nums text-slate-500">
-              {slice.value.toLocaleString()} ({share1(slice.value, total)}%)
-            </div>
-          </div>
-        </li>
-      ))}
-    </ul>
   );
 }
 
@@ -124,13 +87,13 @@ export function FilterSelect({ label, value, onChange, children }: {
   children: ReactNode;
 }) {
   return (
-    <label className="flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-500 shadow-sm">
-      <span className="shrink-0">{label}:</span>
+    <label className="flex items-center gap-1.5 rounded-md border border-border bg-white px-2.5 py-1.5 text-[12px] text-muted focus-within:border-primary/40">
+      <span className="shrink-0">{label}</span>
       <select
         value={value}
         onChange={event => onChange(event.target.value)}
         aria-label={label}
-        className="max-w-[92px] cursor-pointer truncate border-none bg-transparent p-0 pr-1 text-[11px] font-bold text-slate-700 outline-none"
+        className="max-w-[110px] cursor-pointer truncate border-none bg-transparent p-0 pr-1 text-[12px] font-semibold text-text outline-none"
       >
         {children}
       </select>
@@ -140,10 +103,37 @@ export function FilterSelect({ label, value, onChange, children }: {
 
 export function StatChip({ icon: Icon, value, label }: { icon: LucideIcon; value: number; label: string }) {
   return (
-    <div className="rounded-md border border-slate-100 bg-slate-50/60 p-2 text-center">
-      <Icon className="mx-auto h-4 w-4 text-primary/70" />
-      <b className="mt-1 block text-sm leading-none tabular-nums text-primary">{value.toLocaleString()}</b>
-      <span className="mt-1 block truncate text-[10px] font-semibold text-slate-500" title={label}>{label}</span>
+    <div className="rounded-lg bg-parchment px-3 py-2.5">
+      <div className="flex items-center gap-1.5 text-muted">
+        <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        <span className="truncate text-[12px]" title={label}>{label}</span>
+      </div>
+      <b className="mt-1 block text-[18px] font-semibold leading-none tabular-nums text-primary">{value.toLocaleString()}</b>
+    </div>
+  );
+}
+
+export function IconButton({ label, onClick, children, title }: { label: string; onClick: () => void; children: ReactNode; title?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title ?? label}
+      aria-label={label}
+      className="focus-ring flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-white text-muted transition-colors hover:border-primary/30 hover:text-primary"
+    >
+      {children}
+    </button>
+  );
+}
+
+export function LoadWarning({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-accent/40 bg-accent/10 px-4 py-3 text-[13px] text-stage-warnText">
+      <span className="flex-1">{message}</span>
+      <button type="button" onClick={onRetry} className="focus-ring rounded-md border border-accent/50 bg-white px-3 py-1.5 font-semibold transition-colors hover:bg-accent/10">
+        Retry
+      </button>
     </div>
   );
 }

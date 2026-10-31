@@ -210,7 +210,10 @@ const drawInstitutionHeader = (
 
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(5.8);
-  doc.text(`${curriculum.code} NEW CURRICULUM EFFECTIVE SCHOOL YEAR ${curriculum.effective_school_year}`, PAGE_WIDTH / 2, 62.2, { align: 'center' });
+  const regulation = curriculum.cmo_number
+    ? `CMO ${curriculum.cmo_number}${curriculum.cmo_series ? `, s ${curriculum.cmo_series}` : ''}`
+    : curriculum.code;
+  doc.text(`${regulation} NEW CURRICULUM EFFECTIVE SCHOOL YEAR ${curriculum.effective_school_year}`, PAGE_WIDTH / 2, 62.2, { align: 'center' });
 
   doc.setFontSize(7.5);
   doc.text('ID NUMBER:', PAGE_MARGIN + 0.5, 67.6);
@@ -289,6 +292,12 @@ const drawSemester = (doc: jsPDF, semester: CurriculumSemester, label: string, x
     doc.text(String(course.lab_units), numericX + unitWidth * 1.5, baseline, { align: 'center' });
     doc.setFont('Helvetica', 'bold');
     doc.text(String(course.total_units), numericX + unitWidth * 2.5, baseline, { align: 'center' });
+    if (course.prerequisites_text) {
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(4.2);
+      doc.text(fitSingleLineText(doc, course.prerequisites_text, prerequisiteWidth - 1), numericX + unitWidth * 3 + prerequisiteWidth / 2, baseline, { align: 'center' });
+      doc.setFontSize(5.5);
+    }
   });
 
   const totalsY = y + headerHeight + semester.courses.length * rowHeight + 3.2;

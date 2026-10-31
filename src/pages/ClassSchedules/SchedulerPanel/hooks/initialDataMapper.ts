@@ -220,6 +220,7 @@ export const mapApiCourse = (s: ApiCourseRecord): Subject => {
     units: toNumber(s.units),
     lectureHours: toNumber(s.lecture_hours),
     labHours: toNumber(s.lab_hours),
+    classMinutesByCurriculum: s.class_minutes_by_curriculum ?? undefined,
     category: ((s.course_category ?? s.subject_category) as string) === "major" ? "major" : "minor",
     semester: s.semester,
     departmentId: s.department_id ?? null,

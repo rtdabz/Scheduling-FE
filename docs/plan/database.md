@@ -127,6 +127,7 @@ See [[business_rules]] for course ownership and teaching-assignment rules.
 - `code` is unique; status is `active`, `deactivated`, or `archived`.
 - Multiple curricula may remain active in the same department/program scope. Activating one does not demote its siblings.
 - Sections explicitly reference their selected curriculum; its pivot placements govern scheduling.
+- Nullable `cmo_number` (string, 32) and `cmo_series` (year) hold the regulatory CMO reference separately from the unique internal `code`; one CMO can govern several curricula (migration `2026_10_27_100001_add_curriculum_import_support`).
 
 ### `curriculum_course`
 
@@ -135,6 +136,18 @@ See [[business_rules]] for course ownership and teaching-assignment rules.
 - Prevents duplicate `curriculum_id + course_id` pairs.
 - Indexed by `curriculum_id + year_level + semester` for semester lookups.
 - Both foreign keys cascade on delete.
+- Nullable import snapshot columns, written only by the curriculum import: `lecture_units`, `lab_units`, `lecture_minutes`, `laboratory_minutes`, `conversion_snapshot` (JSON: version, basis `weekly`/`total_hours`, total hours, per-unit rates, settings revision, offering department), `prerequisites_text`, and `prerequisites_review` (JSON: version, status, confirmed course IDs/codes, all/any connector, condition text, reviewer, time). Rows without a snapshot keep the legacy credit-derived durations and are never backfilled. Duplication copies all of these columns unchanged.
+- The scheduler does not read the minute columns yet; it still derives durations from `courses.lecture_hours`/`lab_hours`, which keep holding credits.
+
+### `curriculum_classification_rules`
+
+- Department-scoped literal `exact` or `prefix` code rules proposing `major`/`minor` for future imports. Unique on `department_id + match_kind + match_value` (values stored normalized: trimmed, collapsed whitespace, uppercase). Cascade on department delete.
+- Rules never reclassify existing courses; `courses.course_category` remains authoritative for reused courses.
+
+### `curriculum_imports`
+
+- Audit and idempotency record of each successful import: curriculum (null on delete), department, actor, `request_key` (unique per department), `payload_hash`, source format/filename/client-declared SHA-256, extractor version, a bounded `record` JSON (draft source values, reviewed values, resolved rows, group totals, acknowledged reviews with reasons, settings and rule snapshot) and the returned `summary`.
+- Departments gained `lecture_minutes_per_unit` (default 60), `laboratory_minutes_per_unit` (default 180), and `curriculum_import_settings_revision` (optimistic concurrency for import settings).
 
 ### `semesters`
 

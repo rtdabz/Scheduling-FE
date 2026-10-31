@@ -38,6 +38,7 @@ const SecretaryCourses = lazyPage(() => import('./pages/secretary/Courses'));
 
 const CurriculumListPage = lazyPage(() => import('./pages/curriculum/CurriculumListPage'));
 const CurriculumDetailPage = lazyPage(() => import('./pages/curriculum/CurriculumDetailPage'));
+const CurriculumImportPage = lazyPage(() => import('./pages/curriculum/CurriculumImportPage'));
 const SecretarySections = lazyPage(() => import('./pages/secretary/Sections'));
 
 registerPagePrefetch([
@@ -243,6 +244,7 @@ export default function App() {
 
             <Route path="/secretary/courses" element={<CapabilityRoute capability="schedule.view" moduleName="Courses"><SecretaryCourses /></CapabilityRoute>} />
             <Route path="/secretary/curriculum" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumListPage /></CapabilityRoute>} />
+            <Route path="/secretary/curriculum/import" element={<CapabilityRoute capability="curriculum.manage" moduleName="Curriculum Import"><CurriculumImportPage /></CapabilityRoute>} />
             <Route path="/secretary/curriculum/:id" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumDetailPage /></CapabilityRoute>} />
             <Route path="/secretary/sections" element={<CapabilityRoute capability="schedule.view" moduleName="Sections"><SecretarySections /></CapabilityRoute>} />
             <Route path="/secretary/instructors" element={<CapabilityRoute capability="schedule.view" moduleName="Instructors"><Faculty /></CapabilityRoute>} />
@@ -263,6 +265,7 @@ export default function App() {
 
             <Route path="/program_head/courses" element={<CapabilityRoute capability="schedule.view" moduleName="Courses"><SecretaryCourses /></CapabilityRoute>} />
             <Route path="/program_head/curriculum" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumListPage /></CapabilityRoute>} />
+            <Route path="/program_head/curriculum/import" element={<CapabilityRoute capability="curriculum.manage" moduleName="Curriculum Import"><CurriculumImportPage /></CapabilityRoute>} />
             <Route path="/program_head/curriculum/:id" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumDetailPage /></CapabilityRoute>} />
             <Route path="/program_head/sections" element={<CapabilityRoute capability="schedule.view" moduleName="Sections"><SecretarySections /></CapabilityRoute>} />
             <Route path="/program_head/instructor-assignment" element={<CapabilityRoute capability="schedule.assign_instructor" moduleName="Instructor Assignment"><InstructorAssignment /></CapabilityRoute>} />

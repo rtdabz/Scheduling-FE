@@ -8,7 +8,7 @@ import { FIXED_SPLIT_PATTERNS, FULL_DAY_NAMES, parsePreferredPattern, slotCount,
 import { isLabMeetingRoomType } from "../../../../lib/labRoomPolicy";
 import type { DeliveryMode, DropContext, ScheduleItem, Section, Subject, Room } from "../types";
 import { getSubjectTotalSlots } from "../types";
-import { getCourseSlotPlan, laboratoryComponentSlots, sortSplitMeetingsForEdit, slotsToHours, type LaboratoryDurationSettings } from "../courseSlotPlan";
+import { consecutiveMeetingSlots, getCourseSlotPlan, laboratoryComponentSlots, sortSplitMeetingsForEdit, slotsToHours, type SchedulingRoomSettings } from "../courseSlotPlan";
 import { evaluatePlacementQuality, type PlannedMeeting } from "../placementQuality";
 import {
   isFieldSchedulingEligible,
@@ -80,7 +80,7 @@ interface DropModalProps {
   modalForcedDayIndex: number;
   setModalForcedDayIndex: (value: number) => void;
   canGenerateSchedule: boolean;
-  manualSchedulingSettings: (LaboratoryDurationSettings & {
+  manualSchedulingSettings: (SchedulingRoomSettings & {
     forced_day_rules?: Array<{ course_id: number; day: string }>;
     field_course_codes?: string[];
     lecture_lab_schedule_override_enabled?: boolean;
@@ -283,7 +283,7 @@ export default function DropModal({
     const groupHybrid = !modalRun && ((modalIsHybrid && (!hasLaboratoryUnits || modalDay2ClassMode === "online"))
       || (modalSplitEnabled && isHybridSplitEligible(dropSubject) && (modalClassMode === "online") !== (modalDay2ClassMode === "online")));
     const existing = sortSplitMeetingsForEdit(schedules.filter((schedule) => String(schedule.sectionId) === String(selectedSectionId)
-      && String(schedule.courseId ?? schedule.subjectId) === String(dropSubject.id)), dropSubject, modalIsHybrid, manualSchedulingSettings);
+      && String(schedule.courseId ?? schedule.subjectId) === String(dropSubject.id)), dropSubject, modalIsHybrid);
     const row = (dayIndex: number, startSlot: number, length: number, mode: DeliveryMode, roomId: string, index: number) => ({
       day: FULL_DAY_NAMES[dayIndex], start_time: slotToTime24h(startSlot), end_time: slotToTime24h(startSlot + length),
       mode, room_id: mode === "online" ? null : Number(roomId) || null,
@@ -580,7 +580,7 @@ export default function DropModal({
     if (enabled) {
       const preservedDayIndex = modalDay1Index;
       const lectureSlots = getCourseSlotPlan(dropSubject).lectureSlots;
-      const laboratorySlots = laboratoryComponentSlots(dropSubject, manualSchedulingSettings);
+      const laboratorySlots = laboratoryComponentSlots(dropSubject);
       const secondDay = preservedDayIndex === modalDay2Index
         ? getFallbackMeetingDayIndex(preservedDayIndex)
         : modalDay2Index;
@@ -613,13 +613,17 @@ export default function DropModal({
     setModalPreferredPattern(null);
     setIsDay2ModifiedByUser(false);
     setModalDay2Duration(0);
-    if (!modalRun) setModalDay1Duration(getCourseSlotPlan(dropSubject).singleBlockSlots || totalSlots);
+    // The days share the Total Hours equally; a count that cannot split it evenly is refused.
+    const share = consecutiveMeetingSlots(dropSubject, dayCount);
+    setModalDay1Duration(share ?? totalSlots);
     setModalDay1Index(runStartForDay(
       { dayCount, preferredStartDay: null, runs: consecutiveDayRuns(dayCount, sundayEnabled) },
       modalDay1Index,
     ));
     setModalConsecutiveDays(dayCount);
-    setModalValidationError("");
+    setModalValidationError(share === null
+      ? `${dropSubject.code}'s ${slotsToHours(totalSlots)} hours a week cannot be shared equally by ${dayCount} days. Choose a number of days that divides its Total Hours evenly.`
+      : "");
   };
 
   type MeetingShape = "single" | "integrated" | "split" | "consecutive";
@@ -722,21 +726,6 @@ export default function DropModal({
   };
 
   const gridSlotCount = slotCount();
-
-  const handleMeetingDurationChange = (isSecondMeeting: boolean, slots: number): void => {
-    if (isSameTimePair) {
-      setModalDay1Duration(slots);
-      setModalDay2Duration(slots);
-    } else {
-      (isSecondMeeting ? setModalDay2Duration : setModalDay1Duration)(slots);
-    }
-    setModalValidationError("");
-  };
-
-  const handleIntegratedDurationChange = (isSecondMeeting: boolean, slots: number): void => {
-    (isSecondMeeting ? setModalDay2Duration : setModalDay1Duration)(slots);
-    setModalValidationError("");
-  };
 
   const roomMissing = (roomId: string) => Boolean(modalValidationError) && !roomId;
   const firstMeetingTitle = modalIsHybrid ? "Laboratory Meeting" : isTwoMeetingPattern ? "First Meeting" : "Meeting";
@@ -1060,9 +1049,6 @@ export default function DropModal({
               startOptionCount={gridSlotCount}
               onStartChange={setModalDay1StartSlot}
               durationSlots={modalDay1Duration}
-              onDurationChange={isIntegrated || modalRun
-                ? (slots) => handleIntegratedDurationChange(false, slots)
-                : (slots) => handleMeetingDurationChange(false, slots)}
               endLabelSuffix={modalRun ? "(each day)" : undefined}
             />
 
@@ -1103,9 +1089,6 @@ export default function DropModal({
                   setIsDay2ModifiedByUser(true);
                 }}
                 durationSlots={modalDay2Duration}
-                onDurationChange={isIntegrated
-                  ? (slots) => handleIntegratedDurationChange(true, slots)
-                  : (slots) => handleMeetingDurationChange(true, slots)}
               />
             )}
           </div>

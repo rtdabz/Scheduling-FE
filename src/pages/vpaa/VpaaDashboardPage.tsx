@@ -1,153 +1,79 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import {
-  AlertTriangle,
-  ArrowRight,
-  BookOpen,
-  Building2,
-  CalendarCheck2,
-  Check,
-  CheckCircle2,
-  GaugeCircle,
-  Landmark,
-  LayoutGrid,
-  Maximize2,
-  Minimize2,
-  Minus,
-  RotateCcw,
-  Search,
-  SlidersHorizontal,
-  Users,
-  type LucideIcon,
-} from 'lucide-react';
-import { Bar, BarChart, LabelList, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import { BadgeCheck, Building2, FilePen, Inbox, RotateCcw, Scale, ShieldAlert, UserX, type LucideIcon } from 'lucide-react';
 import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
-import DashboardGantt from './calendar/DashboardGantt';
-import ScheduleDetailModal from './calendar/ScheduleDetailModal';
-import { buildStandardHours, DEFAULT_STANDARD_HOURS, findOverlaps, withCalendarDepartments, type CalendarSchedule, type StandardHours } from './calendar/ganttLayout';
-import { isVpaaApproved } from '../../lib/scheduleStatus';
-import type { TimeGridConfigInput } from '../../lib/timeGrid';
-import DashboardMetricCard from '../../components/overview/DashboardMetricCard';
+import { LoadWarning, Panel } from '../../components/vpaa/DashboardPrimitives';
+import { EmptyNote } from '../../components/dashboard/Ledger';
 import BuildingUtilizationPanel from '../../components/vpaa/BuildingUtilizationPanel';
-import FacultyLoadPanel, { type FacultyLoadRow } from '../../components/vpaa/FacultyLoadPanel';
-import AdministrativeActivityPanel, { type ActivityRow } from '../../components/vpaa/AdministrativeActivityPanel';
-import { Donut, DonutLegend, FilterSelect, Panel, type Slice } from '../../components/vpaa/DashboardPrimitives';
+import type { VpaaInsights } from '../../lib/vpaaInsights';
+import { DashboardContext, DistributionWithGroups, KpiCard, KpiStrip, RelatedLinks, StageRows, StatusDonut } from '../../components/dashboard/Analytics';
+import { RequestQueue } from '../../components/dashboard/RequestQueue';
+import { STAGE } from '../../lib/dashboardStage';
 import { grouped } from '../../lib/dashboardFormat';
-import { basicLoadOf } from '../../lib/facultyLoad';
+import { workloadExceptions, type FacultyLoadFields } from '../../lib/facultyLoad';
+import { fullSemesterLabel } from '../../lib/semesterLabel';
 import api from '../../lib/api';
 import { getStoredUser } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
-import { physicalRooms } from '../../lib/roomUsage';
-import { formatPhilippineDate } from '../../lib/philippineTime';
-import { EMPTY_INSIGHTS, type VpaaInsights } from '../../lib/vpaaInsights';
+import { recoveryError, type RoomTransferRequest } from '../../lib/roomRecovery';
+import { oldestWaitingFirst, pendingScheduleRequests, pendingTransferRequests, reviewPath, type PendingRequest } from '../../lib/dashboardQueue';
 import {
   institutionTotals,
   latestSubmissionBySection,
-  percent,
-  queueSeverity,
   relativeAge,
   rollupDepartments,
   type DepartmentRollup,
   type OverviewSubmission,
 } from '../../lib/vpaaOverview';
 
-interface Schedule {
-  course_id?:number|null; department_id?:number|null; department?:Department|null; meeting_type?:string|null;
-  id:number; semester_id:number; section_id:number; faculty_id?:number|null; subject_id?:number|null; room_id?:number|null;
-  day:string; start_time:string; end_time:string; mode?:'on-site'|'online'|'field'; status:string; updated_at?:string;
-  section?:{ id:number; section_name:string; department_id:number; department?:{ department_code:string; department_name:string }|null }|null;
-  faculty?:{ id:number; first_name:string; last_name:string }|null;
-  room?:{ id:number; room_code:string; building?:string|null; room_type?:string }|null;
-  course?:{ id:number; course_code:string; course_name:string; course_category?:string|null; units?:number }|null;
-  subject?:{ id:number; subject_code:string; subject_name:string; subject_category?:string|null; units?:number }|null;
-}
-interface Room { id:number; room_code:string; room_type:string; building?:string|null; status?:string|null }
+interface Schedule { id:number; semester_id:number; section_id:number; department_id?:number|null; status:string }
 interface Section { id:number; section_name:string; department_id:number }
-interface Faculty { id:number; first_name:string; last_name:string; employment_type?:'full-time'|'part-time'; max_units:number; deload_units?:number|null; assigned_units?:number; department_id:number; status:string }
-interface Department { id:number; department_name:string; department_code:string; logo?:string|null }
-interface Subject { id:number; subject_code:string; subject_name:string }
+interface Faculty extends FacultyLoadFields { id:number; department_id:number }
+interface Department { id:number; department_name:string; department_code:string }
 interface Semester { id:number; academic_year:string; semester:'1st'|'2nd'|'summer'; is_active:boolean }
 
 interface DashboardData {
-  schedules:Schedule[]; rooms:Room[]; sections:Section[]; faculties:Faculty[];
-  departments:Department[]; subjects:Subject[]; activeSemester:Semester|null;
-  submissions:OverviewSubmission[]; scheduleLimitReached:boolean;
-  standardHours:StandardHours;
-  activeCurriculaCount:number;
+  schedules:Schedule[]; sections:Section[]; faculties:Faculty[];
+  departments:Department[]; activeSemester:Semester|null;
+  submissions:OverviewSubmission[];
 }
 interface InitialDataResponse {
-  schedules?:Schedule[]; rooms?:Room[]; sections?:Section[]; faculties?:Faculty[];
-  departments?:Department[]; subjects?:Subject[]; courses?:Subject[]; active_semester?:Semester;
+  schedules?:Schedule[]; sections?:Section[]; faculties?:Faculty[];
+  departments?:Department[]; active_semester?:Semester;
   schedule_submissions?:OverviewSubmission[];
-  time_grid?:TimeGridConfigInput;
-  active_curricula_count?:number;
 }
 
-interface Tile { label:string; value:string; detail:string; icon:LucideIcon; path:string; tone:'brand'|'info'|'good'|'warn'|'alert'|'accent' }
-
-const ATTENTION_COLUMNS = 'minmax(0,1.4fr) minmax(0,1.1fr) minmax(0,0.95fr) minmax(0,0.9fr) 78px';
-const WORKFLOW_COLUMNS = 'minmax(0,1.5fr) minmax(0,1.3fr) minmax(0,0.95fr) 92px';
-
 const SCHEDULE_PREVIEW_LIMIT = 2000;
+const APPROVAL_PATH = '/schedules/approval';
 
-const formatSubmittedOn = (value?:string|null) => {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  return formatPhilippineDate(value, { month:'short', day:'numeric', year:'numeric' });
-};
+const DASHBOARD_LIVE_TOPICS = ['schedules', 'approvals', 'assignments', 'sections', 'rooms', 'faculty', 'departments', 'settings'] as const;
 
-const SEVERITY_STYLES = {
-  overdue: 'bg-rose-50 text-rose-700',
-  ageing: 'bg-amber-50 text-amber-800',
-  fresh: 'bg-slate-100 text-slate-600',
-} as const;
-
-const DASHBOARD_LIVE_TOPICS = ['schedules', 'approvals', 'assignments', 'sections', 'rooms', 'faculty', 'courses', 'departments', 'users', 'settings', 'curriculum'] as const;
+type SourceState = 'loading' | 'ready' | 'error';
 
 export default function VpaaDashboardPage() {
   const navigate = useNavigate();
 
   const user = useMemo(() => getStoredUser(), []);
   const cacheKey = `dashboard:${user?.role ?? 'vpaa'}:${user?.id ?? 'current'}`;
-  const insightsCacheKey = `${cacheKey}:insights`;
-  const activityCacheKey = `${cacheKey}:activity`;
   const cached = getCachedData<DashboardData>(cacheKey);
 
   const [loading, setLoading] = useState(!hasCachedData(cacheKey));
+  const [hasData, setHasData] = useState(Boolean(cached));
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const liveRevision = useLiveRevision(DASHBOARD_LIVE_TOPICS);
   const [schedules, setSchedules] = useState<Schedule[]>(cached?.schedules ?? []);
-  const [rooms, setRooms] = useState<Room[]>(cached?.rooms ?? []);
   const [sections, setSections] = useState<Section[]>(cached?.sections ?? []);
   const [faculties, setFaculties] = useState<Faculty[]>(cached?.faculties ?? []);
   const [departments, setDepartments] = useState<Department[]>(cached?.departments ?? []);
-  const [subjects, setSubjects] = useState<Subject[]>(cached?.subjects ?? []);
-  const [activeCurriculaCount, setActiveCurriculaCount] = useState<number>(cached?.activeCurriculaCount ?? 0);
   const [activeSemester, setActiveSemester] = useState<Semester | null>(cached?.activeSemester ?? null);
   const [submissions, setSubmissions] = useState<OverviewSubmission[]>(cached?.submissions ?? []);
-  const [previewTruncated, setPreviewTruncated] = useState(cached?.scheduleLimitReached ?? false);
-  const [standardHours, setStandardHours] = useState<StandardHours>(cached?.standardHours ?? DEFAULT_STANDARD_HOURS);
-  const [selectedSchedule, setSelectedSchedule] = useState<CalendarSchedule | null>(null);
-
-  const cachedInsights = getCachedData<VpaaInsights>(insightsCacheKey);
-  const [insights, setInsights] = useState<VpaaInsights>(cachedInsights ?? EMPTY_INSIGHTS);
-  const [insightsLoading, setInsightsLoading] = useState(!hasCachedData(insightsCacheKey));
-
-  const cachedActivity = getCachedData<ActivityRow[]>(activityCacheKey);
-  const [activity, setActivity] = useState<ActivityRow[]>(cachedActivity ?? []);
-  const [activityLoading, setActivityLoading] = useState(!hasCachedData(activityCacheKey));
-  const [activityError, setActivityError] = useState(false);
-
-  const [filterDept, setFilterDept] = useState('all');
-  const [filterBuilding, setFilterBuilding] = useState('all');
-  const [filterRoom, setFilterRoom] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showTimetableFilters, setShowTimetableFilters] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [transfers, setTransfers] = useState<RoomTransferRequest[]>([]);
+  const [transferState, setTransferState] = useState<SourceState>('loading');
+  const [transferError, setTransferError] = useState('');
+  const [insights, setInsights] = useState<VpaaInsights | null>(null);
+  const [insightsState, setInsightsState] = useState<SourceState>('loading');
 
   const [now, setNow] = useState(new Date());
   useEffect(() => {
@@ -167,36 +93,26 @@ export default function VpaaDashboardPage() {
             params: { schedule_limit: SCHEDULE_PREVIEW_LIMIT },
           });
           const d = response.data || {};
-          const rows = Array.isArray(d.schedules) ? d.schedules : [];
           return {
-            schedules: rows,
-            rooms: Array.isArray(d.rooms) ? d.rooms : [],
+            schedules: Array.isArray(d.schedules) ? d.schedules : [],
             sections: Array.isArray(d.sections) ? d.sections : [],
             faculties: Array.isArray(d.faculties) ? d.faculties : [],
             departments: Array.isArray(d.departments) ? d.departments : [],
-            subjects: Array.isArray(d.subjects) ? d.subjects : (Array.isArray(d.courses) ? d.courses : []),
             activeSemester: d.active_semester || null,
             submissions: Array.isArray(d.schedule_submissions) ? d.schedule_submissions : [],
-            scheduleLimitReached: rows.length >= SCHEDULE_PREVIEW_LIMIT,
-            standardHours: buildStandardHours(d.time_grid?.opening_time, d.time_grid?.closing_time, d.time_grid?.slot_minutes),
-            activeCurriculaCount: typeof d.active_curricula_count === 'number' ? d.active_curricula_count : 0,
           };
         }, reloadKey > 0);
 
         if (!active) return;
-        setSchedules(data.schedules);
-        setRooms(data.rooms);
-        setSections(data.sections);
-        setFaculties(data.faculties);
-        setDepartments(data.departments);
-        setSubjects(data.subjects);
-        setActiveCurriculaCount(data.activeCurriculaCount ?? 0);
-        setActiveSemester(data.activeSemester);
+        setSchedules(data.schedules ?? []);
+        setSections(data.sections ?? []);
+        setFaculties(data.faculties ?? []);
+        setDepartments(data.departments ?? []);
+        setActiveSemester(data.activeSemester ?? null);
         setSubmissions(data.submissions ?? []);
-        setPreviewTruncated(Boolean(data.scheduleLimitReached));
-        setStandardHours(data.standardHours ?? DEFAULT_STANDARD_HOURS);
+        setHasData(true);
       } catch {
-        if (active) setLoadError('Could not load institution-wide scheduling data. Figures below may be out of date.');
+        if (active) setLoadError('Could not load institution-wide scheduling data.');
       } finally {
         if (active) setLoading(false);
       }
@@ -206,65 +122,42 @@ export default function VpaaDashboardPage() {
     return () => { active = false; };
   }, [cacheKey, reloadKey, liveRevision]);
 
+  // Room use is computed server-side; a failed or malformed response shows as unavailable, never as zero rooms.
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
+    api.get<VpaaInsights>('/vpaa/dashboard-insights', { signal: controller.signal })
+      .then(({ data }) => {
+        if (controller.signal.aborted) return;
+        if (!data?.utilization || !Array.isArray(data.utilization.buildings)) throw new Error('Malformed insights');
+        setInsights(data);
+        setInsightsState('ready');
+      })
+      .catch(() => { if (!controller.signal.aborted) setInsightsState('error'); });
+    return () => controller.abort();
+  }, [reloadKey, liveRevision]);
 
-    const load = async () => {
-      setInsightsLoading(liveRevision === 0 && !hasCachedData(insightsCacheKey));
-      try {
-        const data = await loadCachedData<VpaaInsights>(insightsCacheKey, async () => {
-          const response = await api.get<VpaaInsights>('/vpaa/dashboard-insights');
-          return { ...EMPTY_INSIGHTS, ...(response.data ?? {}) };
-        }, reloadKey > 0);
-        if (active) setInsights(data);
-      } catch {
-        if (active && !hasCachedData(insightsCacheKey)) setInsights(EMPTY_INSIGHTS);
-      } finally {
-        if (active) {
-          setInsightsLoading(false);
-        }
-      }
-    };
-
-    load();
-    return () => { active = false; };
-  }, [insightsCacheKey, reloadKey, liveRevision]);
-
+  // The approval workspace lists room transfers beside submissions, so the dashboard reads the same source.
   useEffect(() => {
-    let active = true;
-
-    const load = async () => {
-      setActivityLoading(liveRevision === 0 && !hasCachedData(activityCacheKey));
-      setActivityError(false);
-      try {
-        const rows = await loadCachedData<ActivityRow[]>(activityCacheKey, async () => {
-          const response = await api.get<{ data?: Array<{ id:string; event:string; category:string; occurred_at:string; actor?:{ name?:string }|null }> }>(
-            '/activity-log',
-            { params: { per_page: 10 } },
-          );
-          return (response.data?.data ?? []).slice(0, 6).map(row => ({
-            id: row.id,
-            event: row.event,
-            category: row.category,
-            actor: row.actor?.name ?? null,
-            occurredAt: row.occurred_at,
-          }));
-        }, reloadKey > 0);
-        if (active) setActivity(rows);
-      } catch {
-        if (active && !hasCachedData(activityCacheKey)) setActivityError(true);
-      } finally {
-        if (active) setActivityLoading(false);
-      }
-    };
-
-    load();
-    return () => { active = false; };
-  }, [activityCacheKey, reloadKey, liveRevision]);
+    const controller = new AbortController();
+    api.get<{ transfers?: RoomTransferRequest[] }>('/room-recovery/transfers', { signal: controller.signal })
+      .then(({ data }) => {
+        if (controller.signal.aborted) return;
+        setTransfers(Array.isArray(data?.transfers) ? data.transfers : []);
+        setTransferState('ready');
+        setTransferError('');
+      })
+      .catch(error => {
+        if (controller.signal.aborted) return;
+        setTransferState('error');
+        setTransferError(recoveryError(error));
+      });
+    return () => controller.abort();
+  }, [reloadKey, liveRevision]);
 
   const retry = useCallback(() => setReloadKey(k => k + 1), []);
 
   const activeSemesterId = activeSemester?.id ?? null;
+  const noSemester = hasData && !activeSemester;
 
   const submissionBySection = useMemo(
     () => latestSubmissionBySection(submissions, activeSemesterId),
@@ -277,495 +170,265 @@ export default function VpaaDashboardPage() {
   );
 
   const totals = useMemo(() => institutionTotals(departmentStats), [departmentStats]);
-
-  const workflowRows = useMemo(
-    () => [...departmentStats].sort(
-      (a, b) => b.progressPercent - a.progressPercent || a.department_code.localeCompare(b.department_code),
-    ),
-    [departmentStats],
-  );
-
   const fullyApprovedDepartments = departmentStats.filter(d => d.approvalStatus === 'Fully Approved').length;
 
-  const attentionRows = useMemo(
-    () => departmentStats
-      .filter(d => d.pendingVpaaCount > 0)
-      .sort((a, b) => {
-        if (!a.submittedAt) return 1;
-        if (!b.submittedAt) return -1;
-        return a.submittedAt.localeCompare(b.submittedAt);
-      }),
+  // Departments needing follow-up first: decisions for the VPAA, then returns, then work with the Deans.
+  const progressRows = useMemo(
+    () => [...departmentStats].sort((a, b) => attentionRank(a) - attentionRank(b)
+      || a.progressPercent - b.progressPercent
+      || a.department_code.localeCompare(b.department_code)),
     [departmentStats],
   );
-
-  const overrideRows = useMemo(
-    () => departmentStats.filter(d => d.hasOverride),
-    [departmentStats],
-  );
-
-  const readiness = useMemo(() => {
-    let readyForApproval = 0;
-    let withDean = 0;
-    let returned = 0;
-    let partlyApproved = 0;
-    let stillDrafting = 0;
-    let fullyApproved = 0;
-
-    departmentStats.forEach(dept => {
-      if (dept.approvalStatus === 'Fully Approved') fullyApproved++;
-      else if (dept.pendingVpaaCount > 0) readyForApproval++;
-      else if (dept.returnedCount > 0) returned++;
-      else if (dept.pendingCount > dept.pendingVpaaCount) withDean++;
-      else if (dept.approvedCount > 0) partlyApproved++;
-      else stillDrafting++;
-    });
-
-    return { readyForApproval, withDean, returned, partlyApproved, stillDrafting, fullyApproved };
-  }, [departmentStats]);
-
-  const readinessSlices: Slice[] = [
-    { key: 'ready', label: 'Ready for Final Approval', value: readiness.readyForApproval, color: '#16a36a' },
-    { key: 'dean', label: 'Waiting on Dean', value: readiness.withDean, color: '#0ea5e9' },
-    { key: 'partial', label: 'Partly Approved', value: readiness.partlyApproved, color: '#14b8a6' },
-    { key: 'drafting', label: 'Still Drafting', value: readiness.stillDrafting, color: '#3b82f6' },
-    { key: 'returned', label: 'Returned for Revision', value: readiness.returned, color: '#f59e0b' },
-    { key: 'approved', label: 'Fully Approved', value: readiness.fullyApproved, color: '#8b5cf6' },
-  ];
-
-  const facultyBands = useMemo(() => {
-    let completeLoad = 0;
-    let remainingCapacity = 0;
-    let overloaded = 0;
-    let noAssignment = 0;
-
-    faculties.forEach(f => {
-      const assigned = f.assigned_units || 0;
-      const max = basicLoadOf(f.max_units, f.deload_units);
-      if (assigned <= 0) noAssignment++;
-      else if (assigned > max) overloaded++;
-      else if (assigned === max) completeLoad++;
-      else remainingCapacity++;
-    });
-
-    return { completeLoad, remainingCapacity, overloaded, noAssignment };
-  }, [faculties]);
-
-  const facultySlices: Slice[] = [
-    { key: 'complete', label: 'Complete Load', value: facultyBands.completeLoad, color: '#16a36a' },
-    { key: 'remaining', label: 'With Remaining Capacity', value: facultyBands.remainingCapacity, color: '#3b82f6' },
-    { key: 'overloaded', label: 'Overloaded', value: facultyBands.overloaded, color: '#f59e0b' },
-    { key: 'none', label: 'No Assignment', value: facultyBands.noAssignment, color: '#cbd5e1' },
-  ];
 
   const departmentNames = useMemo(
-    () => new Map(departments.map(d => [Number(d.id), d.department_code])),
+    () => new Map(departments.map(d => [Number(d.id), d.department_name])),
     [departments],
   );
 
-  const overloadedFaculty = useMemo<FacultyLoadRow[]>(
-    () => faculties
-      .map(f => {
-        const assigned = f.assigned_units || 0;
-        const max = basicLoadOf(f.max_units, f.deload_units);
-        return {
-          id: f.id,
-          name: `${f.first_name} ${f.last_name}`.trim(),
-          department: departmentNames.get(Number(f.department_id)) ?? '—',
-          assigned,
-          max,
-          over: assigned - max,
-        };
-      })
-      .filter(row => row.over > 0)
-      .sort((a, b) => b.over - a.over),
-    [faculties, departmentNames],
-  );
-
-  const campusRooms = useMemo(() => physicalRooms(rooms), [rooms]);
-
-  const semesterSchedules = useMemo(
-    () => (activeSemesterId ? schedules.filter(s => Number(s.semester_id) === Number(activeSemesterId)) : schedules),
-    [activeSemesterId, schedules],
-  );
-
-  const publishedSchedules = useMemo(() => withCalendarDepartments(semesterSchedules, departments).filter((item) => isVpaaApproved(item.status)).map((item) => ({
-    ...item,
-    course_id: item.course_id ?? item.course?.id ?? item.subject_id,
-    mode: item.mode?.toLowerCase().includes('online') || item.room?.room_type?.toLowerCase().includes('online') ? 'online' as const
-      : item.mode?.toLowerCase().includes('field') || item.room?.room_type?.toLowerCase().includes('field') ? 'field' as const : 'on-site' as const,
-  })), [semesterSchedules, departments]);
-  const timelineOverlaps = useMemo(() => findOverlaps(publishedSchedules), [publishedSchedules]);
-
-  const buildingOptions = useMemo(
-    () => Array.from(new Set(campusRooms.map(r => (r.building ?? '').trim()).filter(Boolean))).sort(),
-    [campusRooms],
-  );
-  const roomOptions = useMemo(() => {
-    const scoped = filterBuilding === 'all'
-      ? campusRooms
-      : campusRooms.filter(r => (r.building ?? '').trim() === filterBuilding);
-    return [...scoped].sort((a, b) => a.room_code.localeCompare(b.room_code));
-  }, [campusRooms, filterBuilding]);
-
-  const timetableSchedules = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    return publishedSchedules.filter(s => {
-      if (filterDept !== 'all' && Number(s.section?.department_id) !== Number(filterDept)) return false;
-      if (filterBuilding !== 'all' && (s.room?.building ?? '').trim() !== filterBuilding) return false;
-      if (filterRoom !== 'all' && String(s.room_id ?? '') !== filterRoom) return false;
-      if (!query) return true;
-      return [
-        s.section?.section_name,
-        s.course?.course_code,
-        s.course?.course_name,
-        s.subject?.subject_code,
-        s.subject?.subject_name,
-        s.faculty ? `${s.faculty.first_name} ${s.faculty.last_name}` : '',
-        s.room?.room_code,
-        s.room?.building,
-      ].some(value => (value ?? '').toLowerCase().includes(query));
+  const scheduleStatusesBySection = useMemo(() => {
+    const map = new Map<string, string[]>();
+    schedules.forEach(schedule => {
+      const key = String(schedule.section_id);
+      map.set(key, [...(map.get(key) ?? []), schedule.status]);
     });
-  }, [publishedSchedules, filterDept, filterBuilding, filterRoom, searchQuery]);
+    return map;
+  }, [schedules]);
 
-  const changeBuilding = (value:string) => {
-    setFilterBuilding(value);
-    setFilterRoom('all');
-  };
+  const requests = useMemo<PendingRequest[]>(() => {
+    if (!activeSemesterId) return [];
+    const scheduleRequests = pendingScheduleRequests(
+      'vpaa',
+      submissions
+        .filter(s => Number(s.semester_id) === Number(activeSemesterId))
+        .map(s => ({ ...s, sections: s.sections ?? [] })),
+      (_submission, sectionIds) => sectionIds.flatMap(id => scheduleStatusesBySection.get(id) ?? []),
+      id => departmentNames.get(id) ?? 'Department',
+    );
+    return [...scheduleRequests, ...pendingTransferRequests('vpaa', transfers)].sort(oldestWaitingFirst);
+  }, [activeSemesterId, submissions, scheduleStatusesBySection, departmentNames, transfers]);
 
-  const filtersActive = filterDept !== 'all' || filterBuilding !== 'all' || filterRoom !== 'all' || searchQuery !== '';
-  const activeTimetableFilterCount = [filterDept, filterBuilding, filterRoom].filter(value => value !== 'all').length;
-  const resetFilters = () => {
-    setFilterDept('all');
-    setFilterBuilding('all');
-    setFilterRoom('all');
-    setSearchQuery('');
-  };
+  const scheduleRequestCount = requests.filter(r => r.type === 'schedule').length;
+  const transferRequestCount = requests.length - scheduleRequestCount;
+  const transfersKnown = transferState === 'ready';
+  const oldest = requests.find(r => r.waitingSince);
 
-  useEffect(() => {
-    if (!isFullscreen) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = previousOverflow; };
-  }, [isFullscreen]);
+  const exceptions = useMemo(() => workloadExceptions(faculties), [faculties]);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && isFullscreen && !selectedSchedule) setIsFullscreen(false);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isFullscreen, selectedSchedule]);
+  const openApproval = () => navigate(APPROVAL_PATH);
+  const openRequest = (request: PendingRequest) => navigate(reviewPath(APPROVAL_PATH, request));
 
-  const openApproval = () => navigate('/schedules/approval');
+  if (loading) return <DashboardSkeleton variant="vpaa" />;
 
-  const kpis: Tile[] = [
-    {
-      label: 'Awaiting Your Approval',
-      value: grouped(totals.pendingVpaa),
-      detail: attentionRows.length
-        ? `${attentionRows.length} department${attentionRows.length === 1 ? '' : 's'} · oldest ${relativeAge(attentionRows[0]?.submittedAt, now)}`
-        : 'Nothing in your queue',
-      icon: CalendarCheck2,
-      path: '/schedules/approval',
-      tone: totals.pendingVpaa > 0 ? 'alert' : 'good',
-    },
+  const term = fullSemesterLabel(activeSemester);
+  const links = [
+    { label: 'Open master calendar', onClick: () => navigate('/calendar') },
+    { label: 'Reports', onClick: () => navigate('/reports') },
   ];
 
-  const inventory: Tile[] = [
-    { label: 'Departments', value: grouped(departments.length), detail: 'Academic units', icon: Landmark, path: '/departments', tone: 'brand' },
-    { label: 'Instructors', value: grouped(faculties.length), detail: 'Active instructors', icon: Users, path: '/instructors', tone: 'accent' },
-    { label: 'Curriculums', value: grouped(activeCurriculaCount), detail: 'Active curriculums', icon: BookOpen, path: '/curriculum', tone: 'good' },
-    { label: 'Rooms', value: grouped(campusRooms.length), detail: 'Across campus', icon: Building2, path: '/facilities', tone: 'warn' },
-    { label: 'Sections', value: grouped(totals.sections), detail: 'In the active semester', icon: LayoutGrid, path: '/schedules/approval', tone: 'info' },
-  ];
+  if (!hasData) {
+    return <div id="dashboard-overview" className="space-y-4 pb-8 text-text">
+      <LoadWarning message={loadError ?? 'Scheduling data is unavailable.'} onRetry={retry} />
+      <DashboardContext term={term} status="Data unavailable" statusTone="returned" summary="Approval figures are hidden until the data loads." />
+    </div>;
+  }
 
-  const timetablePanel = (
-    <div className={isFullscreen ? 'fixed inset-0 z-[1000] flex flex-col overflow-auto bg-white p-4 sm:p-6' : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
-      <section aria-label="Institutional master timetable" className="flex min-h-0 flex-1 flex-col rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-        <header className="flex shrink-0 flex-wrap items-center gap-2">
-          <h2 className="font-sans text-sm font-bold text-[#5A1220]">Master timetable</h2>
-          <span title="Preview of VPAA-approved classes" className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">Preview</span>
-          <div className="relative ml-auto">
-            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={event => setSearchQuery(event.target.value)}
-              placeholder="Search timetable"
-              aria-label="Search timetable"
-              className="w-40 rounded-md border border-slate-200 bg-white py-1.5 pl-7 pr-2 text-[11px] font-semibold text-slate-700 shadow-sm outline-none transition focus:border-primary/40"
-            />
-          </div>
-          <button type="button" aria-label="Timetable filters" aria-expanded={showTimetableFilters} aria-controls="dashboard-timetable-filters" onClick={() => setShowTimetableFilters(open => !open)}
-            className={`flex h-7 items-center gap-1.5 rounded-md border px-2 text-[11px] font-semibold ${showTimetableFilters || activeTimetableFilterCount > 0 ? 'border-primary/30 bg-primary/5 text-primary' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-            <SlidersHorizontal className="h-3.5 w-3.5" />Filters
-            {activeTimetableFilterCount > 0 && <span>{activeTimetableFilterCount}</span>}
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsFullscreen(open => !open)}
-            title={isFullscreen ? 'Exit full window (Esc)' : 'Full window view'}
-            aria-label={isFullscreen ? 'Exit full window' : 'Full window view'}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-primary/30 hover:text-primary"
-          >
-            {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-          </button>
-          {filtersActive && <button
-            type="button"
-            onClick={resetFilters}
-            title="Reset filters"
-            aria-label="Reset filters"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-primary/30 hover:text-primary"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-          </button>}
-          <button type="button" onClick={() => navigate('/calendar')} className="inline-flex h-7 items-center gap-1 text-[11px] font-bold text-primary hover:underline">
-            Master Calendar <ArrowRight className="h-3.5 w-3.5" />
-          </button>
-        </header>
-
-        {showTimetableFilters && <div id="dashboard-timetable-filters" className="mt-2 flex shrink-0 flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-2">
-          <FilterSelect label="Dept" value={filterDept} onChange={setFilterDept}>
-            <option value="all">All</option>
-            {departments.map(dept => <option key={dept.id} value={String(dept.id)}>{dept.department_code}</option>)}
-          </FilterSelect>
-          <FilterSelect label="Building" value={filterBuilding} onChange={changeBuilding}>
-            <option value="all">All</option>
-            {buildingOptions.map(building => <option key={building} value={building}>{building}</option>)}
-          </FilterSelect>
-          <FilterSelect label="Room" value={filterRoom} onChange={setFilterRoom}>
-            <option value="all">All</option>
-            {roomOptions.map(room => <option key={room.id} value={String(room.id)}>{room.room_code}</option>)}
-          </FilterSelect>
-        </div>}
-
-        {previewTruncated && <p className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-800">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          Preview is based on the most recent {grouped(SCHEDULE_PREVIEW_LIMIT)} meetings; some classes and overlaps may be missing. Campus-wide figures elsewhere on this page cover every meeting.
-        </p>}
-
-        <div className="mt-2 flex min-h-0 min-w-0 flex-1 flex-col">
-          <DashboardGantt
-            schedules={timetableSchedules}
-            allSchedules={publishedSchedules}
-            standardHours={standardHours}
-            overlaps={timelineOverlaps}
-            now={now}
-            onSelect={setSelectedSchedule}
-            isFullscreen={isFullscreen}
-          />
-        </div>
-
-      </section>
-      <ScheduleDetailModal schedule={selectedSchedule} allSchedules={publishedSchedules} overlaps={timelineOverlaps} onClose={() => setSelectedSchedule(null)} onSelect={setSelectedSchedule} />
-    </div>
-  );
-
-  if (loading || insightsLoading || activityLoading) return <DashboardSkeleton variant="vpaa" />;
-
-  return <div id="dashboard-overview" className="space-y-4 pb-8 text-slate-800">
-    {loadError && <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
-      <AlertTriangle className="h-4 w-4 shrink-0" />
-      <span className="flex-1">{loadError}</span>
-      <button type="button" onClick={retry} className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 py-1.5 font-bold text-amber-800 transition hover:bg-amber-100"><RotateCcw className="h-3.5 w-3.5" /> Retry</button>
-    </div>}
-
-    <section id="dashboard-metrics" className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-7">
-      {kpis.map(({ label, value, detail, icon, path, tone }) => <DashboardMetricCard key={label} label={label} value={value} detail={detail} icon={icon} tone={tone} onClick={() => navigate(path)} />)}
-
-      <DashboardMetricCard
-        label="Overall Approval Completion"
-        value={`${totals.progressPercent}%`}
-        detail={`${grouped(totals.approved)} / ${grouped(totals.sections)} sections approved`}
-        progress={totals.progressPercent}
-        tone={totals.progressPercent === 100 ? 'good' : 'brand'}
-        onClick={() => navigate('/schedules/approval')}
+  if (noSemester) {
+    return <div id="dashboard-overview" className="space-y-4 pb-8 text-text">
+      {loadError && <LoadWarning message={`${loadError} Figures below may be out of date.`} onRetry={retry} />}
+      <DashboardContext
+        term="No active semester"
+        status="No active semester"
+        statusTone="drafting"
+        summary="Approval progress is scoped to the active semester. Activate a semester to see decisions and department progress."
       />
+      <RelatedLinks links={links} />
+    </div>;
+  }
 
-      {inventory.map(({ label, value, detail, icon, path, tone }) => <DashboardMetricCard key={label} label={label} value={value} detail={detail} icon={icon} tone={tone} onClick={() => navigate(path)} />)}
-    </section>
+  const decisionLabel = `${grouped(requests.length)} ${requests.length === 1 ? 'decision' : 'decisions'} awaiting you`;
+  const contextStatus = requests.length > 0
+    ? { label: decisionLabel, tone: 'ready' as const }
+    : !transfersKnown
+      ? { label: 'Room transfers unavailable', tone: 'drafting' as const }
+      : totals.sections > 0 && totals.approved === totals.sections
+        ? { label: 'All departments approved', tone: 'done' as const }
+        : { label: 'Nothing awaiting you', tone: 'drafting' as const };
+  const contextSummary = oldest
+    ? `${oldest.department} has waited longest, ${relativeAge(oldest.waitingSince, now)}.`
+    : !transfersKnown
+      ? 'Schedule submissions are listed below; room transfers could not be checked.'
+      : 'Requests appear here once a Dean forwards them.';
 
-    <section className="grid gap-4">
-      <Panel
-        title="Requires Attention"
-        subtitle="Department packages the Deans have cleared for your final approval, longest-waiting first."
-        tone={totals.pendingVpaa > 0 ? 'alert' : 'brand'}
-        badge={totals.pendingVpaa}
-        action="View approval queue"
-        onAction={openApproval}
+  const decisionParts = [
+    `${scheduleRequestCount} schedule`,
+    transfersKnown ? `${transferRequestCount} room transfer` : 'room transfers unavailable',
+  ].join(' · ');
+
+  const activeDepartments = progressRows.filter(row => row.sectionsCount > 0);
+  const idleDepartments = progressRows.filter(row => row.sectionsCount === 0);
+  const returnedDepartments = activeDepartments.filter(row => row.returnedCount > 0).length;
+  const overridesWaiting = requests.filter(request => request.override).length;
+  const notSubmitted = activeDepartments.filter(row => row.draftCount > 0).length;
+
+  const institutionSegments = [
+    { key: 'awaiting', label: 'Awaiting you', value: totals.pendingVpaa, color: STAGE.ready },
+    { key: 'dean', label: 'With the Deans', value: totals.pendingDean, color: STAGE.waiting },
+    { key: 'approved', label: 'Approved', value: totals.approved, color: STAGE.approved },
+    { key: 'returned', label: 'Returned', value: totals.returned, color: STAGE.returned },
+    { key: 'draft', label: 'Not yet submitted', value: totals.draft, color: STAGE.drafting },
+  ];
+  const departmentSegments = (row: DepartmentRollup) => [
+    { key: 'awaiting', label: `awaiting you${row.hasOverride ? ' · override' : ''}`, value: row.pendingVpaaCount, color: STAGE.ready },
+    { key: 'dean', label: 'with the Dean', value: row.pendingCount - row.pendingVpaaCount, color: STAGE.waiting },
+    { key: 'approved', label: 'approved', value: row.approvedCount, color: STAGE.approved },
+    { key: 'returned', label: 'returned', value: row.returnedCount, color: STAGE.returned },
+    { key: 'draft', label: 'drafting', value: row.draftCount, color: STAGE.drafting },
+  ];
+
+  const exceptionRows: Array<{ key: string; label: string; value: number; tone: 'alert' | 'attention' | 'neutral'; icon: LucideIcon; onClick: () => void; action: string }> = [
+    { key: 'over-limit', label: 'Instructors over their limit', value: exceptions.overLimit, tone: 'alert', icon: UserX, onClick: () => navigate('/instructors'), action: 'View instructors' },
+    { key: 'overload', label: 'On overload, within limit', value: exceptions.overload, tone: 'attention', icon: Scale, onClick: () => navigate('/instructors'), action: 'View instructors' },
+    { key: 'overrides', label: 'Dean overrides awaiting you', value: overridesWaiting, tone: 'attention', icon: ShieldAlert, onClick: openApproval, action: 'Open approval queue' },
+    { key: 'not-submitted', label: 'Departments still drafting', value: notSubmitted, tone: 'neutral', icon: FilePen, onClick: () => navigate('/departments'), action: 'View departments' },
+  ];
+  const EXCEPTION_TONES = {
+    alert: 'bg-stage-returned/10 text-stage-returned',
+    attention: 'bg-accent/15 text-stage-warnText',
+    neutral: 'bg-primary/[0.07] text-primary',
+  } as const;
+
+  return <div id="dashboard-overview" className="space-y-4 pb-8 text-text">
+    {loadError && <LoadWarning message={`${loadError} Figures below may be out of date.`} onRetry={retry} />}
+
+    <DashboardContext
+      term={term}
+      status={contextStatus.label}
+      statusTone={contextStatus.tone}
+      summary={contextSummary}
+      action={requests.length > 0 ? { label: 'Review approvals', onClick: openApproval } : undefined}
+    />
+
+    <KpiStrip count={4}>
+      <KpiCard
+        label="Decisions awaiting you"
+        icon={Inbox}
+        value={transfersKnown || requests.length ? grouped(requests.length) : '—'}
+        of={transfersKnown ? 'requests' : 'requests so far'}
+        status={decisionParts}
+        tone={requests.length ? 'attention' : transfersKnown ? 'good' : 'neutral'}
+        onClick={openApproval}
+        actionLabel="Open the approval queue"
+      />
+      <KpiCard
+        label="Sections approved"
+        icon={BadgeCheck}
+        value={grouped(totals.approved)}
+        of={`/ ${grouped(totals.sections)}`}
+        meter={{ value: totals.progressPercent, color: STAGE.approved }}
+        status={totals.sections > 0 && totals.progressPercent === 100 ? 'Every section approved' : `${totals.progressPercent}% across the institution`}
+        tone={totals.sections > 0 && totals.progressPercent === 100 ? 'good' : 'neutral'}
+      />
+      <KpiCard
+        label="Departments complete"
+        icon={Building2}
+        value={grouped(fullyApprovedDepartments)}
+        of={`/ ${grouped(activeDepartments.length)} scheduling`}
+        status={idleDepartments.length
+          ? `${idleDepartments.length} ${idleDepartments.length === 1 ? 'department has' : 'departments have'} no sections`
+          : 'Every department is scheduling'}
+        tone={activeDepartments.length > 0 && fullyApprovedDepartments === activeDepartments.length ? 'good' : 'neutral'}
+        onClick={() => navigate('/departments')}
+        actionLabel="View departments"
+      />
+      <KpiCard
+        label="Returned for revision"
+        icon={RotateCcw}
+        value={grouped(totals.returned)}
+        of={`of ${grouped(totals.sections)} sections`}
+        status={totals.returned ? `In ${returnedDepartments} ${returnedDepartments === 1 ? 'department' : 'departments'}` : 'None returned'}
+        tone={totals.returned ? 'alert' : 'good'}
+      />
+    </KpiStrip>
+
+    <Panel
+      title="Waiting on your decision"
+      subtitle={requests.length ? 'Schedule submissions and room transfers, longest-waiting first.' : undefined}
+      badge={requests.length}
+      action="Open approval queue"
+      onAction={openApproval}
+    >
+      <RequestQueue
+        requests={requests}
+        now={now}
+        title={request => request.department}
+        scopeOf={request => request.type === 'room_transfer'
+          ? `${request.meetingCount} ${request.meetingCount === 1 ? 'meeting' : 'meetings'} moved${request.semesterId && request.semesterId !== activeSemesterId && request.semesterLabel ? ` · ${request.semesterLabel}` : ''}`
+          : `${request.sectionCount} ${request.sectionCount === 1 ? 'section' : 'sections'}`}
+        onOpen={openRequest}
+        onViewAll={openApproval}
+        emptyText="Nothing is waiting on your decision."
+        incomplete={transferState === 'error' ? `Room transfers could not be loaded (${transferError}). Only schedule submissions are listed; open the approval queue to check transfers.` : undefined}
+      />
+    </Panel>
+
+    <Panel
+      title="Institution status"
+      subtitle="Every active section by approval stage, with departments needing follow-up first."
+      action="View departments"
+      onAction={() => navigate('/departments')}
+    >
+      <DistributionWithGroups
+        groupsTitle="Department progress"
+        distribution={<StatusDonut segments={institutionSegments} total={totals.sections} centerLabel="sections" label="Sections by approval stage" />}
       >
-        <div className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 ${totals.pendingVpaa ? 'border-rose-200 bg-rose-50/70' : 'border-emerald-200 bg-emerald-50/70'}`}>
-          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${totals.pendingVpaa ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
-            {totals.pendingVpaa ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-bold leading-tight text-primary">
-              {grouped(totals.pendingVpaa)} {totals.pendingVpaa === 1 ? 'Section' : 'Sections'} Awaiting VPAA Review
-            </div>
-            <p className="mt-0.5 text-[11px] font-semibold leading-tight text-slate-600">
-              {totals.pendingVpaa ? 'Cleared by Deans and waiting on your final approval' : 'Nothing is waiting on your final approval'}
-            </p>
-          </div>
-        </div>
+        {activeDepartments.length ? <StageRows
+          label="Department progress"
+          rows={activeDepartments.map(row => ({
+            key: String(row.id),
+            label: row.department_code,
+            sublabel: row.department_name.replace(/^College of /, ''),
+            summary: `${grouped(row.approvedCount)} / ${grouped(row.sectionsCount)} approved`,
+            title: row.department_name,
+            segments: departmentSegments(row),
+          }))}
+        /> : <EmptyNote>{departments.length ? 'No department has active sections this semester.' : 'No departments are set up yet. Add them under Departments.'}</EmptyNote>}
+        {activeDepartments.length > 0 && idleDepartments.length > 0 && <p className="mt-3 border-t border-border pt-2.5 text-[12px] text-muted">
+          No sections this semester: {idleDepartments.map(row => row.department_code).join(', ')}
+        </p>}
+      </DistributionWithGroups>
+    </Panel>
 
-        {overrideRows.length > 0 && <div className="mt-2.5 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2">
-          <p className="text-[11px] font-bold text-amber-900">
-            {overrideRows.length} package{overrideRows.length === 1 ? '' : 's'} approved by a Dean with an override
-          </p>
-          <p className="mt-0.5 text-[11px] font-semibold leading-snug text-amber-800">
-            {overrideRows.map(row => row.department_code).join(', ')} — a scheduling rule was waived, so these need your explicit review.
-          </p>
-        </div>}
-
-        {attentionRows.length ? <div className="-mx-1 mt-3 overflow-x-auto px-1 sm:overflow-x-visible">
-          <div className="min-w-[520px] sm:min-w-0">
-            <div className="grid gap-2 border-b border-slate-100 pb-2 text-[10px] font-bold uppercase tracking-wide text-slate-400" style={{ gridTemplateColumns: ATTENTION_COLUMNS }}>
-              <span>Department</span>
-              <span>Sections</span>
-              <span>Submitted</span>
-              <span>Waiting</span>
-              <span />
-            </div>
-            <ul className="divide-y divide-slate-100">
-              {attentionRows.map(row => {
-                const severity = queueSeverity(row.submittedAt, now);
-                return <li key={row.id} className="grid items-center gap-2 py-2" style={{ gridTemplateColumns: ATTENTION_COLUMNS }}>
-                  <span className="min-w-0">
-                    <b className="block truncate text-[12px] text-slate-700" title={`${row.department_code} · ${row.department_name}`}>{row.department_name}</b>
-                    <span className="flex flex-wrap items-center gap-1">
-                      {row.hasOverride && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800" title={row.overrideReason ?? 'Approved with an override'}>Override</span>}
-                      {row.revisionNumber > 1 && <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600" title="This package has been through the review loop before">Rev {row.revisionNumber}</span>}
-                    </span>
-                  </span>
-                  <span className="truncate text-[11px] font-semibold text-slate-500">
-                    {grouped(row.pendingVpaaCount)} of {grouped(row.sectionsCount)}
-                  </span>
-                  <span className="truncate text-[11px] font-semibold text-slate-500">{formatSubmittedOn(row.submittedAt)}</span>
-                  <span className={`truncate rounded-full px-2 py-0.5 text-center text-[11px] font-bold ${SEVERITY_STYLES[severity]}`} title={severity === 'overdue' ? 'Waiting five days or more' : severity === 'ageing' ? 'Waiting two days or more' : 'Recently submitted'}>
-                    {relativeAge(row.submittedAt, now)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={openApproval}
-                    title={`Review ${row.department_name} — ${row.pendingVpaaCount} section${row.pendingVpaaCount === 1 ? '' : 's'} awaiting approval`}
-                    className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-600 transition hover:border-rose-300 hover:bg-rose-100"
-                  >
-                    Review
-                  </button>
-                </li>;
-              })}
-            </ul>
-          </div>
-        </div> : <p className="mt-3 py-4 text-center text-xs italic text-slate-400">No department packages are awaiting your review.</p>}
-      </Panel>
-    </section>
-
-    <section className="grid gap-4 xl:grid-cols-12">
-      <Panel
-        title="Workflow · Department Scheduling Progress"
-        subtitle="Approval completion for every academic unit."
-        action="View all departments"
-        onAction={() => navigate('/departments')}
-        className="xl:col-span-6"
-      >
-        {workflowRows.length ? <>
-          <div className="-mx-1 overflow-x-auto px-1 sm:overflow-x-visible">
-            <div className="min-w-[470px] sm:min-w-0">
-              <div className="grid gap-2 border-b border-slate-100 pb-2 text-[10px] font-bold uppercase leading-tight tracking-wide text-slate-400" style={{ gridTemplateColumns: WORKFLOW_COLUMNS }}>
-                <span>Department</span>
-                <span>Completion</span>
-                <span className="text-right">Approved / Total</span>
-                <span className="text-right">Stage</span>
-              </div>
-              <ul className="divide-y divide-slate-100">
-                {workflowRows.map(row => <li key={row.id} className="grid items-center gap-2 py-2" style={{ gridTemplateColumns: WORKFLOW_COLUMNS }}>
-                  <b className="truncate text-[12px] text-slate-700" title={`${row.department_code} · ${row.department_name}`}>{row.department_name}</b>
-                  <span className="h-6 min-w-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={[{ readiness: row.progressPercent, label: `${row.progressPercent}%` }]} layout="vertical" margin={{ top: 4, right: 38, left: 0, bottom: 4 }}>
-                        <XAxis type="number" domain={[0, 100]} hide />
-                        <YAxis type="category" hide />
-                        <Bar dataKey="readiness" fill={row.progressPercent === 100 ? '#16a36a' : row.returnedCount > 0 ? '#e11d48' : '#f59e0b'} radius={[5, 5, 5, 5]} barSize={9} background={{ fill: '#e2e8f0', radius: 5 }}>
-                          <LabelList dataKey="label" position="right" offset={7} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </span>
-                  <span className="text-right text-[11px] font-semibold tabular-nums text-slate-500">{grouped(row.approvedCount)} / {grouped(row.sectionsCount)}</span>
-                  <span className="flex justify-end">
-                    <StageBadge status={row.approvalStatus} />
-                  </span>
-                </li>)}
-              </ul>
-            </div>
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-slate-100 pt-2.5 text-[11px] font-semibold text-slate-500">
-            <span className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-600" /> {fullyApprovedDepartments} of {departments.length} fully approved</span>
-            <span className="flex items-center gap-1.5"><Minus className="h-3.5 w-3.5 text-slate-300" /> {grouped(totals.draft)} sections still drafting</span>
-            <span className="ml-auto font-bold text-primary tabular-nums">{totals.progressPercent}% institutional</span>
-          </div>
-        </> : <p className="py-6 text-center text-xs italic text-slate-400">No departments are configured yet.</p>}
-      </Panel>
-
+    <div className="grid items-start gap-4 xl:grid-cols-12">
       <BuildingUtilizationPanel
         insights={insights}
-        loading={insightsLoading}
-        onOpenRooms={() => navigate('/facilities')}
-        className="xl:col-span-6"
+        state={insightsState}
+        onRetry={retry}
+        onOpenDetails={() => navigate('/reports')}
+        className="xl:col-span-7"
       />
-    </section>
 
-    <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="flex min-h-0 min-w-0 flex-col xl:[contain:size]">
-        {isFullscreen ? createPortal(timetablePanel, document.body) : timetablePanel}
-      </div>
+      <Panel title="Exceptions to watch" subtitle="Workload and scheduling cases outside the norm." className="xl:col-span-5">
+        <ul className="-mx-2 -my-1 divide-y divide-border">
+          {exceptionRows.map(({ key, label, value, tone, icon: Icon, onClick, action }) => <li key={key}>
+            <button type="button" onClick={onClick} title={action} className="focus-ring flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-parchment">
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${value ? EXCEPTION_TONES[tone] : 'bg-stage-idle/60 text-muted'}`}><Icon className="h-4 w-4" aria-hidden="true" /></span>
+              <span className={`min-w-0 flex-1 text-[13px] ${value ? 'font-semibold text-text' : 'text-muted'}`}>{label}</span>
+              <b className={`shrink-0 text-[15px] font-semibold tabular-nums ${value ? 'text-text' : 'text-muted'}`}>{grouped(value)}</b>
+              <span className="sr-only">. {action}</span>
+            </button>
+          </li>)}
+        </ul>
+      </Panel>
+    </div>
 
-      <div className="flex min-w-0 flex-col gap-4">
-        <FacultyLoadPanel
-          slices={facultySlices}
-          total={faculties.length}
-          overloaded={overloadedFaculty}
-          onOpen={() => navigate('/instructors')}
-        />
-
-        <Panel
-          title="Institutional Readiness"
-          subtitle="Departments by approval stage."
-          action="View readiness"
-          onAction={() => navigate('/departments')}
-        >
-          <div className="grid gap-4 sm:grid-cols-[128px_1fr] sm:items-center">
-            <Donut slices={readinessSlices} headline={departments.length} caption="Departments" />
-            <DonutLegend slices={readinessSlices} total={departments.length} />
-          </div>
-        </Panel>
-
-        <AdministrativeActivityPanel
-          rows={activity}
-          loading={activityLoading}
-          error={activityError}
-          now={now}
-          onOpen={() => navigate('/activity-log')}
-          className="min-h-[220px] flex-1"
-          compact
-        />
-      </div>
-    </section>
+    <RelatedLinks links={links} />
   </div>;
 }
 
-const STAGE_BADGES: Record<DepartmentRollup['approvalStatus'], { label:string; className:string }> = {
-  'Fully Approved': { label: 'Approved', className: 'bg-emerald-50 text-emerald-700' },
-  'Pending Review': { label: 'In review', className: 'bg-amber-50 text-amber-800' },
-  Returned: { label: 'Returned', className: 'bg-rose-50 text-rose-700' },
-  'Partially Approved': { label: 'Partial', className: 'bg-sky-50 text-sky-700' },
-  Draft: { label: 'Drafting', className: 'bg-slate-100 text-slate-600' },
+const attentionRank = (row: DepartmentRollup) => {
+  if (row.pendingVpaaCount > 0) return 0;
+  if (row.returnedCount > 0) return 1;
+  if (row.pendingCount > 0) return 2;
+  if (row.approvalStatus === 'Fully Approved') return 4;
+  return 3;
 };
-
-function StageBadge({ status }: { status: DepartmentRollup['approvalStatus'] }) {
-  const badge = STAGE_BADGES[status];
-  return <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badge.className}`} title={status}>{badge.label}</span>;
-}

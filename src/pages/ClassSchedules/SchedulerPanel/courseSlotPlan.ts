@@ -2,76 +2,70 @@ import type { Course, ScheduleItem, Subject } from "./types";
 
 export const SLOTS_PER_HOUR = 2;
 
-export const SLOTS_PER_LABORATORY_UNIT = 6;
+export const SLOT_MINUTES = 30;
 
-type CourseHours = Pick<Partial<Course>, "units" | "lectureHours" | "labHours">;
+type CourseHours = Pick<Partial<Course>, "lectureHours" | "labHours" | "lectureMinutes" | "laboratoryMinutes">;
+
+/** Department scheduling settings the slot helpers read. */
+export interface SchedulingRoomSettings {
+  lab_room_type?: string | null;
+}
 
 export interface CourseSlotPlan {
-  singleBlockSlots: number;
+  /** The course's Total Hours a week, as slots: lecture plus laboratory hours. */
+  totalSlots: number;
   lectureSlots: number;
   laboratorySlots: number;
-  splitTotalSlots: number;
   hasBothComponents: boolean;
 }
 
-export const getCourseSlotPlan = (course?: CourseHours | null): CourseSlotPlan => {
-  const units = Number(course?.units ?? 3);
-  const lectureHours = Number(course?.lectureHours ?? 0);
-  const labHours = Number(course?.labHours ?? 0);
+/** Minutes, when the curriculum recorded them on import; otherwise the course's own hours. */
+const componentSlots = (minutes: number | null | undefined, hours: number | undefined): number =>
+  typeof minutes === "number"
+    ? Math.floor(Math.max(0, minutes) / SLOT_MINUTES)
+    : Math.round(Math.max(0, Number(hours ?? 0)) * SLOTS_PER_HOUR);
 
-  const lectureSlots = Math.max(0, Math.round(lectureHours * SLOTS_PER_HOUR));
-  const laboratorySlots = Math.max(0, Math.round(labHours * SLOTS_PER_LABORATORY_UNIT));
+/**
+ * The course's class time, matching SchedulingPolicy on the server: the minutes its curriculum
+ * recorded on import (see placeCourse), otherwise its lecture and laboratory hours as recorded.
+ */
+export const getCourseSlotPlan = (course?: CourseHours | null): CourseSlotPlan => {
+  const lectureSlots = componentSlots(course?.lectureMinutes, course?.lectureHours);
+  const laboratorySlots = componentSlots(course?.laboratoryMinutes, course?.labHours);
 
   return {
-    singleBlockSlots: course ? Math.max(0, Math.round(units * SLOTS_PER_HOUR)) : 0,
+    totalSlots: lectureSlots + laboratorySlots,
     lectureSlots,
     laboratorySlots,
-    splitTotalSlots: lectureSlots + laboratorySlots,
-    hasBothComponents: lectureHours > 0 && labHours > 0,
+    hasBothComponents: lectureSlots > 0 && laboratorySlots > 0,
   };
+};
+
+/** The course as placed in a curriculum: it carries the class minutes that curriculum recorded on import. */
+export const placeCourse = <T extends Course>(course: T, curriculumId: number | string | null | undefined): T => {
+  const recorded = curriculumId == null ? undefined : course.classMinutesByCurriculum?.[String(curriculumId)];
+  return recorded
+    ? { ...course, lectureMinutes: recorded.lecture, laboratoryMinutes: recorded.laboratory }
+    : { ...course, lectureMinutes: undefined, laboratoryMinutes: undefined };
+};
+
+/** Each consecutive-day meeting's equal share of the Total Hours, or null when the days cannot split it. */
+export const consecutiveMeetingSlots = (course: CourseHours | null | undefined, dayCount: number): number | null => {
+  const total = getCourseSlotPlan(course).totalSlots;
+  return dayCount > 0 && total > 0 && total % dayCount === 0 ? total / dayCount : null;
 };
 
 export const slotsToHours = (slots: number): number => slots / SLOTS_PER_HOUR;
 
-export interface LaboratoryDurationSettings {
-  custom_lab_duration_override_enabled?: boolean | null;
-  custom_lab_duration_minutes?: number | null;
-  custom_lab_duration_6_hours_enabled?: boolean | null;
-  custom_lab_duration_5_hours_enabled?: boolean | null;
-  custom_lab_duration_other_enabled?: boolean | null;
-  lab_room_type?: string | null;
-}
-
-export const SLOT_MINUTES = 30;
-
-export const customLaboratoryDurationSlots = (settings?: LaboratoryDurationSettings | null): number | null => {
-  if (!settings?.custom_lab_duration_override_enabled) return null;
-
-  const minutes = settings.custom_lab_duration_6_hours_enabled
-    ? 360
-    : settings.custom_lab_duration_5_hours_enabled
-      ? 300
-      : settings.custom_lab_duration_other_enabled
-        ? Number(settings.custom_lab_duration_minutes ?? 0)
-        : 0;
-
-  if (!Number.isFinite(minutes) || minutes <= 0 || minutes % SLOT_MINUTES !== 0) return null;
-  return minutes / SLOT_MINUTES;
-};
-
-export const laboratoryComponentSlots = (
-  course?: CourseHours | null,
-  settings?: LaboratoryDurationSettings | null,
-): number => customLaboratoryDurationSlots(settings) ?? getCourseSlotPlan(course).laboratorySlots;
+export const laboratoryComponentSlots = (course?: CourseHours | null): number =>
+  getCourseSlotPlan(course).laboratorySlots;
 
 export const sortSplitMeetingsForEdit = (
   items: ScheduleItem[],
   subject?: Subject | null,
   laboratoryFirst = false,
-  laboratorySettings: LaboratoryDurationSettings | null = null,
 ): ScheduleItem[] => {
-  const lectureSlots = getCourseSlotPlan(subject).lectureSlots;
-  const labSlots = Number(subject?.labHours ?? 0) > 0 ? laboratoryComponentSlots(subject, laboratorySettings) : 0;
+  const { lectureSlots, laboratorySlots: labSlots } = getCourseSlotPlan(subject);
   const meetingRank = (item: ScheduleItem): number => {
     if (item.meetingType === "laboratory") return laboratoryFirst ? 0 : 1;
     if (item.meetingType === "lecture") return laboratoryFirst ? 1 : 0;

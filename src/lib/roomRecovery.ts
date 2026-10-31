@@ -11,15 +11,23 @@ export interface RecoveryRow { id: number; room_id: number | null; day: string; 
 export interface RecoveryPlan { plan_id: string; groups: { key: string; before: RecoveryRow[]; after: RecoveryRow[] }[]; meetings?: RecoveryMeeting[]; unresolved: { schedule_ids: number[]; reason: string; reason_code?: string }[]; search_limit_reached: boolean; expires_at: string }
 export interface RoomTransferPlacement { room: string; day: string; start_time: string; end_time: string }
 export interface RoomTransferRequest {
-  id: string; status: 'pending_dean' | 'pending_vpaa' | 'approved' | 'rejected_by_dean' | 'rejected_by_vpaa'; department_id?: number; department: string; semester_id: number;
+  id: string; status: 'pending_dean' | 'pending_vpaa' | 'approved' | 'applied' | 'rejected_by_dean' | 'rejected_by_vpaa'; department_id?: number; department: string; semester_id: number;
+  // Final approval also turns on Sunday classes for the department.
+  enables_sunday?: boolean;
   semester_label: string; submitted_by: string; submitted_at: string; dean_reviewed_at?: string | null; reviewed_at: string | null; rejection_reason: string | null;
   preview_semester?: Semester; preview_department?: ApiDepartmentRecord; preview_users?: UserSummary[];
   schedule_ids: number[]; changes: { schedule_id: number; mode?: string; course: string; section: string; before: RoomTransferPlacement; after: RoomTransferPlacement; preview_schedule?: ApiScheduleRecord & { section: ApiSectionRecord } }[];
+  // Every class of the affected sections with the proposal applied, printed like Schedule Approval.
+  preview_schedules?: (ApiScheduleRecord & { section: ApiSectionRecord | null })[];
 }
-// Filter only the room-transfer details projection, never general schedule approval data or plan membership.
-export const roomTransferDetailChanges = (request: RoomTransferRequest) => request.changes.filter(change => change.mode !== 'online');
+type RoomTransferChange = RoomTransferRequest['changes'][number];
+// Linked online sessions are listed with the meeting they belong to.
+export const roomTransferDetailChanges = (request: RoomTransferRequest) => request.changes;
+export const isLinkedOnlineSession = (change: RoomTransferChange) => change.mode === 'online';
+export const roomTransferMovedCount = (request: RoomTransferRequest) => request.changes.filter(change => !isLinkedOnlineSession(change)).length;
+export const roomTransferClassLabel = (change: RoomTransferChange) => `${change.course} · ${change.section}${isLinkedOnlineSession(change) ? ' · Linked online session' : ''}`;
 export const ROOM_TRANSFER_STATUS_LABELS = {
-  pending_dean: 'Pending Dean Approval', pending_vpaa: 'Pending VPAA Approval', approved: 'Approved',
+  pending_dean: 'Pending Dean Approval', pending_vpaa: 'Pending VPAA Approval', approved: 'Approved', applied: 'Applied (before approval workflow)',
   rejected_by_dean: 'Rejected by Dean', rejected_by_vpaa: 'Rejected by VPAA',
 };
 

@@ -62,6 +62,11 @@ export interface Course {
   units: number;
   lectureHours: number;
   labHours: number;
+  /** Class minutes each curriculum recorded for the course on import, by curriculum id. */
+  classMinutesByCurriculum?: Record<string, RecordedClassMinutes>;
+  /** Set once the course is placed in a section's curriculum (placeCourse). */
+  lectureMinutes?: number | null;
+  laboratoryMinutes?: number | null;
   category: CourseCategory;
   semester: SemesterPeriod;
   departmentId: number | null;
@@ -79,8 +84,13 @@ export interface Course {
 }
 export type Subject = Course;
 
-export const getSubjectTotalSlots = (subject?: { lectureHours?: number; labHours?: number; units?: number } | null): number =>
-  getCourseSlotPlan(subject).singleBlockSlots;
+export interface RecordedClassMinutes {
+  lecture: number | null;
+  laboratory: number | null;
+}
+
+export const getSubjectTotalSlots = (subject?: { lectureHours?: number; labHours?: number } | null): number =>
+  getCourseSlotPlan(subject).totalSlots;
 
 export interface Section {
   id: string;
@@ -270,6 +280,7 @@ export interface ApiSemesterRecord {
 }
 
 export interface ApiCourseRecord {
+  class_minutes_by_curriculum?: Record<string, RecordedClassMinutes> | null;
   id: number | string;
   course_code: string;
   subject_code?: string;

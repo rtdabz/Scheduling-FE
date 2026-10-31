@@ -204,7 +204,6 @@ const formatProgramSummary = (sections: RawSection[], sectionIds: string[]): str
     .forEach((section) => programs.set(String(section.program!.id), section.program!));
   const list = Array.from(programs.values());
   if (list.length === 0) return 'No program';
-  if (list.length === 1) return programLabel(list[0]);
   return list.map((program) => program.code?.trim() || programLabel(program)).sort().join(', ');
 };
 
@@ -403,22 +402,24 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
   const queueEntries = useMemo<ScheduleApproval[]>(() => [...entries, ...transfers.map((transfer): ScheduleApproval => {
     const changes = roomTransferDetailChanges(transfer);
     const sections = [...new Set(changes.map(change => change.section))];
+    const sectionRecords = changes.flatMap(change => change.preview_schedule?.section ? [change.preview_schedule.section] : []);
     return {
       id: transfer.department_id ?? Number(departments.find(department => department.department_name === transfer.department)?.id ?? 0),
       submissionId: 0,
       entryKey: `room-transfer:${transfer.id}`,
       department: transfer.department,
-      program: '—',
+      program: formatProgramSummary(sectionRecords, sectionRecords.map(section => String(section.id))),
       section: sections.join(', '),
       sectionCount: sections.length,
       subjectsScheduled: new Set(changes.map(change => change.course)).size,
       submittedBy: transfer.submitted_by,
       submittedAt: transfer.submitted_at,
       deanReviewedAt: transfer.dean_reviewed_at ?? null,
-      status: transfer.status === 'pending_dean' ? 'submitted' : transfer.status === 'pending_vpaa' ? 'approved_by_dean' : transfer.status === 'rejected_by_vpaa' ? 'rejected' : transfer.status,
-      submissionStatus: transfer.status,
+      status: transfer.status === 'pending_dean' ? 'submitted' : transfer.status === 'pending_vpaa' ? 'approved_by_dean' : transfer.status === 'rejected_by_vpaa' ? 'rejected' : transfer.status === 'applied' ? 'approved' : transfer.status,
+      submissionStatus: transfer.status === 'applied' ? 'approved' : transfer.status,
       requestType: 'room_transfer',
-      revisionStatus: 'initial',
+      // A transfer changes existing schedules; the badge opens its original and proposed placements.
+      revisionStatus: 'modified',
       workflowSectionIds: [],
       transfer,
     };
@@ -622,7 +623,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     {
       accessorKey: 'requestType',
       header: 'Request Type',
-      cell: ({ row }) => <div><span className="whitespace-nowrap rounded-full bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-800">{row.original.transfer ? 'Room Transfer' : 'Schedule Approval'}</span>{row.original.transfer && <p className="mt-1 text-xs text-gray-500">{row.original.transfer.semester_label}</p>}</div>,
+      cell: ({ row }) => <span className="whitespace-nowrap rounded-full bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-800">{row.original.transfer ? 'Room Transfer' : 'Schedule Approval'}</span>,
     },
     {
       accessorKey: 'department',
@@ -683,7 +684,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       accessorKey: 'revisionStatus',
       header: 'Revision',
       cell: (info) => {
-        if (info.row.original.transfer) return <span className="text-gray-500">—</span>;
         const revision = info.getValue() as RevisionStatus;
         const badgeClass = `px-2.5 py-0.5 rounded-full text-[11px] font-bold ring-1 ring-inset uppercase tracking-wider ${REVISION_STATUS_BADGE[revision]}`;
         return revision === 'modified' ? (

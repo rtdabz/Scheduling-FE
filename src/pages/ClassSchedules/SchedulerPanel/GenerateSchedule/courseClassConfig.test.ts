@@ -1,9 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Course, Section } from "../types";
 import type { CourseSetupConfig } from "./SetupCoursesStep";
-import { slotCount } from "../../../../lib/timeGrid";
 import {
-  applyCourseDefaults,
   compatibleRoomOptions,
   consecutiveDayRuns,
   consecutivePlacementFor,
@@ -15,13 +13,11 @@ import {
   runStartingOn,
   tickedRun,
   durationLabel,
-  EMPTY_COURSE_DEFAULTS,
-  integratedHybridMinutes,
   durationShape,
   formatHours,
   inferInitialCourseClassConfig,
-  maxDurationMinutes,
   meetingParts,
+  requiredDurationMinutes,
   syncCourseConfigToSectionConfigs,
   type CourseClassConfig,
 } from "./courseClassConfig";
@@ -76,8 +72,7 @@ describe("courseClassConfig", () => {
     status: "active",
   };
 
-  // `lectureHours`/`labHours` hold units: 2 lecture + 1 laboratory = 3 units,
-  // and one laboratory unit meets for three hours.
+  // Scheduling reads `lectureHours`/`labHours` as hours: 2 + 1 = 3 Total Hours a week.
   const integratedCourse: Course = {
     id: "c2",
     code: "IT 103",
@@ -112,7 +107,6 @@ describe("courseClassConfig", () => {
     configuration: "regular",
     component: "lecture",
     delivery: "onsite",
-    durationMinutes: 180,
     requiredDay: null,
     preferredRoomId: null,
     sectionScope: "all",
@@ -131,7 +125,6 @@ describe("courseClassConfig", () => {
     expect(config.configuration).toBe("regular");
     expect(config.component).toBe("lecture");
     expect(config.delivery).toBe("onsite");
-    expect(config.durationMinutes).toBe(180);
     expect(durationLabel(config, lectureCourse)).toBe("3h");
     expect(config.requiredDay).toBeNull();
     expect(config.preferredRoomId).toBeNull();
@@ -150,7 +143,7 @@ describe("courseClassConfig", () => {
     const config = { ...baseConfig, configuration: "integrated" as const, delivery: "onsite" as const };
 
     expect(durationShape(config)).toBe("integrated-onsite");
-    expect(durationLabel(config, integratedCourse)).toBe("2h F2F + 3h F2F");
+    expect(durationLabel(config, integratedCourse)).toBe("2h F2F + 1h F2F");
   });
 
   it("sends Integrated On-site as Integrated with an on-site lecture, and reads it back", () => {
@@ -179,13 +172,7 @@ describe("courseClassConfig", () => {
     const config = { ...baseConfig, configuration: "integrated" as const, delivery: "hybrid" as const };
 
     expect(durationShape(config)).toBe("hybrid-laboratory");
-    expect(durationLabel(config, integratedCourse)).toBe("2h Online + 3h F2F");
-    expect(
-      durationLabel(config, integratedCourse, {
-        custom_lab_duration_override_enabled: true,
-        custom_lab_duration_5_hours_enabled: true,
-      }),
-    ).toBe("2h Online + 5h F2F");
+    expect(durationLabel(config, integratedCourse)).toBe("2h Online + 1h F2F");
   });
 
   it("infers Split configuration when sections carry gecSplitCourseIds", () => {
@@ -215,34 +202,23 @@ describe("courseClassConfig", () => {
     expect(config.selectedSectionIds).toEqual(["sec-1"]);
   });
 
-  it("restores a saved duration, room and Required Day when Setup Courses reopens", () => {
+  it("restores a saved room and Required Day when Setup Courses reopens, keeping the Total Hours", () => {
     const savedConfigs: Record<string, CourseSetupConfig> = {
-      "sec-1": {
-        ...emptyConfigs["sec-1"],
-        durationMinutesByCourseId: { c1: 120 },
-        preferredRoomsByCourseId: { c1: "7" },
-      },
-      "sec-2": {
-        ...emptyConfigs["sec-2"],
-        durationMinutesByCourseId: { c1: 120 },
-        preferredRoomsByCourseId: { c1: "7" },
-      },
+      "sec-1": { ...emptyConfigs["sec-1"], preferredRoomsByCourseId: { c1: "7" } },
+      "sec-2": { ...emptyConfigs["sec-2"], preferredRoomsByCourseId: { c1: "7" } },
     };
 
     const config = inferInitialCourseClassConfig(lectureCourse, savedConfigs, dummySections, new Set(), "Saturday");
 
-    expect(config.durationMinutes).toBe(120);
-    expect(durationLabel(config, lectureCourse)).toBe("2h");
+    expect(durationLabel(config, lectureCourse)).toBe("3h");
     expect(config.preferredRoomId).toBe("7");
     expect(config.requiredDay).toBe("Saturday");
   });
 
-  it("caps a Split at the course's units and lets a single class fill the teaching day", () => {
-    expect(maxDurationMinutes(gecCourse, "split")).toBe(180);
-    // One class may run as long as the day (some departments hold an
-    // eight-hour class), whatever its units.
-    expect(maxDurationMinutes(lectureCourse, "single")).toBe(slotCount() * 30);
-    expect(maxDurationMinutes(integratedCourse, "single")).toBe(slotCount() * 30);
+  it("takes every course's duration from its Total Hours", () => {
+    expect(requiredDurationMinutes(lectureCourse)).toBe(180);
+    expect(requiredDurationMinutes(integratedCourse)).toBe(180);
+    expect(requiredDurationMinutes({ ...integratedCourse, lectureHours: 0, labHours: 4 })).toBe(240);
   });
 
   it("syncs Split configuration to all section configs correctly", () => {
@@ -263,21 +239,18 @@ describe("courseClassConfig", () => {
         gecSplitCourseIds: ["c3"],
         hybridSplitCourseIds: [],
         modesByCourseId: { c3: "on-site" },
-        durationMinutesByCourseId: {},
         preferredRoomsByCourseId: {},
-        componentMinutesByCourseId: {},
       });
     }
   });
 
-  it("sends a custom duration and preferred room only to the targeted sections", () => {
+  it("sends a preferred room only to the targeted sections", () => {
     const onConfigChange = vi.fn();
 
     syncCourseConfigToSectionConfigs(
       lectureCourse,
       {
         ...baseConfig,
-        durationMinutes: 120,
         preferredRoomId: "7",
         sectionScope: "selected",
         selectedSectionIds: ["sec-1"],
@@ -288,31 +261,9 @@ describe("courseClassConfig", () => {
     );
 
     expect(onConfigChange).toHaveBeenCalledWith("sec-1", expect.objectContaining({
-      durationMinutesByCourseId: { c1: 120 },
       preferredRoomsByCourseId: { c1: "7" },
     }));
     expect(onConfigChange).not.toHaveBeenCalledWith("sec-2", expect.anything());
-  });
-
-  it("does not send a duration that equals the course's own, or one for a Hybrid shape", () => {
-    const onConfigChange = vi.fn();
-    const withStaleDuration: Record<string, CourseSetupConfig> = {
-      "sec-1": { ...emptyConfigs["sec-1"], durationMinutesByCourseId: { c1: 120 } },
-      "sec-2": { ...emptyConfigs["sec-2"], durationMinutesByCourseId: { c1: 120 } },
-    };
-
-    syncCourseConfigToSectionConfigs(lectureCourse, baseConfig, dummySections, withStaleDuration, onConfigChange);
-    expect(onConfigChange).toHaveBeenCalledWith("sec-1", expect.objectContaining({ durationMinutesByCourseId: {} }));
-
-    onConfigChange.mockClear();
-    syncCourseConfigToSectionConfigs(
-      integratedCourse,
-      { ...baseConfig, configuration: "integrated", delivery: "hybrid", durationMinutes: 60 },
-      dummySections,
-      emptyConfigs,
-      onConfigChange,
-    );
-    expect(onConfigChange).toHaveBeenCalledWith("sec-1", expect.objectContaining({ durationMinutesByCourseId: {} }));
   });
 
   it("syncs Integrated Hybrid configuration to selected sections only", () => {
@@ -338,9 +289,7 @@ describe("courseClassConfig", () => {
       gecSplitCourseIds: [],
       hybridSplitCourseIds: [],
       modesByCourseId: {},
-      durationMinutesByCourseId: {},
       preferredRoomsByCourseId: {},
-      componentMinutesByCourseId: {},
     });
     // sec-2 was already empty, so no change triggered
     expect(onConfigChange).not.toHaveBeenCalledWith("sec-2", expect.anything());
@@ -374,104 +323,14 @@ describe("courseClassConfig", () => {
     ).toEqual(["LAB 1", "LAB 2", "GYM"]);
   });
 
-  it("derives Integrated Hybrid lengths from any course, not a fixed 2h + 3h", () => {
+  it("derives Integrated Hybrid lengths from the course's own hours", () => {
     const heavier: Course = { ...integratedCourse, id: "c9", units: 5, lectureHours: 3, labHours: 2 };
     const config = { ...baseConfig, configuration: "integrated" as const, delivery: "hybrid" as const };
 
     expect(meetingParts(config, heavier)).toEqual([
       { label: "Lecture", minutes: 180, mode: "Online" },
-      { label: "Laboratory", minutes: 360, mode: "F2F" },
+      { label: "Laboratory", minutes: 120, mode: "F2F" },
     ]);
-  });
-
-  it("uses and sends the Integrated Hybrid lengths the user chose", () => {
-    const config = {
-      ...baseConfig,
-      configuration: "integrated" as const,
-      delivery: "hybrid" as const,
-      lectureMinutes: 90,
-      laboratoryMinutes: 210,
-    };
-    const onConfigChange = vi.fn();
-
-    expect(meetingParts(config, integratedCourse)).toEqual([
-      { label: "Lecture", minutes: 90, mode: "Online" },
-      { label: "Laboratory", minutes: 210, mode: "F2F" },
-    ]);
-
-    syncCourseConfigToSectionConfigs(integratedCourse, config, dummySections, emptyConfigs, onConfigChange);
-    expect(onConfigChange).toHaveBeenCalledWith("sec-1", expect.objectContaining({
-      splitCourseIds: ["c2"],
-      componentMinutesByCourseId: { c2: { lecture: 90, laboratory: 210 } },
-    }));
-
-    // Back at the course's own lengths, nothing is sent.
-    onConfigChange.mockClear();
-    const saved: Record<string, CourseSetupConfig> = {
-      "sec-1": { ...emptyConfigs["sec-1"], splitCourseIds: ["c2"], componentMinutesByCourseId: { c2: { lecture: 90, laboratory: 210 } } },
-      "sec-2": { ...emptyConfigs["sec-2"], splitCourseIds: ["c2"], componentMinutesByCourseId: { c2: { lecture: 90, laboratory: 210 } } },
-    };
-    syncCourseConfigToSectionConfigs(
-      integratedCourse,
-      { ...config, lectureMinutes: 120, laboratoryMinutes: 180 },
-      dummySections,
-      saved,
-      onConfigChange,
-    );
-    expect(onConfigChange).toHaveBeenCalledWith("sec-1", expect.objectContaining({ componentMinutesByCourseId: {} }));
-  });
-
-  describe("Default Settings", () => {
-    const defaults = { ...EMPTY_COURSE_DEFAULTS };
-
-    it("sets a lecture course's length, and keeps its own when the default does not fit", () => {
-      const shorter = applyCourseDefaults(baseConfig, lectureCourse, { ...defaults, lectureMinutes: 120 });
-      expect(shorter).toMatchObject({ applied: true, skipped: false });
-      expect(shorter.config.durationMinutes).toBe(120);
-
-      // Longer than the three units allow a week: the course keeps 3h.
-      const longer = applyCourseDefaults(baseConfig, lectureCourse, { ...defaults, lectureMinutes: 240 });
-      expect(longer).toMatchObject({ applied: false, skipped: true });
-      expect(longer.config.durationMinutes).toBe(180);
-    });
-
-    it("needs whole slots per meeting for a Split", () => {
-      const split = { ...baseConfig, configuration: "split" as const };
-      expect(applyCourseDefaults(split, gecCourse, { ...defaults, lectureMinutes: 90 }).skipped).toBe(true);
-      expect(applyCourseDefaults(split, gecCourse, { ...defaults, lectureMinutes: 120 }).config.durationMinutes).toBe(120);
-    });
-
-    it("sets each Integrated session exactly, with no unit-derived week over the pair", () => {
-      const integrated = { ...baseConfig, configuration: "integrated" as const };
-
-      const fits = applyCourseDefaults(integrated, integratedCourse, { ...defaults, laboratoryMinutes: 150 });
-      expect(fits.applied).toBe(true);
-      expect(integratedHybridMinutes(fits.config, integratedCourse)).toEqual({ lecture: 120, laboratory: 150 });
-
-      // 3h lecture + 4h laboratory is past the old 5h unit total, and is kept.
-      const longer = applyCourseDefaults(integrated, integratedCourse, {
-        ...defaults,
-        lectureMinutes: 180,
-        laboratoryMinutes: 240,
-      });
-      expect(longer.applied).toBe(true);
-      expect(integratedHybridMinutes(longer.config, integratedCourse)).toEqual({ lecture: 180, laboratory: 240 });
-
-      // Not whole half-hours: the course keeps its own lengths.
-      const ragged = applyCourseDefaults(integrated, integratedCourse, { ...defaults, lectureMinutes: 100 });
-      expect(ragged.skipped).toBe(true);
-      expect(integratedHybridMinutes(ragged.config, integratedCourse)).toEqual({ lecture: 120, laboratory: 180 });
-    });
-
-    it("leaves field courses and blank defaults alone", () => {
-      const field = { ...baseConfig, component: "field" as const };
-      expect(applyCourseDefaults(field, gecCourse, { ...defaults, lectureMinutes: 60 })).toEqual({
-        config: field,
-        applied: false,
-        skipped: false,
-      });
-      expect(applyCourseDefaults(baseConfig, lectureCourse, defaults).config.durationMinutes).toBe(180);
-    });
   });
 
   it("shows Hybrid Split as one online and one face-to-face session", () => {
@@ -631,15 +490,12 @@ describe("courseClassConfig", () => {
       expect(consecutiveRulesForCourse("101", { ...all, configuration: "split" }, numericSections)).toEqual([]);
     });
 
-    it("meets for the full class length on every day, and sends a custom length as each day's", () => {
+    it("shares the Total Hours equally across the days and never sends a duration", () => {
       const base = inferInitialCourseClassConfig(clinical, emptyConfigs, dummySections, new Set());
-      const run: CourseClassConfig = { ...base, consecutiveDays: 3 };
+      const config: CourseClassConfig = { ...base, consecutiveDays: 2 };
 
-      expect(durationShape(run)).toBe("single");
-      expect(durationLabel(run, clinical)).toBe("3 days × 8h");
-
-      const config: CourseClassConfig = { ...run, durationMinutes: 360 };
-      expect(durationLabel(config, clinical)).toBe("3 days × 6h");
+      expect(durationShape(config)).toBe("single");
+      expect(durationLabel(config, clinical)).toBe("2 days × 4h");
 
       const onConfigChange = vi.fn();
       syncCourseConfigToSectionConfigs(
@@ -652,8 +508,9 @@ describe("courseClassConfig", () => {
 
       expect(onConfigChange).toHaveBeenCalledWith(
         "sec-1",
-        expect.objectContaining({ gecSplitCourseIds: [], durationMinutesByCourseId: { "101": 360 } }),
+        expect.objectContaining({ gecSplitCourseIds: [] }),
       );
+      expect(onConfigChange.mock.calls[0][1]).not.toHaveProperty("durationMinutesByCourseId");
     });
   });
 });

@@ -70,6 +70,32 @@ export const loadLevelOf = (load: LoadBands): LoadLevel => {
   return 'regular';
 };
 
+export interface FacultyLoadFields {
+  max_units?: number | null;
+  deload_units?: number | null;
+  overload_units?: number | null;
+  assigned_units?: number | null;
+  status?: string | null;
+}
+
+/** Active instructors on overload (within their permitted ceiling) and over that ceiling, as the Faculty workspace grades them. */
+export const workloadExceptions = (faculties: FacultyLoadFields[]) => {
+  const active = faculties.filter(f => (f.status ?? 'active').toLowerCase() === 'active');
+  let overload = 0;
+  let overLimit = 0;
+  active.forEach(f => {
+    const level = loadLevelOf({
+      assignedUnits: f.assigned_units ?? 0,
+      maxUnits: f.max_units ?? 0,
+      deloadUnits: f.deload_units ?? 0,
+      overloadUnits: f.overload_units ?? 0,
+    });
+    if (level === 'over_limit') overLimit++;
+    else if (level === 'overload') overload++;
+  });
+  return { overload, overLimit, active: active.length };
+};
+
 export const LOAD_LEVELS: Record<LoadLevel, { label: string; color: string; dot: string }> = {
   regular: { label: 'Regular', color: 'text-emerald-700 bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500' },
   overload: { label: 'Overload', color: 'text-red-600 bg-red-50 border-red-200', dot: 'bg-red-400' },

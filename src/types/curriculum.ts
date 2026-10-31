@@ -26,6 +26,8 @@ export interface Curriculum {
   id: number;
   name: string;
   code: string;
+  cmo_number?: string | null;
+  cmo_series?: number | null;
   department_id: number | null;
   program_id: number | null;
   effective_school_year: string;
@@ -45,6 +47,8 @@ export interface ApiCurriculum {
   id: number;
   name: string;
   code: string;
+  cmo_number?: string | null;
+  cmo_series?: number | null;
   department_id: number | null;
   program_id: number | null;
   effective_school_year: string;
@@ -70,6 +74,15 @@ export interface CurriculumCourse {
   total_units: number;
   program_id?: number | null;
   department_id?: number | null;
+  prerequisites_text?: string | null;
+  /** Present only for imported placements; null rows keep the legacy credit-derived durations. */
+  placement?: {
+    lecture_units: number | null;
+    lab_units: number | null;
+    lecture_minutes: number | null;
+    laboratory_minutes: number | null;
+    conversion_snapshot: Record<string, unknown> | null;
+  } | null;
 }
 
 export interface CurriculumSemester {
@@ -92,6 +105,8 @@ export const mapApiCurriculum = (c: ApiCurriculum): Curriculum => ({
   id: c.id,
   name: c.name,
   code: c.code,
+  cmo_number: c.cmo_number ?? null,
+  cmo_series: c.cmo_series ?? null,
   department_id: c.department_id,
   program_id: c.program_id,
   effective_school_year: c.effective_school_year,

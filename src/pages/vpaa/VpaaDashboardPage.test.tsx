@@ -1,19 +1,6 @@
-import type { ReactElement } from 'react';
-import { cloneElement } from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-// ResponsiveContainer measures its parent, and jsdom reports 0x0 — recharts then
-// draws nothing at all. Give every chart a fixed box so the mount is real work.
-vi.mock('recharts', async () => {
-  const actual = await vi.importActual<typeof import('recharts')>('recharts');
-  return {
-    ...actual,
-    ResponsiveContainer: ({ children }: { children: ReactElement }) =>
-      cloneElement(children, { width: 320, height: 160 } as Partial<Record<string, unknown>>),
-  };
-});
 
 // vi.mock factories are hoisted above the module body, so the spy has to be
 // hoisted with them rather than declared as a plain top-level const.
@@ -25,31 +12,16 @@ import { clearDataCache } from '../../lib/dataCache';
 
 afterEach(cleanup);
 
-const department = (id: number, code: string, name: string) => ({ id, department_code: code, department_name: name, logo: id === 1 ? '/cba-logo.png' : null });
+const department = (id: number, code: string, name: string) => ({ id, department_code: code, department_name: name });
 const section = (id: number, name: string, departmentId: number) => ({ id, section_name: name, department_id: departmentId });
 
 /**
- * Every schedule row here carries a status that the *old* rollup treated as
- * "draft": `faculty_assignment` is where VPAA approval actually leaves a row,
- * and `conditionally_approved` is a Dean approval with an override. If the page
- * ever goes back to reading `schedules.status`, these fixtures make it fail.
+ * `faculty_assignment` is where VPAA approval actually leaves a row, and
+ * `conditionally_approved` is a Dean approval with an override. Approval stage
+ * comes from submissions, so these rows must never decide the counts.
  */
 const schedule = (id: number, sectionId: number, departmentId: number, status: string) => ({
-  id,
-  semester_id: 1,
-  section_id: sectionId,
-  room_id: 1,
-  faculty_id: 1,
-  day: 'Monday',
-  start_time: '08:00:00',
-  end_time: '09:30:00',
-  mode: 'on-site' as const,
-  status,
-  updated_at: '2026-09-08T02:00:00.000000Z',
-  section: { id: sectionId, section_name: `S${sectionId}`, department_id: departmentId },
-  faculty: { id: 1, first_name: 'Grace', last_name: 'Hopper' },
-  room: { id: 1, room_code: 'R 301', building: 'Main', room_type: 'lecture' },
-  course: { id: 1, course_code: 'IT 101', course_name: 'Intro to IT', course_category: 'major', units: 3 },
+  id, semester_id: 1, section_id: sectionId, department_id: departmentId, status,
 });
 
 const submission = (id: number, departmentId: number, status: string, sectionIds: number[], extra: Record<string, unknown> = {}) => ({
@@ -64,261 +36,214 @@ const submission = (id: number, departmentId: number, status: string, sectionIds
   ...extra,
 });
 
+const faculty = (id: number, name: string, assigned: number, extra: Record<string, unknown> = {}) => {
+  const [first_name, last_name] = name.split(' ');
+  return { id, first_name, last_name, max_units: 18, deload_units: 0, overload_units: 6, assigned_units: assigned, department_id: 1, status: 'active', ...extra };
+};
+
+const transfer = (id: string, status: string, extra: Record<string, unknown> = {}) => ({
+  id, status, department_id: 3, department: 'Education', semester_id: 1, semester_label: '2nd Semester, AY 2026-2027',
+  submitted_by: 'Maria Santos', submitted_at: '2026-08-20T02:00:00Z', dean_reviewed_at: '2026-08-25T02:00:00Z',
+  reviewed_at: null, rejection_reason: null, schedule_ids: [9],
+  changes: [{ schedule_id: 9, course: 'ED 101', section: 'BEED 1A', before: { room: 'R1', day: 'Monday', start_time: '08:00', end_time: '09:00' }, after: { room: 'R2', day: 'Monday', start_time: '08:00', end_time: '09:00' } }],
+  ...extra,
+});
+
 const initialData = {
-  time_grid: { opening_time: '06:00', closing_time: '18:00', slot_minutes: 30 },
   active_semester: { id: 1, academic_year: '2026-2027', semester: '2nd', is_active: true },
   departments: [department(1, 'CBA', 'Business Administration'), department(2, 'CIT', 'Information Technology'), department(3, 'CED', 'Education')],
   sections: [section(1, 'BSBA 1A', 1), section(2, 'BSBA 2A', 1), section(3, 'BSIT 1A', 2), section(4, 'BEED 1A', 3)],
   schedules: [
-    { ...schedule(1, 1, 1, 'faculty_assignment'), department: { id: 1, department_code: 'CBA', department_name: 'Business Administration' } },
+    schedule(1, 1, 1, 'faculty_assignment'),
     schedule(2, 2, 1, 'faculty_assignment'),
     schedule(3, 3, 2, 'conditionally_approved'),
     schedule(4, 4, 3, 'draft'),
   ],
-  // CBA: fully approved. CIT: dean-cleared with an override, so it is the queue.
-  // CED: never submitted, so it has no submission row at all.
+  // CBA: fully approved. CIT: Dean-cleared with an override. CED: never submitted.
   schedule_submissions: [
     submission(1, 1, 'approved', [1, 2]),
     submission(2, 2, 'pending_vpaa', [3], { approval_override: true, approval_override_reason: 'Room-type rule waived' }),
   ],
-  faculties: [
-    { id: 1, first_name: 'Grace', last_name: 'Hopper', max_units: 21, assigned_units: 21, department_id: 1, status: 'active' },
-    { id: 2, first_name: 'Alan', last_name: 'Turing', max_units: 21, assigned_units: 12, department_id: 1, status: 'active' },
-    { id: 3, first_name: 'Ada', last_name: 'Lovelace', max_units: 21, assigned_units: 24, department_id: 2, status: 'active' },
-    { id: 4, first_name: 'Donald', last_name: 'Knuth', max_units: 21, assigned_units: 0, department_id: 3, status: 'active' },
-  ],
-  rooms: [
-    { id: 1, room_code: 'R 301', room_type: 'lecture', building: 'Main', status: 'available' },
-    { id: 2, room_code: 'R 202', room_type: 'laboratory', building: 'Annex', status: 'available' },
-    // Virtual placeholder rows must stay out of the campus room inventory.
-    { id: 3, room_code: 'ONLINE', room_type: 'online' },
-  ],
-  courses: [{ id: 1, subject_code: 'IT 101', subject_name: 'Intro to IT' }],
-  active_curricula_count: 5,
+  // Basic 18 + 6 overload = 24 ceiling: 21 is overload within the limit, 25 is over it.
+  faculties: [faculty(1, 'Grace Hopper', 18), faculty(2, 'Alan Turing', 21), faculty(3, 'Ada Lovelace', 25), faculty(4, 'Old Timer', 40, { status: 'inactive' })],
 };
 
 const insights = {
-  semester_id: 1,
-  generated_at: '2026-09-11T02:00:00.000000Z',
+  semester_id: 1, generated_at: '2026-10-30T00:00:00Z',
   utilization: {
-    open_minutes_per_day: 690,
-    rooms_total: 2,
-    rooms_in_use: 1,
-    rooms_unavailable: 0,
-    average_utilization: 23,
+    open_minutes_per_day: 810, rooms_total: 12, rooms_in_use: 5, rooms_unavailable: 0, average_utilization: 18,
     buildings: [
-      { building: 'Main', rooms: 1, rooms_in_use: 1, meetings: 4, booked_hours: 6, utilization: 46 },
-      { building: 'Annex', rooms: 1, rooms_in_use: 0, meetings: 0, booked_hours: 0, utilization: 0 },
+      { building: 'Main Building', rooms: 8, rooms_in_use: 5, meetings: 40, booked_hours: 120, utilization: 27 },
+      { building: 'Annex', rooms: 4, rooms_in_use: 0, meetings: 0, booked_hours: 0, utilization: 0 },
     ],
-    busiest_rooms: [],
-    idle_rooms: [{ id: 2, room_code: 'R 202', building: 'Annex', room_type: 'laboratory', meetings: 0, booked_minutes: 0, utilization: 0, is_unavailable: false }],
-    idle_room_count: 1,
+    busiest_rooms: [], idle_rooms: [], idle_room_count: 7,
   },
-  peak_load: {
-    days: ['Monday', 'Tuesday'],
-    hours: [8, 9],
-    matrix: { Monday: [4, 4], Tuesday: [0, 0] },
-    peak: 4,
-    peak_day: 'Monday',
-    peak_hour: 8,
-  },
-  coverage: {
-    sections_with_schedule: 4,
-    classes_without_instructor: 2,
-    sections_without_instructor: 2,
-    classes_without_room: 0,
-    departments_with_gaps: 1,
-  },
+  peak_load: { days: [], hours: [], matrix: {}, peak: 0, peak_day: null, peak_hour: null },
+  coverage: { sections_with_schedule: 4, classes_without_instructor: 0, sections_without_instructor: 0, classes_without_room: 3, departments_with_gaps: 1 },
 };
 
-const activityLog = {
-  data: [{
-    id: 'scheduling:1',
-    source: 'scheduling',
-    category: 'schedule_workflow',
-    event: 'schedule_approved_by_vpaa',
-    occurred_at: '2026-09-10T02:24:00.000000Z',
-    actor: { id: 2, name: 'VPAA Office', role: 'vpaa' },
-  }],
+const mockApi = (overrides: { initial?: unknown; transfers?: unknown; insights?: unknown } = {}) => {
+  get.mockImplementation((url: string) => {
+    if (url === '/initial-data') return overrides.initial instanceof Error ? Promise.reject(overrides.initial) : Promise.resolve({ data: overrides.initial ?? initialData });
+    if (url === '/vpaa/dashboard-insights') return overrides.insights instanceof Error ? Promise.reject(overrides.insights) : Promise.resolve({ data: overrides.insights ?? insights });
+    if (url === '/room-recovery/transfers') return overrides.transfers instanceof Error ? Promise.reject(overrides.transfers) : Promise.resolve({ data: { transfers: overrides.transfers ?? [] } });
+    return Promise.resolve({ data: {} });
+  });
 };
 
 beforeEach(() => {
   clearDataCache();
   sessionStorage.clear();
   localStorage.setItem('user', JSON.stringify({ id: 2, name: 'VPAA Office', role: 'vpaa' }));
-
-  get.mockImplementation((url: string) => {
-    if (url === '/initial-data') return Promise.resolve({ data: initialData });
-    if (url === '/vpaa/dashboard-insights') return Promise.resolve({ data: insights });
-    if (url === '/activity-log') return Promise.resolve({ data: activityLog });
-    return Promise.resolve({ data: {} });
-  });
+  mockApi();
 });
 
-const renderPage = () => render(<MemoryRouter><VpaaDashboardPage /></MemoryRouter>);
+function LocationProbe() {
+  const location = useLocation();
+  return <p data-testid="location">{location.pathname}{location.search}</p>;
+}
+
+const renderPage = () => render(<MemoryRouter initialEntries={['/dashboard']}>
+  <Routes>
+    <Route path="/dashboard" element={<VpaaDashboardPage />} />
+    <Route path="*" element={<LocationProbe />} />
+  </Routes>
+</MemoryRouter>);
+
+const kpi = async (label: string) => {
+  const kpis = await screen.findByRole('region', { name: 'Key figures' });
+  // The label is a direct child of its card.
+  return within(kpis).getByText(label).parentElement as HTMLElement;
+};
 
 describe('VpaaDashboardPage', () => {
-  // Renders the full Gantt: about 3 s alone, past the 5 s default under a full parallel run.
-  it('reuses the Gantt with configured hours and only published classes in the weekly view', async () => {
+  it('keeps to four figures, the decision queue, exceptions and the institution status', async () => {
     renderPage();
-    const chart = await screen.findByRole('region', { name: 'Master calendar timeline' });
-    fireEvent.click(screen.getByRole('button', { name: 'Week' }));
-
-    const blocks = within(chart).getAllByRole('button', { name: /^IT 101 lecture/ });
-    expect(blocks).toHaveLength(2);
-    expect(within(blocks[0]).getByRole('img', { name: 'Business Administration logo' }).getAttribute('src')).toBe('/cba-logo.png');
-    expect(blocks.map((block) => block.getAttribute('data-schedule-id'))).toEqual(['1', '2']);
-    expect(Number.parseFloat(blocks[0].style.left)).toBeCloseTo(100 * 120 / 720);
-    expect(within(chart).getByText('6 AM')).toBeTruthy();
-    expect(screen.queryByText('Timetable Grid')).toBeNull();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Timetable filters' }));
-    fireEvent.change(screen.getByRole('combobox', { name: 'Dept' }), { target: { value: '2' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Timetable filters' }));
-    expect(screen.queryByRole('combobox', { name: 'Dept' })).toBeNull();
-    expect(within(chart).queryAllByRole('button', { name: /^IT 101 lecture/ })).toHaveLength(0);
-    fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }));
-    expect(within(chart).getAllByRole('button', { name: /^IT 101 lecture/ })).toHaveLength(2);
-  }, 15_000);
-
-  it('opens shared class details in fullscreen and leaves fullscreen open when the details close', async () => {
-    renderPage();
-    await screen.findByRole('region', { name: 'Master calendar timeline' });
-    fireEvent.click(screen.getByRole('button', { name: 'Full window view' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Week' }));
-    const chart = screen.getByRole('region', { name: 'Master calendar timeline' });
-    fireEvent.click(within(chart).getAllByRole('button', { name: /^IT 101 lecture/ })[0]);
-    const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText('Intro to IT')).toBeTruthy();
-    expect(within(dialog).getByText('Overlapping classes (1)')).toBeTruthy();
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Exit full window' })).toBeTruthy();
+    const kpis = await screen.findByRole('region', { name: 'Key figures' });
+    expect(kpis.children).toHaveLength(4);
+    expect(screen.getByText('Waiting on your decision')).toBeTruthy();
+    expect(screen.getByText('Exceptions to watch')).toBeTruthy();
+    expect(screen.getByText('Institution status')).toBeTruthy();
+    expect(screen.getByRole('list', { name: 'Department progress' })).toBeTruthy();
+    expect(screen.getByText('Room use')).toBeTruthy();
+    // Timetable browsing lives in the master calendar.
+    expect(screen.queryByText('Master timetable')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Open master calendar' })).toBeTruthy();
   });
 
-  it('separates on-site, online and field meetings while preserving semester scope', async () => {
-    const today = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()];
-    get.mockImplementation((url: string) => {
-      if (url === '/initial-data') return Promise.resolve({ data: { ...initialData, schedules: [
-        { ...schedule(10, 1, 1, 'finalized'), day: today, meeting_type: 'laboratory' },
-        { ...schedule(11, 2, 1, 'reassignment'), day: today, room: { id: 3, room_code: 'ONLINE', room_type: 'online' } },
-        { ...schedule(12, 1, 1, 'finalized'), day: today, semester_id: 99 },
-        { ...schedule(13, 1, 1, 'finalized'), day: today, mode: 'field', room: null, room_id: null },
-        { ...schedule(14, 2, 1, 'finalized'), day: today, room: { id: 4, room_code: 'FIELD', room_type: 'field' } },
-      ] } });
-      if (url === '/vpaa/dashboard-insights') return Promise.resolve({ data: insights });
-      return Promise.resolve({ data: activityLog });
+  it('shows a pending room transfer when no schedule submission is waiting, and opens that transfer', async () => {
+    mockApi({
+      initial: { ...initialData, schedule_submissions: [submission(1, 1, 'approved', [1, 2])] },
+      transfers: [transfer('t-1', 'pending_vpaa'), transfer('t-2', 'pending_dean'), transfer('t-3', 'approved')],
     });
     renderPage();
-    const chart = await screen.findByRole('region', { name: 'Master calendar timeline' });
-    expect(within(chart).getByRole('button', { name: /^IT 101 laboratory/ }).getAttribute('data-schedule-id')).toBe('10');
-    expect(within(chart).queryByRole('button', { name: /^IT 101 lecture/ })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Online' }));
-    expect(within(chart).getByRole('button', { name: /^IT 101 lecture/ }).getAttribute('data-schedule-id')).toBe('11');
-    expect(within(chart).queryByRole('button', { name: /^IT 101 laboratory/ })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Field' }));
-    expect(within(chart).getAllByRole('button', { name: /^IT 101 lecture/ }).map(block => block.getAttribute('data-schedule-id'))).toEqual(['13', '14']);
-    expect(within(chart).queryByRole('button', { name: /^IT 101 laboratory/ })).toBeNull();
+    const queue = await screen.findByRole('list', { name: 'Pending requests' });
+    expect(within(queue).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(queue).getByText('Room transfer')).toBeTruthy();
+    expect(within(queue).getByText(/1 meeting moved/)).toBeTruthy();
+    expect(screen.getByText('1 decision awaiting you')).toBeTruthy();
+    expect(screen.queryByText('Nothing is waiting on your decision.')).toBeNull();
+
+    fireEvent.click(within(queue).getByRole('button', { name: 'Review Education' }));
+    expect(screen.getByTestId('location').textContent).toBe('/schedules/approval?room_transfer=t-1');
   });
 
-  it('renders every section of the executive overview', async () => {
+  it('counts a Dean override as awaiting the VPAA and keeps the override reason visible', async () => {
     renderPage();
-
-    await waitFor(() => expect(screen.getByText('Requires Attention')).toBeTruthy());
-
-    [
-      'Requires Attention',
-      'Workflow · Department Scheduling Progress',
-      'Room Utilisation by Building',
-      'Master timetable',
-      'Instructor Load Overview',
-      'Institutional Readiness',
-      'Recent Administrative Activity',
-    ].forEach(title => expect(screen.getByText(title)).toBeTruthy());
+    const queue = await screen.findByRole('list', { name: 'Pending requests' });
+    expect(within(queue).getByText('Information Technology')).toBeTruthy();
+    expect(within(queue).getByText('Override: Room-type rule waived')).toBeTruthy();
+    expect(screen.getByText('1 awaiting you · override')).toBeTruthy();
   });
 
-  it('counts a dean override as awaiting the VPAA rather than as a draft', async () => {
+  it('lists separate requests from one department, oldest handoff first', async () => {
+    mockApi({
+      initial: {
+        ...initialData,
+        sections: [...initialData.sections, section(5, 'BSIT 2A', 2)],
+        schedule_submissions: [
+          submission(2, 2, 'pending_vpaa', [3], { dean_reviewed_at: '2026-09-09T02:00:00Z' }),
+          submission(3, 2, 'pending_vpaa', [5], { revision_number: 2, dean_reviewed_at: '2026-08-01T02:00:00Z' }),
+        ],
+      },
+    });
     renderPage();
-
-    // CIT sits at pending_vpaa with approval_override set. The old rollup read
-    // `conditionally_approved` off the schedule row, found no branch for it and
-    // called it a draft, so the package never reached this queue.
-    await waitFor(() => expect(screen.getByText('1 Section Awaiting VPAA Review')).toBeTruthy());
-    expect(screen.getByText(/approved by a Dean with an override/)).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: /^Review/ }).length).toBe(1);
+    const queue = await screen.findByRole('list', { name: 'Pending requests' });
+    const rows = within(queue).getAllByRole('listitem');
+    expect(rows).toHaveLength(2);
+    // The older handoff (a revision) is first, so it cannot hide behind the newer one.
+    expect(within(rows[0]).getByText('Revision 2')).toBeTruthy();
+    expect(screen.getByText('2 decisions awaiting you')).toBeTruthy();
   });
 
-  it('counts VPAA-approved sections as approved, not as drafts', async () => {
+  it('counts VPAA-approved sections from submissions, and fully approved departments beside them', async () => {
     renderPage();
-
-    // CBA's two sections carry `faculty_assignment` on their schedule rows —
-    // where VPAA approval actually leaves them — and `approved` on the
-    // submission. Two of four sections approved is 50%.
-    await waitFor(() => expect(screen.getByText('2 / 4 sections approved')).toBeTruthy());
-    expect(screen.getByText('50%')).toBeTruthy();
+    const card = await kpi('Sections approved');
+    expect(within(card).getByText('2')).toBeTruthy();
+    expect(within(card).getByText('/ 4')).toBeTruthy();
+    const departments = await kpi('Departments complete');
+    expect(within(departments).getByText('1')).toBeTruthy();
+    expect(within(departments).getByText('/ 3 scheduling')).toBeTruthy();
   });
 
-  it('reports room utilisation per building and names idle rooms', async () => {
+  it('separates basic-load overload from exceeding the permitted ceiling, among active instructors', async () => {
     renderPage();
-
-    // Building names appear twice by design: once as a timetable filter option
-    // and once as a row of the utilisation table.
-    fireEvent.click(await screen.findByRole('button', { name: 'Timetable filters' }));
-    await waitFor(() => expect(screen.getAllByText('Main').length).toBeGreaterThan(1));
-    expect(screen.getAllByText('Annex').length).toBeGreaterThan(1);
-    expect(screen.getByText(/Unused this semester/)).toBeTruthy();
-    expect(screen.getAllByText(/R 202/).length).toBeGreaterThan(0);
+    const overLimit = await screen.findByRole('button', { name: /Instructors over their limit/ });
+    expect(within(overLimit).getByText('1')).toBeTruthy();
+    expect(within(screen.getByRole('button', { name: /On overload, within limit/ })).getByText('1')).toBeTruthy();
+    // The inactive instructor at 40 units is not counted.
+    expect(within(screen.getByRole('button', { name: /Dean overrides awaiting you/ })).getByText('1')).toBeTruthy();
+    fireEvent.click(overLimit);
+    expect(screen.getByTestId('location').textContent).toBe('/instructors');
   });
 
-  it('names the overloaded instructor rather than only counting them', async () => {
+  it('does not report an all-clear when room transfers fail to load', async () => {
+    mockApi({ initial: { ...initialData, schedule_submissions: [submission(1, 1, 'approved', [1, 2])] }, transfers: new Error('boom') });
     renderPage();
-    await waitFor(() => expect(screen.getByText('Ada Lovelace')).toBeTruthy());
-    expect(screen.getByText('24 / 21 units')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/Room transfers could not be loaded/)).toBeTruthy());
+    expect(screen.queryByText('Nothing is waiting on your decision.')).toBeNull();
+    expect(screen.queryByText('Nothing awaiting you')).toBeNull();
+    expect(screen.getByText('Room transfers unavailable')).toBeTruthy();
   });
 
-  it('renders administrative activity from the audit log', async () => {
+  it('hides figures instead of showing zeros when the first load fails', async () => {
+    mockApi({ initial: new Error('down') });
     renderPage();
-    await waitFor(() => expect(screen.getByText('Schedule approved by vpaa')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Data unavailable')).toBeTruthy());
+    expect(screen.queryByRole('region', { name: 'Key figures' })).toBeNull();
+    expect(screen.queryByText('Nothing awaiting you')).toBeNull();
   });
 
-  it('keeps virtual ONLINE rows out of the campus room inventory', async () => {
+  it('summarises room use by building, folding buildings without classes into one line', async () => {
     renderPage();
-    // Two physical rooms; the ONLINE placeholder is excluded.
-    await waitFor(() => expect(screen.getByText('Across campus')).toBeTruthy());
-    const roomCard = screen.getByText('Across campus').closest('button');
-    expect(roomCard).toBeTruthy();
-    expect(within(roomCard!).getByText('2')).toBeTruthy();
+    const panel = (await screen.findByText('Room use')).closest('section')!;
+    await waitFor(() => expect(within(panel).getByText('18%')).toBeTruthy());
+    expect(within(panel).getByText(/5 of 12 rooms in use/)).toBeTruthy();
+    expect(within(panel).getByText('Main Building')).toBeTruthy();
+    expect(within(panel).getByText('No classes in Annex.')).toBeTruthy();
+    expect(within(panel).getByText('7 rooms are unused this semester.')).toBeTruthy();
   });
 
-  it('reports active curriculum count in the inventory strip', async () => {
+  it('shows room use as unavailable, not as zero rooms, when insights fail', async () => {
+    mockApi({ insights: new Error('down') });
     renderPage();
-    await waitFor(() => expect(screen.getByText('Active curriculums')).toBeTruthy());
-    const card = screen.getByText('Active curriculums').closest('button');
-    expect(card).toBeTruthy();
-    expect(within(card!).getByText('Curriculums')).toBeTruthy();
-    expect(within(card!).getByText('5')).toBeTruthy();
+    const panel = (await screen.findByText('Room use')).closest('section')!;
+    await waitFor(() => expect(within(panel).getByText('Room use could not be loaded.')).toBeTruthy());
+    expect(within(panel).queryByText('No rooms are set up yet.')).toBeNull();
+    // Other blocks keep working.
+    expect(screen.getByText('Exceptions to watch')).toBeTruthy();
   });
 
-  it('asks the API for the full schedule window rather than the default cap', async () => {
+  it('states that no semester is active rather than rolling up every semester', async () => {
+    mockApi({ initial: { ...initialData, active_semester: null } });
     renderPage();
+    await waitFor(() => expect(screen.getAllByText('No active semester').length).toBeGreaterThan(0));
+    expect(screen.queryByRole('region', { name: 'Key figures' })).toBeNull();
+  });
 
+  it('asks the API for the same schedule window as before', async () => {
+    renderPage();
     await waitFor(() => expect(get).toHaveBeenCalledWith('/initial-data', { params: { schedule_limit: 2000 } }));
-  });
-
-  it('still renders when the insights endpoint fails', async () => {
-    get.mockImplementation((url: string) => {
-      if (url === '/initial-data') return Promise.resolve({ data: initialData });
-      if (url === '/vpaa/dashboard-insights') return Promise.reject(new Error('boom'));
-      return Promise.resolve({ data: activityLog });
-    });
-
-    renderPage();
-
-    // The approval rollup does not depend on the aggregate endpoint, so it must
-    // survive the aggregate being unavailable.
-    await waitFor(() => expect(screen.getByText('1 Section Awaiting VPAA Review')).toBeTruthy());
-    // The utilisation panel falls back to the empty aggregate rather than blanking.
-    expect(screen.getByText('Room Utilisation by Building')).toBeTruthy();
   });
 
   it('shows the skeleton while the first load is in flight', () => {
@@ -327,43 +252,13 @@ describe('VpaaDashboardPage', () => {
     expect(container.querySelector('[aria-label="Loading dashboard"]')).toBeTruthy();
   });
 
-  it('holds the skeleton until the aggregates land, rather than painting without them', async () => {
-    // The page used to render as soon as /initial-data resolved, so the
-    // utilisation and peak-load panels filled in seconds after the rest of the
-    // dashboard had already painted. Keep the aggregate pending and the whole
-    // page must still be the skeleton.
-    let releaseInsights: (value: { data: typeof insights }) => void = () => {};
-    get.mockImplementation((url: string) => {
-      if (url === '/initial-data') return Promise.resolve({ data: initialData });
-      if (url === '/activity-log') return Promise.resolve({ data: activityLog });
-      if (url === '/vpaa/dashboard-insights') return new Promise(resolve => { releaseInsights = resolve; });
-      return Promise.resolve({ data: {} });
-    });
-
-    const { container } = renderPage();
-
-    await waitFor(() => expect(get).toHaveBeenCalledWith('/vpaa/dashboard-insights'));
-    expect(container.querySelector('[aria-label="Loading dashboard"]')).toBeTruthy();
-    expect(screen.queryByText('Requires Attention')).toBeNull();
-
-    releaseInsights({ data: insights });
-
-    await waitFor(() => expect(screen.getByText('Requires Attention')).toBeTruthy());
-    expect(screen.getByText('Room Utilisation by Building')).toBeTruthy();
-  });
-
-  it('serves a revisit from cache instead of refetching the aggregates', async () => {
+  it('serves a revisit from cache instead of refetching the initial data', async () => {
     renderPage();
-    await waitFor(() => expect(screen.getByText('Requires Attention')).toBeTruthy());
-
-    const callsAfterFirstMount = get.mock.calls.length;
+    await screen.findByText('Waiting on your decision');
+    const initialCalls = get.mock.calls.filter(([url]) => url === '/initial-data').length;
     cleanup();
     renderPage();
-
-    // Every panel is seeded from cache, so the revisit paints whole rather than
-    // leaving the two aggregate panels to arrive behind the others.
-    await waitFor(() => expect(screen.getByText('Requires Attention')).toBeTruthy());
-    expect(screen.getByText('Room Utilisation by Building')).toBeTruthy();
-    expect(get.mock.calls.length).toBe(callsAfterFirstMount);
+    await screen.findByText('Waiting on your decision');
+    expect(get.mock.calls.filter(([url]) => url === '/initial-data').length).toBe(initialCalls);
   });
 });

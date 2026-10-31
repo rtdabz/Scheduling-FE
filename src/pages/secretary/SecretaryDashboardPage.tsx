@@ -1,96 +1,59 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
-  ArrowRight,
-  BookOpen,
-  Building2,
-  CalendarCheck2,
+  BadgeCheck,
   CalendarDays,
   Check,
   CheckCircle2,
-  ChevronRight,
   ClipboardCheck,
   DoorOpen,
   FileClock,
-  FileText,
-  FlaskConical,
-  Globe2,
+  FilePen,
   Handshake,
-  LayoutGrid,
-  MapPin,
-  Maximize2,
-  Minimize2,
-  RotateCcw,
+  Hourglass,
+  KeyRound,
   Send,
-  ShieldCheck,
   UserRoundCheck,
-  Users,
   type LucideIcon,
 } from 'lucide-react';
 import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
 import RoomRecoveryAlerts from '../../components/rooms/RoomRecoveryAlerts';
-import DashboardGantt from '../vpaa/calendar/DashboardGantt';
-import ScheduleDetailModal from '../vpaa/calendar/ScheduleDetailModal';
-import { buildStandardHours, DEFAULT_STANDARD_HOURS, findOverlaps, withCalendarDepartments, type CalendarDepartment, type CalendarSchedule, type StandardHours } from '../vpaa/calendar/ganttLayout';
-import type { TimeGridConfigInput } from '../../lib/timeGrid';
-import InstructorWorkloadChart from '../../components/scheduling/InstructorWorkloadChart';
-import { DEAN_REQUIRED_MESSAGE, useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
-import { useToast } from '../../context/ToastContext';
+import { LoadWarning, Panel } from '../../components/vpaa/DashboardPrimitives';
+import { EmptyNote, type TagTone } from '../../components/dashboard/Ledger';
+import { CheckSegments, DashboardContext, KpiCard, KpiStrip, RelatedLinks, StageRows } from '../../components/dashboard/Analytics';
+import { WeekGlance, type GlanceGrid } from '../../components/dashboard/WeekGlance';
+import { STAGE } from '../../lib/dashboardStage';
+import { DEAN_REQUIRED_MESSAGE, useDepartmentScheduleStatus, type SectionStatusItem } from '../../hooks/useDepartmentScheduleStatus';
+import { fullSemesterLabel } from '../../lib/semesterLabel';
 import api from '../../lib/api';
 import { getStoredUser, hasStoredCapability } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
-import { buildRoomUsage, physicalRooms, roomsInUse } from '../../lib/roomUsage';
-import { MILESTONE_TITLES, SUBMISSION_MILESTONES, submissionProgress } from '../../lib/submissionStage';
-import { Bar, BarChart, Cell, LabelList, Pie, PieChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
-import DashboardMetricCard from '../../components/overview/DashboardMetricCard';
-import { basicLoadOf } from '../../lib/facultyLoad';
+import { fetchRoomRequests, type RoomRequest } from '../../lib/roomRequests';
+import { INSTRUCTOR_ASSIGNABLE_STATUSES, type ScheduleStatus } from '../ClassSchedules/SchedulerPanel/types';
 
-interface Schedule { id:number; semester_id:number; section_id:number; faculty_id?:number|null; room_id?:number|null; mode?:string|null; day:string; start_time:string; end_time:string; status:string; meeting_type?:string|null; course_id?:number|null; subject_id?:number|null; course?:{id?:number;course_code:string;course_name?:string;course_category?:string|null;units?:number}|null; subject?:{id?:number;subject_code:string;subject_name?:string;subject_category?:string|null;units?:number}|null; faculty?:{id?:number;first_name:string;last_name:string}|null; room?:{id?:number;room_code:string;room_type?:string;building?:string|null}|null; section?:{id?:number;section_name:string}|null; department_id?:number|null }
-interface Room { id:number; room_code:string; room_type:string; building?:string|null; status?:string|null; department_id?:number|null }
-interface Section { id:number; section_name:string; department_id?:number|null }
-interface Faculty { id:number; first_name:string; last_name:string; max_units:number; assigned_units?:number; deload_units?:number; profile_picture?:string|null; department_id:number }
-interface Subject { id:number; subject_code:string; subject_name:string; department_id?:number|null }
-interface Semester { id:number; status:string }
-interface Overview { schedules:Schedule[]; departments?:CalendarDepartment[]; rooms:Room[]; sections:Section[]; faculties:Faculty[]; subjects:Subject[]; activeSemester:Semester|null; standardHours?:StandardHours }
-interface InitialData { schedules?:Schedule[]; departments?:CalendarDepartment[]; rooms?:Room[]; sections?:Section[]; faculties?:Faculty[]; subjects?:Subject[]; courses?:Subject[]; active_semester?:Semester; time_grid?:TimeGridConfigInput }
+interface Schedule { id:number; semester_id:number; section_id:number; day?:string|null; faculty_id?:number|null; room_id?:number|null; mode?:string|null; start_time:string; end_time:string; status:string; course?:{id?:number}|null; subject?:{id?:number}|null; faculty?:{id?:number}|null; room?:{id?:number;room_type?:string}|null; department_id?:number|null }
+interface Semester { id:number; status?:string; academic_year?:string|null; semester?:string|null }
+interface Overview { schedules:Schedule[]; activeSemester:Semester|null; schedulesTruncated?:boolean; timeGrid?:GlanceGrid|null }
+interface InitialData { schedules?:Schedule[]; active_semester?:Semester; schedules_truncated?:boolean; time_grid?:GlanceGrid|null }
 
-type Tone = 'brand' | 'info' | 'good' | 'warn' | 'alert' | 'accent';
-
-interface Tile { label:string; value:number|string; detail:string; icon:LucideIcon; path:string; tone:Tone }
-interface QueueRow { label:string; value:number; action:string; icon:LucideIcon; path:string }
-
-const TONES: Record<Tone, string> = {
-  brand: 'bg-primary/10 text-primary',
-  info: 'bg-slate-100 text-slate-600',
-  good: 'bg-emerald-50 text-emerald-600',
-  warn: 'bg-amber-50 text-amber-700',
-  alert: 'bg-rose-50 text-rose-600',
-  accent: 'bg-violet-50 text-violet-600',
-};
-
-const STAGES = ['Draft', 'Ready to Submit', 'Submitted to Dean', 'Returned by Dean', 'Approved by Dean', 'Approved by VPAA'];
+interface QueueRow { key:string; label:string; value:number; action:string; icon:LucideIcon; path:string }
 
 const percent = (part:number, total:number) => (total > 0 ? Math.round((part / total) * 100) : 0);
 
-type Delivery = 'on-site' | 'online' | 'field';
-
-const deliveryOf = (schedule:Schedule): Delivery => {
-  const mode = (schedule.mode ?? '').toLowerCase();
+const deliveryOf = (schedule:Schedule) => {
+  const mode = `${schedule.mode ?? ''} ${schedule.room?.room_type ?? ''}`.toLowerCase();
   if (mode.includes('online')) return 'online';
   if (mode.includes('field')) return 'field';
-  const roomType = (schedule.room?.room_type ?? '').toLowerCase();
-  if (roomType.includes('online')) return 'online';
-  if (roomType.includes('field')) return 'field';
   return 'on-site';
 };
 
-const needsRoom = (schedule:Schedule) => deliveryOf(schedule) === 'on-site';
+// Rows the department is still preparing. Submitted, reviewed and approved rows are out of the secretary's hands.
+const PREPARATION_STATUSES = new Set(['draft', 'completed', 'revision', 'rejected', 'rejected_by_dean']);
+const ASSIGNABLE = new Set<string>(INSTRUCTOR_ASSIGNABLE_STATUSES as ScheduleStatus[]);
 
-const inDepartment = <T extends {department_id?:number|null}>(items:T[], departmentId?:number) =>
-  items.filter(item => !departmentId || !item.department_id || Number(item.department_id) === Number(departmentId));
+const YEAR_LABELS: Record<number, string> = { 1: '1st year', 2: '2nd year', 3: '3rd year', 4: '4th year' };
 
 interface SecretaryDashboardPageProps {
   role?: 'secretary' | 'program_head';
@@ -98,58 +61,44 @@ interface SecretaryDashboardPageProps {
 
 const DASHBOARD_LIVE_TOPICS = ['schedules', 'approvals', 'assignments', 'sections', 'rooms', 'faculty', 'courses', 'curriculum', 'departments'] as const;
 
+type SourceState = 'idle' | 'loading' | 'ready' | 'error';
+
 export default function SecretaryDashboardPage({ role = 'secretary' }: SecretaryDashboardPageProps) {
   const navigate = useNavigate();
-  const { toast } = useToast();
 
   const user = useMemo(() => getStoredUser(), []);
-  const departmentId = user?.department_id;
+  const departmentId = user?.department_id ?? null;
   const canViewSchedules = hasStoredCapability('schedule.view');
   const canUpdateSchedules = hasStoredCapability('schedule.update');
   const canAssignInstructors = hasStoredCapability('schedule.assign_instructor');
   const canAssignCrossDepartment = hasStoredCapability('schedule.assign_instructor_cross_department');
   const isProgramHead = role === 'program_head';
-  const paths = isProgramHead
-    ? {
-        sections: '/program_head/sections',
-        schedules: '/program_head/schedule-management',
-        instructors: '/program_head/instructors',
-        courses: '/program_head/courses',
-        rooms: '/program_head/facilities',
-        crossDepartment: '/program_head/cross-department-assignments',
-      }
-    : {
-        sections: '/secretary/sections',
-        schedules: '/secretary/schedule-management',
-        instructors: '/secretary/instructors',
-        courses: '/secretary/courses',
-        rooms: '/secretary/facilities',
-        crossDepartment: '/secretary/cross-department-assignments',
-      };
+  // Room Requests is a Secretary route; owner review also needs its review capability.
+  const canReviewBorrowing = !isProgramHead && hasStoredCapability('room.request') && hasStoredCapability('room.review_requests') && departmentId != null;
+  const base = isProgramHead ? '/program_head' : '/secretary';
+  const paths = {
+    schedules: `${base}/schedule-management`,
+    instructorAssignment: `${base}/instructor-assignment`,
+    rooms: `${base}/facilities`,
+    crossDepartment: `${base}/cross-department-assignments`,
+    history: `${base}/schedule-history`,
+    roomRequests: '/secretary/room-requests',
+  };
   const roomAssignmentPath = canUpdateSchedules ? paths.schedules : paths.rooms;
   const cacheKey = `dashboard:${user?.role ?? 'secretary'}:${user?.id ?? departmentId ?? 'current'}`;
   const cached = getCachedData<Overview>(cacheKey);
 
   const [loading, setLoading] = useState(!hasCachedData(cacheKey));
+  const [hasData, setHasData] = useState(Boolean(cached));
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const liveRevision = useLiveRevision(DASHBOARD_LIVE_TOPICS);
-  const [submitting, setSubmitting] = useState(false);
   const [schedules, setSchedules] = useState<Schedule[]>(cached?.schedules ?? []);
-  const [departments, setDepartments] = useState<CalendarDepartment[]>(cached?.departments ?? []);
-  const [rooms, setRooms] = useState<Room[]>(cached?.rooms ?? []);
-  const [sections, setSections] = useState<Section[]>(cached?.sections ?? []);
-  const [faculties, setFaculties] = useState<Faculty[]>(cached?.faculties ?? []);
-  const [subjects, setSubjects] = useState<Subject[]>(cached?.subjects ?? []);
   const [semester, setSemester] = useState<Semester | null>(cached?.activeSemester ?? null);
-  const [standardHours, setStandardHours] = useState<StandardHours>(cached?.standardHours ?? DEFAULT_STANDARD_HOURS);
-  const [selectedSchedule, setSelectedSchedule] = useState<CalendarSchedule | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [now, setNow] = useState(new Date());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 60000);
-    return () => clearInterval(timer);
-  }, []);
+  const [schedulesTruncated, setSchedulesTruncated] = useState(cached?.schedulesTruncated === true);
+  const [timeGrid, setTimeGrid] = useState<GlanceGrid | null>(cached?.timeGrid ?? null);
+  const [borrowing, setBorrowing] = useState<RoomRequest[]>([]);
+  const [borrowingState, setBorrowingState] = useState<SourceState>(canReviewBorrowing ? 'loading' : 'idle');
 
   useEffect(() => {
     let active = true;
@@ -162,27 +111,20 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
           const { data = {} } = await api.get<InitialData>('/initial-data');
           return {
             schedules: Array.isArray(data.schedules) ? data.schedules : [],
-            departments: Array.isArray(data.departments) ? data.departments : [],
-            rooms: Array.isArray(data.rooms) ? data.rooms : [],
-            sections: Array.isArray(data.sections) ? data.sections : [],
-            faculties: Array.isArray(data.faculties) ? data.faculties : [],
-            subjects: Array.isArray(data.subjects) ? data.subjects : (Array.isArray(data.courses) ? data.courses : []),
             activeSemester: data.active_semester || null,
-            standardHours: buildStandardHours(data.time_grid?.opening_time, data.time_grid?.closing_time, data.time_grid?.slot_minutes),
+            schedulesTruncated: data.schedules_truncated === true,
+            timeGrid: data.time_grid ?? null,
           };
         }, reloadKey > 0);
 
         if (!active) return;
-        setSchedules(overview.schedules);
-        setDepartments(overview.departments ?? []);
-        setRooms(overview.rooms);
-        setSections(overview.sections);
-        setFaculties(overview.faculties);
-        setSubjects(overview.subjects);
-        setSemester(overview.activeSemester);
-        setStandardHours(overview.standardHours ?? DEFAULT_STANDARD_HOURS);
+        setSchedules(overview.schedules ?? []);
+        setSemester(overview.activeSemester ?? null);
+        setSchedulesTruncated(overview.schedulesTruncated === true);
+        setTimeGrid(overview.timeGrid ?? null);
+        setHasData(true);
       } catch {
-        if (active) setLoadError('Could not load scheduling data. Figures below may be out of date.');
+        if (active) setLoadError('Could not load scheduling data.');
       } finally {
         if (active) setLoading(false);
       }
@@ -192,593 +134,307 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     return () => { active = false; };
   }, [cacheKey, reloadKey, liveRevision]);
 
+  useEffect(() => {
+    if (!canReviewBorrowing) return;
+    let active = true;
+    fetchRoomRequests({ status: 'pending' })
+      .then(requests => {
+        if (!active) return;
+        setBorrowing(Array.isArray(requests) ? requests : []);
+        setBorrowingState('ready');
+      })
+      .catch(() => { if (active) setBorrowingState('error'); });
+    return () => { active = false; };
+  }, [canReviewBorrowing, reloadKey, liveRevision]);
+
   const {
-    draftingProgress,
-    draftedCount,
-    totalSections,
-    yearLevels,
+    sections: statusSections,
     stageCounts,
-    canSubmit,
+    yearLevels,
+    totalSections,
     hasDean,
     crossDepartmentPending,
+    loading: statusLoading,
     error: statusError,
     refetch: refetchStatus,
   } = useDepartmentScheduleStatus(departmentId);
 
-  const visibleSections = useMemo(() => inDepartment(sections, departmentId), [sections, departmentId]);
-  const visibleRooms = useMemo(() => inDepartment(rooms, departmentId), [rooms, departmentId]);
-  const visibleSubjects = useMemo(() => inDepartment(subjects, departmentId), [subjects, departmentId]);
-  const visibleFaculty = useMemo(
-    () => faculties.filter(f => !departmentId || Number(f.department_id) === Number(departmentId)),
-    [faculties, departmentId],
-  );
+  const retry = useCallback(() => {
+    setReloadKey(k => k + 1);
+    refetchStatus();
+  }, [refetchStatus]);
 
-  const sectionIds = useMemo(() => new Set(visibleSections.map(s => s.id)), [visibleSections]);
-  const semesterId = semester?.id;
+  const semesterId = semester?.id ?? null;
+  const statusKnown = !statusError || statusSections.length > 0;
+  const sectionIds = useMemo(() => new Set(statusSections.map(s => Number(s.id))), [statusSections]);
   const visibleSchedules = useMemo(
     () => schedules.filter(s =>
-      (!semesterId || Number(s.semester_id) === Number(semesterId)) &&
-      (sectionIds.has(s.section_id) || Number(s.department_id) === Number(departmentId))),
+      semesterId != null && Number(s.semester_id) === Number(semesterId) &&
+      (sectionIds.has(Number(s.section_id)) || (departmentId != null && Number(s.department_id) === Number(departmentId)))),
     [schedules, semesterId, sectionIds, departmentId],
   );
 
-  const calendarSchedules = useMemo<CalendarSchedule[]>(() => withCalendarDepartments(visibleSchedules.map(item => ({
-    ...item,
-    course_id: item.course_id ?? item.course?.id ?? item.subject_id,
-    room: item.room?.id ? { id: item.room.id, room_code: item.room.room_code ?? '', building: item.room.building } : null,
-    section: item.section?.id ? { id: item.section.id, section_name: item.section.section_name ?? '' } : null,
-    faculty: item.faculty?.id ? { id: item.faculty.id, first_name: item.faculty.first_name, last_name: item.faculty.last_name } : null,
-    mode: deliveryOf(item),
-  })), departments), [visibleSchedules, departments]);
-  const timelineOverlaps = useMemo(() => findOverlaps(calendarSchedules), [calendarSchedules]);
-
-  useEffect(() => {
-    document.body.style.overflow = isFullscreen ? 'hidden' : '';
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && isFullscreen && !selectedSchedule) setIsFullscreen(false);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.body.style.overflow = '';
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isFullscreen, selectedSchedule]);
-
-  const scheduledSections = useMemo(() => new Set(visibleSchedules.map(s => s.section_id)).size, [visibleSchedules]);
-  const remaining = Math.max(0, visibleSections.length - scheduledSections);
-  const noInstructor = visibleSchedules.filter(s => !s.faculty_id && !s.faculty).length;
-  const noRoom = visibleSchedules.filter(s => needsRoom(s) && !s.room_id && !s.room).length;
-  const onlineClasses = visibleSchedules.filter(s => deliveryOf(s) === 'online').length;
-  const fieldClasses = visibleSchedules.filter(s => deliveryOf(s) === 'field').length;
-  const incomplete = visibleSchedules.filter(s => (!s.course && !s.subject) || !s.start_time || !s.end_time).length;
-
-  const loads = useMemo(() => visibleFaculty
-    .map(f => {
-      const assigned = f.assigned_units || 0;
-      const max = basicLoadOf(f.max_units, f.deload_units);
-      return { ...f, assigned, max, remaining: Math.max(0, max - assigned) };
-    })
-    .sort((a, b) => b.remaining - a.remaining), [visibleFaculty]);
-
-  const workload = useMemo(
-    () => [...loads].sort((a, b) => b.assigned - a.assigned).slice(0, 5),
-    [loads],
-  );
-
-  const assignableRooms = useMemo(() => physicalRooms(visibleRooms), [visibleRooms]);
-  const classesByRoom = useMemo(() => {
-    const counts = new Map<number, number>();
-    visibleSchedules.forEach(s => {
-      if (s.room_id) counts.set(s.room_id, (counts.get(s.room_id) ?? 0) + 1);
-    });
-    return counts;
-  }, [visibleSchedules]);
-  const roomUsage = useMemo(() => buildRoomUsage(visibleRooms, classesByRoom), [visibleRooms, classesByRoom]);
-  const roomsUsed = roomsInUse(roomUsage);
-  const labRooms = assignableRooms.filter(r => (r.room_type ?? '').toLowerCase().includes('lab')).length;
-
-  const checks: ReadonlyArray<readonly [string, boolean]> = [
-    ['All required sections have schedules', remaining === 0],
-    ['All scheduled classes have instructors', noInstructor === 0],
-    ['All on-site classes have rooms', noRoom === 0],
-    ['Required schedule information is complete', incomplete === 0],
-    ['Every year level has left the draft stage', canSubmit],
-    ['A Department Dean is assigned to receive the submission', hasDean],
-  ];
-  const doneChecks = checks.filter(([, done]) => done).length;
-  const ready = percent(doneChecks, checks.length);
-
-  const currentStage = stageCounts.approved ? 5
-    : stageCounts.approved_by_dean ? 4
-    : stageCounts.revision ? 3
-    : stageCounts.submitted ? 2
-    : canSubmit ? 1
+  const scheduledSectionIds = useMemo(() => new Set(visibleSchedules.map(s => Number(s.section_id))), [visibleSchedules]);
+  // A capped schedule list cannot prove that a section has no meetings.
+  const unscheduled = schedulesTruncated ? 0 : statusSections.filter(s => !scheduledSectionIds.has(Number(s.id))).length;
+  const preparing = visibleSchedules.filter(s => PREPARATION_STATUSES.has(s.status));
+  const noRoom = preparing.filter(s => deliveryOf(s) === 'on-site' && !s.room_id && !s.room).length;
+  const incomplete = preparing.filter(s => (!s.course && !s.subject) || !s.start_time || !s.end_time).length;
+  // Instructors are assigned only after VPAA approval, and finalized work is locked.
+  const assignmentsDue = canAssignInstructors
+    ? visibleSchedules.filter(s => ASSIGNABLE.has(s.status) && !s.faculty_id && !s.faculty).length
     : 0;
+  const borrowingDue = borrowing.filter(r => r.status === 'pending' && (r.owner_department?.id ?? r.room?.department_id ?? null) === departmentId).length;
 
-  const pendingYears = yearLevels.filter(y => !y.isComplete).map(y => y.label);
-  const submitHint = !hasDean
-    ? DEAN_REQUIRED_MESSAGE
-    : canSubmit
-      ? 'Every year level has left the draft stage. Schedules are ready for the Dean.'
-      : pendingYears.length
-        ? `Finish drafting ${pendingYears.join(', ')} before submitting.`
-        : 'No active sections found for this department yet.';
-
-  const progress = submissionProgress(currentStage);
-  const statusNote = progress.isComplete
-    ? 'Approved all the way through. Nothing further is needed for this semester.'
-    : currentStage === 4 ? 'The Dean approved these schedules. Waiting on the VPAA.'
-    : progress.isReturned ? `${stageCounts.revision} section${stageCounts.revision === 1 ? '' : 's'} came back from the Dean. Revise and submit again.`
-    : currentStage === 2 ? 'Schedules are with the Dean for review.'
-    : submitHint;
-  const statusTone: Tone = progress.isReturned ? 'alert'
-    : progress.isComplete || currentStage === 4 ? 'good'
-    : currentStage === 2 ? 'brand'
-    : canSubmit ? 'good'
-    : 'warn';
-  const statusBand = progress.isReturned ? 'border-rose-200 bg-rose-50/70'
-    : progress.isComplete || currentStage === 4 || canSubmit ? 'border-emerald-200 bg-emerald-50/70'
-    : currentStage === 2 ? 'border-primary/20 bg-primary/5'
-    : 'border-amber-200 bg-amber-50/70';
-  const StatusIcon = progress.isReturned ? RotateCcw
-    : progress.isComplete ? ShieldCheck
-    : currentStage === 4 ? CheckCircle2
-    : currentStage === 2 ? Send
-    : canSubmit ? ShieldCheck
-    : FileText;
-
-  const submitToDean = async () => {
-    if (!departmentId || !canSubmit || submitting) return;
-    setSubmitting(true);
-    try {
-      await api.post(`/departments/${departmentId}/submit-schedules`);
-      toast.success('Submitted', 'Department schedules were sent to the Dean for approval.');
-      refetchStatus();
-      setReloadKey(k => k + 1);
-    } catch (err) {
-      const payload = (err as { response?: { data?: { message?: string; hint?: string } } })?.response?.data;
-      toast.error('Submission failed', payload?.hint || payload?.message || 'Could not submit schedules.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const retry = () => {
-    setReloadKey(k => k + 1);
-    refetchStatus();
-  };
-
-
+  const returned = stageCounts.revision;
+  const toDraft = Math.max(0, stageCounts.draft - stageCounts.revision);
+  const drafted = stageCounts.completed;
+  const withDean = stageCounts.submitted;
+  const withVpaa = stageCounts.approved_by_dean + stageCounts.conditionally_approved;
+  const approved = stageCounts.approved;
+  const allYearsDrafted = yearLevels.length > 0 && yearLevels.every(y => y.isComplete);
+  const readyToSubmit = allYearsDrafted && drafted > 0;
 
   const queue: QueueRow[] = [
-    ...(canUpdateSchedules ? [{ label:'Sections that still need schedules', value:remaining, action:'View', icon:CalendarDays, path:paths.schedules } as QueueRow] : []),
-    ...(canAssignInstructors ? [{ label:'Classes without instructors', value:noInstructor, action:'Assign', icon:UserRoundCheck, path:paths.schedules } as QueueRow] : []),
-    ...(canAssignCrossDepartment ? [{ label:'Delegated classes without instructors', value:crossDepartmentPending, action:'Assign', icon:Handshake, path:paths.crossDepartment } as QueueRow] : []),
-    { label:'On-site classes without rooms', value:noRoom, action:'Assign', icon:DoorOpen, path:roomAssignmentPath },
-    ...(canUpdateSchedules ? [{ label:'Incomplete schedule entries', value:incomplete, action:'Complete', icon:ClipboardCheck, path:paths.schedules } as QueueRow] : []),
-    ...(canViewSchedules ? [{ label:'Sections returned for revision', value:stageCounts.revision, action:'Review', icon:FileClock, path:paths.schedules } as QueueRow] : []),
+    ...(canViewSchedules ? [{ key: 'returned', label: 'Sections returned for revision', value: returned, action: 'Revise', icon: FileClock, path: paths.schedules }] : []),
+    ...(canUpdateSchedules ? [{ key: 'unscheduled', label: 'Sections with no meetings yet', value: unscheduled, action: 'Draft', icon: CalendarDays, path: paths.schedules }] : []),
+    { key: 'rooms', label: 'On-site meetings without a room', value: noRoom, action: 'Assign', icon: DoorOpen, path: roomAssignmentPath },
+    ...(canUpdateSchedules ? [{ key: 'incomplete', label: 'Incomplete meeting entries', value: incomplete, action: 'Complete', icon: ClipboardCheck, path: paths.schedules }] : []),
+    ...(canUpdateSchedules && readyToSubmit ? [{ key: 'submit', label: 'Drafted sections ready to submit', value: drafted, action: 'Submit', icon: Send, path: paths.schedules }] : []),
+    ...(canAssignInstructors ? [{ key: 'assign', label: 'Approved meetings without an instructor', value: assignmentsDue, action: 'Assign', icon: UserRoundCheck, path: paths.instructorAssignment }] : []),
+    ...(canAssignCrossDepartment ? [{ key: 'delegated', label: 'Delegated meetings without an instructor', value: crossDepartmentPending, action: 'Assign', icon: Handshake, path: paths.crossDepartment }] : []),
+    ...(canReviewBorrowing ? [{ key: 'borrowing', label: 'Room borrowing requests to review', value: borrowingDue, action: 'Review', icon: KeyRound, path: paths.roomRequests }] : []),
   ];
+  const openQueue = queue.filter(row => row.value > 0);
+  const queueIncomplete = [
+    !statusKnown && 'Section status could not be loaded, so returned and unscheduled sections may be missing.',
+    schedulesTruncated && 'Only part of the semester\'s meetings loaded, so meeting counts may be low.',
+    borrowingState === 'error' && 'Room borrowing requests could not be loaded.',
+  ].filter(Boolean) as string[];
 
-  const openQueue = queue.filter(row => row.value > 0).sort((a, b) => b.value - a.value);
-  const clearedQueue = queue.filter(row => row.value === 0);
-  const openItems = openQueue.reduce((total, row) => total + row.value, 0);
+  const yearRows = useMemo(() => {
+    const groups = new Map<number, SectionStatusItem[]>();
+    statusSections.forEach(s => groups.set(s.year_level, [...(groups.get(s.year_level) ?? []), s]));
+    return [...groups.entries()].sort(([a], [b]) => a - b).map(([year, group]) => {
+      const count = (...statuses: string[]) => group.filter(s => statuses.includes(s.status)).length;
+      return {
+        year,
+        label: YEAR_LABELS[year] ?? `Year ${year}`,
+        total: group.length,
+        drafting: count('draft'),
+        returned: count('revision'),
+        drafted: count('completed'),
+        review: count('submitted', 'approved_by_dean', 'conditionally_approved'),
+        approved: count('approved'),
+      };
+    });
+  }, [statusSections]);
 
-  const progressRows = yearLevels.length
-    ? yearLevels
-    : [{ year_level:0, label:'All sections', total:visibleSections.length, drafted:scheduledSections, isComplete:remaining === 0 }];
-
-  const kpis: Tile[] = [
-    {
-      label: 'Needs Attention',
-      value: openItems,
-      detail: openItems ? `${openItems} item${openItems === 1 ? '' : 's'} to resolve` : 'All tasks cleared',
-      icon: CalendarCheck2,
-      path: paths.schedules,
-      tone: openItems > 0 ? 'alert' : 'good',
-    },
+  // Preparation guidance only: the server validates again on submission.
+  const checks: ReadonlyArray<readonly [string, boolean]> = [
+    ['Every active section has meetings', !schedulesTruncated && unscheduled === 0],
+    ['On-site meetings being prepared have rooms', noRoom === 0],
+    ['Meeting entries are complete', incomplete === 0],
+    ['Every year level has left the draft stage', allYearsDrafted],
+    ['A Department Dean is assigned to receive the submission', hasDean],
   ];
+  const passedChecks = checks.filter(([, done]) => done).length;
+  const showChecks = canViewSchedules && (toDraft > 0 || returned > 0 || drafted > 0);
 
-  const inventory: Tile[] = [
-    { label: 'Sections', value: visibleSections.length, detail: 'Department scope', icon: LayoutGrid, path: paths.sections, tone: 'brand' },
-    { label: 'Instructors', value: visibleFaculty.length, detail: 'Active instructors', icon: Users, path: paths.instructors, tone: 'accent' },
-    { label: 'Courses', value: visibleSubjects.length, detail: 'Offered courses', icon: BookOpen, path: paths.courses, tone: 'good' },
-    { label: 'Rooms', value: assignableRooms.length, detail: 'Department rooms', icon: Building2, path: paths.rooms, tone: 'warn' },
-  ];
-
-  const timetablePanel = (
-    <div className={isFullscreen ? 'fixed inset-0 z-[999999] flex flex-col overflow-auto bg-white p-4 sm:p-6' : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
-      <Panel
-        title="Department Academic Timetable"
-        action="View full timetable"
-        onAction={() => navigate(paths.schedules)}
-        headerExtra={<button
-          type="button"
-          onClick={() => setIsFullscreen(open => !open)}
-          title={isFullscreen ? 'Exit full window (Esc)' : 'Full window view'}
-          aria-label={isFullscreen ? 'Exit full window' : 'Full window view'}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-primary/30 hover:text-primary"
-        >
-          {isFullscreen ? <Minimize2 className="h-3.5 w-3.5"/> : <Maximize2 className="h-3.5 w-3.5"/>}
-        </button>}
-        className="flex min-h-0 flex-1 flex-col"
-      >
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <DashboardGantt
-            schedules={calendarSchedules}
-            allSchedules={calendarSchedules}
-            standardHours={standardHours}
-            overlaps={timelineOverlaps}
-            now={now}
-            onSelect={setSelectedSchedule}
-            isFullscreen={isFullscreen}
-          />
-        </div>
-      </Panel>
-      <ScheduleDetailModal schedule={selectedSchedule} allSchedules={calendarSchedules} overlaps={timelineOverlaps} onClose={() => setSelectedSchedule(null)} onSelect={setSelectedSchedule} />
-    </div>
-  );
-
-  if (loading) {
-    return <DashboardSkeleton
-      variant="secretary"
-      secretaryLayout={{
-        queueRowCount: queue.length,
-        showDraftingProgress: canViewSchedules,
-        showFacultyAssignment: canAssignInstructors,
-        showTimetable: canViewSchedules,
-        readinessCheckCount: checks.length,
-      }}
-    />;
+  if (loading || statusLoading) {
+    return <DashboardSkeleton variant="secretary" secretaryLayout={{ queueRowCount: Math.min(queue.length, 6), showDraftingProgress: canViewSchedules }} />;
   }
 
-  return <div id="dashboard-overview" className="space-y-4 pb-8 text-slate-800">
+  const links = [
+    ...(canViewSchedules ? [{ label: 'Schedule Management', onClick: () => navigate(paths.schedules) }] : []),
+    ...(canAssignInstructors ? [{ label: 'Instructor Assignment', onClick: () => navigate(paths.instructorAssignment) }] : []),
+    ...(canAssignCrossDepartment ? [{ label: 'Cross-Department', onClick: () => navigate(paths.crossDepartment) }] : []),
+    ...(canReviewBorrowing ? [{ label: 'Room Requests', onClick: () => navigate(paths.roomRequests) }] : []),
+    ...(canViewSchedules ? [{ label: 'Schedule History', onClick: () => navigate(paths.history) }] : []),
+  ];
+
+  if (departmentId == null || !hasData || !semester) {
+    const reason = departmentId == null
+      ? { status: 'No department', summary: 'Your account has no department, so there is no scheduling work to show. Ask an administrator to assign one.' }
+      : !hasData
+        ? { status: 'Data unavailable', summary: 'Work items are hidden until scheduling data loads.' }
+        : { status: 'No active semester', summary: 'Scheduling work is scoped to the active semester. Nothing is shown until one is activated.' };
+    return <div id="dashboard-overview" className="space-y-4 pb-8 text-text">
+      {loadError && <LoadWarning message={loadError} onRetry={retry} />}
+      <DashboardContext term={semester ? fullSemesterLabel(semester) : reason.status} status={reason.status} statusTone="drafting" summary={reason.summary} />
+      <RelatedLinks links={links} />
+    </div>;
+  }
+
+  // Concurrent work: every non-empty stage is reported, and the action opens the most urgent one.
+  const concurrent = [
+    returned && `${returned} returned`,
+    toDraft && `${toDraft} drafting`,
+    drafted && `${drafted} drafted, not submitted`,
+    withDean && `${withDean} with the Dean`,
+    withVpaa && `${withVpaa} with the VPAA`,
+    approved && `${approved} approved`,
+  ].filter(Boolean).join(' · ');
+
+  let stage: { label: string; tone: TagTone; summary: string; action?: { label: string; path: string; title?: string } };
+  if (!statusKnown) stage = { label: 'Status unavailable', tone: 'drafting', summary: 'Section stages could not be loaded.' };
+  else if (totalSections === 0) stage = { label: 'No active sections', tone: 'drafting', summary: 'No active sections found for this department yet.' };
+  else if (returned > 0) stage = { label: 'Revision needed', tone: 'returned', summary: concurrent, action: { label: 'Revise returned sections', path: paths.schedules } };
+  else if (toDraft > 0) stage = { label: 'Drafting', tone: 'drafting', summary: concurrent, action: { label: 'Continue drafting', path: paths.schedules } };
+  else if (readyToSubmit) stage = {
+    label: 'Ready to submit', tone: 'ready',
+    summary: hasDean ? concurrent : `${concurrent}. ${DEAN_REQUIRED_MESSAGE}`,
+    action: { label: 'Submit in schedule workflow', path: paths.schedules, title: 'Submission is done from the schedule workflow' },
+  };
+  else if (assignmentsDue > 0) stage = { label: 'Instructor assignment', tone: 'ready', summary: concurrent, action: { label: 'Assign instructors', path: paths.instructorAssignment } };
+  else if (withDean + withVpaa > 0) stage = { label: 'Under review', tone: 'waiting', summary: `${concurrent}. Nothing is needed from you for the sections under review.` };
+  else stage = { label: 'Approved', tone: 'done', summary: canAssignInstructors ? 'Every section is approved by the VPAA, and no approved meeting is waiting for an instructor.' : 'Every section is approved by the VPAA.' };
+
+  const draftedSections = totalSections - toDraft - returned;
+  const approvedMeetings = visibleSchedules.filter(s => ASSIGNABLE.has(s.status)).length;
+  const showReadiness = canViewSchedules && showChecks;
+  const unknown = '—';
+  const kpis = [
+    <KpiCard
+      key="drafted"
+      label="Sections drafted"
+      icon={FilePen}
+      value={statusKnown ? draftedSections : unknown}
+      of={statusKnown ? `/ ${totalSections}` : undefined}
+      meter={statusKnown ? { value: percent(draftedSections, totalSections), color: returned ? STAGE.returned : STAGE.done } : undefined}
+      status={!statusKnown ? 'Section status unavailable' : returned ? `${returned} returned for revision` : toDraft ? `${toDraft} still drafting` : 'Every section drafted'}
+      tone={!statusKnown ? 'neutral' : returned ? 'alert' : toDraft ? 'attention' : 'good'}
+      onClick={canViewSchedules ? () => navigate(paths.schedules) : undefined}
+      actionLabel="Open schedules"
+    />,
+    <KpiCard
+      key="review"
+      label="Under review"
+      icon={Hourglass}
+      value={statusKnown ? withDean + withVpaa : unknown}
+      of={statusKnown ? `of ${totalSections}` : undefined}
+      status={statusKnown ? `${withDean} with the Dean · ${withVpaa} with the VPAA` : 'Section status unavailable'}
+      tone="neutral"
+    />,
+    <KpiCard
+      key="approved"
+      label="Approved by the VPAA"
+      icon={BadgeCheck}
+      value={statusKnown ? approved : unknown}
+      of={statusKnown ? `/ ${totalSections}` : undefined}
+      meter={statusKnown ? { value: percent(approved, totalSections), color: STAGE.approved } : undefined}
+      status={!statusKnown ? 'Section status unavailable' : totalSections > 0 && approved === totalSections ? 'Every section approved' : `${totalSections - approved} not yet approved`}
+      tone={statusKnown && totalSections > 0 && approved === totalSections ? 'good' : 'neutral'}
+    />,
+    canAssignInstructors && <KpiCard
+      key="assign"
+      label="Instructors assigned"
+      icon={UserRoundCheck}
+      value={(approvedMeetings - assignmentsDue).toLocaleString()}
+      of={`/ ${approvedMeetings.toLocaleString()} meetings`}
+      meter={approvedMeetings ? { value: percent(approvedMeetings - assignmentsDue, approvedMeetings), color: STAGE.done } : undefined}
+      status={assignmentsDue ? `${assignmentsDue.toLocaleString()} approved meetings unassigned` : approvedMeetings ? 'Every approved meeting has an instructor' : 'Assigned after VPAA approval'}
+      tone={assignmentsDue ? 'attention' : approvedMeetings ? 'good' : 'neutral'}
+      onClick={() => navigate(paths.instructorAssignment)}
+      actionLabel="Open instructor assignment"
+    />,
+  ].filter(Boolean);
+
+  const yearSegments = (row: typeof yearRows[number]) => [
+    { key: 'approved', label: 'approved', value: row.approved, color: STAGE.approved },
+    { key: 'review', label: 'under review', value: row.review, color: STAGE.waiting },
+    { key: 'drafted', label: 'not submitted', value: row.drafted, color: STAGE.ready },
+    { key: 'returned', label: 'returned', value: row.returned, color: STAGE.returned },
+    { key: 'drafting', label: 'drafting', value: row.drafting, color: STAGE.drafting },
+  ];
+
+  return <div id="dashboard-overview" className="space-y-4 pb-8 text-text">
     {canViewSchedules && <RoomRecoveryAlerts />}
-    {(loadError || statusError) && <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
-      <AlertTriangle className="h-4 w-4 shrink-0"/>
-      <span className="flex-1">{loadError || statusError}</span>
-      <button type="button" onClick={retry} className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 py-1.5 font-bold text-amber-800 transition hover:bg-amber-100"><RotateCcw className="h-3 w-3"/> Retry</button>
-    </div>}
+    {(loadError || statusError) && <LoadWarning message={`${loadError || statusError} Figures below may be out of date.`} onRetry={retry} />}
 
-    <section id="dashboard-metrics" className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-6">
-      {kpis.map(({ label, value, detail, icon, path, tone }) => (
-        <DashboardMetricCard
-          key={label}
-          label={label}
-          value={value}
-          detail={detail}
-          icon={icon}
-          tone={tone}
-          onClick={() => navigate(path)}
-        />
-      ))}
+    <DashboardContext
+      term={fullSemesterLabel(semester)}
+      status={stage.label}
+      statusTone={stage.tone}
+      summary={stage.summary}
+      action={stage.action ? { label: stage.action.label, title: stage.action.title, onClick: () => navigate(stage.action!.path) } : undefined}
+    />
 
-      <DashboardMetricCard
-        label="Drafting Completion"
-        value={`${draftingProgress}%`}
-        detail={`${draftedCount} / ${totalSections} sections completed`}
-        progress={draftingProgress}
-        tone={draftingProgress === 100 ? 'good' : 'brand'}
-        onClick={() => navigate(paths.schedules)}
-      />
+    <KpiStrip count={kpis.length}>{kpis}</KpiStrip>
 
-      {inventory.map(({ label, value, detail, icon, path, tone }) => (
-        <DashboardMetricCard
-          key={label}
-          label={label}
-          value={value}
-          detail={detail}
-          icon={icon}
-          tone={tone}
-          onClick={() => navigate(path)}
-        />
-      ))}
-    </section>
-
-    <section id="dashboard-work-queue" className="grid gap-4 xl:grid-cols-12">
-      <Panel title="Scheduling Work Queue" className="xl:col-span-4" action="View all items" onAction={() => navigate(paths.schedules)}>
-        <div className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5 ${openItems ? 'border-amber-200 bg-amber-50/70' : 'border-emerald-200 bg-emerald-50/70'}`}>
-          <div className="flex min-w-0 items-center gap-2.5">
-            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${openItems ? TONES.warn : TONES.good}`}>{openItems ? <AlertTriangle className="h-4 w-4"/> : <CheckCircle2 className="h-4 w-4"/>}</span>
-            <div className="min-w-0">
-              <div className="text-xl font-bold leading-none tabular-nums text-primary">{openItems}</div>
-              <div className="mt-1 text-[10px] font-semibold leading-tight text-slate-600">{openItems === 1 ? 'item needs attention' : 'items need attention'}</div>
-            </div>
-          </div>
-          <span className="shrink-0 rounded-full bg-white/80 px-2 py-1 text-[10px] font-bold tabular-nums text-slate-600">{clearedQueue.length}/{queue.length} clear</span>
-        </div>
-
-        <ul className="mt-1 divide-y divide-slate-100">
-          {[...openQueue, ...clearedQueue].map(({label, value, action, icon:Icon, path}) => <li key={label}>
+    <div id="dashboard-work-queue" className="grid items-start gap-4 xl:grid-cols-12">
+      <Panel
+        title="What's left to do"
+        subtitle={openQueue.length ? `${openQueue.length} ${openQueue.length === 1 ? 'item needs' : 'items need'} attention.` : undefined}
+        className={showReadiness ? 'xl:col-span-7' : 'xl:col-span-12'}
+      >
+        {queueIncomplete.map(note => <p key={note} role="status" className="mb-3 rounded-md bg-accent/10 px-3 py-2 text-[12px] text-stage-warnText">{note}</p>)}
+        {openQueue.length ? <ul className="-mx-2 divide-y divide-border">
+          {openQueue.map(({ key, label, value, action, icon: Icon, path }) => <li key={key}>
             <button
               type="button"
               onClick={() => navigate(path)}
-              className="group flex w-full items-center gap-2.5 py-2.5 text-left transition hover:bg-slate-50"
+              className="focus-ring group flex w-full items-center gap-3 rounded-md px-2 py-2.5 text-left transition-colors hover:bg-parchment"
             >
-              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${value ? TONES.warn : TONES.good}`}><Icon className="h-3.5 w-3.5"/></span>
-              <span className={`min-w-0 flex-1 truncate text-xs ${value ? 'font-semibold text-slate-700' : 'font-medium text-slate-400'}`} title={label}>{label}</span>
-              <b className={`w-7 shrink-0 text-right text-xs tabular-nums ${value ? 'text-amber-700' : 'text-slate-300'}`}>{value}</b>
-              <span className="flex w-[68px] shrink-0 justify-end">
-                {value
-                  ? <span className="inline-flex items-center gap-0.5 rounded-md border border-primary/30 px-1.5 py-1 text-[10px] font-bold text-primary transition group-hover:border-primary group-hover:bg-primary group-hover:text-white">{action}<ChevronRight className="h-3 w-3"/></span>
-                  : <Check className="h-3.5 w-3.5 text-emerald-500"/>}
-              </span>
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-stage-warnText"><Icon className="h-4 w-4" aria-hidden="true"/></span>
+              <span className="min-w-0 flex-1 text-[13px] font-semibold text-text">{label}</span>
+              <b className="shrink-0 text-right text-[15px] font-semibold tabular-nums text-stage-warnText">{value.toLocaleString()}</b>
+              <span className="rounded-md border border-primary/25 px-2.5 py-1 text-[12px] font-semibold text-primary transition-colors group-hover:bg-primary group-hover:text-white">{action}</span>
             </button>
           </li>)}
-        </ul>
+        </ul> : queueIncomplete.length === 0 && <p className="flex items-center gap-2 text-[13px] text-stage-done">
+          <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true"/>
+          Nothing is left to do right now.
+        </p>}
       </Panel>
 
-      {canViewSchedules && <Panel title="Department Drafting Progress" className="xl:col-span-4" action="Open Schedule" onAction={() => navigate(paths.schedules)}>
-        <div className="relative mx-auto h-44 w-44">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={progressRows.map(row => ({
-                  name: row.label,
-                  value: Math.max(1, row.total),
-                }))}
-                dataKey="value"
-                innerRadius="67%"
-                outerRadius="100%"
-                startAngle={90}
-                endAngle={-270}
-                paddingAngle={1}
-                stroke="#ffffff"
-                strokeWidth={3}
-              >
-                {progressRows.map(row => (
-                  <Cell
-                    key={row.year_level}
-                    fill={row.isComplete ? '#16a36a' : '#f59e0b'}
-                  />
-                ))}
-              </Pie>
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="absolute inset-[22%] flex flex-col items-center justify-center rounded-full bg-white text-center">
-            <b className="text-3xl leading-none text-primary">{draftingProgress}%</b>
-            <span className="mt-1 text-[10px] text-slate-500">{draftedCount}/{totalSections} sections</span>
-          </div>
-        </div>
-        <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-slate-100 pt-3">
-          {progressRows.map(row => {
-            const value = percent(row.drafted, row.total);
-            return (
-              <li key={row.year_level} className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  {row.isComplete
-                    ? <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-500"/>
-                    : <span className="h-3 w-3 shrink-0 rounded-full border-2 border-amber-400"/>}
-                  <span className="min-w-0 flex-1 truncate text-[10px] font-bold text-slate-700">{row.label}</span>
-                  <span className="shrink-0 text-[10px] tabular-nums text-slate-500">{row.drafted}/{row.total}</span>
-                </div>
-                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-200">
-                  <div className={`h-full rounded-full ${row.isComplete ? 'bg-[#16a36a]' : 'bg-amber-400'}`} style={{ width: `${value}%` }} />
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      </Panel>}
-
-      {canAssignInstructors && <Panel title="Instructor Assignment" className="xl:col-span-4" action="Open Schedule Builder" onAction={() => navigate(paths.schedules)}>
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Workload Progress</span>
-          <span className="text-[9px] text-slate-400">Assigned / Max units</span>
-        </div>
-        <InstructorWorkloadChart instructors={workload}/>
-      </Panel>}
-    </section>
-
-    <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      {canViewSchedules && <div className="flex min-h-0 min-w-0 flex-col xl:[contain:size]">
-        {isFullscreen ? createPortal(timetablePanel, document.body) : timetablePanel}
-      </div>}
-
-      <div className="flex min-w-0 flex-col gap-4">
-      <Panel title="Room Assignment" action="View rooms" onAction={() => navigate(paths.rooms)}>
-        <button
-          type="button"
-          onClick={() => navigate(roomAssignmentPath)}
-          className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition hover:shadow-sm ${noRoom ? 'border-rose-200 bg-rose-50/70' : 'border-emerald-200 bg-emerald-50/70'}`}
-        >
-          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${noRoom ? TONES.alert : TONES.good}`}>{noRoom ? <AlertTriangle className="h-4 w-4"/> : <CheckCircle2 className="h-4 w-4"/>}</span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-xl font-bold leading-none tabular-nums text-primary">{noRoom}</span>
-            <span className="mt-1 block text-[10px] font-semibold leading-tight text-slate-600">{noRoom ? 'on-site classes still waiting for a room' : 'every on-site class has a room'}</span>
-          </span>
-          <ChevronRight className="h-4 w-4 shrink-0 text-slate-400"/>
-        </button>
-
-        <div className="mt-3 grid grid-cols-4 gap-2">
-          <StatChip icon={DoorOpen} value={assignableRooms.length} label="Rooms"/>
-          <StatChip icon={FlaskConical} value={labRooms} label="Labs"/>
-          <StatChip icon={Globe2} value={onlineClasses} label="Online"/>
-          <StatChip icon={MapPin} value={fieldClasses} label="Field"/>
-        </div>
-
-        <div className="mt-3.5 flex items-baseline justify-between">
-          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Room Usage</span>
-          <span className="text-[9px] text-slate-400">{roomsUsed} of {assignableRooms.length} rooms in use</span>
-        </div>
-
-        {roomUsage.length ? <div className="mt-2 h-[140px] min-w-0">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={roomUsage.slice(0, 5).map(room => ({ name: room.code, usage: room.share, classesLabel: `${room.classes} ${room.classes === 1 ? 'class' : 'classes'}` }))} layout="vertical" margin={{ top: 2, right: 58, left: 0, bottom: 2 }} barCategoryGap={9}>
-              <XAxis type="number" domain={[0, 100]} hide />
-              <YAxis type="category" dataKey="name" width={64} tick={{ fontSize: 10, fontWeight: 700, fill: '#5A1220' }} axisLine={false} tickLine={false} />
-              <Bar dataKey="usage" fill="#5A1220" radius={[4, 4, 4, 4]} barSize={8} background={{ fill: '#e2e8f0', radius: 4 }}>
-                <LabelList dataKey="classesLabel" position="right" offset={7} style={{ fontSize: 9, fill: '#64748b' }} />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div> : <p className="mt-2 py-3 text-center text-[11px] italic text-slate-400">No rooms available to this department.</p>}
-
-        <div className="mt-3 flex items-baseline justify-between gap-2">
-          <button type="button" onClick={() => navigate(paths.rooms)} className="text-[11px] font-bold text-primary hover:underline">Go to Room List <ArrowRight className="inline h-3 w-3"/></button>
-          {roomUsage.length > 5 && <span className="text-[10px] text-slate-400">+{roomUsage.length - 5} more</span>}
-        </div>
-      </Panel>
-
-      <Panel title="Submission Overview" className="flex flex-1 flex-col">
-        <div className="flex flex-1 flex-col gap-2.5">
-          <div className={`rounded-lg border px-2.5 py-2 ${statusBand}`}>
-            <div className="flex items-start gap-2">
-              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${TONES[statusTone]}`}><StatusIcon className="h-3.5 w-3.5"/></span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate text-xs font-bold leading-tight text-primary" title={STAGES[currentStage]}>{STAGES[currentStage]}</span>
-                  <span className="shrink-0 rounded-full bg-white/80 px-1.5 py-0.5 text-[8px] font-bold tabular-nums text-slate-600">{progress.at + 1}/{SUBMISSION_MILESTONES.length}</span>
-                </div>
-                <p className="mt-0.5 text-[9px] font-medium leading-3.5 text-slate-600">{statusNote}</p>
-              </div>
-            </div>
-          </div>
-
-          <ol className="flex items-start pt-0.5">
-            {SUBMISSION_MILESTONES.map((milestone, i) => {
-              const passed = i < progress.done;
-              const here = i === progress.at && !passed;
-              return <li key={milestone} className="relative min-w-0 flex-1 text-center">
-                {i < SUBMISSION_MILESTONES.length - 1 && <div className={`absolute left-1/2 top-[11px] h-0.5 w-full ${passed ? 'bg-emerald-400' : 'bg-slate-200'}`}/>}
-                <span
-                  title={MILESTONE_TITLES[milestone]}
-                  className={`relative mx-auto flex h-6 w-6 items-center justify-center rounded-full text-[9px] font-bold ${
-                    passed ? 'bg-emerald-500 text-white'
-                    : here ? `text-white ring-4 ${progress.isReturned ? 'bg-rose-500 ring-rose-500/15' : 'bg-primary ring-primary/15'}`
-                    : 'bg-slate-200 text-slate-500'}`}
-                >
-                  {passed ? <Check className="h-3 w-3"/> : here && progress.isReturned ? <RotateCcw className="h-3 w-3"/> : i + 1}
-                </span>
-                <div className={`mt-1.5 px-0.5 text-[8px] leading-[10px] ${here ? 'font-bold text-primary' : passed ? 'font-semibold text-emerald-700' : 'font-semibold text-slate-400'}`}>{milestone}</div>
-              </li>;
-            })}
-          </ol>
-
-          <div className="flex flex-1 flex-col border-t border-slate-100 pt-2.5">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-[9px] font-bold uppercase tracking-wide text-slate-500">Readiness</span>
-              <span className="text-[8px] font-semibold tabular-nums text-slate-500">{doneChecks}/{checks.length} &middot; {ready}%</span>
-            </div>
-            <div className="mt-1 h-7 min-w-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={[{ readiness: ready, label: `${ready}%` }]} layout="vertical" margin={{ top: 4, right: 38, left: 0, bottom: 4 }}>
-                  <XAxis type="number" domain={[0, 100]} hide />
-                  <YAxis type="category" hide />
-                  <Bar dataKey="readiness" fill={ready === 100 ? '#16a36a' : '#f59e0b'} radius={[5, 5, 5, 5]} barSize={9} background={{ fill: '#e2e8f0', radius: 5 }}>
-                    <LabelList dataKey="label" position="right" offset={7} style={{ fontSize: 9, fontWeight: 700, fill: '#64748b' }} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <ul className="mt-2 space-y-1.5">
-              {checks.map(([label, done]) => <li key={label} className="flex items-start gap-2">
-                <span className={`mt-px flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full ${done ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-700'}`}>{done ? <Check className="h-2 w-2"/> : <AlertTriangle className="h-2 w-2"/>}</span>
-                <span className={`min-w-0 flex-1 text-[10px] leading-3.5 ${done ? 'text-slate-500' : 'font-semibold text-slate-700'}`}>{label}</span>
-              </li>)}
-            </ul>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => navigate(paths.schedules)}
-            title={canSubmit ? 'Submission is done from the schedule workflow' : submitHint}
-            className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-[10px] font-bold text-white transition hover:bg-primary-light"
-          >
-            {canSubmit
-              ? <><Send className="h-3 w-3"/>Submit in Schedule Workflow</>
-              : <>Continue Drafting Schedules<ArrowRight className="h-3 w-3"/></>}
-          </button>
-        </div>
-      </Panel>
-
-      <Panel title="Submission Status" className="hidden">
-        <ol className="flex items-start overflow-x-auto pb-3">
-          {STAGES.map((stage, i) => <li key={stage} className="relative min-w-16 flex-1 text-center">
-            {i < STAGES.length - 1 && <div className={`absolute left-1/2 top-3 h-0.5 w-full ${i < currentStage ? 'bg-emerald-400' : 'bg-slate-200'}`} />}
-            <span className={`relative mx-auto flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white ${i <= currentStage ? 'bg-primary' : 'bg-slate-300'}`}>{i < currentStage ? <Check className="h-3 w-3" /> : i + 1}</span>
-            <div className="mt-1.5 px-1 text-[10px] font-semibold leading-3">{stage}</div>
+      {showReadiness && <Panel
+        title="Submission readiness"
+        subtitle={`${passedChecks} of ${checks.length} checks pass.`}
+        className="xl:col-span-5"
+      >
+        <CheckSegments checks={checks} />
+        <ul className="mt-3.5 space-y-2">
+          {checks.map(([label, done]) => <li key={label} className="flex items-start gap-2.5">
+            <span className={`mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${done ? 'bg-stage-done/10 text-stage-done' : 'bg-accent/15 text-stage-warnText'}`}>
+              {done ? <Check className="h-3 w-3" aria-hidden="true"/> : <AlertTriangle className="h-3 w-3" aria-hidden="true"/>}
+            </span>
+            <span className={`min-w-0 flex-1 text-[13px] leading-snug ${done ? 'text-muted' : 'font-semibold text-text'}`}>
+              {label}
+              <span className="sr-only">{done ? ' (passed)' : ' (not yet)'}</span>
+            </span>
           </li>)}
-        </ol>
-        <div className="mt-2 flex flex-wrap items-end justify-between gap-3 border-t border-slate-100 pt-3">
-          <div className="min-w-0 flex-1"><div className="text-[10px] font-bold uppercase tracking-wide text-primary">Current Status</div><div className="text-sm font-bold text-primary">{STAGES[currentStage]}</div><p className="mt-1 text-[11px] leading-4 text-slate-500">{submitHint}</p></div>
-          <button type="button" onClick={submitToDean} disabled={!canSubmit || submitting || !departmentId} className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-[11px] font-bold text-white transition ${canSubmit && !submitting && departmentId ? 'bg-primary hover:bg-primary-light' : 'cursor-not-allowed bg-slate-300'}`}>
-            {submitting ? <LoadingSpinner size={12} /> : <Send className="h-3 w-3" />}{submitting ? 'Submittingâ€¦' : 'Submit to Dean'}
-          </button>
-        </div>
-      </Panel>
-      </div>
-    </section>
-
-    <section className="hidden grid gap-4 xl:grid-cols-12">
-      <Panel title="Submission Readiness Checklist" className="xl:col-span-12">
-        <div className="grid gap-4 md:grid-cols-[1fr_140px] md:items-center">
-          <div className="grid gap-2 sm:grid-cols-2">
-            {checks.map(([label, done]) => <div key={label} className="flex items-center gap-2 text-[11px]">
-              <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${done ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}><Check className="h-3 w-3"/></span>
-              <span className="min-w-0 flex-1 font-medium">{label}</span>
-              <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${done ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-700'}`}>{done ? 'Complete' : 'Pending'}</span>
-            </div>)}
-          </div>
-          <div className="text-center">
-            <div className="text-3xl font-bold text-primary">{ready}%</div>
-            <div className="text-[10px] text-slate-500">Ready to submit to the Dean</div>
-            <button type="button" onClick={() => navigate(paths.schedules)} className="mt-3 w-full rounded-md bg-primary px-3 py-2 text-[11px] font-bold text-white transition hover:bg-primary-light">Review Details</button>
-          </div>
-        </div>
-      </Panel>
-
-      <Panel title="Submission Status" className="hidden xl:col-span-5">
-        <ol className="flex items-start overflow-x-auto pb-3">
-          {STAGES.map((stage, i) => <li key={stage} className="relative min-w-16 flex-1 text-center">
-            {i < STAGES.length - 1 && <div className={`absolute left-1/2 top-3 h-0.5 w-full ${i < currentStage ? 'bg-emerald-400' : 'bg-slate-200'}`}/>}
-            <span className={`relative mx-auto flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white ${i <= currentStage ? 'bg-primary' : 'bg-slate-300'}`}>{i < currentStage ? <Check className="h-3 w-3"/> : i + 1}</span>
-            <div className="mt-1.5 px-1 text-[10px] font-semibold leading-3">{stage}</div>
-          </li>)}
-        </ol>
-        <div className="mt-2 flex flex-wrap items-end justify-between gap-3 border-t border-slate-100 pt-3">
-          <div className="min-w-0 flex-1">
-            <div className="text-[10px] font-bold uppercase tracking-wide text-primary">Current Status</div>
-            <div className="text-sm font-bold text-primary">{STAGES[currentStage]}</div>
-            <p className="mt-1 text-[11px] leading-4 text-slate-500">{submitHint}</p>
-          </div>
-          <button
-            type="button"
-            onClick={submitToDean}
-            disabled={!canSubmit || submitting || !departmentId}
-            title={canSubmit ? 'Send every department schedule to the Dean' : submitHint}
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-[11px] font-bold text-white transition ${canSubmit && !submitting && departmentId ? 'bg-primary hover:bg-primary-light' : 'cursor-not-allowed bg-slate-300'}`}
-          >
-            {submitting ? <LoadingSpinner size={12} /> : <Send className="h-3 w-3"/>}
-            {submitting ? 'Submitting…' : 'Submit to Dean'}
-          </button>
-        </div>
-      </Panel>
-    </section>
-  </div>;
-}
-
-function Panel({title, children, action, onAction, headerExtra, className = ''}:{title:string; children:ReactNode; action?:string; onAction?:() => void; headerExtra?:ReactNode; className?:string}) {
-  return <section className={`rounded-lg border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
-    <div className="mb-3 flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
-      <h2 className="text-[11px] font-bold uppercase tracking-wide text-primary">{title}</h2>
-      <div className="flex shrink-0 items-center gap-3">
-        {action && <button type="button" onClick={onAction} className="inline-flex shrink-0 items-center text-[10px] font-bold text-primary hover:underline">{action}<ChevronRight className="h-3 w-3"/></button>}
-        {headerExtra}
-      </div>
+        </ul>
+        <p className="mt-3 border-t border-border pt-2.5 text-[12px] text-muted">Guidance only. Submission is validated again in the schedule workflow.</p>
+      </Panel>}
     </div>
-    {children}
-  </section>;
-}
 
-function StatChip({icon:Icon, value, label}:{icon:LucideIcon; value:number; label:string}) {
-  return <div className="rounded-md border border-slate-100 bg-slate-50/60 p-2 text-center">
-    <Icon className="mx-auto h-3.5 w-3.5 text-primary/70"/>
-    <b className="mt-1 block text-sm leading-none tabular-nums text-primary">{value}</b>
-    <span className="mt-1 block truncate text-[9px] font-semibold text-slate-500" title={label}>{label}</span>
+    {canViewSchedules && <div className="grid items-start gap-4 xl:grid-cols-12">
+      <Panel
+        title="Week at a glance"
+        subtitle="Class meetings per hour across the department."
+        action="Open schedules"
+        onAction={() => navigate(paths.schedules)}
+        className="xl:col-span-7"
+      >
+        {schedulesTruncated && <p role="status" className="mb-3 rounded-md bg-accent/10 px-3 py-2 text-[12px] text-stage-warnText">Only part of the semester's meetings loaded, so this preview may be incomplete.</p>}
+        <WeekGlance meetings={visibleSchedules} grid={timeGrid} />
+      </Panel>
+
+      <Panel title="Progress by year level" subtitle="Sections by stage, per year level." className="xl:col-span-5">
+        {!statusKnown ? <EmptyNote>Section status could not be loaded, so progress is unavailable.</EmptyNote>
+          : yearRows.length ? <StageRows
+            label="Year level progress"
+            rows={yearRows.map(row => ({
+              key: String(row.year),
+              label: row.label,
+              summary: `${row.total - row.drafting - row.returned} / ${row.total} drafted`,
+              segments: yearSegments(row),
+            }))}
+          /> : <EmptyNote>No active sections found for this department yet.</EmptyNote>}
+      </Panel>
+    </div>}
+
+    <RelatedLinks links={links} />
   </div>;
 }
-
-
-
-import LoadingSpinner from "../../components/ui/LoadingSpinner";

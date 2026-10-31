@@ -1,5 +1,4 @@
-import { ArrowRight } from 'lucide-react';
-import { Donut, DonutLegend, Panel, type Slice } from './DashboardPrimitives';
+import { Panel, type Slice } from './DashboardPrimitives';
 import { grouped } from '../../lib/dashboardFormat';
 
 export interface FacultyLoadRow {
@@ -11,6 +10,12 @@ export interface FacultyLoadRow {
   over: number;
 }
 
+const valueOf = (slices: Slice[], key: string) => slices.find(slice => slice.key === key)?.value ?? 0;
+
+/**
+ * Workload exceptions only: who is over their maximum load, and who has no
+ * classes yet. The full spread lives on the Instructors page.
+ */
 export default function FacultyLoadPanel({
   slices,
   total,
@@ -24,50 +29,46 @@ export default function FacultyLoadPanel({
   onOpen: () => void;
   className?: string;
 }) {
+  const unassigned = valueOf(slices, 'none');
+  const fullLoad = valueOf(slices, 'complete');
+  const withRoom = valueOf(slices, 'remaining');
+
   return (
     <Panel
-      title="Instructor Load Overview"
-      subtitle="Teaching load spread across all active instructors."
-      action="View instructor loads"
+      title="Workload exceptions"
+      subtitle={`${grouped(fullLoad)} at full load and ${grouped(withRoom)} with room for more, of ${grouped(total)} active instructors.`}
+      action="View instructors"
       onAction={onOpen}
-      className={`flex flex-col ${className}`}
+      className={className}
     >
-      <div className="grid gap-4 sm:grid-cols-[128px_1fr] sm:items-center">
-        <Donut slices={slices} headline={grouped(total)} caption="Total Instructors" />
-        <DonutLegend slices={slices} total={total} />
-      </div>
-
-      {overloaded.length > 0 && (
-        <div className="mt-3 border-t border-slate-100 pt-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">
-            Over maximum load ({grouped(overloaded.length)})
+      {overloaded.length > 0 ? (
+        <>
+          <p className="text-[13px] font-semibold text-stage-warnText">
+            Over their maximum load ({grouped(overloaded.length)})
           </p>
-          <ul className="mt-1.5 divide-y divide-slate-100">
+          <ul className="mt-1 divide-y divide-border">
             {overloaded.slice(0, 5).map(row => (
-              <li key={row.id} className="flex items-center gap-2 py-1.5">
-                <b className="truncate text-[12px] text-slate-700" title={row.name}>{row.name}</b>
-                <span className="truncate text-[11px] font-semibold text-slate-400">{row.department}</span>
-                <span className="ml-auto shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold tabular-nums text-amber-800">
+              <li key={row.id} className="flex items-center gap-2 py-2">
+                <b className="truncate text-[13px] font-semibold text-text" title={row.name}>{row.name}</b>
+                <span className="truncate text-[12px] text-muted">{row.department}</span>
+                <span className="ml-auto shrink-0 text-[13px] font-semibold tabular-nums text-stage-warnText">
                   {row.assigned} / {row.max} units
                 </span>
               </li>
             ))}
           </ul>
           {overloaded.length > 5 && (
-            <p className="mt-1.5 text-[11px] font-semibold text-slate-500">
-              +{grouped(overloaded.length - 5)} more over their ceiling.
-            </p>
+            <p className="mt-1 text-[12px] text-muted">{grouped(overloaded.length - 5)} more are over their ceiling.</p>
           )}
-        </div>
+        </>
+      ) : (
+        <p className="text-[13px] text-stage-done">No instructor is over their maximum load.</p>
       )}
-
-      <button
-        type="button"
-        onClick={onOpen}
-        className="mt-auto self-start pt-3 text-xs font-bold text-primary hover:underline"
-      >
-        View Instructor Loads <ArrowRight className="inline h-3.5 w-3.5" />
-      </button>
+      {unassigned > 0 && (
+        <p className="mt-3 border-t border-border pt-3 text-[13px] text-muted">
+          <b className="font-semibold text-text">{grouped(unassigned)}</b> {unassigned === 1 ? 'instructor has' : 'instructors have'} no classes yet.
+        </p>
+      )}
     </Panel>
   );
 }

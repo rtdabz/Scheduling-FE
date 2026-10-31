@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../../lib/api';
-import { recoveryError, roomTransferDetailChanges, ROOM_TRANSFER_STATUS_LABELS, type RoomTransferPlacement, type RoomTransferRequest } from '../../lib/roomRecovery';
+import { isLinkedOnlineSession, recoveryError, roomTransferClassLabel, roomTransferDetailChanges, roomTransferMovedCount, ROOM_TRANSFER_STATUS_LABELS, type RoomTransferPlacement, type RoomTransferRequest } from '../../lib/roomRecovery';
 import { formatTime12h } from '../../lib/timeGrid';
 import { publishLiveTopics } from '../../lib/liveUpdates';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
@@ -44,7 +44,7 @@ export default function RoomTransferRequests({ transfers, stage, onClose, onRevi
   const selectedRequest = items[0];
   const printInput = useMemo(() => selectedRequest ? roomTransferPreview(selectedRequest) : null, [selectedRequest]);
   const detailRows = useMemo(() => selectedRequest ? roomTransferDetailChanges(selectedRequest).map(change => ({
-    key: String(change.schedule_id), section: change.section, change: 'Changed', classLabel: change.course,
+    key: String(change.schedule_id), section: change.section, change: 'Changed', classLabel: isLinkedOnlineSession(change) ? `${change.course} (linked online session)` : change.course,
     before: `${change.before.day} ${formatTime12h(change.before.start_time)}–${formatTime12h(change.before.end_time)}, ${change.before.room}, ${change.mode ?? 'on-site'}`,
     after: `${change.after.day} ${formatTime12h(change.after.start_time)}–${formatTime12h(change.after.end_time)}, ${change.after.room}, ${change.mode ?? 'on-site'}`,
   })) : [], [selectedRequest]);
@@ -87,9 +87,11 @@ export default function RoomTransferRequests({ transfers, stage, onClose, onRevi
     finally { setBusy(false); }
   };
   const cancelDecision = () => { if (!busy) { setDecision(null); setError(''); } };
+  const sundayNotice = decision?.request.enables_sunday
+    ? ` This transfer moves classes to Sunday, so final approval also enables Sunday classes for ${decision.request.department}.` : '';
   const confirmation = <>
     <ConfirmModal isOpen={decision?.action === 'approve'} title="Approve room transfer"
-      message={stage === 'dean' ? 'Approve this room transfer and forward it to the VPAA? Existing schedules will remain unchanged.' : 'Approve these proposed room transfers and apply the schedule changes?'}
+      message={(stage === 'dean' ? 'Approve this room transfer and forward it to the VPAA? Existing schedules will remain unchanged.' : 'Approve these proposed room transfers and apply the schedule changes?') + sundayNotice}
       confirmLabel="Approve transfer" variant="maroon" onConfirm={decide} onCancel={cancelDecision} isConfirming={busy}>
       {error && <p role="alert" className="mt-2 text-sm text-red-700">{error}</p>}
     </ConfirmModal>
@@ -101,7 +103,7 @@ export default function RoomTransferRequests({ transfers, stage, onClose, onRevi
   </>;
   if (review && onClose) return <>
     {selectedRequest && <ScheduleApprovalPreviewModal open title="Room Transfer Request Details"
-      status={selectedRequest.status.startsWith('rejected_') ? 'rejected' : selectedRequest.status === 'approved' ? 'approved' : 'pending'}
+      status={selectedRequest.status.startsWith('rejected_') ? 'rejected' : selectedRequest.status === 'approved' || selectedRequest.status === 'applied' ? 'approved' : 'pending'}
       statusLabel={ROOM_TRANSFER_STATUS_LABELS[selectedRequest.status]} printInput={printInput}
       canAct={selectedRequest.status === `pending_${stage}`} inert={decision !== null || detailsOpen} closeOnEscape onClose={onClose}
       emptyMessage="The proposed schedule preview is unavailable. View Details to review every proposed change."
@@ -120,14 +122,15 @@ export default function RoomTransferRequests({ transfers, stage, onClose, onRevi
     {message && <p role="status" className="mt-3 text-sm text-emerald-800">{message}</p>}
     {error && !decision && <p role="alert" className="mt-3 text-sm text-red-700">{error} <button type="button" onClick={() => setRefresh(value => value + 1)} className="font-semibold underline">Retry</button></p>}
     {!loading && !error && items.length === 0 && <p className="mt-3 text-sm text-slate-500">No room transfer requests.</p>}
-    {(['pending_dean', 'pending_vpaa', 'approved', 'rejected_by_dean', 'rejected_by_vpaa'] as const).flatMap(status => items.filter(item => item.status === status)).map(item => <details key={item.id} open={params.get('room_transfer') === item.id || (review && item.status === `pending_${stage}`)} className="mt-3 rounded-lg border border-slate-200 p-3">
-      <summary className="cursor-pointer text-sm font-semibold">{ROOM_TRANSFER_STATUS_LABELS[item.status]} · {item.department} · {item.semester_label} · {roomTransferDetailChanges(item).length} meeting(s)</summary>
+    {(['pending_dean', 'pending_vpaa', 'approved', 'applied', 'rejected_by_dean', 'rejected_by_vpaa'] as const).flatMap(status => items.filter(item => item.status === status)).map(item => <details key={item.id} open={params.get('room_transfer') === item.id || (review && item.status === `pending_${stage}`)} className="mt-3 rounded-lg border border-slate-200 p-3">
+      <summary className="cursor-pointer text-sm font-semibold">{ROOM_TRANSFER_STATUS_LABELS[item.status]} · {item.department} · {item.semester_label} · {roomTransferMovedCount(item)} meeting(s)</summary>
       <p className="mt-2 text-xs text-slate-500">Submitted by {item.submitted_by} · {new Date(item.submitted_at).toLocaleString()}</p>
       <ul className="mt-2 space-y-2 text-sm">{roomTransferDetailChanges(item).map(change => <li key={change.schedule_id}>
-        <p className="font-semibold">{change.course} · {change.section}</p>
-        <p className="text-slate-500">Current at submission: {placement(change.before)}</p>
+        <p className="font-semibold">{roomTransferClassLabel(change)}</p>
+        <p className="text-slate-500">Original: {placement(change.before)}</p>
         <p>Proposed: {placement(change.after)}</p>
       </li>)}</ul>
+      {item.enables_sunday && <p className="mt-2 text-sm text-amber-900">Final approval also enables Sunday classes for {item.department}.</p>}
       {item.rejection_reason && <p className="mt-2 text-sm text-red-800">Rejection reason: {item.rejection_reason}</p>}
       {review && item.status === `pending_${stage}` && <div className="mt-3 flex gap-2">
         {(['approve', 'reject'] as const).map(action => <button key={action} type="button" disabled={busy} onClick={() => { setDecision({ request: item, action }); setReason(''); setError(''); }} className="rounded-lg border border-primary px-4 py-2 text-sm font-semibold text-primary disabled:opacity-50">{action === 'approve' ? 'Approve' : 'Reject'}</button>)}

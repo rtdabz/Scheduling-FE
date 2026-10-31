@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  SLOTS_PER_HOUR,
-  SLOTS_PER_LABORATORY_UNIT,
-  customLaboratoryDurationSlots,
+  consecutiveMeetingSlots,
+  placeCourse,
   getCourseSlotPlan,
   laboratoryComponentSlots,
   slotsToHours,
@@ -10,51 +9,94 @@ import {
 import { getSubjectTotalSlots } from "./types";
 
 /**
- * Guards the fix for audit finding #19 (and finding #3 of the split-hours audit):
- * the two server conventions are named separately, and the third formula — a
- * hardcoded 6 for any major with both components — is gone.
+ * Scheduling follows each course's Total Hours as recorded, matching
+ * SchedulingPolicy::courseDurationSlots on the server: lecture hours plus
+ * laboratory hours, with no unit conversion.
  */
 
 describe("getCourseSlotPlan", () => {
-  it("derives a single block from units, matching CspSolver::rawDurationSlots", () => {
-    expect(getCourseSlotPlan({ units: 3, lectureHours: 3, labHours: 0 }).singleBlockSlots).toBe(6);
-    expect(getCourseSlotPlan({ units: 5, lectureHours: 2, labHours: 1 }).singleBlockSlots).toBe(10);
+  it("reads a lecture-only course's hours as they are", () => {
+    const plan = getCourseSlotPlan({ lectureHours: 3, labHours: 0 });
+
+    expect(plan.lectureSlots).toBe(6);
+    expect(plan.laboratorySlots).toBe(0);
+    expect(plan.totalSlots).toBe(6);
+    expect(plan.hasBothComponents).toBe(false);
   });
 
-  it("derives split components from hours, matching CspSolver::buildVariables", () => {
-    const plan = getCourseSlotPlan({ units: 3, lectureHours: 2, labHours: 1 });
+  it("reads a laboratory-only course's hours as they are", () => {
+    const plan = getCourseSlotPlan({ lectureHours: 0, labHours: 8 });
 
-    expect(plan.lectureSlots).toBe(2 * SLOTS_PER_HOUR);
-    expect(plan.laboratorySlots).toBe(1 * SLOTS_PER_LABORATORY_UNIT);
-    expect(plan.splitTotalSlots).toBe(10);
+    expect(plan.laboratorySlots).toBe(16);
+    expect(plan.totalSlots).toBe(16);
+    expect(plan.hasBothComponents).toBe(false);
+  });
+
+  it("adds a lecture and laboratory course's hours without converting either", () => {
+    const plan = getCourseSlotPlan({ lectureHours: 2, labHours: 1 });
+
+    expect(plan.lectureSlots).toBe(4);
+    expect(plan.laboratorySlots).toBe(2);
+    expect(plan.totalSlots).toBe(6);
     expect(plan.hasBothComponents).toBe(true);
   });
 
-  it("keeps the two conventions distinct for the same course", () => {
-    const plan = getCourseSlotPlan({ units: 3, lectureHours: 2, labHours: 1 });
+  it("gives no time to a missing course", () => {
+    expect(getCourseSlotPlan(null).totalSlots).toBe(0);
+    expect(getCourseSlotPlan(undefined).totalSlots).toBe(0);
+  });
+});
 
-    // 3 units is a 3-hour single block; the same course split is 5 hours.
-    expect(plan.singleBlockSlots).toBe(6);
-    expect(plan.splitTotalSlots).toBe(10);
+describe("placeCourse", () => {
+  const course = {
+    id: "8", code: "IT 105", name: "Computer Programming 2", units: 3, lectureHours: 2, labHours: 1,
+    category: "major" as const, semester: "2nd" as const, departmentId: 6, yearLevel: 1 as const,
+    roomTypeRequired: "laboratory" as const, status: "active" as const,
+    classMinutesByCurriculum: { "19": { lecture: 120, laboratory: 180 } },
+  };
+
+  it("uses the minutes the section's curriculum recorded on import", () => {
+    const plan = getCourseSlotPlan(placeCourse(course, 19));
+    expect([plan.lectureSlots, plan.laboratorySlots, plan.totalSlots]).toEqual([4, 6, 10]);
   });
 
-  it("does not claim both components when one is absent", () => {
-    expect(getCourseSlotPlan({ units: 3, lectureHours: 3, labHours: 0 }).hasBothComponents).toBe(false);
-    expect(getCourseSlotPlan({ units: 3, lectureHours: 0, labHours: 1 }).hasBothComponents).toBe(false);
+  it("keeps the course's own hours for a curriculum entered by hand, or no curriculum", () => {
+    expect(getCourseSlotPlan(placeCourse(course, 1)).totalSlots).toBe(6);
+    expect(getCourseSlotPlan(placeCourse(course, null)).totalSlots).toBe(6);
+    // Re-placing in another curriculum drops the previous curriculum's minutes.
+    expect(getCourseSlotPlan(placeCourse(placeCourse(course, 19), 1)).totalSlots).toBe(6);
+  });
+});
+
+describe("consecutiveMeetingSlots", () => {
+  it("shares the Total Hours equally across the days", () => {
+    expect(consecutiveMeetingSlots({ lectureHours: 0, labHours: 8 }, 2)).toBe(8);
+    expect(consecutiveMeetingSlots({ lectureHours: 3, labHours: 0 }, 3)).toBe(2);
   });
 
-  it("defaults a course with no units to three, and no course to zero", () => {
-    expect(getCourseSlotPlan({}).singleBlockSlots).toBe(6);
-    expect(getCourseSlotPlan(null).singleBlockSlots).toBe(0);
-    expect(getCourseSlotPlan(undefined).singleBlockSlots).toBe(0);
+  it("refuses a day count that cannot split the hours into equal half-hour meetings", () => {
+    expect(consecutiveMeetingSlots({ lectureHours: 0, labHours: 8 }, 3)).toBeNull();
+    expect(consecutiveMeetingSlots({ lectureHours: 0, labHours: 0 }, 2)).toBeNull();
   });
 });
 
 describe("getSubjectTotalSlots", () => {
-  it("still reports the single-block convention", () => {
-    expect(getSubjectTotalSlots({ units: 3, lectureHours: 2, labHours: 1 })).toBe(6);
-    expect(getSubjectTotalSlots({ units: 5, lectureHours: 2, labHours: 1 })).toBe(10);
+  it("reports the Total Hours as slots", () => {
+    expect(getSubjectTotalSlots({ lectureHours: 3, labHours: 0 })).toBe(6);
+    expect(getSubjectTotalSlots({ lectureHours: 2, labHours: 1 })).toBe(6);
     expect(getSubjectTotalSlots(null)).toBe(0);
+  });
+
+  it("follows the course's hours even when its units say otherwise", () => {
+    const course = { units: 5, lectureHours: 2, labHours: 1 };
+    expect(getSubjectTotalSlots(course)).toBe(6);
+  });
+});
+
+describe("laboratoryComponentSlots", () => {
+  it("is the laboratory hours", () => {
+    expect(laboratoryComponentSlots({ lectureHours: 2, labHours: 1 })).toBe(2);
+    expect(laboratoryComponentSlots({ lectureHours: 3, labHours: 2 })).toBe(4);
   });
 });
 
@@ -63,36 +105,5 @@ describe("slotsToHours", () => {
     expect(slotsToHours(6)).toBe(3);
     expect(slotsToHours(10)).toBe(5);
     expect(slotsToHours(1)).toBe(0.5);
-  });
-});
-
-describe("laboratoryComponentSlots", () => {
-  const course = { units: 3, lectureHours: 2, labHours: 1 };
-
-  it("uses three hours per laboratory unit when no custom duration is set", () => {
-    expect(laboratoryComponentSlots(course, null)).toBe(6);
-    expect(laboratoryComponentSlots(course, { custom_lab_duration_override_enabled: false, custom_lab_duration_5_hours_enabled: true })).toBe(6);
-  });
-
-  it("applies the presets in the server's precedence order", () => {
-    expect(laboratoryComponentSlots(course, {
-      custom_lab_duration_override_enabled: true,
-      custom_lab_duration_6_hours_enabled: true,
-      custom_lab_duration_5_hours_enabled: true,
-    })).toBe(12);
-    expect(laboratoryComponentSlots(course, { custom_lab_duration_override_enabled: true, custom_lab_duration_5_hours_enabled: true })).toBe(10);
-    expect(laboratoryComponentSlots(course, {
-      custom_lab_duration_override_enabled: true,
-      custom_lab_duration_other_enabled: true,
-      custom_lab_duration_minutes: 240,
-    })).toBe(8);
-  });
-
-  it("ignores a custom minute count off the 30-minute grid", () => {
-    expect(customLaboratoryDurationSlots({
-      custom_lab_duration_override_enabled: true,
-      custom_lab_duration_other_enabled: true,
-      custom_lab_duration_minutes: 250,
-    })).toBeNull();
   });
 });

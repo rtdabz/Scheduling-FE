@@ -1086,7 +1086,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     );
   });
 
-  it("sends the Configure panel's custom duration and preferred room with the run", async () => {
+  it("sends the Configure panel's preferred room with the run and no duration", async () => {
     get.mockImplementation((url: string) => {
       if (url === "/scheduling-settings") {
         return Promise.resolve({
@@ -1138,9 +1138,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     fireEvent.click(continueToSetup);
 
     fireEvent.click(await screen.findByRole("button", { name: /^Configure$/ }));
-    fireEvent.change(screen.getByLabelText(/Duration in hours/i), {
-      target: { value: "2" },
-    });
+    expect(screen.queryByLabelText(/Duration in hours/i)).toBeNull();
     fireEvent.change(screen.getByLabelText(/Preferred Room/i), {
       target: { value: "7" },
     });
@@ -1162,13 +1160,15 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
           section_configs: [
             expect.objectContaining({
               section_id: 10,
-              duration_minutes_by_course_id: { 20: 120 },
               preferred_rooms_by_course_id: { 20: 7 },
             }),
           ],
         }),
       ),
     );
+    const sent = post.mock.calls.find(([url]) => url === "/schedule-recommendations/year-level-preview/queue")?.[1];
+    expect(sent.section_configs[0]).not.toHaveProperty("duration_minutes_by_course_id");
+    expect(sent.section_configs[0]).not.toHaveProperty("component_minutes_by_course_id");
   });
 
   it("renders the four-step workflow with the rules board on the first step", async () => {
