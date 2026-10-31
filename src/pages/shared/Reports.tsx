@@ -208,11 +208,11 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
       role="dialog"
       aria-modal="true"
       aria-label={`${row.label} - Detailed Report`}
-      className="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-slate-900/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-slate-900/60 p-0 backdrop-blur-sm sm:p-4"
     >
-      <div className="relative my-auto flex w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-5 py-4">
-          <div className="flex items-center gap-3">
+      <div className="relative flex min-h-[100dvh] w-full max-w-5xl flex-col overflow-hidden bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-150 sm:my-auto sm:min-h-0 sm:max-h-[calc(100dvh-2rem)] sm:rounded-2xl sm:border sm:border-slate-200">
+        <div className="flex flex-col gap-4 border-b border-slate-100 bg-slate-50/70 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <div className="flex min-w-0 items-center gap-3 pr-10 sm:pr-0">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#4e0a10] text-white shadow-sm">
               {kind === 'schedule' && <CalendarDays size={20} />}
               {kind === 'load' && <GraduationCap size={20} />}
@@ -220,16 +220,16 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
               {kind === 'curriculum' && <BookOpen size={20} />}
               {kind === 'approval' && <ClipboardCheck size={20} />}
             </span>
-            <div>
-              <h2 className="text-base font-extrabold text-slate-800">{row.label}</h2>
-              <p className="text-xs text-slate-500">{row.description} &bull; Detailed Breakdown</p>
+            <div className="min-w-0">
+              <h2 className="truncate text-base font-extrabold text-slate-800">{row.label}</h2>
+              <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{row.description} &bull; Detailed breakdown</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
             <button
               type="button"
               onClick={onExportCsv}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 sm:flex-none"
             >
               <Download size={13} /> Export CSV
             </button>
@@ -237,7 +237,7 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
               <button
                 type="button"
                 onClick={onPrint}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-[#4e0a10] px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-[#6b1520]"
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#4e0a10] px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-[#6b1520] sm:flex-none"
               >
                 <Printer size={13} /> Print PDF
               </button>
@@ -246,14 +246,14 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
               type="button"
               onClick={onClose}
               aria-label="Close detail modal"
-              className="ml-2 flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition"
+              className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
             >
               <X size={16} />
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 border-b border-slate-100 bg-white px-5 py-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 border-b border-slate-100 bg-white px-4 py-3 sm:grid-cols-4 sm:gap-3 sm:px-5">
           {kind === 'schedule' && (
             <>
               <div className="flex items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/50 p-2.5">
@@ -446,11 +446,12 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50/50 px-5 py-2.5">
-          <div className="relative max-w-sm flex-1">
+        <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50/50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-5 sm:py-2.5">
+          <div className="relative w-full sm:max-w-sm sm:flex-1">
             <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="search"
+              aria-label="Search report records"
               placeholder="Search records in this report..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -466,9 +467,9 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
           </span>
         </div>
 
-        <div>
+        <div className="min-h-0 flex-1 overflow-auto">
           {kind === 'schedule' && (
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="min-w-[760px] w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 z-10 bg-slate-100/90 backdrop-blur-sm border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
                 <tr>
                   <th className="px-4 py-2.5">Section</th>
@@ -537,7 +538,7 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
           )}
 
           {kind === 'load' && (
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="min-w-[720px] w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 z-10 bg-slate-100/90 backdrop-blur-sm border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
                 <tr>
                   <th className="px-4 py-2.5">Instructor</th>
@@ -612,7 +613,7 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
           )}
 
           {kind === 'room' && (
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="min-w-[620px] w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 z-10 bg-slate-100/90 backdrop-blur-sm border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
                 <tr>
                   <th className="px-4 py-2.5">Room Code</th>
@@ -673,7 +674,7 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
           )}
 
           {kind === 'curriculum' && (
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="min-w-[620px] w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 z-10 bg-slate-100/90 backdrop-blur-sm border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
                 <tr>
                   <th className="px-4 py-2.5">Course Code</th>
@@ -720,7 +721,7 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
           )}
 
           {kind === 'approval' && (
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="min-w-[560px] w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 z-10 bg-slate-100/90 backdrop-blur-sm border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
                 <tr>
                   <th className="px-4 py-2.5">Section Name</th>
@@ -938,8 +939,10 @@ export default function Reports() {
 
   const departments = useMemo(() => overview?.departments ?? [], [overview]);
   const query = search.trim().toLowerCase();
+  const activeTab = TABS.find((tab) => tab.kind === kind) ?? TABS[0];
   const reportGroups = departments.map((department) => ({ department, rows: rowsFor(department, kind) }));
   const availableCount = reportGroups.reduce((total, group) => total + group.rows.filter((row) => row.count > 0).length, 0);
+  const totalScopeCount = reportGroups.reduce((total, group) => total + group.rows.length, 0);
 
   const totalSectionsCount = useMemo(
     () => departments.reduce((acc, d) => acc + d.complete_section_count, 0),
@@ -965,21 +968,32 @@ export default function Reports() {
   const visibleCount = visibleGroups.reduce((total, group) => total + group.rows.length, 0);
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-600">
-          <CalendarDays size={16} className="shrink-0 text-[#4e0a10]" />
-          <span>Institutional Academic Reports Repository</span>
+    <div className="space-y-6">
+      <div className="relative overflow-hidden rounded-2xl border border-[#4e0a10]/15 bg-gradient-to-br from-[#4e0a10] to-[#721823] px-5 py-5 text-white shadow-sm sm:px-6 sm:py-6">
+        <div className="pointer-events-none absolute -right-12 -top-16 h-40 w-40 rounded-full bg-white/5" />
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/15">
+              <FileSpreadsheet size={21} />
+            </span>
+            <div>
+              <h2 className="text-lg font-extrabold tracking-tight sm:text-xl">Institutional reports</h2>
+              <p className="mt-1 max-w-2xl text-xs leading-relaxed text-white/75 sm:text-sm">
+                Review approved schedules, teaching loads, facilities, curricula, and readiness across departments.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            aria-label="Refresh"
+            onClick={refresh}
+            disabled={isLoading}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-white/20 disabled:opacity-60 sm:w-auto"
+          >
+            <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+            {isLoading ? 'Refreshing reports' : 'Refresh reports'}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={refresh}
-          disabled={isLoading}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition hover:border-[#4e0a10]/30 hover:text-[#4e0a10] disabled:opacity-50"
-        >
-          <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
-          {isLoading ? 'Refreshing' : 'Refresh'}
-        </button>
       </div>
 
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
@@ -998,15 +1012,19 @@ export default function Reports() {
           tone="accent"
         />
         <DashboardMetricCard
-          label="Available Reports"
+          label="Reports Ready"
           value={isLoading && !overview ? '—' : availableCount}
-          detail={`${departments.length} department${departments.length === 1 ? '' : 's'} reporting`}
+          detail={`${totalScopeCount} total scope${totalScopeCount === 1 ? '' : 's'} across ${departments.length} department${departments.length === 1 ? '' : 's'}`}
           icon={FileSpreadsheet}
           tone="good"
         />
       </div>
 
-      <div role="tablist" aria-label="Report type" className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
+      <div
+        role="tablist"
+        aria-label="Report type"
+        className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-2 lg:mx-0 lg:grid lg:grid-cols-5 lg:overflow-visible lg:px-0 lg:pb-0"
+      >
         {TABS.map(({ kind: tabKind, label, description, icon: Icon }) => (
           <button
             key={tabKind}
@@ -1031,7 +1049,7 @@ export default function Reports() {
             }}
             onClick={() => setKind(tabKind)}
             disabled={loadingRowKey !== null || exportingRowKey !== null || loadingDetailKey !== null}
-            className={`group flex flex-col justify-between rounded-xl border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] disabled:opacity-60 ${
+            className={`group flex w-[180px] shrink-0 snap-start flex-col justify-between rounded-xl border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] disabled:opacity-60 sm:w-[210px] lg:w-auto ${
               kind === tabKind
                 ? 'border-[#4e0a10]/30 bg-[#4e0a10]/5 ring-1 ring-[#4e0a10]/15 shadow-sm'
                 : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
@@ -1078,21 +1096,37 @@ export default function Reports() {
       >
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-5">
           <div>
-            <h2 className="text-sm font-extrabold text-slate-800">Report directory</h2>
+            <h2 className="text-sm font-extrabold text-slate-800">{activeTab.label} reports</h2>
             <p className="mt-0.5 text-xs text-slate-500">
-              Browse detailed breakdown tables, open official PDFs, or export CSV data for any department or program.
+              {activeTab.description}
             </p>
           </div>
           {overview && (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
-              <CheckCircle2 size={13} />
-              {availableCount} available scope{availableCount === 1 ? '' : 's'}
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                availableCount > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+              }`}
+            >
+              {availableCount > 0 ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />}
+              {availableCount > 0 ? `${availableCount} ready to use` : 'No reports ready'}
             </span>
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-slate-50/70 px-4 py-3 sm:px-5">
-          <div className="relative min-w-0 flex-1 basis-56 sm:max-w-md">
+        {overview && totalScopeCount > 0 && availableCount === 0 && (
+          <div role="status" className="flex items-start gap-3 border-b border-amber-100 bg-amber-50/70 px-4 py-3 text-amber-900 sm:px-5">
+            <AlertCircle size={17} className="mt-0.5 shrink-0" />
+            <div>
+              <p className="text-xs font-bold">Reports are waiting for approved data</p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-amber-800/80">
+                Report actions unlock automatically after schedules complete the approval workflow.
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-2 border-b border-slate-200 bg-slate-50/70 px-4 py-3 sm:flex sm:flex-wrap sm:items-center sm:gap-3 sm:px-5">
+          <div className="relative col-span-2 min-w-0 sm:flex-1 sm:basis-56 sm:max-w-md">
             <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="search"
@@ -1105,13 +1139,13 @@ export default function Reports() {
           </div>
 
           {departments.length > 1 && (
-            <div className="relative inline-flex items-center">
+            <div className="relative inline-flex min-w-0 items-center">
               <Filter size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <select
                 aria-label="Filter by department"
                 value={deptFilter}
                 onChange={(e) => setDeptFilter(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-7 text-xs font-bold text-slate-600 outline-none transition hover:border-slate-300 focus:border-[#4e0a10]/40"
+                className="w-full min-w-0 rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-7 text-xs font-bold text-slate-600 outline-none transition hover:border-slate-300 focus:border-[#4e0a10]/40 sm:w-auto sm:max-w-64"
               >
                 <option value="all">All Departments</option>
                 {departments.map((d) => (
@@ -1127,9 +1161,11 @@ export default function Reports() {
             type="button"
             aria-pressed={readyOnly}
             onClick={() => setReadyOnly(!readyOnly)}
-            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold transition ${
+            disabled={availableCount === 0}
+            title={availableCount === 0 ? 'No reports are ready yet' : 'Show only reports that are ready to use'}
+            className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold transition ${
               readyOnly ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
-            }`}
+            } disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400`}
           >
             <CheckCircle2 size={14} />Available only
           </button>
@@ -1142,15 +1178,17 @@ export default function Reports() {
                 setReadyOnly(false);
                 setDeptFilter('all');
               }}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-[#4e0a10]"
+              className="col-span-2 inline-flex items-center justify-center gap-1 py-1 text-xs font-semibold text-slate-500 hover:text-[#4e0a10] sm:col-span-1 sm:justify-start sm:py-0"
             >
               <X size={13} />Clear filters
             </button>
           )}
 
           {overview && (
-            <span role="status" className="ml-auto text-[11px] font-semibold text-slate-400">
-              {visibleCount} report{visibleCount === 1 ? '' : 's'}
+            <span role="status" className="col-span-2 text-right text-[11px] font-semibold text-slate-400 sm:ml-auto">
+              {visibleCount === totalScopeCount
+                ? `${totalScopeCount} total scope${totalScopeCount === 1 ? '' : 's'}`
+                : `${visibleCount} of ${totalScopeCount} scopes`}
             </span>
           )}
         </div>
@@ -1209,7 +1247,7 @@ export default function Reports() {
                   <div className="min-w-0">
                     <h3 className="text-xs font-bold leading-relaxed text-slate-700">{department.name}</h3>
                     <p className="mt-1 text-[10px] font-semibold text-slate-400">
-                      {rows.length} report{rows.length === 1 ? '' : 's'}
+                      {rows.length} scope{rows.length === 1 ? '' : 's'}
                     </p>
                   </div>
                 </header>
@@ -1227,7 +1265,7 @@ export default function Reports() {
                       'section package';
 
                     return (
-                      <li key={row.key} className="flex flex-wrap items-center gap-3 px-4 py-4 transition hover:bg-slate-50/70 sm:px-5">
+                      <li key={row.key} className="flex flex-col items-stretch gap-3 px-4 py-4 transition hover:bg-slate-50/70 sm:flex-row sm:items-center sm:px-5">
                         <span
                           className={`hidden h-9 w-8 shrink-0 items-center justify-center rounded-lg border sm:flex ${
                             row.count > 0 ? 'border-[#4e0a10]/10 bg-[#4e0a10]/5 text-[#4e0a10]' : 'border-slate-100 bg-slate-50 text-slate-300'
@@ -1245,46 +1283,54 @@ export default function Reports() {
                           </p>
                         </div>
 
-                        <div className="ml-auto flex items-center gap-2 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => void openDetail(row)}
-                            disabled={row.count === 0 || loadingRowKey !== null || exportingRowKey !== null || loadingDetailKey !== null}
-                            aria-label={`View Details: ${row.label}`}
-                            title={row.count === 0 ? 'Nothing approved to display yet' : 'View detailed report breakdown'}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] font-bold text-slate-700 shadow-sm transition hover:border-[#4e0a10]/40 hover:bg-[#4e0a10]/5 hover:text-[#4e0a10] disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            {isDetailLoading ? <LoadingSpinner size={13} className="animate-spin" /> : <Eye size={13} className="text-[#4e0a10]" />}
-                            <span>View Details</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => void exportCsv(row)}
-                            disabled={row.count === 0 || loadingRowKey !== null || exportingRowKey !== null || loadingDetailKey !== null}
-                            aria-label={`Export CSV: ${row.label}`}
-                            title={row.count === 0 ? 'Nothing approved to export yet' : 'Export CSV data'}
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] font-bold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            {isExporting ? <LoadingSpinner size={13} className="animate-spin" /> : <Download size={13} />}
-                            <span className="hidden sm:inline">CSV</span>
-                          </button>
-
-                          {(kind === 'schedule' || kind === 'load') && (
+                        {row.count === 0 ? (
+                          <span className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-500 sm:ml-auto sm:w-auto">
+                            <AlertCircle size={13} />
+                            Not ready
+                          </span>
+                        ) : (
+                          <div className={`grid w-full shrink-0 gap-2 sm:ml-auto sm:flex sm:w-auto ${kind === 'schedule' || kind === 'load' ? 'grid-cols-3' : 'grid-cols-2'}`}>
                             <button
                               type="button"
-                              onClick={() => void print(row)}
-                              disabled={row.count === 0 || loadingRowKey !== null || exportingRowKey !== null || loadingDetailKey !== null}
-                              aria-label={`Open PDF: ${row.label}`}
-                              title={row.count === 0 ? 'Nothing approved to print yet' : 'Open PDF'}
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-[#4e0a10] px-3 py-2 text-[11px] font-bold text-white shadow-sm transition hover:bg-[#6b1520] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
+                              onClick={() => void openDetail(row)}
+                              disabled={loadingRowKey !== null || exportingRowKey !== null || loadingDetailKey !== null}
+                              aria-label={`View Details: ${row.label}`}
+                              title="View detailed report breakdown"
+                              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2.5 text-[11px] font-bold text-slate-700 shadow-sm transition hover:border-[#4e0a10]/40 hover:bg-[#4e0a10]/5 hover:text-[#4e0a10] disabled:cursor-not-allowed disabled:opacity-40 sm:py-2"
                             >
-                              {isBusy ? <LoadingSpinner size={14} className="animate-spin" /> : <Printer size={14} />}
-                              {isBusy ? 'Preparing...' : 'Open PDF'}
-                              {!isBusy && <ArrowUpRight size={12} />}
+                              {isDetailLoading ? <LoadingSpinner size={13} className="animate-spin" /> : <Eye size={13} className="text-[#4e0a10]" />}
+                              <span className="sm:hidden">View</span>
+                              <span className="hidden sm:inline">View Details</span>
                             </button>
-                          )}
-                        </div>
+
+                            <button
+                              type="button"
+                              onClick={() => void exportCsv(row)}
+                              disabled={loadingRowKey !== null || exportingRowKey !== null || loadingDetailKey !== null}
+                              aria-label={`Export CSV: ${row.label}`}
+                              title="Export CSV data"
+                              className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-2.5 text-[11px] font-bold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 sm:py-2"
+                            >
+                              {isExporting ? <LoadingSpinner size={13} className="animate-spin" /> : <Download size={13} />}
+                              <span className="hidden sm:inline">CSV</span>
+                            </button>
+
+                            {(kind === 'schedule' || kind === 'load') && (
+                              <button
+                                type="button"
+                                onClick={() => void print(row)}
+                                disabled={loadingRowKey !== null || exportingRowKey !== null || loadingDetailKey !== null}
+                                aria-label={`Open PDF: ${row.label}`}
+                                title="Open PDF"
+                                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#4e0a10] px-3 py-2.5 text-[11px] font-bold text-white shadow-sm transition hover:bg-[#6b1520] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none sm:py-2"
+                              >
+                                {isBusy ? <LoadingSpinner size={14} className="animate-spin" /> : <Printer size={14} />}
+                                {isBusy ? 'Preparing...' : <><span className="sm:hidden">PDF</span><span className="hidden sm:inline">Open PDF</span></>}
+                                {!isBusy && <ArrowUpRight size={12} className="hidden sm:block" />}
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </li>
                     );
                   })}

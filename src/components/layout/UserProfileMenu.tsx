@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronsUpDown, LogOut, Settings, User } from 'lucide-react';
+import { ChevronDown, LogOut, Settings, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { fetchCurrentUser, forgetCurrentUser } from '../../lib/currentUser';
 import { useToast } from '../../context/ToastContext';
@@ -58,16 +58,17 @@ export default function UserProfileMenu() {
   };
 
   return <div ref={wrapper} className="relative">
-    <button id="sidebar-profile" type="button" onClick={() => setMenuOpen(!open)} aria-label="Open user profile menu" aria-expanded={open} className="flex items-center gap-2 rounded-full p-1 pr-2 text-left text-white transition hover:bg-white/10">
-      <ProfileAvatar src={photo} alt={user?.name || 'User'} className="h-8 w-8 rounded-full ring-1 ring-white/30" />
-      <span className="hidden min-w-0 max-w-32 flex-col sm:flex"><span className="truncate text-xs font-bold">{user?.name || 'Administrator'}</span><span className="text-[10px] text-white/65">{roleLabel(user?.role)}</span></span>
-      <ChevronsUpDown className="hidden h-3.5 w-3.5 text-white/60 sm:block" />
+    <button id="sidebar-profile" type="button" onClick={() => setMenuOpen(!open)} aria-label="Open user profile menu" aria-haspopup="menu" aria-expanded={open} title={`${user?.name || 'Administrator'} · ${roleLabel(user?.role)}`} className="relative flex h-11 w-11 items-center justify-center rounded-full transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A]">
+      <ProfileAvatar src={photo} alt={user?.name || 'User'} className="h-10 w-10 rounded-full ring-2 ring-white/20" />
+      <span className="absolute bottom-0 right-0 flex h-4 w-4 items-center justify-center rounded-full border-2 border-[#4e0a10] bg-slate-700 text-white shadow-sm" aria-hidden="true">
+        <ChevronDown className={`h-2.5 w-2.5 transition-transform ${open ? 'rotate-180' : ''}`} strokeWidth={3} />
+      </span>
     </button>
-    {open && <div className="absolute right-0 top-full z-[60] mt-2 max-h-[calc(100vh-5rem)] w-[min(15rem,calc(100vw-1rem))] overflow-y-auto rounded-xl border border-slate-200 bg-[#F7F4F0] text-slate-700 shadow-2xl">
+    {open && <div role="menu" className="absolute right-0 top-full z-[60] mt-3 max-h-[calc(100vh-5rem)] w-[min(15rem,calc(100vw-1rem))] overflow-y-auto rounded-xl border border-slate-200 bg-[#F7F4F0] text-slate-700 shadow-2xl">
       <div className="flex items-center gap-2.5 border-b border-gray-100 bg-gray-50/50 p-2.5"><ProfileAvatar src={photo} className="h-9 w-9 rounded-full" /><div className="min-w-0"><p className="truncate text-xs font-bold">{user?.name || 'Administrator'}</p><p className="truncate text-[10px] text-gray-500">{user?.email || user?.username || ''}</p></div></div>
-      <div className="space-y-0.5 p-1.5"><button type="button" onClick={() => { setMenuOpen(false); setProfileOpen(true); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold hover:bg-[#4e0a10]/5"><User size={14} /> My Profile</button>
-{role === 'vpaa' && <><button type="button" onClick={() => { setMenuOpen(false); navigate('/settings'); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold hover:bg-[#4e0a10]/5"><Settings size={14} /> Settings</button></>}</div>
-      <div className="border-t border-gray-100 p-1.5"><button type="button" disabled={loggingOut} onClick={logout} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50 disabled:opacity-50"><LogOut size={14} /> {loggingOut ? 'Signing out...' : 'Log Out'}</button></div>
+      <div className="space-y-0.5 p-1.5"><button role="menuitem" type="button" onClick={() => { setMenuOpen(false); setProfileOpen(true); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold hover:bg-[#4e0a10]/5"><User size={14} /> My Profile</button>
+{role === 'vpaa' && <><button role="menuitem" type="button" onClick={() => { setMenuOpen(false); navigate('/settings'); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold hover:bg-[#4e0a10]/5"><Settings size={14} /> Settings</button></>}</div>
+      <div className="border-t border-gray-100 p-1.5"><button role="menuitem" type="button" disabled={loggingOut} onClick={logout} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50 disabled:opacity-50"><LogOut size={14} /> {loggingOut ? 'Signing out...' : 'Log Out'}</button></div>
     </div>}
     {profileOpen && <UserProfileModal onClose={() => setProfileOpen(false)} user={user} roleLabel={roleLabel(user?.role)} onSaved={handleProfileSaved} />}
   </div>;

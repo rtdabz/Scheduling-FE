@@ -1,11 +1,11 @@
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$backendRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot '..\backend'))
-$php = 'C:\tools\php-8.5.12\php.exe'
+$backendRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot '..\Scheduling-BE'))
+$php = Join-Path $env:USERPROFILE '.config\herd\bin\php85\php.exe'
 
 if (-not (Test-Path -LiteralPath $php)) {
-    throw "PHP executable not found at $php"
+    throw "PHP 8.5 executable not found at $php"
 }
 
 # Keep child processes and Composer on the same PHP runtime.
@@ -51,9 +51,10 @@ foreach ($process in $staleProcesses) {
     Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
 }
 
+$backendCommand = "& '$php' '$(Join-Path $backendRoot 'artisan')' serve --host=127.0.0.1 --port=8000 --no-reload"
 $backendServer = Start-WicarsProcess `
-    -FilePath $php `
-    -ArgumentList @((Join-Path $backendRoot 'artisan'), 'serve', '--host=127.0.0.1', '--port=8000') `
+    -FilePath 'powershell.exe' `
+    -ArgumentList @('-NoProfile', '-Command', $backendCommand) `
     -WorkingDirectory $backendRoot
 
 $queueWorker = Start-WicarsProcess `
