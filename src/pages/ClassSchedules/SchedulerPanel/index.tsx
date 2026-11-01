@@ -20,6 +20,7 @@ import { useWorkflowGuide } from "../../../hooks/useWorkflowGuide";
 import YearLevelGenerateScheduleWorkflow from "./GenerateSchedule/YearLevelGenerateScheduleWorkflow";
 import GenerationProgressDrawer from "./GenerateSchedule/GenerationProgressDrawer";
 import { GenerationRunProvider } from "./hooks/useGenerationRun";
+import { getStoredUser } from "../../../lib/storedUser";
 
 interface SchedulerPanelProps {
   autoAssignOnOpen?: boolean;
@@ -54,6 +55,8 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
   useWorkflowGuide({ id: "schedule-builder-plotting", isReady: !scheduler.isLoading && plottingActive, steps: plottingGuideSteps, mission: "Plot the Timetable" });
   useWorkflowGuide({ id: "schedule-builder-faculty-assignment", isReady: !scheduler.isLoading && facultyAssignmentActive, steps: facultyAssignmentGuideSteps, mission: "Assign Instructors" });
   useWorkflowGuide({ id: "schedule-builder-review", isReady: !scheduler.isLoading && reviewActive, steps: reviewGuideSteps, mission: "Review the Schedule" });
+  // The Secretary reassigns room schedules from Facilities; other roles keep the entry here.
+  const reassignsFromFacilities = getStoredUser()?.role === "secretary";
   const [isAutoAssignOpen, setIsAutoAssignOpen] = useState(false);
   const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
   const [isSavingGenerated, setIsSavingGenerated] = useState(false);
@@ -134,7 +137,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         {...scheduler}
         pendingRoomTransferCount={pendingRoomTransferCount}
         onPrint={() => scheduler.setIsPrintModalOpen(true)}
-        onOpenRoomTransfer={scheduler.activeSemester ? () => {
+        onOpenRoomTransfer={scheduler.activeSemester && !reassignsFromFacilities ? () => {
           setSearchParams(current => {
             const next = new URLSearchParams(current);
             next.set('recovery', 'open');
@@ -149,10 +152,10 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         onAutoAssign={scheduler.canAssignInstructor ? () => setIsAutoAssignOpen(true) : undefined}
         onClearInstructors={scheduler.canAssignInstructor ? () => { setClearInstructorScope(scheduler.clearableSectionInstructorCount > 0 ? "section" : "department"); setIsClearInstructorConfirmOpen(true); } : undefined}
       />
-      <RoomReassignmentPanel semesterId={Number(scheduler.activeSemester?.id) || undefined} onPendingCountChange={setPendingRoomTransferCount} onTransferred={() => {
+      {!reassignsFromFacilities && <RoomReassignmentPanel semesterId={Number(scheduler.activeSemester?.id) || undefined} onPendingCountChange={setPendingRoomTransferCount} onTransferred={() => {
         void scheduler.refreshSchedules();
         scheduler.refreshConflictCounts();
-      }} />
+      }} />}
 
       {scheduler.canUpdateSchedule && !scheduler.ownsSelectedProgram && (
         <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">

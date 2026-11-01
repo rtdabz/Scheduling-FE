@@ -136,7 +136,7 @@ export default function VpaaDashboardPage() {
     return () => controller.abort();
   }, [reloadKey, liveRevision]);
 
-  // The approval workspace lists room transfers beside submissions, so the dashboard reads the same source.
+  // The approval workspace lists room schedule reassignments beside submissions, so the dashboard reads the same source.
   useEffect(() => {
     const controller = new AbortController();
     api.get<{ transfers?: RoomTransferRequest[] }>('/room-recovery/transfers', { signal: controller.signal })
@@ -249,19 +249,19 @@ export default function VpaaDashboardPage() {
   const contextStatus = requests.length > 0
     ? { label: decisionLabel, tone: 'ready' as const }
     : !transfersKnown
-      ? { label: 'Room transfers unavailable', tone: 'drafting' as const }
+      ? { label: 'Room schedule reassignments unavailable', tone: 'drafting' as const }
       : totals.sections > 0 && totals.approved === totals.sections
         ? { label: 'All departments approved', tone: 'done' as const }
         : { label: 'Nothing awaiting you', tone: 'drafting' as const };
   const contextSummary = oldest
     ? `${oldest.department} has waited longest, ${relativeAge(oldest.waitingSince, now)}.`
     : !transfersKnown
-      ? 'Schedule submissions are listed below; room transfers could not be checked.'
+      ? 'Schedule submissions are listed below; room schedule reassignments could not be checked.'
       : 'Requests appear here once a Dean forwards them.';
 
   const decisionParts = [
     `${scheduleRequestCount} schedule`,
-    transfersKnown ? `${transferRequestCount} room transfer` : 'room transfers unavailable',
+    transfersKnown ? `${transferRequestCount} room schedule reassignment` : 'room schedule reassignments unavailable',
   ].join(' · ');
 
   const activeDepartments = progressRows.filter(row => row.sectionsCount > 0);
@@ -352,7 +352,7 @@ export default function VpaaDashboardPage() {
 
     <Panel
       title="Waiting on your decision"
-      subtitle={requests.length ? 'Schedule submissions and room transfers, longest-waiting first.' : undefined}
+      subtitle={requests.length ? 'Schedule submissions and room schedule reassignments, longest-waiting first.' : undefined}
       badge={requests.length}
       action="Open approval queue"
       onAction={openApproval}
@@ -367,7 +367,7 @@ export default function VpaaDashboardPage() {
         onOpen={openRequest}
         onViewAll={openApproval}
         emptyText="Nothing is waiting on your decision."
-        incomplete={transferState === 'error' ? `Room transfers could not be loaded (${transferError}). Only schedule submissions are listed; open the approval queue to check transfers.` : undefined}
+        incomplete={transferState === 'error' ? `Room schedule reassignments could not be loaded (${transferError}). Only schedule submissions are listed; open the approval queue to check transfers.` : undefined}
       />
     </Panel>
 

@@ -120,14 +120,14 @@ describe('DeanDashboardPage', () => {
     expect(within(rows[0]).getByText('BSIT 1A · Juan Dela Cruz')).toBeTruthy();
   });
 
-  it('shows a pending room transfer beside submissions and opens it directly', async () => {
+  it('shows a pending room schedule reassignment beside submissions and opens it directly', async () => {
     mockApi({ initial: { ...initialData, schedule_submissions: [] }, transfers: [transfer('t-9', 'pending_dean'), transfer('t-8', 'pending_vpaa')] });
     renderPage();
     const queue = await screen.findByRole('list', { name: 'Pending requests' });
     expect(within(queue).getAllByRole('listitem')).toHaveLength(1);
     expect(within(queue).getByText('2 meetings moved · Maria Santos')).toBeTruthy();
     expect(screen.getByText('1 request to review')).toBeTruthy();
-    fireEvent.click(within(queue).getByRole('button', { name: 'Review Room transfer request' }));
+    fireEvent.click(within(queue).getByRole('button', { name: 'Review Room schedule reassignment request' }));
     expect(screen.getByTestId('location').textContent).toBe('/dean/schedules/approval?room_transfer=t-9');
   });
 

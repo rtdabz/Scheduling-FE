@@ -60,7 +60,7 @@ describe('notificationLink', () => {
     expect(notificationLink('room_transfer_dean_approved', 'vpaa', { plan_id: 'plan-1' })).toBe('/schedules/approval?room_transfer=plan-1#schedule-approval-list');
     expect(notificationLink('room_transfer_submitted', 'vpaa')).toBeUndefined();
     expect(notificationLink('room_transfer_dean_approved', 'dean')).toBeUndefined();
-    expect(notificationLink('room_transfer_approved', 'secretary', { plan_id: 'plan-1' })).toBe('/secretary/schedule-management?recovery=open&room_transfer=plan-1');
+    expect(notificationLink('room_transfer_approved', 'secretary', { plan_id: 'plan-1' })).toBe('/secretary/facilities?recovery=open&room_transfer=plan-1');
     expect(notificationLink('room_transfer_rejected', 'program_head', { plan_id: 'plan-2' })).toBe('/program_head/schedule-management?recovery=open&room_transfer=plan-2');
     expect(notificationLink('room_transfer_submitted', 'secretary')).toBeUndefined();
     expect(notificationLink('room_transfer_approved', 'dean', { plan_id: 'plan-3' })).toBe('/dean/schedules/approval?room_transfer=plan-3#schedule-approval-list');

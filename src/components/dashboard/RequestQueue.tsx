@@ -43,7 +43,7 @@ export function RequestQueue({ requests, now, title, scopeOf, onOpen, onViewAll,
         return <li key={request.key} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5 first:pt-0 last:pb-0">
           <span className="min-w-0 flex-1 basis-56">
             <span className="flex min-w-0 items-center gap-1.5">
-              <StatusTag tone={request.type === 'room_transfer' ? 'waiting' : 'approved'}>{request.type === 'room_transfer' ? 'Room transfer' : 'Schedule'}</StatusTag>
+              <StatusTag tone={request.type === 'room_transfer' ? 'waiting' : 'approved'}>{request.type === 'room_transfer' ? 'Room schedule reassignment' : 'Schedule'}</StatusTag>
               <b className="truncate text-[13px] font-semibold text-text" title={title(request)}>{title(request)}</b>
             </span>
             <span className="mt-1 flex flex-wrap items-center gap-1 text-[12px] text-muted">

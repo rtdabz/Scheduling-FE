@@ -90,19 +90,19 @@ export default function RoomTransferRequests({ transfers, stage, onClose, onRevi
   const sundayNotice = decision?.request.enables_sunday
     ? ` This transfer moves classes to Sunday, so final approval also enables Sunday classes for ${decision.request.department}.` : '';
   const confirmation = <>
-    <ConfirmModal isOpen={decision?.action === 'approve'} title="Approve room transfer"
-      message={(stage === 'dean' ? 'Approve this room transfer and forward it to the VPAA? Existing schedules will remain unchanged.' : 'Approve these proposed room transfers and apply the schedule changes?') + sundayNotice}
+    <ConfirmModal isOpen={decision?.action === 'approve'} title="Approve room schedule reassignment"
+      message={(stage === 'dean' ? 'Approve this room schedule reassignment and forward it to the VPAA? Existing schedules will remain unchanged.' : 'Approve these proposed room schedule reassignments and apply the schedule changes?') + sundayNotice}
       confirmLabel="Approve transfer" variant="maroon" onConfirm={decide} onCancel={cancelDecision} isConfirming={busy}>
       {error && <p role="alert" className="mt-2 text-sm text-red-700">{error}</p>}
     </ConfirmModal>
-    <ScheduleRejectionModal open={decision?.action === 'reject'} title="Reject room transfer"
+    <ScheduleRejectionModal open={decision?.action === 'reject'} title="Reject room schedule reassignment"
       description="Reject this request and retain the original schedules?" reasonLabel="Rejection reason"
       reason={reason} error={error} isSubmitting={busy} maxLength={1000} closeOnEscape
       confirmLabel="Reject transfer" submittingLabel="Rejecting..." onReasonChange={value => { setReason(value); setError(''); }}
       onClose={cancelDecision} onConfirm={() => { void decide(); }} />
   </>;
   if (review && onClose) return <>
-    {selectedRequest && <ScheduleApprovalPreviewModal open title="Room Transfer Request Details"
+    {selectedRequest && <ScheduleApprovalPreviewModal open title="Room Schedule Reassignment Details"
       status={selectedRequest.status.startsWith('rejected_') ? 'rejected' : selectedRequest.status === 'approved' || selectedRequest.status === 'applied' ? 'approved' : 'pending'}
       statusLabel={ROOM_TRANSFER_STATUS_LABELS[selectedRequest.status]} printInput={printInput}
       canAct={selectedRequest.status === `pending_${stage}`} inert={decision !== null || detailsOpen} closeOnEscape onClose={onClose}
@@ -111,17 +111,17 @@ export default function RoomTransferRequests({ transfers, stage, onClose, onRevi
       onApprove={() => { setDecision({ request: selectedRequest, action: 'approve' }); setReason(''); setError(''); }}
       onReject={() => { setDecision({ request: selectedRequest, action: 'reject' }); setReason(''); setError(''); }} />}
     <ScheduleChangesModal data={detailRows} isOpen={detailsOpen} onClose={() => setDetailsOpen(false)}
-      title="Room transfer changes" description="Every proposed room transfer, with the original and proposed schedule placements." />
+      title="Room schedule reassignment changes" description="Every proposed room schedule reassignment, with the original and proposed schedule placements." />
     {confirmation}
   </>;
   if (!review && items.length === 0) return null;
-  return <section id="room-transfers" aria-label="Room transfer requests" className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
-    <h2 className="text-base font-bold text-slate-900">Room transfer requests</h2>
-    <p className="mt-1 text-sm text-slate-600">Room transfers require Dean approval followed by VPAA approval. Original schedules stay unchanged until final approval, when availability is checked again.</p>
-    {loading && <p role="status" className="mt-3 text-sm">Loading room transfer requests…</p>}
+  return <section id="room-transfers" aria-label="Room schedule reassignment requests" className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+    <h2 className="text-base font-bold text-slate-900">Room schedule reassignment requests</h2>
+    <p className="mt-1 text-sm text-slate-600">Room schedule reassignments require Dean approval followed by VPAA approval. Original schedules stay unchanged until final approval, when availability is checked again.</p>
+    {loading && <p role="status" className="mt-3 text-sm">Loading room schedule reassignment requests…</p>}
     {message && <p role="status" className="mt-3 text-sm text-emerald-800">{message}</p>}
     {error && !decision && <p role="alert" className="mt-3 text-sm text-red-700">{error} <button type="button" onClick={() => setRefresh(value => value + 1)} className="font-semibold underline">Retry</button></p>}
-    {!loading && !error && items.length === 0 && <p className="mt-3 text-sm text-slate-500">No room transfer requests.</p>}
+    {!loading && !error && items.length === 0 && <p className="mt-3 text-sm text-slate-500">No room schedule reassignment requests.</p>}
     {(['pending_dean', 'pending_vpaa', 'approved', 'applied', 'rejected_by_dean', 'rejected_by_vpaa'] as const).flatMap(status => items.filter(item => item.status === status)).map(item => <details key={item.id} open={params.get('room_transfer') === item.id || (review && item.status === `pending_${stage}`)} className="mt-3 rounded-lg border border-slate-200 p-3">
       <summary className="cursor-pointer text-sm font-semibold">{ROOM_TRANSFER_STATUS_LABELS[item.status]} · {item.department} · {item.semester_label} · {roomTransferMovedCount(item)} meeting(s)</summary>
       <p className="mt-2 text-xs text-slate-500">Submitted by {item.submitted_by} · {new Date(item.submitted_at).toLocaleString()}</p>

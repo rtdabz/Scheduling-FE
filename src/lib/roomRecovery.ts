@@ -1,5 +1,6 @@
 import api from './api';
 import { getStoredUser } from './storedUser';
+import { roomReassignmentPage } from './notificationLink';
 import type { ApiDepartmentRecord, ApiScheduleRecord, ApiSectionRecord, Semester, UserSummary } from '../pages/ClassSchedules/SchedulerPanel/types';
 
 export interface RecoveryCase { id: number; room_code: string; reason: string; trigger: string; semester_id: number; semester_label: string; meeting_count: number; schedule_ids: number[] }
@@ -36,7 +37,7 @@ export function recoveryLink(caseId?: number, semesterId?: number, roomId?: numb
   const query = new URLSearchParams({ recovery: caseId ? String(caseId) : 'open' });
   if (semesterId) query.set('recovery_semester', String(semesterId));
   if (roomId) query.set('recovery_room', String(roomId));
-  return `/${role}/schedule-management?${query}`;
+  return `${roomReassignmentPage(role)}?${query}`;
 }
 
 export function recoveryError(error: unknown): string {

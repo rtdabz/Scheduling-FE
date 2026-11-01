@@ -1,5 +1,8 @@
 type Role = 'vpaa' | 'dean' | 'secretary' | 'program_head';
 
+/** The Secretary reassigns room schedules from Facilities; the Program Head still views them from Schedule Management. */
+export const roomReassignmentPage = (role: string) => role === 'secretary' ? '/secretary/facilities' : `/${role}/schedule-management`;
+
 const isDepartmentScheduler = (role: Role): boolean => role === 'secretary' || role === 'program_head';
 
 const pageFor = (type: string, role: Role): string | null => {
@@ -81,12 +84,12 @@ export const notificationLink = (
   if ((type === 'room_transfer_approved' || type === 'room_transfer_rejected') && (role === 'secretary' || role === 'program_head')) {
     const params = new URLSearchParams({ recovery: 'open' });
     if (typeof metadata?.plan_id === 'string') params.set('room_transfer', metadata.plan_id);
-    return `/${role}/schedule-management?${params}`;
+    return `${roomReassignmentPage(role)}?${params}`;
   }
   if ((type === 'room_recovery' || type === 'room_recovery_applied') && (role === 'secretary' || role === 'program_head')) {
     const id = Number(metadata?.recovery_case_id);
     const semester = Number(metadata?.semester_id);
-    return `/${role}/schedule-management?recovery=${Number.isInteger(id) && id > 0 ? id : 'open'}${Number.isInteger(semester) && semester > 0 ? `&recovery_semester=${semester}` : ''}`;
+    return `${roomReassignmentPage(role)}?recovery=${Number.isInteger(id) && id > 0 ? id : 'open'}${Number.isInteger(semester) && semester > 0 ? `&recovery_semester=${semester}` : ''}`;
   }
   if (role !== 'vpaa' && role !== 'dean' && role !== 'secretary' && role !== 'program_head') return undefined;
   const page = pageFor(type, role);

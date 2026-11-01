@@ -206,7 +206,7 @@ export default function App() {
             <Route path="/calendar" element={<CapabilityRoute capability="schedule.view" moduleName="Calendar"><VpaaCalendarPage /></CapabilityRoute>} />
             <Route path="/instructors" element={<RoleRoute role="vpaa" moduleName="Instructor Management"><Faculty /></RoleRoute>} />
             <Route path="/designations" element={<RoleRoute role="vpaa" moduleName="Instructor Designations"><Designations /></RoleRoute>} />
-            <Route path="/facilities" element={<RoleRoute role="vpaa" moduleName="Facility Management"><Rooms /></RoleRoute>} />
+            <Route path="/facilities" element={<RoleRoute role="vpaa" moduleName="Facilities"><Rooms /></RoleRoute>} />
 
             <Route path="/curriculum" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumListPage /></CapabilityRoute>} />
             <Route path="/curriculum/:id" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumDetailPage /></CapabilityRoute>} />
@@ -225,7 +225,7 @@ export default function App() {
             <Route path="/dean/courses" element={<CapabilityRoute capability="schedule.view" moduleName="Courses"><SecretaryCourses /></CapabilityRoute>} />
             <Route path="/dean/sections" element={<CapabilityRoute capability="schedule.view" moduleName="Sections"><SecretarySections /></CapabilityRoute>} />
             <Route path="/dean/instructors" element={<CapabilityRoute capability="schedule.view" moduleName="Instructors"><Faculty /></CapabilityRoute>} />
-            <Route path="/dean/facilities" element={<CapabilityRoute capability="schedule.view" moduleName="Facility"><Rooms /></CapabilityRoute>} />
+            <Route path="/dean/facilities" element={<CapabilityRoute capability="schedule.view" moduleName="Facilities"><Rooms /></CapabilityRoute>} />
 
             <Route path="/dean/curriculum" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumListPage /></CapabilityRoute>} />
             <Route path="/dean/curriculum/:id" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumDetailPage /></CapabilityRoute>} />
@@ -238,7 +238,7 @@ export default function App() {
             <Route path="/secretary/schedule-management" element={<CapabilityRoute capability="schedule.create" moduleName="Schedule Management"><SecretaryScheduleBuilder /></CapabilityRoute>} />
             <Route path="/secretary/schedules" element={<CapabilityRoute capability="schedule.view" moduleName="Schedules"><SecretarySchedules /></CapabilityRoute>} />
             <Route path="/secretary/section-timetables" element={<CapabilityRoute capability="schedule.view" moduleName="Section Timetables"><SecretarySectionTimetables /></CapabilityRoute>} />
-            <Route path="/secretary/facilities" element={<CapabilityRoute capability="schedule.view" moduleName="Facility"><Rooms /></CapabilityRoute>} />
+            <Route path="/secretary/facilities" element={<CapabilityRoute capability="schedule.view" moduleName="Facilities"><Rooms /></CapabilityRoute>} />
             <Route path="/secretary/room-requests" element={<CapabilityRoute capability="room.request" moduleName="Room Requests"><RoomRequests /></CapabilityRoute>} />
             <Route path="/secretary/program-rooms" element={<CapabilityRoute capability="room.assign_program" moduleName="Program Rooms"><SecretaryProgramRooms /></CapabilityRoute>} />
 
@@ -261,7 +261,7 @@ export default function App() {
             <Route path="/program_head/schedules" element={<CapabilityRoute capability="schedule.view" moduleName="Schedules"><ProgramHeadSchedules /></CapabilityRoute>} />
             <Route path="/program_head/section-timetables" element={<CapabilityRoute capability="schedule.view" moduleName="Section Timetables"><ProgramHeadSectionTimetables /></CapabilityRoute>} />
             <Route path="/program_head/instructors" element={<CapabilityRoute capability="schedule.view" moduleName="Instructors"><Faculty /></CapabilityRoute>} />
-            <Route path="/program_head/facilities" element={<CapabilityRoute capability="schedule.view" moduleName="Facility"><Rooms /></CapabilityRoute>} />
+            <Route path="/program_head/facilities" element={<CapabilityRoute capability="schedule.view" moduleName="Facilities"><Rooms /></CapabilityRoute>} />
 
             <Route path="/program_head/courses" element={<CapabilityRoute capability="schedule.view" moduleName="Courses"><SecretaryCourses /></CapabilityRoute>} />
             <Route path="/program_head/curriculum" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumListPage /></CapabilityRoute>} />

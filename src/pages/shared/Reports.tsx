@@ -76,7 +76,7 @@ const TABS: { kind: ReportKind; label: string; description: string; icon: typeof
   {
     kind: 'room',
     label: 'Room Utilization',
-    description: 'Facility occupancy, lecture vs laboratory capacity, and booked hours.',
+    description: 'Facilities occupancy, lecture vs laboratory capacity, and booked hours.',
     icon: Building2,
   },
   {

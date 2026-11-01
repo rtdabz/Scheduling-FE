@@ -20,12 +20,12 @@ beforeEach(() => { vi.mocked(api.get).mockResolvedValue({ data: { transfers: [tr
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 const review = (stage: 'dean' | 'vpaa' = 'vpaa') => render(<MemoryRouter><RoomTransferRequests stage={stage} /></MemoryRouter>);
 
-describe('Room transfer VPAA review', () => {
+describe('Room schedule reassignment VPAA review', () => {
   it('opens the existing paginated changes modal above the shared schedule preview', async () => {
     const many = { ...transfer, changes: Array.from({ length: 28 }, (_, i) => ({ ...transfer.changes[0], schedule_id: i + 1, mode: i === 27 ? 'online' : 'on-site', course: `SCI${i + 1}` })) };
     const close = vi.fn();
     render(<MemoryRouter><RoomTransferRequests stage="vpaa" transfers={[many]} onClose={close} /></MemoryRouter>);
-    const dialog = screen.getByRole('dialog', { name: 'Room Transfer Request Details' });
+    const dialog = screen.getByRole('dialog', { name: 'Room Schedule Reassignment Details' });
     expect(within(dialog).queryByRole('table')).toBeNull();
     expect(within(dialog).getByText('27 schedules affected · 1 linked online session')).toBeTruthy();
     expect(within(dialog).getByText('SCI1 · A')).toBeTruthy();
@@ -34,9 +34,9 @@ describe('Room transfer VPAA review', () => {
     expect(viewDetails.getAttribute('aria-haspopup')).toBe('dialog');
     expect(viewDetails.hasAttribute('aria-expanded')).toBe(false);
     fireEvent.click(viewDetails);
-    const changes = screen.getByRole('dialog', { name: 'Room transfer changes' });
+    const changes = screen.getByRole('dialog', { name: 'Room schedule reassignment changes' });
     expect(dialog.hasAttribute('inert')).toBe(true);
-    expect(within(changes).getByRole('table', { name: 'Room transfer changes' })).toBeTruthy();
+    expect(within(changes).getByRole('table', { name: 'Room schedule reassignment changes' })).toBeTruthy();
     expect(within(changes).getByText('SCI3')).toBeTruthy();
     expect(within(changes).getByText('SCI25')).toBeTruthy();
     expect(within(changes).queryByText('SCI26')).toBeNull();
@@ -46,16 +46,16 @@ describe('Room transfer VPAA review', () => {
     expect(within(changes).getAllByText('Monday 8:00 AM–9:00 AM, Lab 1, on-site')).toHaveLength(2);
     expect(within(changes).getAllByText('Monday 8:00 AM–9:00 AM, Lab 2, on-site')).toHaveLength(2);
     fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog', { name: 'Room transfer changes' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Room schedule reassignment changes' })).toBeNull();
     expect(close).not.toHaveBeenCalled();
     expect(dialog.hasAttribute('inert')).toBe(false);
     await waitFor(() => expect(document.activeElement).toBe(viewDetails));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Approve' }));
-    expect(screen.getByRole('dialog', { name: 'Approve room transfer' })).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Approve room schedule reassignment' })).toBeTruthy();
     expect(dialog.hasAttribute('inert')).toBe(true);
     fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog', { name: 'Approve room transfer' })).toBeNull();
-    expect(screen.getByRole('dialog', { name: 'Room Transfer Request Details' })).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: 'Approve room schedule reassignment' })).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'Room Schedule Reassignment Details' })).toBeTruthy();
     expect(api.post).not.toHaveBeenCalled();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(close).toHaveBeenCalledTimes(1);
@@ -72,7 +72,7 @@ describe('Room transfer VPAA review', () => {
   it('confirms approval once and refreshes the reviewed status', async () => {
     review();
     fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
-    const dialog = screen.getByRole('dialog', { name: 'Approve room transfer' });
+    const dialog = screen.getByRole('dialog', { name: 'Approve room schedule reassignment' });
     vi.mocked(api.post).mockResolvedValueOnce({ data: { message: 'Approved and applied.' } });
     vi.mocked(api.get).mockResolvedValue({ data: { transfers: [{ ...transfer, status: 'approved' }] } });
     const confirm = within(dialog).getByRole('button', { name: 'Approve transfer' });
@@ -88,7 +88,7 @@ describe('Room transfer VPAA review', () => {
     vi.mocked(api.get).mockResolvedValue({ data: { transfers: [{ ...transfer, status: `pending_${stage}` }] } });
     review(stage);
     fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
-    const dialog = screen.getByRole('dialog', { name: 'Reject room transfer' });
+    const dialog = screen.getByRole('dialog', { name: 'Reject room schedule reassignment' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Reject transfer' }));
     expect(within(dialog).getByRole('alert').textContent).toContain('A rejection reason is required.');
     expect(api.post).not.toHaveBeenCalled();
@@ -108,13 +108,13 @@ describe('Room transfer VPAA review', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('Availability changed.');
     expect(screen.getByText(/^Pending VPAA Approval/)).toBeTruthy();
     expect(publishLiveTopics).not.toHaveBeenCalled();
-    expect(screen.getByRole('dialog', { name: 'Approve room transfer' })).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Approve room schedule reassignment' })).toBeTruthy();
   });
 
   it('keeps the rejection reason after a server failure and blocks duplicate or cancelled decisions while saving', async () => {
     review();
     fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
-    const dialog = screen.getByRole('dialog', { name: 'Reject room transfer' });
+    const dialog = screen.getByRole('dialog', { name: 'Reject room schedule reassignment' });
     const reason = within(dialog).getByRole('textbox', { name: 'Rejection reason' }) as HTMLTextAreaElement;
     fireEvent.change(reason, { target: { value: 'Keep the current laboratory.' } });
     let fail: (error: unknown) => void = () => {};
@@ -125,20 +125,20 @@ describe('Room transfer VPAA review', () => {
     expect(reason.disabled).toBe(true);
     expect((within(dialog).getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.getByRole('dialog', { name: 'Reject room transfer' })).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Reject room schedule reassignment' })).toBeTruthy();
     await act(async () => { fail({ response: { data: { message: 'The decision could not be saved.' } } }); });
     expect((await within(dialog).findByRole('alert')).textContent).toContain('The decision could not be saved.');
     expect(reason.value).toBe('Keep the current laboratory.');
     expect(reason.disabled).toBe(false);
     fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog', { name: 'Reject room transfer' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Reject room schedule reassignment' })).toBeNull();
   });
 
   it('uses Dean confirmation to forward a request without implying schedules were applied', async () => {
     vi.mocked(api.get).mockResolvedValue({ data: { transfers: [{ ...transfer, status: 'pending_dean' }] } });
     review('dean');
     fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
-    expect(screen.getByText('Approve this room transfer and forward it to the VPAA? Existing schedules will remain unchanged.')).toBeTruthy();
+    expect(screen.getByText('Approve this room schedule reassignment and forward it to the VPAA? Existing schedules will remain unchanged.')).toBeTruthy();
     vi.mocked(api.post).mockResolvedValueOnce({ data: { message: 'Pending VPAA Approval. Existing schedules are unchanged.' } });
     vi.mocked(api.get).mockResolvedValue({ data: { transfers: [transfer] } });
     fireEvent.click(screen.getByRole('button', { name: 'Approve transfer' }));
@@ -183,7 +183,7 @@ describe('Room transfer VPAA review', () => {
     vi.mocked(api.get).mockRejectedValueOnce({ response: { data: { message: 'Could not load transfers.' } } });
     review();
     expect((await screen.findByRole('alert')).textContent).toContain('Could not load transfers.');
-    expect(screen.queryByText('No room transfer requests.')).toBeNull();
+    expect(screen.queryByText('No room schedule reassignment requests.')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText(/^Pending VPAA Approval/)).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());

@@ -54,8 +54,8 @@ describe('Room recovery workflow', () => {
     panel();
     fireEvent.click(await screen.findByText('Find suitable rooms'));
     fireEvent.click(await screen.findByRole('button', { name: 'Submit for approval' }));
-    const confirmation = screen.getByRole('dialog', { name: 'Submit room transfer' });
-    expect(within(confirmation).getByText('Are you sure you want to submit this room transfer for approval?')).toBeTruthy();
+    const confirmation = screen.getByRole('dialog', { name: 'Submit room schedule reassignment' });
+    expect(within(confirmation).getByText('Are you sure you want to submit this room schedule reassignment for approval?')).toBeTruthy();
     expect(api.post).toHaveBeenCalledTimes(1); // Only the read-only preview request.
     const controls = within(confirmation).getAllByRole('button');
     await waitFor(() => expect(document.activeElement).toBe(controls[0]));
@@ -63,11 +63,11 @@ describe('Room recovery workflow', () => {
     fireEvent.keyDown(document, { key: 'Tab' });
     expect(document.activeElement).toBe(controls[0]);
     fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog', { name: 'Submit room transfer' })).toBeNull();
-    expect(screen.getByRole('dialog', { name: 'Room Transfer' })).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: 'Submit room schedule reassignment' })).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'Reassign Room Schedule' })).toBeTruthy();
     expect(api.post).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Submit for approval' }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Submit room transfer' })).getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Submit room schedule reassignment' })).getByRole('button', { name: 'Cancel' }));
     expect(api.post).toHaveBeenCalledTimes(1);
   });
 
@@ -83,12 +83,12 @@ describe('Room recovery workflow', () => {
     expect(api.post).toHaveBeenLastCalledWith('/room-recovery/plans/plan-1/submit', { group_keys: ['single-11'] });
   });
 
-  it('reuses the just-loaded list when opening the Room Transfer modal', async () => {
+  it('reuses the just-loaded list when opening the Reassign Room Schedule modal', async () => {
     render(<MemoryRouter><ToolbarWithTransfers /></MemoryRouter>);
-    await screen.findByRole('status', { name: 'Pending room transfers' });
+    await screen.findByRole('status', { name: 'Pending room schedule reassignments' });
     const calls = vi.mocked(api.get).mock.calls.length;
-    fireEvent.click(screen.getByRole('button', { name: 'Room Transfer' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Room Transfer' });
+    fireEvent.click(screen.getByRole('button', { name: 'Reassign Room Schedule' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reassign Room Schedule' });
     expect(await within(dialog).findByText('SCI101')).toBeTruthy();
     expect(api.get).toHaveBeenCalledTimes(calls);
   });
@@ -96,13 +96,13 @@ describe('Room recovery workflow', () => {
   it('updates the pending badge on source changes and hides it at zero', async () => {
     vi.mocked(api.get).mockResolvedValue({ data: { ...data, pending_count: 2 } });
     render(<MemoryRouter><ToolbarWithTransfers /></MemoryRouter>);
-    const button = screen.getByRole('button', { name: 'Room Transfer' });
-    const badge = () => within(button).queryByRole('status', { name: 'Pending room transfers' });
-    await waitFor(() => expect(badge()?.textContent).toBe('2 pending room transfers'));
+    const button = screen.getByRole('button', { name: 'Reassign Room Schedule' });
+    const badge = () => within(button).queryByRole('status', { name: 'Pending room schedule reassignments' });
+    await waitFor(() => expect(badge()?.textContent).toBe('2 pending room schedule reassignments'));
     for (const [count, topic] of [[3, 'rooms'], [1, 'approvals'], [0, 'schedules']] as const) {
       vi.mocked(api.get).mockResolvedValue({ data: { ...data, pending_count: count } });
       fireEvent(window, new CustomEvent('wicars:live-update', { detail: { topics: [topic] } }));
-      await waitFor(() => count > 0 ? expect(badge()?.textContent).toBe(`${count} pending room transfers`) : expect(badge()).toBeNull());
+      await waitFor(() => count > 0 ? expect(badge()?.textContent).toBe(`${count} pending room schedule reassignments`) : expect(badge()).toBeNull());
     }
   });
 
@@ -111,11 +111,11 @@ describe('Room recovery workflow', () => {
     const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => now);
     try {
       render(<MemoryRouter><ToolbarWithTransfers /></MemoryRouter>);
-      await screen.findByRole('status', { name: 'Pending room transfers' });
+      await screen.findByRole('status', { name: 'Pending room schedule reassignments' });
       const calls = vi.mocked(api.get).mock.calls.length;
       now += 11000;
       vi.mocked(api.get).mockResolvedValue({ data: { ...data, cases: [], schedules: [{ ...data.schedules[0], course: 'SCI202' }] } });
-      fireEvent.click(screen.getByRole('button', { name: 'Room Transfer' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Reassign Room Schedule' }));
       expect(await screen.findByText('SCI202')).toBeTruthy();
       expect(api.get).toHaveBeenCalledTimes(calls + 1);
     } finally {
@@ -125,8 +125,8 @@ describe('Room recovery workflow', () => {
 
   it('keeps the badge while approval is pending and clears it after an approved schedule update', async () => {
     render(<MemoryRouter><ToolbarWithTransfers /></MemoryRouter>);
-    await screen.findByRole('status', { name: 'Pending room transfers' });
-    fireEvent.click(screen.getByRole('button', { name: 'Room Transfer' }));
+    await screen.findByRole('status', { name: 'Pending room schedule reassignments' });
+    fireEvent.click(screen.getByRole('button', { name: 'Reassign Room Schedule' }));
     const find = await screen.findByRole('button', { name: 'Find suitable rooms' });
     await waitFor(() => expect((find as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(find);
@@ -136,19 +136,19 @@ describe('Room recovery workflow', () => {
     fireEvent.click(confirm);
     fireEvent.click(screen.getByRole('button', { name: 'Submit request' }));
     expect(await screen.findByText('Pending Dean Approval.')).toBeTruthy();
-    expect(screen.getByRole('status', { name: 'Pending room transfers' }).textContent).toContain('1');
+    expect(screen.getByRole('status', { name: 'Pending room schedule reassignments' }).textContent).toContain('1');
     vi.mocked(api.get).mockResolvedValue({ data: { ...data, pending_count: 0, cases: [], schedules: [] } });
     fireEvent(window, new CustomEvent('wicars:live-update', { detail: { topics: ['schedules'] } }));
-    await waitFor(() => expect(screen.queryByRole('status', { name: 'Pending room transfers' })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('status', { name: 'Pending room schedule reassignments' })).toBeNull());
   });
 
-  it('replaces the Conflicts toolbar action with Room Transfer and opens a modal on demand', async () => {
+  it('replaces the Conflicts toolbar action with Reassign Room Schedule and opens a modal on demand', async () => {
     render(<MemoryRouter><ToolbarWithTransfers /></MemoryRouter>);
     expect(screen.queryByRole('button', { name: 'Conflicts' })).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
-    const button = screen.getByRole('button', { name: 'Room Transfer' });
+    const button = screen.getByRole('button', { name: 'Reassign Room Schedule' });
     button.focus(); fireEvent.click(button);
-    const dialog = await screen.findByRole('dialog', { name: 'Room Transfer' });
+    const dialog = await screen.findByRole('dialog', { name: 'Reassign Room Schedule' });
     expect(await within(dialog).findByText('SCI101')).toBeTruthy();
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -157,12 +157,12 @@ describe('Room recovery workflow', () => {
 
   it('opens affected schedules from the toolbar without a duplicate unavailable-room banner', async () => {
     render(<MemoryRouter><ToolbarWithTransfers /></MemoryRouter>);
-    await screen.findByRole('status', { name: 'Pending room transfers' });
+    await screen.findByRole('status', { name: 'Pending room schedule reassignments' });
     expect(screen.queryByText('Room unavailable: Lab 1')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Review room transfers' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Review room schedule reassignments' })).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Room Transfer' }));
-    const modal = await screen.findByRole('dialog', { name: 'Room Transfer' });
+    fireEvent.click(screen.getByRole('button', { name: 'Reassign Room Schedule' }));
+    const modal = await screen.findByRole('dialog', { name: 'Reassign Room Schedule' });
     expect(await within(modal).findByText('SCI101')).toBeTruthy();
     expect(within(modal).getByText('Laboratory', { exact: true })).toBeTruthy();
     expect(within(modal).getByText('Room unavailable', { exact: true })).toBeTruthy();
@@ -236,8 +236,8 @@ describe('Room recovery workflow', () => {
     });
     render(<MemoryRouter initialEntries={['/?recovery=open&room_transfer=plan-1']}><RoomReassignmentPanel /></MemoryRouter>);
     expect(await screen.findByText('Incident semester: 2026-2027 · First Semester')).toBeTruthy();
-    const details = await screen.findByRole('dialog', { name: 'Submitted room transfers' });
-    expect(within(details).getByRole('table', { name: 'Submitted room transfer schedules' })).toBeTruthy();
+    const details = await screen.findByRole('dialog', { name: 'Submitted room schedule reassignments' });
+    expect(within(details).getByRole('table', { name: 'Submitted room schedule reassignment schedules' })).toBeTruthy();
     fireEvent.click(within(details).getByRole('button', { name: 'Close modal' }));
     expect((screen.getByRole('checkbox', { name: /^Select SCI101/ }) as HTMLInputElement).disabled).toBe(true);
     expect(api.get).toHaveBeenCalledWith('/room-recovery/transfers', expect.anything());
@@ -247,13 +247,13 @@ describe('Room recovery workflow', () => {
     vi.mocked(api.get).mockResolvedValue({ data: { ...data, transfers: [pendingTransfer, { ...pendingTransfer, id: 'plan-2', status: 'pending_vpaa' }] } });
     panel();
     const view = await screen.findByRole('button', { name: 'View Details' });
-    expect(screen.getByRole('status', { name: 'Pending room transfer requests' }).textContent).toBe('2 pending requests');
+    expect(screen.getByRole('status', { name: 'Pending room schedule reassignment requests' }).textContent).toBe('2 pending requests');
     expect(screen.getByText('Pending Dean Approval: 1')).toBeTruthy();
     expect(screen.getByText('Pending VPAA Approval: 1')).toBeTruthy();
     expect(document.querySelector('details')).toBeNull();
     view.focus(); fireEvent.click(view);
-    const details = screen.getByRole('dialog', { name: 'Submitted room transfers' });
-    expect(within(details).getByRole('table', { name: 'Submitted room transfer schedules' })).toBeTruthy();
+    const details = screen.getByRole('dialog', { name: 'Submitted room schedule reassignments' });
+    expect(within(details).getByRole('table', { name: 'Submitted room schedule reassignment schedules' })).toBeTruthy();
     expect(within(details).queryByRole('button', { name: /Approve|Reject/ })).toBeNull();
     expect(api.post).not.toHaveBeenCalled();
     const parent = document.querySelector('.room-transfer-modal')!;
@@ -264,12 +264,12 @@ describe('Room recovery workflow', () => {
     controls[controls.length - 1].focus(); fireEvent.keyDown(document, { key: 'Tab' });
     expect(document.activeElement).toBe(controls[0]);
     fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog', { name: 'Submitted room transfers' })).toBeNull();
-    expect(screen.getByRole('dialog', { name: 'Room Transfer' })).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: 'Submitted room schedule reassignments' })).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'Reassign Room Schedule' })).toBeTruthy();
     await waitFor(() => expect(document.activeElement).toBe(view));
   });
 
-  it('paginates submitted schedules without changing the room transfer selection or proposal', async () => {
+  it('paginates submitted schedules without changing the room schedule reassignment selection or proposal', async () => {
     const transfer = { ...pendingTransfer, changes: Array.from({ length: 23 }, (_, i) => ({ ...pendingTransfer.changes[0], schedule_id: i + 1, course: `SCI${i + 1}` })) };
     vi.mocked(api.get).mockResolvedValue({ data: { ...data, transfers: [transfer] } });
     panel();
@@ -277,8 +277,8 @@ describe('Room recovery workflow', () => {
     await screen.findByRole('button', { name: 'Submit for approval' });
     const calls = vi.mocked(api.get).mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: 'View Details' }));
-    const details = screen.getByRole('dialog', { name: 'Submitted room transfers' });
-    const table = within(details).getByRole('table', { name: 'Submitted room transfer schedules' });
+    const details = screen.getByRole('dialog', { name: 'Submitted room schedule reassignments' });
+    const table = within(details).getByRole('table', { name: 'Submitted room schedule reassignment schedules' });
     expect(within(table).getAllByRole('row')).toHaveLength(11);
     expect(within(table).getByText('SCI1 · A')).toBeTruthy();
     expect(within(table).getAllByText('Lab 1')).toHaveLength(10);
@@ -300,12 +300,12 @@ describe('Room recovery workflow', () => {
     vi.mocked(api.get).mockResolvedValue({ data: { ...data, transfers: [pendingTransfer] } });
     panel();
     fireEvent.click(await screen.findByRole('button', { name: 'View Details' }));
-    const details = screen.getByRole('dialog', { name: 'Submitted room transfers' });
+    const details = screen.getByRole('dialog', { name: 'Submitted room schedule reassignments' });
     vi.mocked(api.get).mockResolvedValue({ data: { ...data, transfers: [{ ...pendingTransfer, status: 'pending_vpaa' }] } });
     fireEvent(window, new CustomEvent('wicars:live-update', { detail: { topics: ['approvals'] } }));
-    const table = within(details).getByRole('table', { name: 'Submitted room transfer schedules' });
+    const table = within(details).getByRole('table', { name: 'Submitted room schedule reassignment schedules' });
     expect((await within(table).findAllByText('Pending VPAA Approval', { selector: 'span' })).length).toBeGreaterThan(0);
-    expect(screen.getByRole('dialog', { name: 'Submitted room transfers' })).toBe(details);
+    expect(screen.getByRole('dialog', { name: 'Submitted room schedule reassignments' })).toBe(details);
     expect(api.post).not.toHaveBeenCalled();
   });
 
@@ -316,14 +316,14 @@ describe('Room recovery workflow', () => {
     vi.mocked(api.get).mockRejectedValue(new Error('Connection interrupted'));
     fireEvent(window, new CustomEvent('wicars:live-update', { detail: { topics: ['approvals'] } }));
     const retry = await screen.findByRole('button', { name: 'Refresh' });
-    const parent = screen.getByRole('dialog', { name: 'Room Transfer' });
+    const parent = screen.getByRole('dialog', { name: 'Reassign Room Schedule' });
     expect(parent.hasAttribute('inert')).toBe(false);
     expect(within(parent).getByText('Semester details unavailable')).toBeTruthy();
     expect(within(parent).getByRole('button', { name: 'Close modal' })).toBeTruthy();
-    expect(screen.queryByRole('dialog', { name: 'Submitted room transfers' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Submitted room schedule reassignments' })).toBeNull();
     vi.mocked(api.get).mockResolvedValue({ data: { ...data, transfers: [pendingTransfer] } });
     fireEvent.click(retry);
-    expect(await screen.findByRole('dialog', { name: 'Submitted room transfers' })).toBeTruthy();
+    expect(await screen.findByRole('dialog', { name: 'Submitted room schedule reassignments' })).toBeTruthy();
     expect(api.post).not.toHaveBeenCalled();
   });
 
@@ -347,9 +347,9 @@ describe('Room recovery workflow', () => {
   it('keeps the table in the schedules pane and finder and confirmation in the review pane', async () => {
     panel();
     const schedules = await screen.findByRole('region', { name: 'Schedules' });
-    const review = screen.getByRole('region', { name: 'Review proposed room transfers' });
-    const card = within(review).getByRole('article', { name: 'Proposed room transfers' });
-    const actions = within(review).getByRole('group', { name: 'Room transfer actions' });
+    const review = screen.getByRole('region', { name: 'Review proposed room schedule reassignments' });
+    const card = within(review).getByRole('article', { name: 'Proposed room schedule reassignments' });
+    const actions = within(review).getByRole('group', { name: 'Room schedule reassignment actions' });
     expect(within(schedules).getByRole('table')).toBeTruthy();
     expect(within(schedules).queryByRole('button', { name: 'Find suitable rooms' })).toBeNull();
     expect(within(card).queryByRole('button', { name: 'Find suitable rooms' })).toBeNull();
@@ -404,7 +404,7 @@ describe('Room recovery workflow', () => {
   it('links an alert to the exact case and semester', async () => {
     render(<MemoryRouter><RoomRecoveryAlerts /></MemoryRouter>);
     const link = await screen.findByText('Review affected schedules');
-    expect(link.getAttribute('href')).toBe('/secretary/schedule-management?recovery=2&recovery_semester=1');
+    expect(link.getAttribute('href')).toBe('/secretary/facilities?recovery=2&recovery_semester=1');
     expect(screen.getByText(/Lab 1: 1 meeting/)).toBeTruthy();
   });
 
@@ -425,12 +425,12 @@ describe('Room recovery workflow', () => {
     await waitFor(() => expect(banner()).toBeNull());
   });
 
-  it('shows pending room transfers even without a closure incident', async () => {
+  it('shows pending room schedule reassignments even without a closure incident', async () => {
     vi.mocked(api.get).mockResolvedValue({ data: { ...data, cases: [], pending_count: 2, schedules: [] } });
     render(<MemoryRouter><RoomRecoveryAlerts /></MemoryRouter>);
     expect(await screen.findByText(/2 meeting\(s\) need attention/)).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Review room transfers' }).getAttribute('href'))
-      .toBe('/secretary/schedule-management?recovery=open&recovery_semester=1');
+    expect(screen.getByRole('link', { name: 'Review room schedule reassignments' }).getAttribute('href'))
+      .toBe('/secretary/facilities?recovery=open&recovery_semester=1');
     expect(screen.queryByText('No unresolved room recovery alerts.')).toBeNull();
   });
 

@@ -34,6 +34,7 @@ interface Room {
   room_code: string;
   building: string;
   room_type: 'lecture' | 'laboratory' | 'online' | 'field';
+  allow_lecture_usage?: boolean;
   status: 'available' | 'not available';
   department_id: number | null;
   department: Department | null;
@@ -296,6 +297,16 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
           <p className="text-[9px] font-bold uppercase tracking-wider text-gray-455 mb-0.5">Department</p>
           <p className="text-xs font-bold text-gray-700">{room.department?.department_code || 'General'}</p>
         </div>
+        {room.room_type === 'laboratory' && (
+          <div className="col-span-2 sm:col-span-4 bg-gray-50 rounded-lg py-2 px-3 border border-gray-100 shadow-sm">
+            <p className="text-[9px] font-bold uppercase tracking-wider text-gray-455 mb-0.5">Lecture Use</p>
+            <p className="text-xs font-bold text-gray-700">
+              {room.allow_lecture_usage
+                ? 'Allowed: major full-lecture courses may use this lab when it is vacant'
+                : 'Not allowed: laboratory classes only'}
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="room-detail-print-grid flex-1 flex flex-col min-h-0 bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm font-sans mt-3">

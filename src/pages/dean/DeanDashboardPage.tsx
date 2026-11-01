@@ -122,7 +122,7 @@ export default function DeanDashboardPage() {
     return () => { active = false; };
   }, [cacheKey, reloadKey, liveRevision]);
 
-  // Room transfers share the Dean approval workspace; the server scopes them to this department.
+  // Room schedule reassignments share the Dean approval workspace; the server scopes them to this department.
   useEffect(() => {
     const controller = new AbortController();
     api.get<{ transfers?: RoomTransferRequest[] }>('/room-recovery/transfers', { signal: controller.signal })
@@ -193,7 +193,7 @@ export default function DeanDashboardPage() {
   }, [submissions]);
 
   const requestTitle = (request: PendingRequest) => {
-    if (request.type === 'room_transfer') return 'Room transfer request';
+    if (request.type === 'room_transfer') return 'Room schedule reassignment request';
     const programs = new Set(request.sectionIds.map(id => programLabel(sectionById.get(id)?.program ?? submissionSections.get(id)?.program)));
     programs.delete(NO_PROGRAM);
     return programs.size ? `${[...programs].sort().join(', ')} schedule` : 'Schedule submission';
@@ -262,7 +262,7 @@ export default function DeanDashboardPage() {
   const contextStatus = requests.length > 0
     ? { label: `${requests.length} ${requests.length === 1 ? 'request' : 'requests'} to review`, tone: 'ready' as const }
     : !transfersKnown
-      ? { label: 'Room transfers unavailable', tone: 'drafting' as const }
+      ? { label: 'Room schedule reassignments unavailable', tone: 'drafting' as const }
       : statusKnown && totalSections > 0 && stageCounts.approved === totalSections
         ? { label: 'All sections approved', tone: 'done' as const }
         : { label: 'Nothing to review', tone: 'drafting' as const };
@@ -307,7 +307,7 @@ export default function DeanDashboardPage() {
         icon={Inbox}
         value={transfersKnown || requests.length ? requests.length : unknown}
         of="requests"
-        status={`${scheduleRequestCount} schedule · ${transfersKnown ? `${transferRequestCount} room transfer` : 'room transfers unavailable'}`}
+        status={`${scheduleRequestCount} schedule · ${transfersKnown ? `${transferRequestCount} room schedule reassignment` : 'room schedule reassignments unavailable'}`}
         tone={requests.length ? 'attention' : transfersKnown ? 'good' : 'neutral'}
         onClick={openApproval}
         actionLabel="Open the approval queue"
@@ -347,7 +347,7 @@ export default function DeanDashboardPage() {
 
     <Panel
       title="Review queue"
-      subtitle={requests.length ? 'Schedule submissions and room transfers, longest-waiting first.' : undefined}
+      subtitle={requests.length ? 'Schedule submissions and room schedule reassignments, longest-waiting first.' : undefined}
       badge={requests.length}
       action="Open approval queue"
       onAction={openApproval}
@@ -360,7 +360,7 @@ export default function DeanDashboardPage() {
         onOpen={openRequest}
         onViewAll={openApproval}
         emptyText="Nothing is waiting on your review."
-        incomplete={transferState === 'error' ? `Room transfers could not be loaded (${transferError}). Only schedule submissions are listed; open the approval queue to check transfers.` : undefined}
+        incomplete={transferState === 'error' ? `Room schedule reassignments could not be loaded (${transferError}). Only schedule submissions are listed; open the approval queue to check transfers.` : undefined}
       />
     </Panel>
 

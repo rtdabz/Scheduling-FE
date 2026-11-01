@@ -47,7 +47,7 @@ vi.mock('../ClassSchedules/SchedulerPanel/hooks/initialDataMapper', () => ({
 
 // The preview embeds a generated PDF; report what it was given instead.
 vi.mock('../../components/scheduling/ScheduleApprovalPreviewModal', () => ({
-  default: (props: { title: string; checks?: ReactNode; inert?: boolean; onClose: () => void; status: string; canAct: boolean; printInput: { allSchedules: unknown[] } | null; onReject: () => void; onApprove: () => void }) => props.title === 'Room Transfer Request Details' ? (
+  default: (props: { title: string; checks?: ReactNode; inert?: boolean; onClose: () => void; status: string; canAct: boolean; printInput: { allSchedules: unknown[] } | null; onReject: () => void; onApprove: () => void }) => props.title === 'Room Schedule Reassignment Details' ? (
     <div role="dialog" aria-label={props.title} aria-hidden={props.inert || undefined} inert={props.inert || undefined}>
       {props.checks}<span>{`${props.printInput?.allSchedules.length ?? 0} meetings`}</span>
       {props.canAct && <><button onClick={props.onApprove}>Approve</button><button onClick={props.onReject}>Reject</button></>}
@@ -159,7 +159,7 @@ const transfer = (status: RoomTransferRequest['status'], id = 'transfer-1'): Roo
   ],
 });
 
-describe('Unified schedule and room transfer approval queue', () => {
+describe('Unified schedule and room schedule reassignment approval queue', () => {
   afterEach(() => cleanup());
   beforeEach(() => {
     clearDataCache(); vi.clearAllMocks(); mocks.apiGet.mockReset(); mocks.apiPost.mockReset().mockResolvedValue({ data: {} });
@@ -175,11 +175,11 @@ describe('Unified schedule and room transfer approval queue', () => {
     return server;
   }
   const mainTable = () => screen.getByRole('table', { name: 'Schedule submissions' });
-  const transferRow = () => within(mainTable()).getAllByRole('row').find(row => row.textContent?.includes('Room Transfer'))!;
+  const transferRow = () => within(mainTable()).getAllByRole('row').find(row => row.textContent?.includes('Room Schedule Reassignment'))!;
   async function openTransfer() {
-    await waitFor(() => expect(within(mainTable()).getByText('Room Transfer')).toBeTruthy());
+    await waitFor(() => expect(within(mainTable()).getByText('Room Schedule Reassignment')).toBeTruthy());
     fireEvent.click(within(transferRow()).getByRole('button', { name: 'View' }));
-    return screen.findByRole('dialog', { name: 'Room Transfer Request Details' });
+    return screen.findByRole('dialog', { name: 'Room Schedule Reassignment Details' });
   }
 
   it.each(['dean', 'vpaa'] as const)('fills transfer rows in the %s table like schedule approvals', async stage => {
@@ -190,20 +190,20 @@ describe('Unified schedule and room transfer approval queue', () => {
       department_id: 1, room_id: null, status: 'faculty_assignment', day: change.after.day, start_time: change.after.start_time, end_time: change.after.end_time,
       mode: change.mode === 'online' ? 'online' as const : 'on-site' as const, section } }));
     queue(stage, [request]);
-    await waitFor(() => expect(within(mainTable()).getByText('Room Transfer')).toBeTruthy());
+    await waitFor(() => expect(within(mainTable()).getByText('Room Schedule Reassignment')).toBeTruthy());
     const cells = within(transferRow()).getAllByRole('cell').map(cell => cell.textContent);
-    expect(cells[0]).toBe('Room Transfer');
+    expect(cells[0]).toBe('Room Schedule Reassignment');
     expect(cells[2]).toBe('BSIT');
     expect(cells.at(-2)).toBe('Modified');
     expect(transferRow().textContent).not.toContain('2026-2027 1st');
     fireEvent.click(within(transferRow()).getByRole('button', { name: 'Modified' }));
-    expect(await screen.findByRole('dialog', { name: 'Room Transfer Request Details' })).toBeTruthy();
+    expect(await screen.findByRole('dialog', { name: 'Room Schedule Reassignment Details' })).toBeTruthy();
   });
 
   it.each(['dean', 'vpaa'] as const)('combines both request types in the %s table and lists linked online sessions in transfer details', async stage => {
     queue(stage);
     const details = await openTransfer();
-    expect(screen.queryByRole('region', { name: 'Room transfer requests' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Room schedule reassignment requests' })).toBeNull();
     expect(within(details).getByText('PHYSICAL-CLASS · IT-1A')).toBeTruthy();
     expect(within(details).getByText('ONLINE-CLASS · IT-1A · Linked online session')).toBeTruthy();
     expect(within(details).getByRole('region', { name: 'Changes Summary' }).textContent).toContain('R1');
@@ -225,7 +225,7 @@ describe('Unified schedule and room transfer approval queue', () => {
     const server = queue(stage);
     const details = await openTransfer();
     fireEvent.click(within(details).getByRole('button', { name: 'Approve' }));
-    const confirmation = screen.getByRole('dialog', { name: 'Approve room transfer' });
+    const confirmation = screen.getByRole('dialog', { name: 'Approve room schedule reassignment' });
     if (stage === 'dean') expect(within(confirmation).getByText(/forward it to the VPAA.*remain unchanged/)).toBeTruthy();
     expect(mocks.apiPost).not.toHaveBeenCalled();
     mocks.apiPost.mockImplementation(async () => { server.requests = [transfer(stage === 'dean' ? 'pending_vpaa' : 'approved')]; return { data: { message: 'Approved.' } }; });
@@ -237,14 +237,14 @@ describe('Unified schedule and room transfer approval queue', () => {
     expect(mocks.apiPost).toHaveBeenCalledTimes(1);
     expect(mocks.apiPost).toHaveBeenCalledWith('/room-recovery/plans/transfer-1/approve', {});
     fireEvent.click(screen.getByRole('button', { name: /^Schedule Approved/ }));
-    await waitFor(() => expect(within(mainTable()).getByText('Room Transfer')).toBeTruthy());
+    await waitFor(() => expect(within(mainTable()).getByText('Room Schedule Reassignment')).toBeTruthy());
     expect(within(mainTable()).getByText(stage === 'dean' ? 'Pending VPAA Approval' : 'Approved')).toBeTruthy();
   });
 
   it.each(['dean', 'vpaa'] as const)('requires a reason and moves a %s transfer into Rejected', async stage => {
     const server = queue(stage);
     fireEvent.click(within(await openTransfer()).getByRole('button', { name: 'Reject' }));
-    const confirmation = screen.getByRole('dialog', { name: 'Reject room transfer' });
+    const confirmation = screen.getByRole('dialog', { name: 'Reject room schedule reassignment' });
     fireEvent.click(within(confirmation).getByRole('button', { name: 'Reject transfer' }));
     expect(within(confirmation).getByRole('alert').textContent).toContain('reason is required');
     expect(mocks.apiPost).not.toHaveBeenCalled();
@@ -276,7 +276,7 @@ describe('Unified schedule and room transfer approval queue', () => {
 
   it('opens notification-linked details and closing them does not reopen the modal', async () => {
     queue('dean', [transfer('pending_dean')], '?room_transfer=transfer-1');
-    const details = await screen.findByRole('dialog', { name: 'Room Transfer Request Details' });
+    const details = await screen.findByRole('dialog', { name: 'Room Schedule Reassignment Details' });
     fireEvent.click(within(details).getByRole('button', { name: 'Close preview' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     fireEvent.click(screen.getByRole('button', { name: 'Reset Filters' }));
@@ -303,7 +303,7 @@ describe('Unified schedule and room transfer approval queue', () => {
     expect(within(mainTable()).getByText('Schedule Approval')).toBeTruthy();
     mocks.apiGet.mockImplementation((url: string) => Promise.resolve(url === '/room-recovery/transfers' ? { data: { transfers: [transfer('pending_dean')] } } : payload('pending_dean', 'submitted')));
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    await waitFor(() => expect(within(mainTable()).getByText('Room Transfer')).toBeTruthy());
+    await waitFor(() => expect(within(mainTable()).getByText('Room Schedule Reassignment')).toBeTruthy());
     expect(screen.queryByRole('alert')).toBeNull();
   });
 });

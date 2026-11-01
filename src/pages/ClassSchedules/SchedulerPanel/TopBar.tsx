@@ -619,14 +619,14 @@ export default function TopBar({
                 type="button"
                 onClick={onOpenRoomTransfer}
                 aria-haspopup="dialog"
-                aria-label="Room Transfer"
+                aria-label="Reassign Room Schedule"
                 aria-describedby={pendingRoomTransferCount > 0 ? 'schedule-builder-room-transfer-count' : undefined}
                 title="Review schedules needing a room and transfer them to suitable rooms"
                 className={`${toolButtonClass} border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50`}
               >
                 <DoorOpen className="h-3.5 w-3.5" />
-                <span>Room Transfer</span>
-                {pendingRoomTransferCount > 0 && <span id="schedule-builder-room-transfer-count" role="status" aria-label="Pending room transfers" className="inline-flex min-w-5 items-center justify-center rounded-full bg-primary px-1.5 py-0.5 text-[11px] font-bold leading-4 text-white">{pendingRoomTransferCount}<span className="sr-only"> pending room transfers</span></span>}
+                <span>Reassign Room Schedule</span>
+                {pendingRoomTransferCount > 0 && <span id="schedule-builder-room-transfer-count" role="status" aria-label="Pending room schedule reassignments" className="inline-flex min-w-5 items-center justify-center rounded-full bg-primary px-1.5 py-0.5 text-[11px] font-bold leading-4 text-white">{pendingRoomTransferCount}<span className="sr-only"> pending room schedule reassignments</span></span>}
               </button>
           )}
           {isLoading ? <Skeleton className="h-9 w-20 rounded-lg" /> : (

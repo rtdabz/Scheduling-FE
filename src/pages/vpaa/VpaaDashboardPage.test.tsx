@@ -131,7 +131,7 @@ describe('VpaaDashboardPage', () => {
     expect(screen.getByRole('button', { name: 'Open master calendar' })).toBeTruthy();
   });
 
-  it('shows a pending room transfer when no schedule submission is waiting, and opens that transfer', async () => {
+  it('shows a pending room schedule reassignment when no schedule submission is waiting, and opens that transfer', async () => {
     mockApi({
       initial: { ...initialData, schedule_submissions: [submission(1, 1, 'approved', [1, 2])] },
       transfers: [transfer('t-1', 'pending_vpaa'), transfer('t-2', 'pending_dean'), transfer('t-3', 'approved')],
@@ -139,7 +139,7 @@ describe('VpaaDashboardPage', () => {
     renderPage();
     const queue = await screen.findByRole('list', { name: 'Pending requests' });
     expect(within(queue).getAllByRole('listitem')).toHaveLength(1);
-    expect(within(queue).getByText('Room transfer')).toBeTruthy();
+    expect(within(queue).getByText('Room schedule reassignment')).toBeTruthy();
     expect(within(queue).getByText(/1 meeting moved/)).toBeTruthy();
     expect(screen.getByText('1 decision awaiting you')).toBeTruthy();
     expect(screen.queryByText('Nothing is waiting on your decision.')).toBeNull();
@@ -197,13 +197,13 @@ describe('VpaaDashboardPage', () => {
     expect(screen.getByTestId('location').textContent).toBe('/instructors');
   });
 
-  it('does not report an all-clear when room transfers fail to load', async () => {
+  it('does not report an all-clear when room schedule reassignments fail to load', async () => {
     mockApi({ initial: { ...initialData, schedule_submissions: [submission(1, 1, 'approved', [1, 2])] }, transfers: new Error('boom') });
     renderPage();
-    await waitFor(() => expect(screen.getByText(/Room transfers could not be loaded/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Room schedule reassignments could not be loaded/)).toBeTruthy());
     expect(screen.queryByText('Nothing is waiting on your decision.')).toBeNull();
     expect(screen.queryByText('Nothing awaiting you')).toBeNull();
-    expect(screen.getByText('Room transfers unavailable')).toBeTruthy();
+    expect(screen.getByText('Room schedule reassignments unavailable')).toBeTruthy();
   });
 
   it('hides figures instead of showing zeros when the first load fails', async () => {

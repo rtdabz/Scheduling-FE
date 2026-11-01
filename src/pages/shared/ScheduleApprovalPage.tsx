@@ -623,7 +623,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     {
       accessorKey: 'requestType',
       header: 'Request Type',
-      cell: ({ row }) => <span className="whitespace-nowrap rounded-full bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-800">{row.original.transfer ? 'Room Transfer' : 'Schedule Approval'}</span>,
+      cell: ({ row }) => <span className="whitespace-nowrap rounded-full bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-800">{row.original.transfer ? 'Room Schedule Reassignment' : 'Schedule Approval'}</span>,
     },
     {
       accessorKey: 'department',
@@ -758,7 +758,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       <div id="schedule-approval-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 mb-6">
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap flex-1">
           <select aria-label="Request Type" value={selectedRequestType} onChange={event => { setSelectedRequestType(event.target.value as typeof selectedRequestType); resetPage(); }} className={selectClass}>
-            <option value="all">All Request Types</option><option value="schedule">Schedule Approval</option><option value="room_transfer">Room Transfer</option>
+            <option value="all">All Request Types</option><option value="schedule">Schedule Approval</option><option value="room_transfer">Room Schedule Reassignment</option>
           </select>
           {stage === 'vpaa' && (
             <select
@@ -799,7 +799,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       {loadError && (
         <LoadErrorBanner message={`${loadError} The queue below may be empty or out of date.`} onRetry={refresh} className="mb-4" />
       )}
-      {transfersError && <LoadErrorBanner message={`Room transfers could not be refreshed: ${transfersError} Regular schedule approvals remain available.`} onRetry={refresh} className="mb-4" />}
+      {transfersError && <LoadErrorBanner message={`Room schedule reassignments could not be refreshed: ${transfersError} Regular schedule approvals remain available.`} onRetry={refresh} className="mb-4" />}
 
       {isTruncated && !loadError && (
         <TruncatedDataNotice className="mb-4">

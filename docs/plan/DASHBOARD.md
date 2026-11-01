@@ -15,6 +15,7 @@
 
 ## Architecture & Decisions
 
+- [VPAA Archive improvement plan](vpaa_archive_improvement_plan.md) — Prioritized problems, diagnostic evidence, redesign structure, implementation phases, and acceptance checks; review completed 2026-11-01, implementation and browser verification outstanding.
 - [[decisions]]
 - [Dashboard integration plan](dashboard_integration_plan.md) — Role-specific content, metric definitions, and acceptance checks; Phases 1–2 implemented 2026-10-30, authenticated UI checks and backend contract sign-off outstanding.
 - [[curriculum_document_import_plan]] — Implemented reviewed curriculum import (PDF/CSV/XLSX/DOCX), classification rules, and conversion settings; Phase 2 scheduling integration deferred (see section 16).

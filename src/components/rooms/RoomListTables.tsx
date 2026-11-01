@@ -117,7 +117,6 @@ export function RoomsTable<T extends RoomListRow>({
   canManage,
   onOpen,
   onEdit,
-  onArchive,
   onPrint,
   onAvailabilityChange,
 }: {
@@ -126,11 +125,9 @@ export function RoomsTable<T extends RoomListRow>({
   canManage: boolean;
   onOpen: (room: T) => void;
   onEdit: (room: T) => void;
-  onArchive: (room: T) => void;
   onPrint?: (room: T) => void;
   onAvailabilityChange: (room: T) => void;
 }) {
-  const hasActions = canManage || Boolean(onPrint);
 
   const columns: ColumnDef<T>[] = [
     {
@@ -194,13 +191,16 @@ export function RoomsTable<T extends RoomListRow>({
         );
       },
     },
-    ...(hasActions ? [{
+    {
       id: 'actions',
       header: 'Actions',
       enableSorting: false,
       meta: { align: 'right' as const, cellClassName: 'whitespace-nowrap', stopRowClick: true },
       cell: ({ row }: { row: { original: T } }) => (
         <div className="flex justify-end gap-2">
+          <TableActionButton label="View Room Details" variant="view" onClick={() => onOpen(row.original)}>
+            <Eye size={17} />
+          </TableActionButton>
           {onPrint && (
             <TableActionButton label="Print Room Timetable" variant="print" onClick={() => onPrint(row.original)}>
               <Printer size={15} />
@@ -210,9 +210,6 @@ export function RoomsTable<T extends RoomListRow>({
             <>
               <TableActionButton label="Edit Room" variant="edit" onClick={() => onEdit(row.original)}>
                 <Pencil size={15} />
-              </TableActionButton>
-              <TableActionButton label="Archive Room" variant="archive" onClick={() => onArchive(row.original)}>
-                <Archive size={15} />
               </TableActionButton>
               {!['online', 'field'].includes(row.original.room_type) && (
                 <TableActionButton label={row.original.status === 'available' ? 'Mark Unavailable' : 'Mark Available'} variant={row.original.status === 'available' ? 'danger' : 'success'} className="w-auto gap-1.5 px-3 text-xs font-semibold" onClick={() => onAvailabilityChange(row.original)}>
@@ -224,7 +221,7 @@ export function RoomsTable<T extends RoomListRow>({
           )}
         </div>
       ),
-    } satisfies ColumnDef<T>] : []),
+    } satisfies ColumnDef<T>,
   ];
 
   const table = useDataTable<T>({ data: rooms, columns, pageSize: 10, getRowId: (room) => String(room.id) });

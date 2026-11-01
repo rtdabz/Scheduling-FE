@@ -31,7 +31,7 @@ export default function RoomRecoveryAlerts() {
         <div><p className="text-sm font-semibold">{item.room_code}: {item.meeting_count} meeting(s) need attention</p><p className="text-xs text-slate-600">{item.semester_label} · {item.reason}</p></div>
         <Link className="inline-flex items-center gap-1 text-sm font-semibold text-primary underline" to={recoveryLink(item.id, item.semester_id)}>Review affected schedules <ArrowRight size={15} /></Link>
       </div>)}
-      {data.cases.length === 0 && <p className="text-sm text-slate-600">{data.pending_count} meeting(s) need attention. <Link to={recoveryLink(undefined, data.semester_id)} className="font-semibold text-primary underline">Review room transfers</Link></p>}
+      {data.cases.length === 0 && <p className="text-sm text-slate-600">{data.pending_count} meeting(s) need attention. <Link to={recoveryLink(undefined, data.semester_id)} className="font-semibold text-primary underline">Review room schedule reassignments</Link></p>}
       {data.new_rooms.length > 0 && <p className="text-sm text-slate-600">Recently added rooms: {data.new_rooms.map(room => room.room_code).join(', ')}. <Link to={recoveryLink(undefined, data.semester_id)} className="font-semibold text-primary underline">Explore relocation</Link></p>}
       </div>
     </section>}

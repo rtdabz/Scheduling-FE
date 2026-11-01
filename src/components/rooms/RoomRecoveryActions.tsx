@@ -49,7 +49,7 @@ export default function RoomRecoveryActions({ rooms, room, onRoomChange, onAvail
       title={makingAvailable ? 'Mark Room Available' : 'Mark Room Unavailable'}
       message={makingAvailable
         ? `Mark ${selectedRoom?.room_code ?? 'this room'} as available? This restores the room's availability without changing existing schedules or records.`
-        : `Mark ${selectedRoom?.room_code ?? 'this room'} as unavailable? It will be excluded from new room transfers. Existing schedules and records will be preserved, and affected departments will be notified.`}
+        : `Mark ${selectedRoom?.room_code ?? 'this room'} as unavailable? It will be excluded from new room schedule reassignments. Existing schedules and records will be preserved, and affected departments will be notified.`}
       confirmLabel={makingAvailable ? 'Mark Available' : 'Mark Unavailable'}
       variant={makingAvailable ? 'success' : 'warning'}
       isConfirming={busy}

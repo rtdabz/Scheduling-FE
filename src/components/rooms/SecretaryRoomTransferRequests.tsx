@@ -19,9 +19,9 @@ export default function SecretaryRoomTransferRequests({ requests, isOpen, loadin
   const close = () => { onClose(); window.setTimeout(() => opener.current?.focus(), 0); };
 
   return <>
-    <section aria-label="Submitted room transfer requests" className="mb-4 flex flex-col justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:px-4">
+    <section aria-label="Submitted room schedule reassignment requests" className="mb-4 flex flex-col justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:px-4">
       <div className="flex min-w-0 flex-col gap-2">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h3 className="text-sm font-bold text-slate-900">Room transfer requests</h3><span role="status" aria-label="Pending room transfer requests" className="text-xs font-semibold text-slate-600">{pending.length} pending {pending.length === 1 ? 'request' : 'requests'}</span></div>
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h3 className="text-sm font-bold text-slate-900">Room schedule reassignment requests</h3><span role="status" aria-label="Pending room schedule reassignment requests" className="text-xs font-semibold text-slate-600">{pending.length} pending {pending.length === 1 ? 'request' : 'requests'}</span></div>
         <div className="flex flex-wrap gap-2 text-[11px] font-semibold">
           {deanCount > 0 && <span className="rounded-md bg-amber-50 px-2 py-1 text-amber-900">Pending Dean Approval: {deanCount}</span>}
           {vpaaCount > 0 && <span className="rounded-md bg-amber-50 px-2 py-1 text-amber-900">Pending VPAA Approval: {vpaaCount}</span>}
@@ -30,7 +30,7 @@ export default function SecretaryRoomTransferRequests({ requests, isOpen, loadin
       </div>
       <button ref={opener} type="button" disabled={loading} onClick={() => { setStatus('all'); onOpen(); }} aria-haspopup="dialog" className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 self-start rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-primary-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50 sm:self-auto"><Eye size={15} aria-hidden="true" />View Details</button>
     </section>
-    <Modal isOpen={isOpen} onClose={close} title="Submitted room transfers" description="Track Dean and VPAA approval. Your schedules stay unchanged until final approval." size="xl" className="submitted-transfers-modal">
+    <Modal isOpen={isOpen} onClose={close} title="Submitted room schedule reassignments" description="Track Dean and VPAA approval. Your schedules stay unchanged until final approval." size="xl" className="submitted-transfers-modal">
       <div className="p-4 sm:p-5">
         <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <p className="text-sm font-semibold text-slate-800">{requests.length} submitted requests · {requests.reduce((count, item) => count + roomTransferMovedCount(item), 0)} schedules</p>

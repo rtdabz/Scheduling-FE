@@ -23,7 +23,7 @@ export const secretaryNav: NavSection[] = [
       { label: 'Dashboard', path: '/secretary/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
       { label: 'Department', path: '/secretary/departments', icon: Building2, id: 'sidebar-departments', requiredCapability: 'schedule.view' },
       {
-        label: 'Facility',
+        label: 'Facilities',
         icon: DoorOpen,
         id: 'sidebar-facility',
         requiredCapability: ['schedule.view', 'room.assign_program'],

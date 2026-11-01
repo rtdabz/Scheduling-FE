@@ -17,6 +17,7 @@ interface Room {
   room_code: string;
   building: string;
   room_type: 'lecture' | 'laboratory' | 'online' | 'field';
+  allow_lecture_usage?: boolean;
   status: 'available' | 'not available';
   department_id: number | null;
   department: Department | null;

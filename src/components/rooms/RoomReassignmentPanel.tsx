@@ -159,7 +159,7 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
   const incidentTerm = term?.is_active != null && !term.is_active;
   return <>
     {!open && error && <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Unable to check room availability. <button type="button" onClick={() => setRefresh(v => v + 1)} className="font-semibold underline">Retry</button></p>}
-    <Modal isOpen={open} onClose={close} title="Room Transfer" description={loading ? 'Loading semester…' : term ? `${incidentTerm ? 'Incident semester' : 'Current semester'}: ${term.academic_year} · ${termName}` : error ? 'Semester details unavailable' : 'No active semester configured'} size="xl" className="room-transfer-modal" inert={requestsOpen} closeOnEscape={!busy && !confirmSubmit && !requestsOpen} closeOnOverlayClick={!busy && !confirmSubmit && !requestsOpen} showCloseButton={!busy && !confirmSubmit && !requestsOpen}>
+    <Modal isOpen={open} onClose={close} title="Reassign Room Schedule" description={loading ? 'Loading semester…' : term ? `${incidentTerm ? 'Incident semester' : 'Current semester'}: ${term.academic_year} · ${termName}` : error ? 'Semester details unavailable' : 'No active semester configured'} size="xl" className="room-transfer-modal" inert={requestsOpen} closeOnEscape={!busy && !confirmSubmit && !requestsOpen} closeOnOverlayClick={!busy && !confirmSubmit && !requestsOpen} showCloseButton={!busy && !confirmSubmit && !requestsOpen}>
       <div ref={modalContent} className="room-transfer">
         {message && <p role="status" className="transfer-alert transfer-success"><CheckCircle2 size={18} aria-hidden="true" />{message}</p>}
         {error && <div role="alert" className="transfer-alert transfer-error"><p>{error}</p><button type="button" disabled={busy} onClick={() => setRefresh(v => v + 1)}>Refresh</button></div>}
@@ -186,16 +186,16 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
                     <td role="cell" className="transfer-room-cell"><p className="transfer-room-name">{row.room}</p><p className="transfer-meta transfer-meeting-time">{meetingTime(row)}</p></td>
                     <td role="cell" className="transfer-status-cell"><span className="transfer-notice">{row.pending_transfer_id ? ROOM_TRANSFER_STATUS_LABELS[row.pending_transfer_status ?? 'pending_dean'] : row.attention_reason ?? 'Room needs attention'}</span>{row.status === 'faculty_assignment' && <p className="transfer-meta">Day/time changes allowed when enabled</p>}{(row.revision_required ?? !['draft', 'completed', 'revision', 'faculty_assignment'].includes(row.status)) && <p className="transfer-meta">Revision required</p>}</td>
                   </tr>)}
-                  {affected.length === 0 && <tr><td colSpan={4} className="transfer-table-empty"><CheckCircle2 size={22} aria-hidden="true" /><p>{data.schedules.length === 0 ? 'No on-site schedules in this semester.' : 'No room transfers needed.'}</p></td></tr>}
+                  {affected.length === 0 && <tr><td colSpan={4} className="transfer-table-empty"><CheckCircle2 size={22} aria-hidden="true" /><p>{data.schedules.length === 0 ? 'No on-site schedules in this semester.' : 'No room schedule reassignments needed.'}</p></td></tr>}
                 </tbody>
               </table>
             </div>
             <p className="transfer-help"><Info size={15} aria-hidden="true" /><span>Lab classes need a lab. Locked schedules require revision.</span></p>
           </section>
-          <section aria-label="Review proposed room transfers" className="transfer-review">
-            <div className="transfer-section-heading"><h3><span className="transfer-step" aria-hidden="true">2</span>Review proposed room transfers</h3></div>
+          <section aria-label="Review proposed room schedule reassignments" className="transfer-review">
+            <div className="transfer-section-heading"><h3><span className="transfer-step" aria-hidden="true">2</span>Review proposed room schedule reassignments</h3></div>
             <p className="transfer-description">Find rooms, review changes, then submit for approval.</p>
-            <div role="group" aria-label="Room transfer actions" className="transfer-workflow">
+            <div role="group" aria-label="Room schedule reassignment actions" className="transfer-workflow">
               <div className="transfer-finder">
                 <label className="transfer-time-option"><input type="checkbox" disabled={busy || !canEdit} checked={allowTime} onChange={event => { invalidate(); setAllowTime(event.target.checked); }} />Allow day and time changes</label>
                 <p className="transfer-meta">Search all days, including Sunday, while keeping linked schedules and instructors conflict-free.</p>
@@ -203,9 +203,9 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
                 <button type="button" disabled={busy || !canEdit || !selected.length || !data.semester_id} onClick={preview} className={`transfer-button ${plan && plan.groups.length > 0 ? 'transfer-button-secondary' : 'transfer-button-primary'}`}>{busy && !plan ? <LoaderCircle size={17} className="transfer-spinner" aria-hidden="true" /> : <Search size={17} aria-hidden="true" />}{busy && !plan ? 'Finding rooms…' : 'Find suitable rooms'}</button>
                 {!selected.length && affected.length > 0 && <p className="transfer-meta">Select at least one schedule to find rooms.</p>}
               </div>
-              <article aria-label="Proposed room transfers" className="transfer-results">
+              <article aria-label="Proposed room schedule reassignments" className="transfer-results">
                 <div className="transfer-results-heading"><h4>Available room suggestions</h4>{plan && <span>{plan.groups.length} ready</span>}</div>
-                <p role="status" className="sr-only">{busy ? (plan ? 'Submitting room transfers…' : 'Checking room availability…') : plan ? `${plan.groups.length} proposed transfers. ${plan.unresolved.length} unresolved.` : ''}</p>
+                <p role="status" className="sr-only">{busy ? (plan ? 'Submitting room schedule reassignments…' : 'Checking room availability…') : plan ? `${plan.groups.length} proposed transfers. ${plan.unresolved.length} unresolved.` : ''}</p>
                 <div className="transfer-results-scroll" role="region" aria-label="Room suggestions" tabIndex={0} aria-busy={busy}>
                   {!plan && <div className="transfer-empty"><p>{busy ? 'Checking room availability…' : affected.length ? 'Available rooms will appear here.' : 'No room suggestions needed.'}</p><p className="transfer-meta">{busy ? 'Matching room types and checking schedule conflicts.' : !affected.length ? 'Room suggestions appear when schedules need a replacement.' : selected.length ? 'Find suitable rooms for the selected schedules.' : 'Choose schedules from the list to get started.'}</p></div>}
                   {plan && <>
@@ -250,7 +250,7 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
               {plan && plan.groups.length > 0 && <div className="transfer-confirm">
                 <p role="status" className="transfer-confirm-count">{groups.length} of {plan.groups.length} classes selected for transfer</p>
                 <p className="transfer-meta">Existing schedules stay unchanged until Dean and VPAA approval. Linked meetings stay together and availability is rechecked at final approval.</p>
-                {!canSubmit && <p className="transfer-meta">Only the Secretary can submit room transfers.</p>}
+                {!canSubmit && <p className="transfer-meta">Only the Secretary can submit room schedule reassignments.</p>}
                 <button type="button" disabled={busy || !groups.length || !canSubmit} onClick={() => setConfirmSubmit(true)} className="transfer-button transfer-button-primary">{busy && <LoaderCircle size={17} className="transfer-spinner" aria-hidden="true" />}{busy ? 'Submitting…' : 'Submit for approval'}</button>
               </div>}
             </div>
@@ -258,7 +258,7 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
         </div>}
       </div>
     </Modal>
-    <ConfirmModal isOpen={open && confirmSubmit} title="Submit room transfer" message="Are you sure you want to submit this room transfer for approval?"
+    <ConfirmModal isOpen={open && confirmSubmit} title="Submit room schedule reassignment" message="Are you sure you want to submit this room schedule reassignment for approval?"
       confirmLabel="Submit request" variant="maroon" isConfirming={busy} onConfirm={submit} onCancel={() => { if (!busy) setConfirmSubmit(false); }} />
   </>;
 }

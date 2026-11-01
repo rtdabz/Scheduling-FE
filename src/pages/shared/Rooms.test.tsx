@@ -254,4 +254,75 @@ describe('Rooms component', () => {
     expect(put).toHaveBeenCalledWith('/rooms/1', expect.objectContaining({ room_code: 'LAB-101' }));
     expect(put.mock.calls[0][1]).not.toHaveProperty('status');
   });
+  it('creates a building only from the details of its real first room', async () => {
+    sessionStorage.setItem('user', JSON.stringify({ id: 1, role: 'vpaa' }));
+    render(<MemoryRouter><Rooms /></MemoryRouter>);
+    await screen.findByText('Main Bldg');
+    fireEvent.click(screen.getByRole('button', { name: 'Add Building' }));
+    const form = within(document.getElementById('room-form')!);
+    fireEvent.change(form.getByPlaceholderText(/NEE Building/), { target: { value: '  North   Hall ' } });
+    fireEvent.click(form.getByRole('button', { name: 'Create Building' }));
+    expect(await form.findByText('Room code is required')).toBeTruthy();
+    expect(post).not.toHaveBeenCalled();
+
+    fireEvent.change(form.getByPlaceholderText('e.g. CCS-LAB1'), { target: { value: 'nh-lab1' } });
+    fireEvent.change(form.getByDisplayValue('Lecture'), { target: { value: 'laboratory' } });
+    fireEvent.click(form.getByRole('checkbox'));
+    fireEvent.change(form.getByLabelText('Room status'), { target: { value: 'not available' } });
+    post.mockResolvedValueOnce({ data: { room: { id: 9, room_code: 'NH-LAB1', building: 'North Hall', room_type: 'laboratory', allow_lecture_usage: true, status: 'not available', department_id: null, department: null } } });
+    fireEvent.click(form.getByRole('button', { name: 'Create Building' }));
+    await waitFor(() => expect(post).toHaveBeenCalledExactlyOnceWith('/rooms', expect.objectContaining({
+      room_code: 'NH-LAB1', building: 'North Hall', room_type: 'laboratory', allow_lecture_usage: true, status: 'not available',
+    })));
+    expect(await screen.findByText('North Hall')).toBeTruthy();
+  });
+
+  it('refuses a new building whose name differs from an existing one only in case or spacing', async () => {
+    sessionStorage.setItem('user', JSON.stringify({ id: 1, role: 'vpaa' }));
+    render(<MemoryRouter><Rooms /></MemoryRouter>);
+    await screen.findByText('Main Bldg');
+    fireEvent.click(screen.getByRole('button', { name: 'Add Building' }));
+    const form = within(document.getElementById('room-form')!);
+    fireEvent.change(form.getByPlaceholderText(/NEE Building/), { target: { value: ' main   BLDG' } });
+    expect(form.getByText(/A building named .Main Bldg. already exists/)).toBeTruthy();
+  });
+
+  it('groups rooms whose building names differ only in case or spacing', async () => {
+    sessionStorage.setItem('user', JSON.stringify({ id: 1, role: 'vpaa' }));
+    get.mockImplementation((url: string) => Promise.resolve({ data: url === '/initial-data' ? {
+      rooms: [
+        { id: 1, room_code: 'MB-101', building: 'Main Bldg', room_type: 'lecture', status: 'available', department_id: 1 },
+        { id: 2, room_code: 'MB-102', building: ' main  bldg ', room_type: 'lecture', status: 'available', department_id: 1 },
+      ],
+      departments: [{ id: 1, department_name: 'CCS', department_code: 'CCS' }],
+      schedules: [],
+    } : [] }));
+    render(<MemoryRouter><Rooms /></MemoryRouter>);
+    fireEvent.click(await screen.findByText('Main Bldg'));
+    expect(screen.queryByText('main  bldg')).toBeNull();
+    expect(screen.getByText('MB-101')).toBeTruthy();
+    expect(screen.getByText('MB-102')).toBeTruthy();
+  });
+
+  it.each(['vpaa', 'secretary'])('offers room details in both views and no per-room archive for %s users', async (role) => {
+    sessionStorage.setItem('user', JSON.stringify({ id: 1, role, department_id: 1 }));
+    render(<MemoryRouter><Rooms /></MemoryRouter>);
+    fireEvent.click(await screen.findByText('Main Bldg'));
+    fireEvent.click(screen.getByRole('button', { name: 'List View' }));
+    expect(screen.getByRole('button', { name: 'View Room Details' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Archive Room' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Grid View' }));
+    expect(screen.getByRole('button', { name: 'View details of LAB-101' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Archive$/ })).toBeNull();
+  });
+
+  it('gives only the secretary the Reassign Room Schedule entry point', async () => {
+    const view = render(<MemoryRouter><Rooms /></MemoryRouter>);
+    expect(await screen.findByRole('button', { name: /Reassign Room Schedule/ })).toBeTruthy();
+    view.unmount();
+    sessionStorage.setItem('user', JSON.stringify({ id: 1, role: 'vpaa' }));
+    render(<MemoryRouter><Rooms /></MemoryRouter>);
+    await screen.findByText('Main Bldg');
+    expect(screen.queryByRole('button', { name: /Reassign Room Schedule/ })).toBeNull();
+  });
 });

@@ -3,7 +3,7 @@ import { roomTransferMovedCount, type RoomTransferRequest } from './roomRecovery
 
 export type ReviewStage = 'dean' | 'vpaa';
 
-/** One request waiting on a reviewer: a schedule submission slice or a room transfer, never mixed into section totals. */
+/** One request waiting on a reviewer: a schedule submission slice or a room schedule reassignment, never mixed into section totals. */
 export interface PendingRequest {
   key: string;
   type: 'schedule' | 'room_transfer';
@@ -76,7 +76,7 @@ export const pendingScheduleRequests = <T extends DashboardSubmission>(
     };
   });
 
-/** Room transfers the server already scoped to this reviewer; only the ones at their stage are pending. */
+/** Room schedule reassignments the server already scoped to this reviewer; only the ones at their stage are pending. */
 export const pendingTransferRequests = (stage: ReviewStage, transfers: RoomTransferRequest[]): PendingRequest[] => transfers
   .filter(transfer => transfer.status === PENDING_STATUS[stage])
   .map(transfer => {

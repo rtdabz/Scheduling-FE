@@ -23,6 +23,8 @@ import {
   AlertTriangle,
   Ban,
   CheckCircle2,
+  Eye,
+  DoorOpen,
 } from 'lucide-react';
 import api from '../../lib/api';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
@@ -30,6 +32,7 @@ import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import RoomDetailModal from '../../components/ui/RoomDetailModal';
 import RoomRecoveryActions from '../../components/rooms/RoomRecoveryActions';
+import RoomReassignmentPanel from '../../components/rooms/RoomReassignmentPanel';
 import { recoveryError } from '../../lib/roomRecovery';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
@@ -117,6 +120,11 @@ interface RoomsPageData {
 
 const UNASSIGNED_BUILDING = 'Other/Unassigned';
 
+/** Matches the server: names that differ only in case or spacing are one building. */
+const normalizeBuilding = (name: string | null | undefined) => (name || '').trim().replace(/\s+/g, ' ');
+const buildingKey = (name: string | null | undefined) => normalizeBuilding(name).toLowerCase();
+const buildingOf = (room: { building: string }) => normalizeBuilding(room.building) || UNASSIGNED_BUILDING;
+
 const SCHEDULE_LIMIT = 2000;
 
 const mapApiRoom = (r: ApiRoom): Room => ({
@@ -143,6 +151,7 @@ export default function Rooms() {
   const [schedules, setSchedules] = useState<Schedule[]>(cachedRoomsData?.schedules ?? []);
   const [activeSemester, setActiveSemester] = useState<unknown>(cachedRoomsData?.activeSemester ?? null);
   const [schedulesTruncated, setSchedulesTruncated] = useState(cachedRoomsData?.schedulesTruncated ?? false);
+  const activeSemesterId = Number((activeSemester as { id?: number | string } | null)?.id) || undefined;
   const [isLoading, setIsLoading] = useState(!hasCachedData(roomsCacheKey));
   const [selectedRoomIdForDetail, setSelectedRoomIdForDetail] = useState<number | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
@@ -153,6 +162,8 @@ export default function Rooms() {
   const userDepartmentId = user?.department_id;
   const canManageRooms = isVpaa;
   const showGuide = role === 'secretary';
+  const isSecretary = role === 'secretary';
+  const [pendingReassignmentCount, setPendingReassignmentCount] = useState(0);
 
   const isProgramHead = role === 'program_head';
   const userProgramId = user?.program_id ?? null;
@@ -211,7 +222,7 @@ export default function Rooms() {
     setHandledRoomLink(linkedRoomId);
     const room = filteredRooms.find(r => r.id === linkedRoomId);
     if (room) {
-      setSelectedBuilding(room.building || UNASSIGNED_BUILDING);
+      setSelectedBuilding(buildingOf(room));
       setGlobalFilter('');
       setSelectedRoomIdForDetail(room.id);
       setIsDetailModalOpen(true);
@@ -232,8 +243,6 @@ export default function Rooms() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [recoveryRoomId, setRecoveryRoomId] = useState('');
   const [saveError, setSaveError] = useState('');
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [idToDelete, setIdToDelete] = useState<number | null>(null);
 
   const [roomCode, setRoomCode] = useState('');
   const [building, setBuilding] = useState('');
@@ -260,9 +269,10 @@ export default function Rooms() {
 
   const liveBuildingDuplicate = useMemo(() => {
     if (selectedBuilding || isEditMode) return null;
-    const trimmed = building.trim().toLowerCase();
-    if (!trimmed) return null;
-    return rooms.find((r) => (r.building || '').trim().toLowerCase() === trimmed)?.building || null;
+    const key = buildingKey(building);
+    if (!key) return null;
+    const match = rooms.find((r) => buildingKey(r.building) === key);
+    return match ? normalizeBuilding(match.building) : null;
   }, [selectedBuilding, isEditMode, building, rooms]);
 
   useEffect(() => {
@@ -305,15 +315,12 @@ export default function Rooms() {
     setSaveError('');
 
     let hasError = false;
-    const trimmedBuilding = building.trim();
+    const trimmedBuilding = normalizeBuilding(building);
     const addingBuilding = !selectedBuilding && !isEditMode;
     const sameText = (a: string, b: string) =>
       a.trim().replace(/\s+/g, ' ').toLowerCase() === b.trim().replace(/\s+/g, ' ').toLowerCase();
 
-    let trimmedCode = roomCode.trim().replace(/\s+/g, ' ');
-    if (addingBuilding) {
-      trimmedCode = trimmedBuilding ? `${trimmedBuilding.toUpperCase()}-101` : '';
-    }
+    const trimmedCode = roomCode.trim().replace(/\s+/g, ' ');
 
     if (!trimmedCode) {
       setCodeError('Room code is required');
@@ -328,7 +335,7 @@ export default function Rooms() {
     if (!trimmedBuilding) {
       setBuildingError('Building is required');
       hasError = true;
-    } else if (addingBuilding && rooms.some((r) => r.building && sameText(r.building, trimmedBuilding))) {
+    } else if (addingBuilding && rooms.some((r) => buildingKey(r.building) === buildingKey(trimmedBuilding))) {
       setBuildingError('This building already exists. Open it to add rooms.');
       hasError = true;
     } else {
@@ -341,7 +348,7 @@ export default function Rooms() {
       hasError = true;
     }
 
-    if (!addingBuilding && (liveRoomCodeDuplicate || rooms.some((r) => r.id !== editingId && sameText(r.room_code, trimmedCode)))) {
+    if (liveRoomCodeDuplicate || rooms.some((r) => r.id !== editingId && sameText(r.room_code, trimmedCode))) {
       const codeMsg = liveRoomCodeDuplicate
         ? `Room code "${liveRoomCodeDuplicate.room_code}" already exists.`
         : 'This room code is already used by another room.';
@@ -358,8 +365,8 @@ export default function Rooms() {
       const payload = {
         room_code: trimmedCode,
         building: trimmedBuilding,
-        room_type: (!selectedBuilding && !isEditMode) ? 'lecture' : roomType,
-        allow_lecture_usage: (selectedBuilding || isEditMode) && roomType === 'laboratory' && allowLectureUsage,
+        room_type: roomType,
+        allow_lecture_usage: roomType === 'laboratory' && allowLectureUsage,
         ...(!isEditMode ? { status } : {}),
         department_id: isVpaa ? (departmentId ? parseInt(departmentId) : null) : (departmentId ? parseInt(departmentId) : (user?.department_id ? Number(user.department_id) : null))
       };
@@ -383,7 +390,7 @@ export default function Rooms() {
           setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeSemester, schedulesTruncated });
           return nextRooms;
         });
-        toast.success('Success', 'Room created successfully');
+        toast.success('Success', addingBuilding ? 'Building and first room created successfully' : 'Room created successfully');
       }
 
       setRoomCode('');
@@ -421,31 +428,6 @@ export default function Rooms() {
     setIsModalOpen(true);
   };
 
-  const triggerDeleteConfirmation = (id: number) => {
-    setIdToDelete(id);
-    setIsDeleteModalOpen(true);
-  };
-
-  const confirmDeleteRoom = async () => {
-    if (idToDelete !== null) {
-      try {
-        await api.delete(`/rooms/${idToDelete}`);
-        setRooms(prev => {
-          const nextRooms = prev.filter(r => r.id !== idToDelete);
-          invalidateCacheGroups('rooms', 'schedules', 'dashboards');
-          setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeSemester, schedulesTruncated });
-          return nextRooms;
-        });
-        toast.success('Archived', 'Room archived successfully');
-      } catch {
-        toast.error('Error', 'Failed to archive room');
-      } finally {
-        setIsDeleteModalOpen(false);
-        setIdToDelete(null);
-      }
-    }
-  };
-
   const openBuildingEdit = useCallback((name: string) => {
     if (name === UNASSIGNED_BUILDING) return;
     setBuildingToEdit(name);
@@ -472,7 +454,7 @@ export default function Rooms() {
       setBuildingNameError('Building name must not exceed 100 characters');
       return;
     }
-    if (rooms.some((r) => r.building && r.building.trim() !== from && r.building.trim().toLowerCase() === to.toLowerCase())) {
+    if (rooms.some((r) => buildingKey(r.building) !== buildingKey(from) && buildingKey(r.building) === buildingKey(to))) {
       setBuildingNameError(`A building named "${to}" already exists.`);
       return;
     }
@@ -516,7 +498,7 @@ export default function Rooms() {
         setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeSemester, schedulesTruncated });
         return nextRooms;
       });
-      if (selectedBuilding === name) setSelectedBuilding(null);
+      if (selectedBuilding !== null && buildingKey(selectedBuilding) === buildingKey(name)) setSelectedBuilding(null);
       toast.success('Archived', 'Building archived successfully');
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
@@ -596,7 +578,7 @@ export default function Rooms() {
     if (query) {
       result = selectedBuilding
         ? result.filter(r => r.room_code.toLowerCase().includes(query))
-        : result.filter(r => (r.building || UNASSIGNED_BUILDING).toLowerCase().includes(query));
+        : result.filter(r => buildingOf(r).toLowerCase().includes(query));
     }
 
     if (departmentFilter) {
@@ -611,17 +593,18 @@ export default function Rooms() {
   }, [filteredRooms, globalFilter, departmentFilter, roomTypeFilter, selectedBuilding]);
 
   const buildings = useMemo(() => {
-    const map = new Map<string, Room[]>();
+    const map = new Map<string, { name: string; rooms: Room[] }>();
     searchedRooms.forEach(room => {
-      const b = room.building || UNASSIGNED_BUILDING;
-      if (!map.has(b)) {
-        map.set(b, []);
+      const name = buildingOf(room);
+      const key = name === UNASSIGNED_BUILDING ? '' : buildingKey(name);
+      if (!map.has(key)) {
+        map.set(key, { name, rooms: [] });
       }
-      map.get(b)!.push(room);
+      map.get(key)!.rooms.push(room);
     });
     
-    return Array.from(map.entries())
-      .map(([name, roomsInBuilding]) => {
+    return Array.from(map.values())
+      .map(({ name, rooms: roomsInBuilding }) => {
         const total = roomsInBuilding.length;
         const available = roomsInBuilding.filter(r => r.status === 'available').length;
         return {
@@ -641,7 +624,9 @@ export default function Rooms() {
   const roomsInSelectedBuilding = useMemo(() => {
     if (!selectedBuilding) return [];
     return searchedRooms
-      .filter(r => (r.building || UNASSIGNED_BUILDING) === selectedBuilding)
+      .filter(r => selectedBuilding === UNASSIGNED_BUILDING
+        ? buildingOf(r) === UNASSIGNED_BUILDING
+        : buildingKey(r.building) === buildingKey(selectedBuilding))
       .sort((a, b) => a.room_code.localeCompare(b.room_code, undefined, { numeric: true, sensitivity: 'base' }));
   }, [searchedRooms, selectedBuilding]);
 
@@ -701,6 +686,13 @@ export default function Rooms() {
         setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeSemester, schedulesTruncated });
         toast.success(nextStatus === 'available' ? 'Room available' : 'Room unavailable', message);
       }} />
+      {isSecretary && (
+        <RoomReassignmentPanel
+          semesterId={activeSemesterId}
+          onPendingCountChange={setPendingReassignmentCount}
+          onTransferred={() => invalidateCacheGroups('rooms', 'schedules', 'dashboards')}
+        />
+      )}
       <div id="rooms-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans">
         <SearchInput
           value={globalFilter}
@@ -760,6 +752,30 @@ export default function Rooms() {
               <List size={15} />
             </button>
           </div>
+
+          {isSecretary && (
+            <button
+              id="rooms-reassign-schedule"
+              type="button"
+              onClick={() => {
+                setSearchParams(current => {
+                  const next = new URLSearchParams(current);
+                  next.set('recovery', 'open');
+                  if (activeSemesterId) next.set('recovery_semester', String(activeSemesterId));
+                  next.delete('recovery_room');
+                  return next;
+                });
+              }}
+              aria-haspopup="dialog"
+              aria-describedby={pendingReassignmentCount > 0 ? 'rooms-reassign-schedule-count' : undefined}
+              title="Review schedules needing a room and reassign them to suitable rooms"
+              className="border border-gray-300 bg-white text-gray-700 px-4 py-2.5 rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5 font-bold text-xs shadow-sm cursor-pointer ml-auto whitespace-nowrap"
+            >
+              <DoorOpen size={15} />
+              <span>Reassign Room Schedule</span>
+              {pendingReassignmentCount > 0 && <span id="rooms-reassign-schedule-count" role="status" aria-label="Pending room schedule reassignments" className="inline-flex min-w-5 items-center justify-center rounded-full bg-[#5A1220] px-1.5 py-0.5 text-[11px] font-bold leading-4 text-white">{pendingReassignmentCount}</span>}
+            </button>
+          )}
 
           {canManageRooms && (
             <button
@@ -1041,21 +1057,28 @@ export default function Rooms() {
                       </div>
                     </div>
 
+                    <div className="flex justify-end gap-2 border-t border-gray-100 pt-3 relative z-10" onClick={e => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        aria-label={`View details of ${room.room_code}`}
+                        title="View Room Details"
+                        onClick={() => {
+                          setSelectedRoomIdForDetail(room.id);
+                          setIsDetailModalOpen(true);
+                        }}
+                        className="flex items-center gap-1 rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 transition-colors hover:bg-sky-100"
+                      >
+                        <Eye size={13} />
+                        <span>Details</span>
+                      </button>
                     {canManageRooms && (
-                      <div className="flex justify-end gap-2 border-t border-gray-100 pt-3 relative z-10" onClick={e => e.stopPropagation()}>
+                      <>
                         <button
                           onClick={() => handleEditClick(room)}
                           className="flex items-center gap-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100"
                         >
                           <Pencil size={13} />
                           <span>Edit</span>
-                        </button>
-                        <button
-                          onClick={() => triggerDeleteConfirmation(room.id)}
-                          className="flex items-center gap-1 rounded-xl border border-stone-300 bg-stone-100 px-3 py-1.5 text-xs font-semibold text-stone-700 transition-colors hover:bg-stone-200"
-                        >
-                          <Archive size={13} />
-                          <span>Archive</span>
                         </button>
                         {!['online', 'field'].includes(room.room_type) && (
                           <button
@@ -1068,8 +1091,9 @@ export default function Rooms() {
                             <span className="truncate">{room.status === 'available' ? 'Mark Unavailable' : 'Mark Available'}</span>
                           </button>
                         )}
-                      </div>
+                      </>
                     )}
+                    </div>
                   </div>
                 );
               })}
@@ -1084,7 +1108,6 @@ export default function Rooms() {
                 setIsDetailModalOpen(true);
               }}
               onEdit={handleEditClick}
-              onArchive={(room) => { void triggerDeleteConfirmation(room.id); }}
               onPrint={handlePrintRoom}
               onAvailabilityChange={(room) => setRecoveryRoomId(String(room.id))}
             />
@@ -1112,7 +1135,7 @@ export default function Rooms() {
             </div>
             <form id="room-form" onSubmit={handleSubmit} noValidate className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
               {saveError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{saveError}</p>}
-              {liveRoomCodeDuplicate && (selectedBuilding || isEditMode) && (
+              {liveRoomCodeDuplicate && (
                 <div className="flex items-center gap-2.5 p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-700 animate-in fade-in">
                   <AlertTriangle size={16} className="shrink-0 text-red-600" />
                   <span>
@@ -1157,57 +1180,57 @@ export default function Rooms() {
                 </div>
               )}
 
-              {(selectedBuilding || isEditMode) && (
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Room Code <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={roomCode}
-                    onChange={(e) => {
-                      setRoomCode(e.target.value.toUpperCase());
-                      setCodeError('');
-                    }}
-                    placeholder="e.g. CCS-LAB1"
-                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                      codeError || (liveRoomCodeDuplicate && (selectedBuilding || isEditMode))
-                        ? 'border-red-500 focus:ring-red-500'
-                        : 'border-gray-200 focus:ring-[#C9952A]'
-                    }`}
-                  />
-                  {(codeError || (liveRoomCodeDuplicate && (selectedBuilding || isEditMode))) && (
-                    <p className="text-xs text-red-500 mt-1 font-semibold">
-                      {codeError || `Room code "${liveRoomCodeDuplicate?.room_code}" is already in use.`}
-                    </p>
-                  )}
-                </div>
+              {!selectedBuilding && !isEditMode && (
+                <p className="text-xs text-gray-500">Enter the details of the building's first room. More rooms can be added after the building is created.</p>
               )}
 
-              <div className={`grid ${isEditMode ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
-                {(selectedBuilding || isEditMode) && (
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                      Room Type <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={roomType}
-                      onChange={(e) => {
-                        const nextRoomType = e.target.value as 'lecture' | 'laboratory' | 'online' | 'field';
-                        setRoomType(nextRoomType);
-                        if (nextRoomType !== 'laboratory') {
-                          setAllowLectureUsage(false);
-                        }
-                      }}
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
-                    >
-                      <option value="lecture">Lecture</option>
-                      <option value="laboratory">Laboratory</option>
-                    </select>
-                  </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                  {!selectedBuilding && !isEditMode ? 'First Room Code' : 'Room Code'} <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={roomCode}
+                  onChange={(e) => {
+                    setRoomCode(e.target.value.toUpperCase());
+                    setCodeError('');
+                  }}
+                  placeholder="e.g. CCS-LAB1"
+                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
+                    codeError || liveRoomCodeDuplicate
+                      ? 'border-red-500 focus:ring-red-500'
+                      : 'border-gray-200 focus:ring-[#C9952A]'
+                  }`}
+                />
+                {(codeError || liveRoomCodeDuplicate) && (
+                  <p className="text-xs text-red-500 mt-1 font-semibold">
+                    {codeError || `Room code "${liveRoomCodeDuplicate?.room_code}" is already in use.`}
+                  </p>
                 )}
+              </div>
 
-                {!isEditMode && <div className={selectedBuilding ? "" : "col-span-2"}>
+              <div className={`grid ${isEditMode ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                    Room Type <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={roomType}
+                    onChange={(e) => {
+                      const nextRoomType = e.target.value as 'lecture' | 'laboratory' | 'online' | 'field';
+                      setRoomType(nextRoomType);
+                      if (nextRoomType !== 'laboratory') {
+                        setAllowLectureUsage(false);
+                      }
+                    }}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
+                  >
+                    <option value="lecture">Lecture</option>
+                    <option value="laboratory">Laboratory</option>
+                  </select>
+                </div>
+
+                {!isEditMode && <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
                     Status <span className="text-red-500">*</span>
                   </label>
@@ -1223,7 +1246,7 @@ export default function Rooms() {
                 </div>}
               </div>
 
-              {(selectedBuilding || isEditMode) && roomType === 'laboratory' && (
+              {roomType === 'laboratory' && (
                 <label className="flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
                   <input
                     type="checkbox"
@@ -1371,17 +1394,6 @@ export default function Rooms() {
         variant="danger"
         onCancel={() => setBuildingToArchive(null)}
         onConfirm={confirmArchiveBuilding}
-      />
-
-      <ConfirmModal
-        isOpen={isDeleteModalOpen}
-        eyebrow="Archive Record"
-        title="Archive Room"
-        message="This room will be hidden from active lists and can be restored from the Archive."
-        confirmLabel="Archive"
-        variant="danger"
-        onCancel={() => setIsDeleteModalOpen(false)}
-        onConfirm={confirmDeleteRoom}
       />
 
       <RoomDetailModal
