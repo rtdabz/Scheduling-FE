@@ -88,7 +88,9 @@ const EVENT_DETAILS: Record<string, { label: string; category: string }> = {
   schedule_updated: { label: 'Schedule Updated', category: 'scheduling' },
   schedule_deleted: { label: 'Schedule Deleted', category: 'scheduling' },
   schedule_batch_deleted: { label: 'Schedule Deleted', category: 'scheduling' },
-  record_restored: { label: 'Record Restored', category: 'scheduling' },
+  // Archive events take their category from the archived or restored record (see entryLabel).
+  record_restored: { label: 'Record Restored', category: 'by_target' },
+  record_archived: { label: 'Record Archived', category: 'by_target' },
   schedule_batch_status_updated: { label: 'Schedule Status Updated', category: 'scheduling' },
   schedule_plan_committed: { label: 'Schedule Plan Committed', category: 'scheduling' },
   schedule_conflicts_cleared: { label: 'Conflicts Cleared', category: 'scheduling' },
@@ -118,6 +120,32 @@ const EVENT_DETAILS: Record<string, { label: string; category: string }> = {
 
 const formatLabel = (value: string) =>
   EVENT_DETAILS[value]?.label || value.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+
+const TARGET_LABELS: Record<string, string> = {
+  user: 'Account',
+  department: 'Department',
+  program: 'Program',
+  room: 'Room',
+  instructor: 'Instructor',
+  designation: 'Designation',
+  course: 'Course',
+  semester: 'Semester',
+  schedule: 'Class Schedule',
+  schedule_split: 'Meeting Split',
+};
+
+const ARCHIVE_EVENT_VERBS: Record<string, string> = { record_restored: 'Restored', record_archived: 'Archived' };
+
+const entryLabel =(entry: Pick<ActivityEntry, 'event' | 'target'>): string => {
+  const verb = ARCHIVE_EVENT_VERBS[entry.event];
+  const target = TARGET_LABELS[entry.target.type];
+  return verb && target ? `${target} ${verb}` : formatLabel(entry.event);
+};
+
+const targetLabel = (entry: ActivityEntry): string => {
+  const name = typeof entry.metadata.label === 'string' ? ` — ${entry.metadata.label}` : '';
+  return `${TARGET_LABELS[entry.target.type] ?? formatLabel(entry.target.type)}${entry.target.id ? ` #${entry.target.id}` : ''}${name}`;
+};
 
 const formatDate = (value: string) => new Intl.DateTimeFormat('en-PH', {
   dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila',
@@ -197,7 +225,7 @@ export default function ActivityLog() {
     {
       id: 'event',
       header: 'Event',
-      cell: ({ row }) => <p className="text-sm font-semibold text-gray-900">{formatLabel(row.original.event)}</p>,
+      cell: ({ row }) => <p className="text-sm font-semibold text-gray-900">{entryLabel(row.original)}</p>,
     },
     {
       id: 'category',
@@ -401,7 +429,7 @@ export default function ActivityLog() {
                   {categories.find(c => c[0] === selected.category)?.[1] || formatLabel(selected.category)}
                 </span>
                 <h2 id="activity-title" className="mt-1.5 text-xl font-bold text-gray-900">
-                  {EVENT_DETAILS[selected.event]?.label || formatLabel(selected.event)}
+                  {entryLabel(selected)}
                 </h2>
                 <div className="mt-1.5"><StatusBadge status={selected.status} /></div>
                 <p className="mt-1 text-xs text-gray-400">{formatDate(selected.occurred_at)}</p>
@@ -428,7 +456,7 @@ export default function ActivityLog() {
                 </div>
                 <div>
                   <dt className="text-xs font-bold uppercase text-gray-500">Target Entity</dt>
-                  <dd className="mt-1 text-gray-900 font-semibold">{formatLabel(selected.target.type)} {selected.target.id ? `#${selected.target.id}` : ''}</dd>
+                  <dd className="mt-1 text-gray-900 font-semibold">{targetLabel(selected)}</dd>
                 </div>
                 <div>
                   <dt className="text-xs font-bold uppercase text-gray-500">Event ID</dt>

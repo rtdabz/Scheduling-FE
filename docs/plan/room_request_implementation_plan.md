@@ -2,7 +2,7 @@
 
 Date: 2026-10-12 (Asia/Shanghai).
 
-Status: Planned. No implementation phase has been completed by this planning task.
+Status: Implemented 2026-11-03. All phases are complete except the MariaDB approval/revocation-versus-placement race probe, which remains unverified (see Phase 2). Resolution details, commands, and results are in the [follow-up fix report](reports/room_requests_followup_review_2026-11-03.md#resolution-status-fix-pass-2026-11-03), which also added RR-08 (archive lifecycle guards, delivered with Phase 1) and RR-09 (exact-time availability, delivered with Phase 5).
 
 Source: [Room Request frontend and backend review](reports/room_requests_review.md). Finding numbers below refer to that review. Its verified baseline includes existing uncommitted work; inspect the current working tree before each implementation phase and preserve unrelated changes.
 
@@ -26,12 +26,12 @@ Do not add permissions, endpoints, database fields, automatic approval-stage tra
 
 | Phase | Scope | Review findings | Dependency | Status |
 |---|---|---|---|---|
-| 1 | Current-owner authorization and reassignment guards | 1 | None | Planned |
-| 2 | Shared scheduling locks and atomic history/audit | 2, 3 | Phase 1 | Planned |
-| 3 | Reliable save results when notifications fail | 4 | Phase 2 | Planned |
-| 4 | Semester context, availability states, and cache consistency | 5, 7, 8 | Phases 1–3 | Planned |
-| 5 | Request windows matching actual class duration | 6 | Phase 4 | Planned |
-| 6 | Integrated verification and workflow documentation | All | Phases 1–5 | Planned |
+| 1 | Current-owner authorization and reassignment guards (+ RR-08 archive guards) | 1 | None | Done |
+| 2 | Shared scheduling locks and atomic history/audit | 2, 3 | Phase 1 | Done; placement-race probe outstanding |
+| 3 | Reliable save results when notifications fail | 4 | Phase 2 | Done |
+| 4 | Semester context, availability states, and cache consistency | 5, 7, 8 | Phases 1–3 | Done |
+| 5 | Request windows matching actual class duration (+ RR-09 exact times) | 6 | Phase 4 | Done |
+| 6 | Integrated verification and workflow documentation | All | Phases 1–5 | Done |
 
 Implement in this order. Keep each phase reviewable and report its changes, verification, and remaining limits before moving to the next phase during an implementation task. This plan does not require a new permission checkpoint between routine phases.
 
@@ -159,9 +159,9 @@ Implement in this order. Keep each phase reviewable and report its changes, veri
 
 ## Completion checklist
 
-- [ ] Phase 1: Current-owner authorization and operational request guards verified.
-- [ ] Phase 2: Shared write coordination and atomic displacement history/audit implemented and verified; production-database evidence recorded separately.
-- [ ] Phase 3: Notification failures cannot misreport committed request actions; recovery behavior verified.
-- [ ] Phase 4: Explicit semester context, safe availability states, and local cache updates verified.
-- [ ] Phase 5: Actual-duration requests verified against backend grant-fit rules.
-- [ ] Phase 6: Integrated acceptance, build checks, documentation, and remaining limits recorded.
+- [x] Phase 1: Current-owner authorization and operational request guards verified (plus room/building archive guards).
+- [x] Phase 2: Atomic displacement history/audit implemented and verified, including rollback on history failure. Shared lock verified on MariaDB for archive versus request mutations; approval/revocation versus placement not yet probed.
+- [x] Phase 3: Notification failures cannot misreport committed request actions; queued retry verified (failed attempt writes nothing, retry delivers once).
+- [x] Phase 4: Explicit semester context, safe availability states, and local cache updates verified.
+- [x] Phase 5: Actual-duration requests verified against backend grant-fit rules; exact-minute overlap checks. Superseded in the UI on 2026-11-04 by a weekly schedule picker offering 1.5- and 3-hour windows; the backend keeps accepting other valid durations.
+- [x] Phase 6: Integrated acceptance, build checks, documentation, and remaining limits recorded.

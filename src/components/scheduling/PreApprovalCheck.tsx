@@ -1,14 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { AlertTriangle, CheckCircle2, ClipboardX } from 'lucide-react';
 import LoadingSpinner from '../ui/LoadingSpinner';
-import {
-  conflictRuleLabel,
-  fetchConflicts,
-  fetchRuleIssues,
-  ruleIssueLabel,
-  type RuleIssue,
-  type ScheduleConflict,
-} from '../../lib/conflicts';
+import { conflictRuleLabel, ruleIssueLabel } from '../../lib/conflicts';
+import { usePreApprovalCheck, type PreApprovalCheckState } from './usePreApprovalCheck';
 
 interface PreApprovalCheckProps {
   departmentId: number;
@@ -16,62 +10,31 @@ interface PreApprovalCheckProps {
   onOpenConflicts?: (count: number) => void;
 }
 
-interface CheckResult {
-  open: ScheduleConflict[];
-  issues: RuleIssue[];
-}
+/** The findings of a pre-approval check, including its loading and failure states. */
+export function PreApprovalCheckResults({ state, className = 'px-5 py-2.5' }: { state: PreApprovalCheckState; className?: string }) {
+  if (state.status === 'idle') return null;
 
-export default function PreApprovalCheck({ departmentId, sectionIds, onOpenConflicts }: PreApprovalCheckProps) {
-  const [result, setResult] = useState<CheckResult | null>(null);
-  const [failed, setFailed] = useState(false);
-  const sectionKey = sectionIds.join(',');
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const sections = new Set(sectionKey.split(',').filter(Boolean));
-    const inPackage = (schedule: { department_id: number | null; section_id: number | null }) => (
-      Number(schedule.department_id) === departmentId && sections.has(String(schedule.section_id))
-    );
-
-    void Promise.all([
-      fetchConflicts({ departmentId, signal: controller.signal }),
-      fetchRuleIssues({ departmentId, signal: controller.signal }),
-    ])
-      .then(([conflicts, issues]) => {
-        const next: CheckResult = {
-          open: conflicts.filter((conflict) => conflict.schedules.some(inPackage)),
-          issues: issues.filter((issue) => inPackage(issue.schedule)),
-        };
-        setResult(next);
-        onOpenConflicts?.(next.open.length);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setFailed(true);
-      });
-
-    return () => controller.abort();
-  }, [departmentId, sectionKey, onOpenConflicts]);
-
-  if (failed) {
+  if (state.status === 'failed') {
     return (
-      <p className="px-5 py-2 text-xs font-semibold text-amber-700">
+      <p role="status" className={`text-xs font-semibold text-amber-700 ${className}`}>
         The pre-approval check could not run. The server still refuses approval while a conflict is open.
       </p>
     );
   }
 
-  if (result === null) {
+  if (state.status === 'loading') {
     return (
-      <p className="flex items-center gap-2 px-5 py-2 text-xs font-semibold text-gray-500">
+      <p role="status" className={`flex items-center gap-2 text-xs font-semibold text-gray-500 ${className}`}>
         <LoadingSpinner size={14} className="animate-spin" /> Checking this schedule for conflicts and rule issues…
       </p>
     );
   }
 
+  const { result } = state;
   const clean = result.open.length === 0 && result.issues.length === 0;
 
   return (
-    <section aria-label="Pre-approval check" className="max-h-44 space-y-2 overflow-y-auto px-5 py-2.5">
+    <section aria-label="Pre-approval check" className={`space-y-2 ${className}`}>
       {clean ? (
         <p className="flex items-center gap-2 text-xs font-bold text-emerald-700">
           <CheckCircle2 className="h-4 w-4" /> No conflicts or scheduling issues found.
@@ -106,6 +69,17 @@ export default function PreApprovalCheck({ departmentId, sectionIds, onOpenConfl
       )}
     </section>
   );
+}
+
+export default function PreApprovalCheck({ departmentId, sectionIds, onOpenConflicts }: PreApprovalCheckProps) {
+  const state = usePreApprovalCheck({ departmentId, sectionIds });
+  const openCount = state.status === 'ready' ? state.result.open.length : null;
+
+  useEffect(() => {
+    if (openCount !== null) onOpenConflicts?.(openCount);
+  }, [openCount, onOpenConflicts]);
+
+  return <PreApprovalCheckResults state={state} className="max-h-44 overflow-y-auto px-5 py-2.5" />;
 }
 
 function CheckGroup({ tone, icon, title, items }: {

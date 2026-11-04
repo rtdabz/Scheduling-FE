@@ -1,7 +1,8 @@
 import type jsPDF from 'jspdf';
 import tccLogo from '../assets/logo.jpg';
 import municipalLogo from '../assets/municipal-logo.png';
-import type { Curriculum, CurriculumSemester, Program } from '../types/curriculum';
+import type { Curriculum, CurriculumNote, CurriculumSemester, Program } from '../types/curriculum';
+import { noteSegments, noteScopeLabel } from './curriculumImport/notes';
 import { buildExportFilename } from './exportFile';
 import { openPdfPreview } from './pdfPreview';
 
@@ -309,6 +310,89 @@ const drawSemester = (doc: jsPDF, semester: CurriculumSemester, label: string, x
   doc.text(String(semester.totals.tu), numericX + unitWidth * 2.5, totalsY, { align: 'center' });
 };
 
+const NOTE_FONT_SIZE = 5.5;
+const NOTE_LINE_HEIGHT = 2.6;
+const NOTE_GAP = 1.2;
+const NOTE_LABEL_COLOR = '#555555';
+
+type NoteSegment = { text: string; color: string | null };
+
+/**
+ * Wraps a note to the page width, keeping each piece in its printed colour and every line break in the source.
+ * Long words are broken rather than cut off.
+ */
+const layoutNote = (doc: jsPDF, segments: NoteSegment[], width: number): NoteSegment[][] => {
+  doc.setFont('Helvetica', 'normal');
+  doc.setFontSize(NOTE_FONT_SIZE);
+  const lines: NoteSegment[][] = [[]];
+  let lineWidth = 0;
+  const push = (text: string, color: string | null) => {
+    const line = lines[lines.length - 1];
+    const last = line[line.length - 1];
+    if (last && last.color === color) last.text += text;
+    else line.push({ text, color });
+    lineWidth += doc.getTextWidth(text);
+  };
+  const breakLine = () => {
+    const line = lines[lines.length - 1];
+    if (line.length > 0) line[line.length - 1].text = line[line.length - 1].text.trimEnd();
+    lines.push([]);
+    lineWidth = 0;
+  };
+  for (const segment of segments) {
+    for (const piece of segment.text.split(/(\n| +)/)) {
+      if (piece === '') continue;
+      if (piece === '\n') {
+        lines.push([]);
+        lineWidth = 0;
+        continue;
+      }
+      if (/^ +$/.test(piece)) {
+        if (lineWidth > 0) push(piece, segment.color);
+        continue;
+      }
+      if (lineWidth > 0 && lineWidth + doc.getTextWidth(piece) > width) breakLine();
+      let chunk = '';
+      for (const ch of piece) {
+        if (chunk && lineWidth + doc.getTextWidth(chunk + ch) > width) {
+          push(chunk, segment.color);
+          breakLine();
+          chunk = '';
+        }
+        chunk += ch;
+      }
+      if (chunk) push(chunk, segment.color);
+    }
+  }
+  return lines;
+};
+
+const rgb = (hex: string): [number, number, number] => [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16)) as [number, number, number];
+
+/** Leading form blanks the document printed before the note, reproduced on paper as course codes' are. */
+const printedBlanks = (note: CurriculumNote) => {
+  const at = note.source_text ? note.source_text.indexOf(note.text) : -1;
+  const prefix = at > 0 ? note.source_text!.slice(0, at) : '';
+  return /^[\s_]*$/.test(prefix) ? prefix.trimStart() : '';
+};
+
+const noteLines = (doc: jsPDF, note: CurriculumNote, label: string | null) => {
+  const segments = noteSegments(note);
+  const blanks = printedBlanks(note);
+  return layoutNote(
+    doc,
+    [
+      ...(label ? [{ text: `${label}: `, color: NOTE_LABEL_COLOR }] : []),
+      ...(blanks ? [{ text: blanks, color: segments[0]?.color ?? null }] : []),
+      ...segments,
+    ],
+    CONTENT_WIDTH - 2,
+  );
+};
+
+const notesHeight = (doc: jsPDF, notes: { note: CurriculumNote; label: string | null }[]) =>
+  notes.reduce((sum, { note, label }) => sum + noteLines(doc, note, label).length * NOTE_LINE_HEIGHT + NOTE_GAP, 0);
+
 const drawEvaluationTable = (doc: jsPDF, y: number) => {
   const x = 26;
   const width = 147;
@@ -351,19 +435,56 @@ export const createCurriculumPdfDocument = (
   const title = getPrintableProgramTitle(options.curriculum, options.program);
   drawInstitutionHeader(doc, options.curriculum, title, tccImage, municipalImage, departmentImage);
 
+  // Source notes print with the year they belong to (year, term or course scope) or after all years.
+  const notes = options.curriculum.notes ?? [];
+  const yearNotes = (section: CurriculumPrintSection) => {
+    const courses = [section.firstSemester, section.secondSemester, section.summer].flatMap((semester) => semester.courses);
+    return notes.flatMap((note): { note: CurriculumNote; label: string | null }[] => {
+      const { scope } = note;
+      if (scope.level === 'year' && scope.year_level === section.yearLevel) return [{ note, label: null }];
+      if (scope.level === 'term' && scope.year_level === section.yearLevel) return [{ note, label: noteScopeLabel(scope) }];
+      const course = scope.level === 'course' ? courses.find((candidate) => candidate.id === scope.course_id) : undefined;
+      return course ? [{ note, label: noteScopeLabel(scope, course.code) }] : [];
+    });
+  };
+  const curriculumNotes = notes.filter((note) => note.scope.level === 'curriculum').map((note) => ({ note, label: null }));
+
   const summerSections = sections.filter((section) => section.summer.courses.length > 0);
   const pairedRows = sections.reduce((sum, section) => sum + Math.max(section.firstSemester.courses.length, section.secondSemester.courses.length), 0);
   const summerRows = summerSections.reduce((sum, section) => sum + section.summer.courses.length, 0);
   const blockCount = sections.length + summerSections.length;
-  const fixedHeight = blockCount * 16.9;
+  const fixedHeight = blockCount * 16.9 + sections.reduce((sum, section) => sum + notesHeight(doc, yearNotes(section)), 0) + notesHeight(doc, curriculumNotes);
   const availableRowsHeight = PAGE_HEIGHT - 72 - EVALUATION_HEIGHT - 7 - fixedHeight;
   const rowHeight = Math.max(2.35, Math.min(3.45, availableRowsHeight / Math.max(1, pairedRows + summerRows)));
 
   let y = 71;
   const gutter = 3;
   const semesterWidth = (CONTENT_WIDTH - gutter) / 2;
+  // Content that no longer fits continues on a new page instead of being clipped or overlapping.
+  const ensureSpace = (height: number) => {
+    if (y + height <= PAGE_HEIGHT - PAGE_MARGIN) return;
+    doc.addPage([PAGE_WIDTH, PAGE_HEIGHT], 'portrait');
+    y = PAGE_MARGIN + 2;
+  };
+  const drawNotes = (items: { note: CurriculumNote; label: string | null }[]) => {
+    for (const { note, label } of items) {
+      for (const line of noteLines(doc, note, label)) {
+        ensureSpace(NOTE_LINE_HEIGHT);
+        let x = PAGE_MARGIN + 1;
+        for (const segment of line) {
+          doc.setTextColor(...(segment.color ? rgb(segment.color) : [0, 0, 0] as [number, number, number]));
+          doc.text(segment.text, x, y + NOTE_LINE_HEIGHT * 0.75);
+          x += doc.getTextWidth(segment.text);
+        }
+        y += NOTE_LINE_HEIGHT;
+      }
+      y += NOTE_GAP;
+    }
+    doc.setTextColor(0, 0, 0);
+  };
 
   sections.forEach((section) => {
+    ensureSpace(16.9 + Math.max(section.firstSemester.courses.length, section.secondSemester.courses.length) * rowHeight);
     drawBand(doc, yearLabel(section.yearLevel), y);
     y += 7.1;
     drawSemester(doc, section.firstSemester, 'First Semester', PAGE_MARGIN, y, semesterWidth, rowHeight);
@@ -371,14 +492,18 @@ export const createCurriculumPdfDocument = (
     y += 9.8 + Math.max(section.firstSemester.courses.length, section.secondSemester.courses.length) * rowHeight;
 
     if (section.summer.courses.length > 0) {
+      ensureSpace(16.9 + section.summer.courses.length * rowHeight);
       drawBand(doc, 'SUMMER', y);
       y += 7.1;
       drawSemester(doc, section.summer, 'Summer', PAGE_MARGIN, y, semesterWidth + 19, rowHeight);
       y += 9.8 + section.summer.courses.length * rowHeight;
     }
+    drawNotes(yearNotes(section));
   });
+  drawNotes(curriculumNotes);
 
-  drawEvaluationTable(doc, Math.min(y + 0.8, PAGE_HEIGHT - EVALUATION_HEIGHT - 4));
+  ensureSpace(EVALUATION_HEIGHT + 4.8);
+  drawEvaluationTable(doc, y + 0.8);
   if (autoPrint) doc.autoPrint();
   return doc;
 };

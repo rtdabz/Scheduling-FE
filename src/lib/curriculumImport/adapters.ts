@@ -2,7 +2,7 @@ import { extractCurriculumLayout } from './pdfLayout';
 import { readPdfText } from './pdfSource';
 import { detectTemplateHeader, metadataFromLines, rowsFromGrid, rowsFromTemplate, type ColumnMapping, type HeaderDetection } from './tabular';
 import { termOf } from './normalize';
-import type { Extraction, ImportFormat, Provenance } from './types';
+import type { Extraction, ImportFormat, Provenance, UnreadRegion } from './types';
 
 export const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 
@@ -52,6 +52,8 @@ export interface TableSource {
   rows: string[][];
   provenance: (rowIndex: number) => Provenance;
   warnings: string[];
+  /** Content the reader could not turn into text, such as DOCX images. */
+  unread?: UnreadRegion[];
 }
 
 export type TableReading =
@@ -76,7 +78,7 @@ export const readTable = (table: TableSource): TableReading | null => {
   if (hasGridHeader(table.rows)) {
     const extraction = rowsFromGrid(table.rows, table.format, table.provenance);
     if (extraction) {
-      return { kind: 'extraction', extraction: { ...extraction, metadata: { ...header, notes: extraction.metadata.notes }, warnings: [...table.warnings, ...extraction.warnings] } };
+      return { kind: 'extraction', extraction: { ...extraction, metadata: { ...header, notes: extraction.metadata.notes }, unread: table.unread ?? [], warnings: [...table.warnings, ...extraction.warnings] } };
     }
   }
 
@@ -88,7 +90,7 @@ export const readTable = (table: TableSource): TableReading | null => {
 
 export const applyMapping = (table: TableSource, detection: HeaderDetection, mapping: ColumnMapping): Extraction => {
   const extraction = rowsFromTemplate(table.rows, { headerRow: detection.headerRow, mapping }, table.format, table.provenance);
-  return { ...extraction, warnings: [...table.warnings, ...extraction.warnings] };
+  return { ...extraction, unread: table.unread ?? [], warnings: [...table.warnings, ...extraction.warnings] };
 };
 
 export const readCsv = async (text: string): Promise<TableSource> => {
@@ -168,7 +170,9 @@ export const tableFromConvertedHtml = (html: string): TableSource => {
   }
 
   if (tableIndex === 0) warnings.push('The document has no tables. Use the CSV/XLSX template or a document with a course table.');
-  return { format: 'docx', label: 'Document', rows, provenance: (rowIndex) => provenance[rowIndex], warnings };
+  // The DOCX reader keeps images only as placeholders; any text in them, such as a pasted note, is not read.
+  const unread: UnreadRegion[] = Array.from(document.querySelectorAll('img'), () => ({ reason: 'image' as const }));
+  return { format: 'docx', label: 'Document', rows, provenance: (rowIndex) => provenance[rowIndex], warnings, unread };
 };
 
 export const extractPdf = async (bytes: ArrayBuffer, signal?: AbortSignal, onPage?: (page: number, total: number) => void): Promise<Extraction> =>

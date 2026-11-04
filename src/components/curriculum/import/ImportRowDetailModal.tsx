@@ -55,7 +55,7 @@ export default function ImportRowDetailModal({ row, issues, bytes, onClose, onCh
     mismatch && 'units that do not add up',
   ].filter(Boolean) as string[];
   const errors = issues.filter((issue) => issue.severity === 'error');
-  const reviews = issues.filter((issue) => issue.severity === 'review' && !issue.acknowledged);
+  const notices = issues.filter((issue) => issue.severity === 'notice');
   const toFix = localProblems.length;
 
   const footerStatus = toFix > 0
@@ -79,14 +79,14 @@ export default function ImportRowDetailModal({ row, issues, bytes, onClose, onCh
       )}
     >
       <div className="space-y-5 px-4 py-5 sm:px-5">
-        {(errors.length > 0 || reviews.length > 0) && (
+        {(errors.length > 0 || notices.length > 0) && (
           <section aria-label="Checks for this course" className="space-y-1.5">
             {errors.map((issue) => (
               <p key={issue.key} className="flex gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800">
                 <AlertOctagon size={15} className="mt-0.5 shrink-0" aria-hidden="true" /> {issue.message}
               </p>
             ))}
-            {reviews.map((issue) => (
+            {notices.map((issue) => (
               <p key={issue.key} className="flex gap-2 rounded-lg border border-accent/40 bg-accent/[0.07] px-3 py-2 text-[13px] text-text">
                 <AlertTriangle size={15} className="mt-0.5 shrink-0 text-accent" aria-hidden="true" /> {issue.message}
               </p>

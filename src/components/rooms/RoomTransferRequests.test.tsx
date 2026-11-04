@@ -27,24 +27,48 @@ describe('Room schedule reassignment VPAA review', () => {
     render(<MemoryRouter><RoomTransferRequests stage="vpaa" transfers={[many]} onClose={close} /></MemoryRouter>);
     const dialog = screen.getByRole('dialog', { name: 'Room Schedule Reassignment Details' });
     expect(within(dialog).queryByRole('table')).toBeNull();
-    expect(within(dialog).getByText('27 schedules affected · 1 linked online session')).toBeTruthy();
-    expect(within(dialog).getByText('SCI1 · A')).toBeTruthy();
-    expect(within(dialog).queryByText('SCI3 · A')).toBeNull();
+    // The summary and sample rows live only inside View Details.
+    expect(within(dialog).queryByRole('region', { name: 'Changes Summary' })).toBeNull();
+    expect(within(dialog).queryByText('SCI1 · A')).toBeNull();
+    expect(within(dialog).queryByText(/more schedules?/)).toBeNull();
+    // Status lives in View Details, not above the document.
+    expect(within(dialog).queryByText('Pending VPAA Approval')).toBeNull();
     const viewDetails = within(dialog).getByRole('button', { name: 'View Details' });
+    expect(viewDetails.closest('.border-b')?.querySelector('h2')?.textContent).toBe('Room Schedule Reassignment Details');
     expect(viewDetails.getAttribute('aria-haspopup')).toBe('dialog');
     expect(viewDetails.hasAttribute('aria-expanded')).toBe(false);
     fireEvent.click(viewDetails);
     const changes = screen.getByRole('dialog', { name: 'Room schedule reassignment changes' });
     expect(dialog.hasAttribute('inert')).toBe(true);
+    const summary = within(changes).getByRole('region', { name: 'Changes Summary' });
+    expect(summary.textContent).toContain('27affected meetings');
+    expect(summary.textContent).toContain('1linked online session');
+    expect(within(summary).getByText('Science')).toBeTruthy();
+    expect(within(summary).getByText('2026-2027 1st')).toBeTruthy();
+    expect(within(summary).getByText('Secretary')).toBeTruthy();
+    expect(within(summary).getByText('Pending VPAA Approval')).toBeTruthy();
+    expect(within(summary).queryByText('VPAA reviewed')).toBeNull();
     expect(within(changes).getByRole('table', { name: 'Room schedule reassignment changes' })).toBeTruthy();
+    expect(within(changes).getByRole('columnheader', { name: 'Session type' })).toBeTruthy();
+    expect(within(changes).getByRole('columnheader', { name: 'Original' })).toBeTruthy();
+    expect(within(changes).getByRole('columnheader', { name: 'Proposed' })).toBeTruthy();
     expect(within(changes).getByText('SCI3')).toBeTruthy();
     expect(within(changes).getByText('SCI25')).toBeTruthy();
     expect(within(changes).queryByText('SCI26')).toBeNull();
     fireEvent.click(within(changes).getByRole('button', { name: /next/i }));
     expect(within(changes).getByText('SCI27')).toBeTruthy();
-    expect(within(changes).getByText('SCI28 (linked online session)')).toBeTruthy();
-    expect(within(changes).getAllByText('Monday 8:00 AM–9:00 AM, Lab 1, on-site')).toHaveLength(2);
-    expect(within(changes).getAllByText('Monday 8:00 AM–9:00 AM, Lab 2, on-site')).toHaveLength(2);
+    expect(within(changes).getByText('SCI28')).toBeTruthy();
+    expect(within(changes).getAllByText('Room changed')).toHaveLength(2);
+    expect(within(changes).getByText('Linked online session — unchanged')).toBeTruthy();
+    expect(within(changes).getAllByText('On-site')).toHaveLength(2);
+    expect(within(changes).getByText('Online')).toBeTruthy();
+    // Room over day and time; changed values carry text, not only color, and the linked session says it is unchanged.
+    expect(within(changes).getAllByText('Lab 1')).toHaveLength(3);
+    expect(within(changes).getAllByText('Lab 2')).toHaveLength(3);
+    expect(within(changes).getAllByText('Monday 8:00 AM–9:00 AM')).toHaveLength(6);
+    expect(within(changes).getAllByText('(new room)')).toHaveLength(2);
+    expect(within(changes).getAllByText('Same as original')).toHaveLength(1);
+    expect(within(changes).getByRole('region', { name: 'Room schedule reassignment changes table' }).getAttribute('tabindex')).toBe('0');
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: 'Room schedule reassignment changes' })).toBeNull();
     expect(close).not.toHaveBeenCalled();
@@ -177,6 +201,43 @@ describe('Room schedule reassignment VPAA review', () => {
     render(<MemoryRouter><RoomTransferRequests transfers={[{ ...transfer, status: 'applied' }]} /></MemoryRouter>);
     expect(screen.getByText(/^Applied \(before approval workflow\) ·/)).toBeTruthy();
     expect(screen.queryByText(/Final approval also enables Sunday/)).toBeNull();
+  });
+
+  it('shows a decided request in View Details from its stored data for the Dean', async () => {
+    const decided: RoomTransferRequest = {
+      ...transfer, status: 'rejected_by_vpaa', dean_reviewed_at: '2026-10-24T03:00:00Z', reviewed_at: '2026-10-25T04:00:00Z',
+      rejection_reason: 'Lab 2 is reserved for the fair.',
+      changes: [
+        { ...transfer.changes[0], schedule_id: 21, mode: 'on-site', course: 'SCI201', section: 'B',
+          after: { room: 'Lab 1', day: 'Tuesday', start_time: '10:00', end_time: '11:00' },
+          preview_schedule: { meeting_type: 'laboratory' } as NonNullable<RoomTransferRequest['changes'][number]['preview_schedule']> },
+        { ...transfer.changes[0], schedule_id: 22, mode: 'online', course: 'SCI201', section: 'B',
+          before: { room: 'Online', day: 'Monday', start_time: '13:00', end_time: '14:00' },
+          after: { room: 'Online', day: 'Monday', start_time: '13:00', end_time: '14:00' } },
+      ],
+    };
+    render(<MemoryRouter><RoomTransferRequests stage="dean" transfers={[decided]} onClose={vi.fn()} /></MemoryRouter>);
+    const dialog = screen.getByRole('dialog', { name: 'Room Schedule Reassignment Details' });
+    expect(within(dialog).queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(within(dialog).queryByText(/Rejection reason/)).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'View Details' }));
+    const changes = screen.getByRole('dialog', { name: 'Room schedule reassignment changes' });
+    const summary = within(changes).getByRole('region', { name: 'Changes Summary' });
+    expect(summary.textContent).toContain('1affected meeting');
+    expect(summary.textContent).toContain('1linked online session');
+    expect(within(summary).getByText('Rejected by VPAA')).toBeTruthy();
+    expect(within(summary).getByText(new Date('2026-10-24T03:00:00Z').toLocaleString())).toBeTruthy();
+    expect(within(summary).getByText(new Date('2026-10-25T04:00:00Z').toLocaleString())).toBeTruthy();
+    expect(within(summary).getByText('Rejection reason: Lab 2 is reserved for the fair.')).toBeTruthy();
+    expect(within(changes).getByText('Time changed')).toBeTruthy();
+    expect(within(changes).getByText('Laboratory · On-site')).toBeTruthy();
+    expect(within(changes).getByText('Linked online session — unchanged')).toBeTruthy();
+    expect(within(changes).getAllByText('Lab 1')).toHaveLength(2);
+    expect(within(changes).getByText('Monday 8:00 AM–9:00 AM')).toBeTruthy();
+    expect(within(changes).getByText('Tuesday 10:00 AM–11:00 AM')).toBeTruthy();
+    expect(within(changes).getByText('(new day or time)')).toBeTruthy();
+    expect(within(changes).queryByText('(new room)')).toBeNull();
+    expect(within(changes).getAllByText('Same as original')).toHaveLength(1);
   });
 
   it('offers a retry if requests cannot be loaded', async () => {

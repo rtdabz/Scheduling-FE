@@ -889,18 +889,16 @@ describe("DropModal Consecutive Days", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: "Consecutive Days" }));
 
-    // Two days by default, starting on the day it was dropped on (Thursday).
+    // Three days by default, starting on the day it was dropped on (Thursday).
     const days = screen.getByLabelText("Number of days") as HTMLSelectElement;
-    expect(days.value).toBe("2");
-    expect(screen.getByRole("heading", { name: "Each day of the run (2 days)" })).toBeDefined();
+    expect(days.value).toBe("3");
+    expect(screen.getByRole("heading", { name: "Each day of the run (3 days)" })).toBeDefined();
     expect((screen.getByLabelText("Starting day") as HTMLSelectElement).value).toBe("3");
-    expect(screen.getAllByText("Thursday–Friday").length).toBeGreaterThan(0);
-
-    // Three days from Thursday ends Saturday; Monday-Saturday has six at most.
-    fireEvent.change(days, { target: { value: "3" } });
     expect(screen.getAllByText("Thursday–Saturday").length).toBeGreaterThan(0);
+
+    // Manual plotting starts at three days; Monday-Saturday has six at most.
     expect(within(days).getAllByRole("option").map((option) => option.textContent)).toEqual(
-      ["2 days", "3 days", "4 days", "5 days", "6 days"],
+      ["3 days", "4 days", "5 days", "6 days"],
     );
 
     fireEvent.click(screen.getByRole("radio", { name: "Single" }));

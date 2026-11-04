@@ -81,6 +81,8 @@ interface RoomDetailContentProps {
   isLoading: boolean;
   initialViewMode?: 'list' | 'grid';
   highlightSlots?: LinkedSlot[];
+  /** Semester whose borrowing grants are shown; defaults to the active one. */
+  semesterId?: number | null;
 }
 
 const formatTime = (timeStr: string) => {
@@ -104,7 +106,7 @@ const noop = () => undefined;
 
 const NO_SLOTS: LinkedSlot[] = [];
 
-export default function RoomDetailContent({ room, schedules, isLoading, initialViewMode = 'list', highlightSlots = NO_SLOTS }: RoomDetailContentProps) {
+export default function RoomDetailContent({ room, schedules, isLoading, initialViewMode = 'list', highlightSlots = NO_SLOTS, semesterId }: RoomDetailContentProps) {
   const [activeTabDay, setActiveTabDay] = useState<string>(() => {
     if (highlightSlots[0]) return highlightSlots[0].day;
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -121,7 +123,7 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
     [highlightSlots, activeTabDay],
   );
   const [viewMode, setViewMode] = useState<'list' | 'grid'>(initialViewMode);
-  const { grants: roomGrants, ready: grantsReady } = useRoomGrants(room?.id ?? null);
+  const { grants: roomGrants, ready: grantsReady, error: grantsError, stale: grantsStale, retry: retryGrants } = useRoomGrants(room?.id ?? null, semesterId);
   const activeDayGrants = useMemo(
     () => roomGrants
       .filter((block) => block.day === activeTabDay)
@@ -308,6 +310,19 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
           </div>
         )}
       </div>
+
+      {(grantsError || grantsStale) && (
+        <div role="alert" className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 font-sans text-xs font-semibold text-amber-800">
+          <span>
+            {grantsError
+              ? 'Borrowed-room reservations could not be loaded, so lent time may be missing below.'
+              : 'Borrowed-room reservations could not be refreshed; the ones shown may be out of date.'}
+          </span>
+          <button type="button" onClick={retryGrants} className="rounded-md border border-amber-300 bg-white px-2.5 py-1 font-bold text-amber-800 hover:bg-amber-100 cursor-pointer">
+            Retry
+          </button>
+        </div>
+      )}
 
       <div className="room-detail-print-grid flex-1 flex flex-col min-h-0 bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm font-sans mt-3">
         <div className="room-print-title hidden px-2 pb-2 text-base font-bold uppercase text-slate-900">

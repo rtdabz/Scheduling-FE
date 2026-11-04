@@ -958,7 +958,7 @@ const selectedSchedule = assignmentSchedules.find(
 
     const start = timeToMinutes(schedule.start_time);
     const end = timeToMinutes(schedule.end_time);
-    const conflict = schedules.some((item) => (
+    const conflict = schedules.find((item) => (
       String(item.id) !== scheduleId
       && String(item.faculty_id ?? "") === facultyId
       && Number(item.semester_id) === Number(schedule.semester_id)
@@ -967,7 +967,14 @@ const selectedSchedule = assignmentSchedules.find(
       && timeToMinutes(item.start_time) < end
     ));
 
-    return conflict ? "Instructor has an overlapping class at this time." : null;
+    if (!conflict) return null;
+
+    const conflictSubject = subjectMap.get(Number(conflict.course_id ?? conflict.subject_id ?? 0));
+    const code = conflictSubject?.course_code ?? conflictSubject?.subject_code;
+    const title = conflictSubject?.course_name ?? conflictSubject?.subject_name;
+    const course = code ? (title ? `${code} (${title})` : code) : title ?? "another course";
+    const section = conflict.section?.section_name;
+    return `Instructor already teaches ${course}${section ? ` for ${section}` : ""} on ${conflict.day}, ${formatTime(conflict.start_time)} – ${formatTime(conflict.end_time)}.`;
   };
 
   const worklistClasses = useMemo<WorklistClass[]>(() => {

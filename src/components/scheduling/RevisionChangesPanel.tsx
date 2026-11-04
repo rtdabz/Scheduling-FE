@@ -3,7 +3,6 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { History } from 'lucide-react';
 import DataTable from '../ui/DataTable';
 import LoadingSpinner from '../ui/LoadingSpinner';
-import Modal from '../ui/Modal';
 import { useDataTable } from '../ui/useDataTable';
 import api from '../../lib/api';
 import { formatTime12h } from '../../lib/timeGrid';
@@ -97,7 +96,7 @@ const detailColumns: ColumnDef<ChangeDetailRow>[] = [
   { accessorKey: 'after', header: 'After' },
 ];
 
-function ChangeDetailsModal({ entries, isOpen, onClose }: { entries: RevisionChangeEntry[]; isOpen: boolean; onClose: () => void }) {
+function ChangeDetailsTable({ entries }: { entries: RevisionChangeEntry[] }) {
   const data = useMemo(() => toDetailRows(entries), [entries]);
   const table = useDataTable<ChangeDetailRow>({
     data,
@@ -107,30 +106,26 @@ function ChangeDetailsModal({ entries, isOpen, onClose }: { entries: RevisionCha
   });
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      size="xl"
-      title="Changes to the working copy"
-      description="Every change made since this version was recalled or returned."
-    >
-      <DataTable
-        table={table}
-        variant="embedded"
-        density="compact"
-        totalLabel="changes"
-        ariaLabel="Changes since this version"
-        emptyTitle="No changes recorded."
-        emptyDescription="Nothing has changed in the working copy since this version."
-      />
-    </Modal>
+    <DataTable
+      table={table}
+      variant="embedded"
+      density="compact"
+      totalLabel="changes"
+      ariaLabel="Changes since this version"
+      scrollAriaLabel="Changes since this version table"
+      className="rounded-xl border border-slate-200"
+      scrollClassName="overflow-x-auto rounded-t-xl focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#C9952A]"
+      tableClassName="min-w-[48rem] [&_thead]:bg-gray-50"
+      emptyTitle="No changes recorded."
+      emptyDescription="Nothing has changed in the working copy since this version."
+    />
   );
 }
 
+/** Every change made to the working copy since a closed version, with its paginated table. */
 export default function RevisionChangesPanel({ submissionId }: { submissionId: number }) {
   const [entries, setEntries] = useState<RevisionChangeEntry[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -141,36 +136,25 @@ export default function RevisionChangesPanel({ submissionId }: { submissionId: n
   }, [submissionId]);
 
   if (failed) {
-    return <p className="px-5 py-2 text-xs font-semibold text-amber-700">The changes made since this version could not be loaded.</p>;
+    return <p role="status" className="text-xs font-semibold text-amber-700">The changes made since this version could not be loaded.</p>;
   }
   if (entries === null) {
     return (
-      <p className="flex items-center gap-2 px-5 py-2 text-xs font-semibold text-gray-500">
+      <p role="status" className="flex items-center gap-2 text-xs font-semibold text-gray-500">
         <LoadingSpinner size={14} className="animate-spin" /> Loading changes made since this version…
       </p>
     );
   }
 
   return (
-    <section aria-label="Changes since this version" className="px-5 py-2.5">
-      <div className="flex items-center justify-between gap-2">
-        <p className="flex items-center gap-2 text-xs font-bold text-slate-700">
-          <History className="h-4 w-4" />
-          {entries.length === 0
-            ? 'No changes to the working copy since this version.'
-            : `Changes to the working copy since this version (${entries.length})`}
-        </p>
-        {entries.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setDetailsOpen(true)}
-            className="shrink-0 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:bg-slate-50"
-          >
-            View details
-          </button>
-        )}
-      </div>
-      <ChangeDetailsModal entries={entries} isOpen={detailsOpen} onClose={() => setDetailsOpen(false)} />
-    </section>
+    <div className="space-y-3">
+      <p className="flex items-center gap-2 text-xs font-bold text-slate-700">
+        <History className="h-4 w-4" />
+        {entries.length === 0
+          ? 'No changes to the working copy since this version.'
+          : `Changes to the working copy since this version (${entries.length})`}
+      </p>
+      {entries.length > 0 && <ChangeDetailsTable entries={entries} />}
+    </div>
   );
 }

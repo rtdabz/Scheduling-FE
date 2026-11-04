@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, CheckCircle2, Clock3, Pencil, Settings2, ShieldCheck } from 'lucide-react';
+import { AlertOctagon, ArrowLeft, Check, CheckCircle2, Clock3, FileText, List, ListChecks, Pencil, Settings2, ShieldCheck } from 'lucide-react';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
@@ -10,22 +10,32 @@ import { getStoredUser } from '../../lib/storedUser';
 import { useToast } from '../../context/ToastContext';
 import { curriculumImportService } from '../../services/curriculum/curriculumImportService';
 import ImportCreditLedger from '../../components/curriculum/import/ImportCreditLedger';
+import ImportReviewSummary from '../../components/curriculum/import/ImportReviewSummary';
+import ImportCurriculumDetailsModal, { type MetadataField, type MetadataIssue } from '../../components/curriculum/import/ImportCurriculumDetailsModal';
 import ImportDraftTable from '../../components/curriculum/import/ImportDraftTable';
 import { CONFIGURE_STATUS_LABELS, configureStatus, type ConfigureStatus } from '../../lib/curriculumImport/configureStatus';
-import ImportIssuesPanel from '../../components/curriculum/import/ImportIssuesPanel';
+import ImportIssuesModal from '../../components/curriculum/import/ImportIssuesModal';
+import type { IssueAction } from '../../components/curriculum/import/ImportIssuesPanel';
 import ImportRowDetailModal from '../../components/curriculum/import/ImportRowDetailModal';
 import ImportSettingsModal from '../../components/curriculum/import/ImportSettingsModal';
 import ImportStepper, { type StepperStep } from '../../components/curriculum/import/ImportStepper';
 import ImportTermRail, { type TermSelection } from '../../components/curriculum/import/ImportTermRail';
+import ImportTermTabs from '../../components/curriculum/import/ImportTermTabs';
 import ImportUploader from '../../components/curriculum/import/ImportUploader';
+import { IMPORT_HEADER_GRADIENT } from '../../components/curriculum/import/importTheme';
+import SourceNotes from '../../components/curriculum/SourceNotes';
+import { notesForTerm, noteScopeLabel } from '../../lib/curriculumImport/notes';
 import {
   applyMapping, detectFormat, extractPdf, ImportFileError, readCsv, readDocx, readTable, readXlsx, sha256Hex,
   type TableReading, type TableSource,
 } from '../../lib/curriculumImport/adapters';
-import { buildDraft, groupTotals, localProblems, toPayload } from '../../lib/curriculumImport/draft';
+import {
+  buildDraft, groupKey, groupTotals, initialSelection, isPlaced, localProblems, proposedImportCode, toPayload, totalsDiffer,
+  type GroupAttention, type PreviewSelection,
+} from '../../lib/curriculumImport/draft';
 import { TERM_LABELS, YEAR_LABELS } from '../../lib/curriculumImport/normalize';
 import { TEMPLATE_FIELDS, TEMPLATE_HEADERS, type ColumnMapping, type HeaderDetection } from '../../lib/curriculumImport/tabular';
-import type { DraftRow, Extraction, ImportDraft, ImportResult, ImportSettings, ValidationResult } from '../../lib/curriculumImport/types';
+import type { DraftRow, Extraction, ImportDraft, ImportResult, ImportSettings, PlacementTerm, SourceNote, UnreadRegion, ValidationResult } from '../../lib/curriculumImport/types';
 import type { Program } from '../../types/curriculum';
 
 type Step = 'upload' | 'review' | 'configure' | 'import' | 'done';
@@ -35,7 +45,7 @@ const STEPS: StepperStep<WorkStep>[] = [
   { id: 'upload', label: 'Upload & extract', hint: 'Choose the curriculum file' },
   { id: 'review', label: 'Preview', hint: 'Check courses, units, terms' },
   { id: 'configure', label: 'Configure', hint: 'Categories and class time' },
-  { id: 'import', label: 'Import', hint: 'Validate and create' },
+  { id: 'import', label: 'Import', hint: 'Review and confirm' },
 ];
 const ORDER: WorkStep[] = STEPS.map((step) => step.id);
 
@@ -43,9 +53,22 @@ type StatusFilter = 'all' | ConfigureStatus;
 
 const EXTRACTION_BUDGET_MS = 30_000;
 
+// Findings about classification and class time are fixed in Configure; the rest in Preview.
+const CATEGORY_CODES = new Set(['unclassified', 'category_override', 'catalog_category_mismatch']);
+const BASIS_CODES = new Set(['scheduling_basis_required', 'total_hours_required', 'nonweekly_basis', 'unrepresentable_minutes']);
+const issueControl = (code: string, field: string | null): 'category' | 'basis' | null => (
+  CATEGORY_CODES.has(code) || field === 'category' ? 'category'
+    : BASIS_CODES.has(code) || field === 'scheduling_basis' || field === 'total_hours' ? 'basis'
+      : null
+);
+const CONTROL_LABELS = { category: 'Category for', basis: 'Scheduling basis for' } as const;
+
 const inputClass = 'h-9 w-full rounded-lg border border-border bg-white px-3 text-[13px] text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-parchment disabled:text-muted';
 const primaryButton = 'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 text-[13px] font-bold text-white hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50';
 const secondaryButton = 'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-primary bg-white px-4 text-[13px] font-bold text-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50';
+// Light-on-maroon controls for the gradient header.
+const headerControl = 'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-white/30 bg-white/10 text-[13px] font-bold text-white hover:border-white/50 hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-[#4e0a10] disabled:cursor-not-allowed disabled:opacity-50';
+const headerButton = `${headerControl} px-4`;
 const quietButton = 'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-border bg-white px-4 text-[13px] font-bold text-text hover:bg-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50';
 
 const newRequestKey = () => (typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join(''));
@@ -75,7 +98,15 @@ export default function CurriculumImportPage() {
   const [programs, setPrograms] = useState<Program[]>([]);
   const [settings, setSettings] = useState<ImportSettings | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [activeGroup, setActiveGroup] = useState<TermSelection>('all');
+  // Preview and Configure share one term selection, kept when moving between steps; Import's rail reads it too.
+  const [termGroup, setTermGroup] = useState<PreviewSelection>('unassigned');
+  const [viewAll, setViewAll] = useState(false);
+  // Closed initially; `focus` names the field to focus when opened from a metadata error.
+  const [details, setDetails] = useState<{ open: boolean; focus: MetadataField | null }>({ open: false, focus: null });
+  const [issuesOpen, setIssuesOpen] = useState(false);
+  // The details start unreviewed after each upload; the button says so until they are opened.
+  const [detailsReviewed, setDetailsReviewed] = useState(false);
+  const [moved, setMoved] = useState<{ code: string; to: PreviewSelection } | null>(null);
   const [openRowId, setOpenRowId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -84,7 +115,6 @@ export default function CurriculumImportPage() {
 
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [stale, setStale] = useState(true);
-  const [acknowledgements, setAcknowledgements] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<'validate' | 'commit' | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const requestKey = useRef<{ fingerprint: string; key: string } | null>(null);
@@ -126,10 +156,14 @@ export default function CurriculumImportPage() {
     setDraft(next);
     setValidation(null);
     setStale(true);
-    setAcknowledgements({});
     setPendingMapping(null);
     setSheets(null);
-    setActiveGroup('all');
+    setTermGroup(initialSelection(groupTotals(next), next.rows.filter((row) => !isPlaced(row)).length));
+    setViewAll(false);
+    setDetails({ open: false, focus: null });
+    setDetailsReviewed(false);
+    setIssuesOpen(false);
+    setMoved(null);
     setSelected(new Set());
     setStatusFilter('all');
     setStep('review');
@@ -202,7 +236,6 @@ export default function CurriculumImportPage() {
     setValidation(null);
     setFile(null);
     setBytes(null);
-    setAcknowledgements({});
     setSelected(new Set());
     requestKey.current = null;
     setStep('upload');
@@ -229,13 +262,19 @@ export default function CurriculumImportPage() {
     });
   }, []);
 
-  const updateMetadata = (patch: Partial<ImportDraft['metadata']>) => {
-    setDraft((current) => (current ? { ...current, metadata: { ...current.metadata, ...patch } } : current));
+  // Note placement and transcriptions are draft content: they invalidate the last check like any edit.
+  const updateNotes = (notes: SourceNote[]) => {
+    setDraft((current) => (current ? { ...current, notes } : current));
     markChanged();
   };
 
-  const acknowledge = (key: string, reason: string) => {
-    setAcknowledgements((current) => ({ ...current, [key]: reason }));
+  const updateUnread = (unread: UnreadRegion[]) => {
+    setDraft((current) => (current ? { ...current, unread } : current));
+    markChanged();
+  };
+
+  const updateMetadata = (patch: Partial<ImportDraft['metadata']>) => {
+    setDraft((current) => (current ? { ...current, metadata: { ...current.metadata, ...patch } } : current));
     markChanged();
   };
 
@@ -264,11 +303,28 @@ export default function CurriculumImportPage() {
     return map;
   }, [draft, visibleIssues, problems]);
 
+  // Errors and notices per Preview tab, so findings on other terms stay visible from the tabs.
+  const attention = useMemo(() => {
+    const map = new Map<string, GroupAttention>();
+    const bump = (key: string, field: keyof GroupAttention) => {
+      const current = map.get(key) ?? { errors: 0, notices: 0 };
+      map.set(key, { ...current, [field]: current[field] + 1 });
+    };
+    for (const row of draft?.rows ?? []) {
+      const key = isPlaced(row) ? groupKey(row.year_level, row.semester) : 'unassigned';
+      const issues = visibleIssues.get(row.row_id) ?? [];
+      if (issues.some((issue) => issue.severity === 'error') || problems.some((problem) => problem.row_id === row.row_id)) bump(key, 'errors');
+      if (issues.some((issue) => issue.severity === 'notice')) bump(key, 'notices');
+    }
+    return map;
+  }, [draft, visibleIssues, problems]);
+
   const termRows = useMemo(() => {
     if (!draft) return [];
-    if (activeGroup === 'all') return draft.rows;
-    return draft.rows.filter((row) => row.year_level === activeGroup.year && row.semester === activeGroup.term);
-  }, [draft, activeGroup]);
+    if (viewAll) return draft.rows;
+    if (termGroup === 'unassigned') return draft.rows.filter((row) => !isPlaced(row));
+    return draft.rows.filter((row) => row.year_level === termGroup.year && row.semester === termGroup.term);
+  }, [draft, viewAll, termGroup]);
 
   const statusCounts = useMemo(() => {
     const counts = new Map<ConfigureStatus, number>();
@@ -293,7 +349,7 @@ export default function CurriculumImportPage() {
     setBusy('validate');
     setSubmitError(null);
     try {
-      const next = await curriculumImportService.validate(toPayload(draft, { acknowledgements }));
+      const next = await curriculumImportService.validate(toPayload(draft, {}));
       setValidation(next);
       setStale(false);
       return next;
@@ -313,11 +369,12 @@ export default function CurriculumImportPage() {
     setBusy('commit');
     setSubmitError(null);
     try {
+      // The single confirmation names the reviewed outcome by its fingerprint; the server checks it again.
       const imported = await curriculumImportService.commit(toPayload(draft, {
-        acknowledgements,
         requestKey: requestKey.current.key,
         fingerprint: validation.fingerprint,
         expectedSettingsRevision: validation.settings_revision,
+        confirmed: true,
       }));
       invalidateCacheGroups('curriculum', 'courses', 'schedules', 'dashboards');
       setResult(imported);
@@ -337,16 +394,18 @@ export default function CurriculumImportPage() {
     }
   };
 
-  const focusRow = (rowId: string) => {
+  /** Opens the row's term (in `destination`, by default the current working step) and focuses the row or one of its controls. */
+  const focusRow = (rowId: string, destination?: 'review' | 'configure', control: 'category' | 'basis' | null = null) => {
     const row = draft?.rows.find((candidate) => candidate.row_id === rowId);
     if (!row) return;
-    setActiveGroup(row.year_level && row.semester ? { year: row.year_level, term: row.semester } : 'all');
-    setStatusFilter('all');
-    setStep((current) => (current === 'import' || current === 'upload' ? 'review' : current));
+    selectTerm(isPlaced(row) ? { year: row.year_level, term: row.semester } : 'unassigned');
+    setStep((current) => destination ?? (current === 'import' || current === 'upload' ? 'review' : current));
+    // After the step renders, and after a closing dialog has returned focus to its opener.
     window.setTimeout(() => {
       const element = document.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(rowId)}"]`);
       element?.scrollIntoView({ block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
-      element?.querySelector<HTMLElement>('input, select, button')?.focus();
+      const target = control ? element?.querySelector<HTMLElement>(`[aria-label^="${CONTROL_LABELS[control]}"]`) : null;
+      (target ?? element?.querySelector<HTMLElement>('input, select, button'))?.focus();
     }, 50);
   };
 
@@ -361,12 +420,136 @@ export default function CurriculumImportPage() {
   const program = programs.find((candidate) => candidate.id === draft?.metadata.program_id) ?? null;
   const currentIndex = step === 'done' ? ORDER.length : ORDER.indexOf(step);
   const completed = new Set(ORDER.filter((_, index) => draft !== null && index < currentIndex));
-  const unplaced = draft?.rows.filter((row) => !row.year_level || !row.semester).length ?? 0;
-  const termTitle = activeGroup === 'all' ? 'All courses' : `${YEAR_LABELS[activeGroup.year]}, ${TERM_LABELS[activeGroup.term]}`;
+  const unplaced = draft?.rows.filter((row) => !isPlaced(row)).length ?? 0;
+  const selectionTitle = (selection: TermSelection | PreviewSelection) => (selection === 'all'
+    ? 'All courses'
+    : selection === 'unassigned' ? 'Unassigned courses' : `${YEAR_LABELS[selection.year]}, ${TERM_LABELS[selection.term]}`);
+  const summaryGroup = viewAll ? 'all' : termGroup;
+  const termTitle = selectionTitle(summaryGroup);
+  // Import's rail has no Unassigned entry; those rows are in its all-course view.
+  const railSelection: TermSelection = viewAll || termGroup === 'unassigned' ? 'all' : termGroup;
   const selectedInView = visibleRows.filter((row) => selected.has(row.row_id));
+  // Changing what is visible drops the status filter and any selection, so no hidden row is edited in bulk.
+  const changeView = () => {
+    setStatusFilter('all');
+    setSelected(new Set());
+    setMoved(null);
+  };
+  const selectTerm = (selection: PreviewSelection) => {
+    setTermGroup(selection);
+    setViewAll(false);
+    changeView();
+  };
+  const toggleViewAll = () => {
+    setViewAll((value) => !value);
+    changeView();
+  };
+  const filterStatus = (filter: StatusFilter) => {
+    setStatusFilter(filter);
+    setSelected(new Set());
+  };
   const goTo = (next: WorkStep) => {
+    setSelected(new Set());
     setStep(next);
     setSubmitError(null);
+  };
+
+  /**
+   * Edits keep the current tab; a course moved elsewhere is announced with a way to follow it. Stable, because
+   * the table rebuilds (and remounts) its cells whenever its onChange changes, which would drop focus.
+   */
+  const view = useRef({ draft, step, viewAll, termGroup });
+  useLayoutEffect(() => {
+    view.current = { draft, step, viewAll, termGroup };
+  });
+  const changeRow = useCallback((rowId: string, patch: Partial<DraftRow>) => {
+    updateRow(rowId, patch);
+    const { draft: current, step: currentStep, viewAll: showingAll, termGroup: from } = view.current;
+    const row = current?.rows.find((candidate) => candidate.row_id === rowId);
+    if (!row || currentStep !== 'review' || showingAll || !('year_level' in patch || 'semester' in patch)) return;
+    const next = { ...row, ...patch };
+    const to: PreviewSelection = isPlaced(next) ? { year: next.year_level, term: next.semester } : 'unassigned';
+    const same = to === 'unassigned' || from === 'unassigned' ? to === from : to.year === from.year && to.term === from.term;
+    setMoved(same ? null : { code: next.code.trim() || rowId, to });
+  }, [updateRow]);
+
+  const courseCodes = new Map((draft?.rows ?? []).map((row) => [row.row_id, row.code.trim() || row.row_id]));
+  const termNotes = !draft ? [] : viewAll
+    ? draft.notes
+    : termGroup === 'unassigned'
+      ? draft.notes.filter(({ scope }) => scope.level === 'course' && termRows.some((row) => row.row_id === scope.row_id))
+      : notesForTerm(draft.notes, termGroup.year, termGroup.term, new Set(termRows.map((row) => row.row_id)));
+
+  const proposedCode = draft ? proposedImportCode(draft.metadata) : null;
+  const cmoPartial = !!draft && !draft.metadata.cmo_number.trim() !== !draft.metadata.cmo_series.trim();
+  const codeText = validated ? validation!.metadata.code : proposedCode ?? 'Assigned automatically';
+  const codeHint = validated
+    ? 'Confirmed by the last check. The import assigns it again and adds a suffix if it was taken meanwhile.'
+    : proposedCode
+      ? 'Proposed from the CMO. Validate to confirm; a suffix such as -2 is added when the code is taken.'
+      : cmoPartial
+        ? 'Enter both the CMO number and the series, or clear both.'
+        : 'No CMO is given, so the program and effective year name the code.';
+  const metadataFields: MetadataField[] = ['name', 'program_id', 'effective_school_year', 'cmo_number', 'cmo_series'];
+  const asMetadataField = (field: string | null | undefined): MetadataField | null => {
+    const name = field?.startsWith('metadata.') ? field.slice('metadata.'.length) : null;
+    return name && (metadataFields as string[]).includes(name) ? name as MetadataField : null;
+  };
+  // Local problems always count; server errors only while the last check is current.
+  const metadataIssues: MetadataIssue[] = [
+    ...problems.filter((problem) => problem.row_id === null).map((problem) => ({ field: asMetadataField(problem.field), message: problem.message })),
+    ...(stale ? [] : validation?.issues ?? []).filter((issue) => issue.severity === 'error').map((issue) => ({ field: asMetadataField(issue.field), message: issue.message })),
+  ].filter((issue): issue is MetadataIssue => issue.field !== null);
+  const metadataNeedsFix = metadataIssues.length > 0;
+  const openDetails = (focus: MetadataField | null = null) => {
+    setDetails({ open: true, focus });
+    setDetailsReviewed(true);
+  };
+
+  // Counts for the Validation results entry point. Local problems block sending, so they never coexist with
+  // current server results; the key check still guards against counting one finding twice. Notices are facts
+  // for the review, never pending tasks.
+  const localKeys = new Set(problems.map((problem) => `${problem.row_id}:${problem.field}`));
+  const freshIssues = validation && !stale ? validation.issues : [];
+  const errorCount = problems.length + freshIssues.filter((issue) => issue.severity === 'error' && !localKeys.has(`${issue.row_id}:${issue.field}`)).length;
+  const noticeCount = freshIssues.filter((issue) => issue.severity === 'notice').length;
+  const lastCheck = validation && stale
+    ? { errors: validation.issues.filter((issue) => issue.severity === 'error').length, notices: validation.issues.filter((issue) => issue.severity === 'notice').length }
+    : null;
+  const issueState = !validation ? 'unchecked' : stale ? 'stale' : errorCount > 0 ? 'blocked' : 'ready';
+  const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
+  const issuesStatus = {
+    unchecked: problems.length > 0 ? 'Not validated. The draft problems below were found in your browser.' : 'Not validated yet.',
+    stale: 'Changed since the last check. Server results below are from that check.',
+    blocked: 'Results of the latest check of the whole draft. Errors block the import until corrected.',
+    ready: 'Validated: nothing blocks the import. Notices are shown in the review.',
+  }[issueState];
+  const lastCheckText = lastCheck && lastCheck.errors + lastCheck.notices > 0
+    ? `last check: ${[lastCheck.errors ? plural(lastCheck.errors, 'error') : null, lastCheck.notices ? plural(lastCheck.notices, 'notice') : null].filter(Boolean).join(', ')}`
+    : null;
+
+  const issueAction = (issue: { key: string; code: string; row_id: string | null; field: string | null }): IssueAction | null => {
+    if (issue.row_id) {
+      const control = issueControl(issue.code, issue.field);
+      return { label: 'Show course', onClick: () => { setIssuesOpen(false); focusRow(issue.row_id!, control ? 'configure' : 'review', control); } };
+    }
+    const field = asMetadataField(issue.field);
+    if (field) return { label: 'Open curriculum details', onClick: () => { setIssuesOpen(false); openDetails(field); } };
+    const group = issue.key.match(/:(\d)-(\d)$/);
+    if (group && isPlaced({ year_level: Number(group[1]), semester: Number(group[2]) as PlacementTerm })) {
+      const year = Number(group[1]);
+      const term = Number(group[2]) as PlacementTerm;
+      return {
+        label: 'Show term',
+        onClick: () => {
+          setIssuesOpen(false);
+          selectTerm({ year, term });
+          setStep((current) => (current === 'import' ? 'review' : current));
+          window.setTimeout(() => document.getElementById(`import-year-tab-${year}`)?.focus(), 50);
+        },
+      };
+    }
+    return null;
   };
 
   const validationStatus = !validation
@@ -375,13 +558,89 @@ export default function CurriculumImportPage() {
       ? 'Changed since the last check'
       : validation.valid
         ? 'Ready to import'
-        : [
-          counts?.errors ? `${counts.errors} error${counts.errors === 1 ? '' : 's'}` : null,
-          counts?.reviews_open ? `${counts.reviews_open} review${counts.reviews_open === 1 ? '' : 's'} without a reason` : null,
-        ].filter(Boolean).join(', ');
+        : counts?.errors ? `${counts.errors} error${counts.errors === 1 ? '' : 's'} to correct` : 'Ready to review';
+
+  const importBlocker = canImport || busy !== null ? null
+    : problems.length > 0 ? `Import is blocked: ${plural(problems.length, 'draft problem')} to fix.`
+      : !validation ? 'Import is blocked: validate the draft first.'
+        : stale ? 'Import is blocked: the draft changed, validate again.'
+          : `Import is blocked: ${plural(errorCount, 'error')} to correct.`;
+
+  const issueBadges = (onDark: boolean) => (
+    <>
+      {errorCount > 0 && <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${onDark ? 'bg-red-50 text-red-800' : 'bg-red-50 text-red-700 ring-1 ring-red-200'}`}>{plural(errorCount, 'error')}</span>}
+      {noticeCount > 0 && <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${onDark ? 'bg-[#C9952A] text-[#36060b]' : 'bg-accent/15 text-[#7a5410]'}`}>{plural(noticeCount, 'notice')}</span>}
+      {issueState === 'unchecked' && <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${onDark ? 'bg-white/15 text-white' : 'text-muted'}`}>{errorCount > 0 ? 'found in your browser, not validated' : 'Not validated'}</span>}
+      {issueState === 'stale' && <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${onDark ? 'bg-white/15 text-white' : 'text-muted'}`}>Changed since last check</span>}
+      {issueState === 'ready' && <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${onDark ? 'bg-emerald-50 text-emerald-800' : 'text-emerald-800'}`}>Ready to review</span>}
+    </>
+  );
+  // The badges' text runs together for screen readers, so the buttons carry a spoken summary.
+  const issuesLabel = `Validation results: ${[
+    errorCount > 0 ? plural(errorCount, 'error') : null,
+    noticeCount > 0 ? plural(noticeCount, 'notice') : null,
+    issueState === 'unchecked' ? 'not validated' : null,
+    issueState === 'stale' ? `changed since last check${lastCheckText ? ` (${lastCheckText})` : ''}` : null,
+    issueState === 'ready' ? 'ready to review' : null,
+  ].filter(Boolean).join(', ')}`;
+  const issuesControl = draft && (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <button type="button" onClick={() => setIssuesOpen(true)} aria-label={issuesLabel} className={secondaryButton}>
+        <ListChecks size={15} aria-hidden="true" /> Validation results
+      </button>
+      <span className="flex flex-wrap items-center gap-1.5 text-[13px]" data-testid="issue-counts">{issueBadges(false)}</span>
+    </div>
+  );
+  // Step 4's entry point sits in its gradient heading.
+  const issuesHeaderButton = draft && (
+    <button type="button" onClick={() => setIssuesOpen(true)} aria-label={issuesLabel} className={`${headerButton} h-auto min-h-9 shrink-0 flex-wrap py-1.5`}>
+      <ListChecks size={15} aria-hidden="true" /> Validation results
+      <span className="flex flex-wrap items-center gap-1" data-testid="issue-badges">{issueBadges(true)}</span>
+    </button>
+  );
+
+  const stepHeaderClass = `-mx-4 -mt-5 rounded-t-[11px] px-4 py-3 sm:-mx-6 sm:px-6 ${IMPORT_HEADER_GRADIENT}`;
+  const detailsBar = draft && (
+    <div className="mt-4 rounded-xl border border-border bg-parchment/60 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <button type="button" onClick={() => openDetails()} className={secondaryButton}>
+            <FileText size={15} aria-hidden="true" /> Curriculum details
+            {(metadataNeedsFix || !detailsReviewed) && (
+              <span className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[11px] font-black leading-none text-white ${metadataNeedsFix ? 'bg-red-600' : 'bg-[#C9952A]'}`}>
+                <span aria-hidden="true">!</span>
+                <span className="sr-only">{metadataNeedsFix ? ', needs correction' : ', not reviewed yet'}</span>
+              </span>
+            )}
+          </button>
+          {metadataNeedsFix && (
+            <button type="button" onClick={() => openDetails(metadataIssues[0].field)} className="inline-flex h-7 items-center gap-1 rounded-full bg-red-50 px-2.5 text-xs font-bold text-red-700 ring-1 ring-red-200 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+              <AlertOctagon size={13} aria-hidden="true" /> Needs correction
+            </button>
+          )}
+        </div>
+        {issuesControl}
+        <dl className="flex min-w-0 basis-full flex-wrap gap-x-5 gap-y-1 text-[13px]">
+          <div className="flex min-w-0 gap-1.5"><dt className="text-muted">Program</dt><dd className="truncate font-semibold text-text">{program ? programLabel(program) : 'All programs in the department'}</dd></div>
+          <div className="flex gap-1.5"><dt className="text-muted">School year</dt><dd className="font-semibold tabular-nums text-text">{draft.metadata.effective_school_year.trim() || '—'}</dd></div>
+          <div className="flex items-center gap-1.5"><dt className="text-muted">Code</dt><dd className="font-semibold text-text">{codeText}{!validated && proposedCode && <span className="ml-1.5 rounded bg-accent/15 px-1.5 text-[11px] font-bold text-[#7a5410]">Proposed</span>}</dd></div>
+        </dl>
+      </div>
+      {metadataNeedsFix && (
+        <ul className="mt-2 space-y-1 border-t border-border pt-2 text-[13px]">
+          {metadataIssues.map((issue) => (
+            <li key={`${issue.field}:${issue.message}`} className="flex flex-wrap items-center gap-x-3">
+              <span className="text-red-800">{issue.message}</span>
+              <button type="button" onClick={() => openDetails(issue.field)} className="text-xs font-bold text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Fix</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 
   const actionBar = (left: ReactNode, right: ReactNode) => (
-    <div className="sticky bottom-0 z-20 -mx-4 mt-4 border-t border-border bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+    <div className="-mx-4 mt-4 rounded-b-xl border-t border-border bg-white px-4 py-3 sm:-mx-6 sm:px-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0 text-[13px]" role="status">{left}</div>
         <div className="flex flex-wrap items-center gap-2">{right}</div>
@@ -406,21 +665,21 @@ export default function CurriculumImportPage() {
   return (
     <div className="w-full space-y-4 font-sans">
       <header className="rounded-xl border border-border bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <Link to={curriculumBase} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border text-muted hover:bg-parchment hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent" aria-label="Back to curriculum list"><ArrowLeft size={16} /></Link>
+        <div className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 ${step === 'done' ? 'rounded-[11px]' : 'rounded-t-[11px]'} ${IMPORT_HEADER_GRADIENT}`}>
+          <div className="flex min-w-0 flex-1 basis-60 items-center gap-3">
+            <Link to={curriculumBase} className={`${headerControl} w-9 shrink-0`} aria-label="Back to curriculum list"><ArrowLeft size={16} /></Link>
             <div className="min-w-0">
-              <h1 className="truncate text-xl font-semibold text-primary">Import curriculum</h1>
-              <p className="truncate text-[13px] text-muted">{file ? file.name : 'Creates a new deactivated curriculum from a reviewed document'}</p>
+              <h1 className="truncate text-xl font-semibold text-white">Import curriculum</h1>
+              <p className="truncate text-[13px] text-amber-50/85" title={file?.name}>{file ? file.name : 'Creates a new deactivated curriculum from a reviewed document'}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {settings && (
-              <button type="button" onClick={() => setSettingsOpen(true)} className={quietButton}>
+              <button type="button" onClick={() => setSettingsOpen(true)} className={headerButton}>
                 <Settings2 size={15} aria-hidden="true" /> Import settings
               </button>
             )}
-            {draft && step !== 'done' && <button type="button" onClick={() => void discardDraft()} className={quietButton}>Discard draft</button>}
+            {draft && step !== 'done' && <button type="button" onClick={() => void discardDraft()} className={headerButton}>Discard draft</button>}
           </div>
         </div>
         {step !== 'done' && (
@@ -485,7 +744,8 @@ export default function CurriculumImportPage() {
       )}
 
       {draft && (step === 'review' || step === 'configure' || step === 'import') && (
-        <div className="grid items-start gap-4 lg:grid-cols-[15rem_minmax(0,1fr)] xl:grid-cols-[17.5rem_minmax(0,1fr)]">
+        <div className={step === 'import' ? 'grid items-start gap-4 lg:grid-cols-[15rem_minmax(0,1fr)] xl:grid-cols-[17.5rem_minmax(0,1fr)]' : ''}>
+          {step === 'import' && (
           <div className="lg:sticky lg:top-4">
             <button type="button" onClick={() => setRailOpen((open) => !open)} aria-expanded={railOpen} aria-controls="import-term-rail" className={`${quietButton} w-full justify-between lg:hidden`}>
               <span>Terms: {termTitle}</span>
@@ -497,137 +757,151 @@ export default function CurriculumImportPage() {
               rowCount={draft.rows.length}
               unplacedCount={unplaced}
               errorsByGroup={errorsByGroup}
-              selection={activeGroup}
+              selection={railSelection}
               onSelect={(selection) => {
-                setActiveGroup(selection);
                 setRailOpen(false);
-                if (step === 'import') setStep('review');
+                if (selection === 'all') {
+                  setViewAll(true);
+                  changeView();
+                } else {
+                  selectTerm(selection);
+                }
+                goTo('review');
               }}
             />
             </div>
           </div>
+          )}
 
           <section aria-labelledby="step-heading" className="min-w-0 rounded-xl border border-border bg-white px-4 pt-5 sm:px-6">
             {step === 'review' && (
               <>
-                <h2 id="step-heading" className="text-lg font-semibold text-text">Preview the extracted curriculum</h2>
-                <p className="mt-1 text-[13px] text-muted">Correct anything the document got wrong. The original values stay on record next to your corrections.</p>
+                <div className={stepHeaderClass}>
+                  <h2 id="step-heading" className="text-lg font-semibold text-white">Preview the extracted curriculum</h2>
+                  <p className="mt-0.5 text-[13px] text-amber-50/85">Correct anything the document got wrong. The original values stay on record next to your corrections.</p>
+                </div>
 
-                <fieldset className="mt-5 rounded-xl border border-border p-4">
-                  <legend className="px-1 text-[13px] font-bold text-text">Curriculum details</legend>
-                  <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2 xl:grid-cols-3">
-                    <label className="block text-[13px] sm:col-span-2 xl:col-span-2">
-                      <span className="font-semibold text-text">Curriculum name <span className="text-red-700" aria-hidden="true">*</span></span>
-                      <input value={draft.metadata.name} onChange={(event) => updateMetadata({ name: event.target.value })} className={`${inputClass} mt-1 ${draft.metadata.name.trim() ? '' : 'border-red-300 bg-red-50/60'}`} />
-                    </label>
-                    <div className="text-[13px]">
-                      <span className="font-semibold text-text">Internal code</span>
-                      <p aria-label="Internal code" className="mt-1 flex h-9 items-center rounded-lg border border-border bg-parchment px-3 font-semibold text-muted">
-                        {validated ? validation!.metadata.code : 'Assigned automatically'}
-                      </p>
-                    </div>
-                    <label className="block text-[13px] sm:col-span-2 xl:col-span-1">
-                      <span className="font-semibold text-text">Program</span>
-                      <select value={draft.metadata.program_id ?? ''} disabled={user?.role === 'program_head'} onChange={(event) => updateMetadata({ program_id: event.target.value ? Number(event.target.value) : null })} className={`${inputClass} mt-1`}>
-                        <option value="">All programs in the department</option>
-                        {programs.map((candidate) => <option key={candidate.id} value={candidate.id}>{programLabel(candidate)}</option>)}
-                      </select>
-                      {draft.detected.program_text && <span className="mt-1 block text-xs text-muted">From the document: {draft.detected.program_text}{!program ? '. No matching program is selected.' : ''}</span>}
-                    </label>
-                    <label className="block text-[13px]">
-                      <span className="font-semibold text-text">Effective school year <span className="text-red-700" aria-hidden="true">*</span></span>
-                      <input value={draft.metadata.effective_school_year} onChange={(event) => updateMetadata({ effective_school_year: event.target.value })} placeholder="2020-2021" className={`${inputClass} mt-1 tabular-nums ${draft.metadata.effective_school_year.trim() ? '' : 'border-red-300 bg-red-50/60'}`} />
-                    </label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="block text-[13px]"><span className="font-semibold text-text">CMO number</span><input value={draft.metadata.cmo_number} onChange={(event) => updateMetadata({ cmo_number: event.target.value })} className={`${inputClass} mt-1`} /></label>
-                      <label className="block text-[13px]"><span className="font-semibold text-text">Series</span><input value={draft.metadata.cmo_series} inputMode="numeric" onChange={(event) => updateMetadata({ cmo_series: event.target.value })} placeholder="2015" className={`${inputClass} mt-1 tabular-nums`} /></label>
-                    </div>
-                  </div>
-                  {draft.metadata.notes.length > 0 && (
-                    <div className="mt-4 rounded-lg bg-parchment px-3 py-2 text-[13px] text-text">
-                      <p className="font-semibold">Notes kept from the document</p>
-                      <p className="text-xs text-muted">Recorded with the import, not added as courses.</p>
-                      <ul className="mt-1 list-disc pl-5">{draft.metadata.notes.map((note) => <li key={note}>{note}</li>)}</ul>
-                    </div>
-                  )}
-                  {draft.warnings.length > 0 && <ul className="mt-3 list-disc rounded-lg border border-accent/40 bg-accent/[0.07] py-2 pl-8 pr-3 text-[13px] text-text">{draft.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}
-                </fieldset>
+                {detailsBar}
+                {(draft.warnings.length > 0 || draft.unread.length > 0) && (
+                  <ul className="mt-3 list-disc rounded-lg border border-accent/40 bg-accent/[0.07] py-2 pl-8 pr-3 text-[13px] text-text">
+                    {draft.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                    {draft.unread.map((region, index) => (
+                      <li key={`unread-${index}`}>
+                        {region.page ? `Page ${region.page}: ` : ''}
+                        {region.reason === 'image'
+                          ? 'an image in the course area was not read. Check it, then answer it in Curriculum details.'
+                          : `text was not recognised as a course or note: "${region.text ?? ''}". Check it, then answer it in Curriculum details.`}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </>
             )}
 
             {step === 'configure' && (
               <>
-                <h2 id="step-heading" className="text-lg font-semibold text-text">Configure categories and class time</h2>
-                <p className="mt-1 text-[13px] text-muted">Department rules suggest Major or Minor. Override a row only when the rule is wrong for it; you will be asked why.</p>
-
-                {settings && (
-                  <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-parchment px-4 py-3">
-                    <dl className="flex flex-wrap gap-x-8 gap-y-1 text-[13px]">
-                      <div><dt className="text-xs text-muted">Lecture</dt><dd className="font-bold tabular-nums text-text">{settings.lecture_minutes_per_unit} min per unit</dd></div>
-                      <div><dt className="text-xs text-muted">Laboratory</dt><dd className="font-bold tabular-nums text-text">{settings.laboratory_minutes_per_unit} min per unit</dd></div>
-                      <div><dt className="text-xs text-muted">Classification rules</dt><dd className="font-bold tabular-nums text-text">{settings.rules.filter((rule) => rule.enabled).length} active</dd></div>
-                    </dl>
-                    <button type="button" onClick={() => setSettingsOpen(true)} className={quietButton}>{settings.can_manage ? 'Edit settings' : 'View settings'}</button>
-                  </div>
-                )}
-
-                <div className="mt-4 flex flex-wrap items-center gap-2" role="group" aria-label="Filter by status">
-                  {(['all', 'needs_category', 'invalid', 'override', 'rule', 'manual', 'unchecked'] as StatusFilter[]).map((filter) => {
-                    const count = filter === 'all' ? termRows.length : statusCounts.get(filter) ?? 0;
-                    if (filter !== 'all' && count === 0) return null;
-                    const active = statusFilter === filter;
-                    return (
-                      <button key={filter} type="button" aria-pressed={active} onClick={() => setStatusFilter(filter)} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${active ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text hover:border-primary/50'}`}>
-                        {filter === 'all' ? 'All' : CONFIGURE_STATUS_LABELS[filter]}
-                        <span className={`tabular-nums ${active ? 'text-white/80' : 'text-muted'}`}>{count}</span>
-                      </button>
-                    );
-                  })}
+                <div className={stepHeaderClass}>
+                  <h2 id="step-heading" className="text-lg font-semibold text-white">Configure categories and class time</h2>
+                  <p className="mt-0.5 text-[13px] text-amber-50/85">Department rules suggest Major or Minor. Override a row only when the rule is wrong for it; you will be asked why.</p>
                 </div>
-
-                <div className={`mt-3 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-[13px] ${selectedInView.length ? 'border-primary/30 bg-primary/[0.04]' : 'border-dashed border-border text-muted'}`}>
-                  {selectedInView.length === 0 ? (
-                    <span>Select courses to set their category together.</span>
-                  ) : (
-                    <>
-                      <span className="font-bold text-text">{selectedInView.length} selected</span>
-                      <span className="text-muted">Set category:</span>
-                      {(['major', 'minor'] as const).map((category) => (
-                        <button key={category} type="button" onClick={() => setCategoryFor(new Set(selectedInView.map((row) => row.row_id)), category)} className="h-8 rounded-md border border-primary bg-white px-3 text-xs font-bold text-primary hover:bg-primary/5">{category === 'major' ? 'Major' : 'Minor'}</button>
-                      ))}
-                      <button type="button" onClick={() => setCategoryFor(new Set(selectedInView.map((row) => row.row_id)), null)} className="h-8 rounded-md border border-border bg-white px-3 text-xs font-bold text-text hover:bg-parchment">Use rule</button>
-                      <button type="button" onClick={() => toggleSelected(selectedInView.map((row) => row.row_id), false)} className="ml-auto h-8 rounded-md px-2 text-xs font-bold text-muted hover:text-text">Clear selection</button>
-                    </>
-                  )}
-                </div>
+                {detailsBar}
               </>
             )}
 
             {(step === 'review' || step === 'configure') && (
               <>
-                <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
-                  <div className="flex flex-wrap items-center gap-3">
+                <div className="mt-5">
+                  {viewAll ? (
+                    <p className="border-b border-border pb-2 text-[13px] text-muted">Showing every course in source order. Validation always checks the whole draft.</p>
+                  ) : (
+                    <ImportTermTabs totals={totals} unassignedCount={unplaced} attention={attention} selection={termGroup} panelId="import-term-panel" onSelect={selectTerm} />
+                  )}
+                </div>
+                <div
+                  id="import-term-panel"
+                  role={viewAll ? undefined : 'tabpanel'}
+                  aria-labelledby={viewAll ? undefined : termGroup === 'unassigned' ? 'import-year-tab-unassigned' : `import-year-tab-${termGroup.year}`}
+                >
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <h3 className="text-base font-semibold text-text">{termTitle}</h3>
+                    {(() => {
+                      if (summaryGroup === 'all') return <p className="text-[13px] tabular-nums text-muted">{draft.rows.length} courses</p>;
+                      if (summaryGroup === 'unassigned') return <p className="text-[13px] tabular-nums text-muted">{termRows.length} {termRows.length === 1 ? 'course' : 'courses'} without a valid year or term</p>;
+                      const group = totals.find((candidate) => candidate.year_level === summaryGroup.year && candidate.semester === summaryGroup.term);
+                      const differs = !!group && totalsDiffer(group);
+                      return (
+                        <p className="text-[13px] tabular-nums text-muted">
+                          {group?.row_count ?? 0} {group?.row_count === 1 ? 'course' : 'courses'} · <span className="font-bold text-text">{group?.calculated.tu ?? 0} units</span>
+                          {group?.reported ? <span className={differs ? 'ml-1 rounded bg-accent/15 px-1.5 font-bold text-[#7a5410]' : 'ml-1'}>(printed {group.reported.tu ?? '?'}{differs ? ', differs' : ''})</span> : <span className="ml-1">(no printed total)</span>}
+                        </p>
+                      );
+                    })()}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
                     {step === 'review' && (
                       <button type="button" onClick={() => setTableEditing((value) => !value)} aria-pressed={tableEditing} className={tableEditing ? primaryButton : secondaryButton}>
                         {tableEditing ? <><Check size={15} aria-hidden="true" /> Done editing</> : <><Pencil size={14} aria-hidden="true" /> Edit table</>}
                       </button>
                     )}
+                    <button type="button" onClick={toggleViewAll} aria-pressed={viewAll} className={quietButton}>
+                      <List size={14} aria-hidden="true" /> {viewAll ? 'Back to terms' : 'View all courses'}
+                    </button>
                   </div>
-                  {activeGroup !== 'all' && (() => {
-                    const group = totals.find((candidate) => candidate.year_level === activeGroup.year && candidate.semester === activeGroup.term);
-                    if (!group) return null;
-                    const mismatch = group.reported && group.reported.tu !== group.calculated.tu;
-                    return (
-                      <p className="text-[13px] tabular-nums text-muted">
-                        {group.row_count} courses, <span className="font-bold text-text">{group.calculated.tu} units</span>
-                        {group.reported ? <span className={mismatch ? 'ml-1 font-bold text-[#7a5410]' : 'ml-1'}>(printed {group.reported.tu ?? '?'})</span> : <span className="ml-1">(no printed total)</span>}
-                      </p>
-                    );
-                  })()}
                 </div>
-                <div className="-mx-4 sm:-mx-6">
-                  <ImportDraftTable
+                {termNotes.length > 0 && (
+                  <SourceNotes
+                    className="mt-3"
+                    title={viewAll ? 'Notes from the curriculum document' : 'Notes for this view, from the document'}
+                    notes={termNotes.map((note) => ({ ...note, label: noteScopeLabel(note.scope, note.scope.level === 'course' ? courseCodes.get(note.scope.row_id) : null) }))}
+                  />
+                )}
+                {step === 'review' && moved && (
+                  <p role="status" className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-primary/20 bg-primary/[0.04] px-3 py-2 text-[13px] text-text">
+                    <span><span className="font-bold">{moved.code}</span> moved to {selectionTitle(moved.to)}.</span>
+                    <button type="button" onClick={() => selectTerm(moved.to)} className="font-bold text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Open {selectionTitle(moved.to)}</button>
+                  </p>
+                )}
+                {step === 'configure' && (
+                  <>
+                    <div className="mt-3 flex flex-wrap items-center gap-2" role="group" aria-label="Filter by status in this view">
+                      {(['all', 'needs_category', 'invalid', 'override', 'rule', 'manual', 'unchecked'] as StatusFilter[]).map((filter) => {
+                        const count = filter === 'all' ? termRows.length : statusCounts.get(filter) ?? 0;
+                        if (filter !== 'all' && count === 0 && statusFilter !== filter) return null;
+                        const active = statusFilter === filter;
+                        return (
+                          <button key={filter} type="button" aria-pressed={active} onClick={() => filterStatus(filter)} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${active ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text hover:border-primary/50'}`}>
+                            {filter === 'all' ? 'All' : CONFIGURE_STATUS_LABELS[filter]}
+                            <span className={`tabular-nums ${active ? 'text-white/80' : 'text-muted'}`}>{count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className={`mt-3 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-[13px] ${selectedInView.length ? 'border-primary/30 bg-primary/[0.04]' : 'border-dashed border-border text-muted'}`}>
+                      {selectedInView.length === 0 ? (
+                        <span>Select courses to set their category together.</span>
+                      ) : (
+                        <>
+                          <span className="font-bold text-text">{selectedInView.length} selected</span>
+                          <span className="text-muted">Set category:</span>
+                          {(['major', 'minor'] as const).map((category) => (
+                            <button key={category} type="button" onClick={() => setCategoryFor(new Set(selectedInView.map((row) => row.row_id)), category)} className="h-8 rounded-md border border-primary bg-white px-3 text-xs font-bold text-primary hover:bg-primary/5">{category === 'major' ? 'Major' : 'Minor'}</button>
+                          ))}
+                          <button type="button" onClick={() => setCategoryFor(new Set(selectedInView.map((row) => row.row_id)), null)} className="h-8 rounded-md border border-border bg-white px-3 text-xs font-bold text-text hover:bg-parchment">Use rule</button>
+                          <button type="button" onClick={() => toggleSelected(selectedInView.map((row) => row.row_id), false)} className="ml-auto h-8 rounded-md px-2 text-xs font-bold text-muted hover:text-text">Clear selection</button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
+                {!viewAll && termRows.length === 0 && (
+                  <p className="mt-3 rounded-lg border border-dashed border-border px-3 py-4 text-center text-[13px] text-muted">
+                    {termGroup === 'unassigned' ? 'Every course has a year and term.' : 'No courses in this term. The document lists it, or its last course was moved; choose another tab to continue.'}
+                  </p>
+                )}
+                <div className={`-mx-4 sm:-mx-6 ${step === 'configure' ? 'mt-3' : ''}`}>
+                  {!(!viewAll && termRows.length === 0) && <ImportDraftTable
                     mode={step}
                     editing={step === 'review' && tableEditing}
                     rows={visibleRows}
@@ -637,9 +911,10 @@ export default function CurriculumImportPage() {
                     settings={settings}
                     selected={selected}
                     onToggleSelected={toggleSelected}
-                    onChange={updateRow}
+                    onChange={changeRow}
                     onOpenRow={setOpenRowId}
-                  />
+                  />}
+                </div>
                 </div>
                 {actionBar(
                   statusLine,
@@ -656,38 +931,37 @@ export default function CurriculumImportPage() {
 
             {step === 'import' && (
               <>
-                <h2 id="step-heading" className="text-lg font-semibold text-text">Validate and import</h2>
-                <p className="mt-1 text-[13px] text-muted">The server checks the whole draft. The import creates the curriculum only when nothing is left to fix or accept.</p>
+                <div className={`${stepHeaderClass} flex flex-wrap items-center justify-between gap-x-4 gap-y-2`}>
+                  <div className="min-w-0 flex-1 basis-72">
+                    <h2 id="step-heading" className="text-lg font-semibold text-white">Review and import</h2>
+                    <p className="mt-0.5 text-[13px] text-amber-50/85">An automatic summary of what will be created, from the server's check of the whole draft. Confirm it once to import.</p>
+                  </div>
+                  {issuesHeaderButton}
+                </div>
 
-                <dl className="mt-5 grid gap-x-8 gap-y-3 rounded-xl border border-border px-4 py-3 text-[13px] sm:grid-cols-3">
-                  <div>
-                    <dt className="text-xs text-muted">Internal code</dt>
-                    <dd aria-label="Assigned internal code" className="font-bold text-text">{validated ? validation!.metadata.code : 'Assigned when validated'}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted">Courses</dt>
-                    <dd className="font-bold tabular-nums text-text">{draft.rows.length} in {totals.filter((group) => group.row_count > 0).length} terms</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted">Check result</dt>
-                    <dd className={`font-bold ${validated && validation?.valid ? 'text-emerald-800' : validated ? 'text-red-700' : 'text-muted'}`}>{validationStatus}</dd>
-                  </div>
-                </dl>
+                {validated && validation ? (
+                  <ImportReviewSummary draft={draft} validation={validation} programName={program ? programLabel(program) : 'All programs in the department'} />
+                ) : (
+                  <p className="mt-5 rounded-xl border border-dashed border-border px-4 py-4 text-[13px] text-muted" role="status">
+                    {validation ? 'The draft changed after the last check. Validate again to bring the review up to date.' : 'Validate the whole draft to generate the review.'}
+                    {' '}<span aria-label="Check result">{validationStatus}</span>
+                  </p>
+                )}
 
                 <div className="mt-6"><ImportCreditLedger totals={totals} rowCount={draft.rows.length} /></div>
-
-                <div className="mt-6 border-t border-border pt-5">
-                  {validation
-                    ? <ImportIssuesPanel issues={validation.issues} acknowledgements={acknowledgements} stale={stale} onAcknowledge={acknowledge} onFocusRow={focusRow} />
-                    : <p className="text-[13px] text-muted">Validate to run the server checks: existing courses, categories, totals, and class time.</p>}
-                </div>
 
                 {actionBar(
                   <span className="flex items-center gap-1.5 text-muted"><ShieldCheck size={15} aria-hidden="true" /> The curriculum is created deactivated. Activate it afterwards from the curriculum list.</span>,
                   <>
                     <button type="button" onClick={() => goTo('configure')} className={quietButton}>Back</button>
                     {validateButton}
-                    <button type="button" onClick={() => void commit()} disabled={!canImport} className={primaryButton}>{busy === 'commit' ? 'Importing…' : 'Import curriculum'}</button>
+                    {importBlocker && (
+                      <span className="flex items-center gap-1.5 text-xs text-muted">
+                        <span id="import-blocker">{importBlocker}</span>
+                        <button type="button" onClick={() => setIssuesOpen(true)} className="whitespace-nowrap font-bold text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">View issues</button>
+                      </span>
+                    )}
+                    <button type="button" onClick={() => void commit()} disabled={!canImport} aria-describedby={importBlocker ? 'import-blocker' : undefined} className={primaryButton}>{busy === 'commit' ? 'Importing…' : 'Confirm and import'}</button>
                   </>,
                 )}
               </>
@@ -714,9 +988,15 @@ export default function CurriculumImportPage() {
             <div><dt className="text-xs text-muted">Terms</dt><dd className="text-lg font-bold tabular-nums">{result.totals.populated_groups}</dd></div>
             <div><dt className="text-xs text-muted">Total units</dt><dd className="text-lg font-bold tabular-nums">{result.totals.calculated.tu}</dd></div>
           </dl>
-          {Object.keys(result.acknowledged).length > 0 && (
+          {result.confirmation && (
+            <p className="mt-3 text-[13px] text-muted">
+              Confirmed by {result.confirmation.user_name ?? 'you'} on {new Date(result.confirmation.confirmed_at).toLocaleString()}
+              {result.changes ? `, with ${result.changes.filter((change) => !change.formatting).length} recorded changes from the document` : ''}.
+            </p>
+          )}
+          {result.acknowledged && Object.keys(result.acknowledged).length > 0 && (
             <details className="mt-4 text-[13px]">
-              <summary className="cursor-pointer font-bold text-text">{Object.keys(result.acknowledged).length} accepted reviews and their reasons</summary>
+              <summary className="cursor-pointer font-bold text-text">Reasons recorded with this earlier import ({Object.keys(result.acknowledged).length})</summary>
               <ul className="mt-2 space-y-1.5">{Object.entries(result.acknowledged).map(([key, item]) => <li key={key} className="rounded-lg bg-parchment px-3 py-2"><span className="text-text">{item.message}</span><br /><span className="text-muted">Reason: {item.reason}</span></li>)}</ul>
             </details>
           )}
@@ -728,7 +1008,36 @@ export default function CurriculumImportPage() {
       )}
 
       {openRow && draft && (
-        <ImportRowDetailModal row={openRow} issues={stale ? [] : issuesByRow.get(openRow.row_id) ?? []} bytes={bytes} onClose={() => setOpenRowId(null)} onChange={updateRow} />
+        <ImportRowDetailModal row={openRow} issues={stale ? [] : issuesByRow.get(openRow.row_id) ?? []} bytes={bytes} onClose={() => setOpenRowId(null)} onChange={changeRow} />
+      )}
+      {issuesOpen && draft && (
+        <ImportIssuesModal
+          status={issuesStatus}
+          issues={validation?.issues ?? []}
+          localIssues={problems.map((problem) => ({ key: `local:${problem.row_id}:${problem.field}`, message: problem.message, row_id: problem.row_id, field: problem.field }))}
+          stale={stale}
+          checked={!!validation}
+          actionFor={issueAction}
+          onClose={() => setIssuesOpen(false)}
+        />
+      )}
+      {details.open && draft && (
+        <ImportCurriculumDetailsModal
+          metadata={draft.metadata}
+          detected={draft.detected}
+          programs={programs}
+          programLocked={user?.role === 'program_head'}
+          code={{ text: codeText, tag: validated ? 'Checked' : proposedCode ? 'Proposed' : null, hint: codeHint }}
+          issues={metadataIssues}
+          focusField={details.focus}
+          onChange={updateMetadata}
+          notes={draft.notes}
+          courseCodes={courseCodes}
+          onNotesChange={updateNotes}
+          unread={draft.unread}
+          onUnreadChange={updateUnread}
+          onClose={() => setDetails({ open: false, focus: null })}
+        />
       )}
       {settingsOpen && settings && (
         <ImportSettingsModal

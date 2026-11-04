@@ -46,25 +46,33 @@ vi.mock('../ClassSchedules/SchedulerPanel/hooks/initialDataMapper', () => ({
 }));
 
 // The preview embeds a generated PDF; report what it was given instead.
+type PreviewProps = {
+  title: string; checks?: ReactNode; headerActions?: ReactNode; inert?: boolean; onClose: () => void; status?: string; statusLabel?: string;
+  canAct: boolean; printInput: { allSchedules: unknown[] } | null; onReject: () => void; onApprove: () => void;
+  approveBlockedReason?: string | null; closeOnEscape?: boolean;
+};
 vi.mock('../../components/scheduling/ScheduleApprovalPreviewModal', () => ({
-  default: (props: { title: string; checks?: ReactNode; inert?: boolean; onClose: () => void; status: string; canAct: boolean; printInput: { allSchedules: unknown[] } | null; onReject: () => void; onApprove: () => void }) => props.title === 'Room Schedule Reassignment Details' ? (
+  default: (props: PreviewProps) => props.title === 'Room Schedule Reassignment Details' ? (
     <div role="dialog" aria-label={props.title} aria-hidden={props.inert || undefined} inert={props.inert || undefined}>
-      {props.checks}<span>{`${props.printInput?.allSchedules.length ?? 0} meetings`}</span>
+      {props.headerActions}{props.checks}<span>{`${props.printInput?.allSchedules.length ?? 0} meetings`}</span>
       {props.canAct && <><button onClick={props.onApprove}>Approve</button><button onClick={props.onReject}>Reject</button></>}
       <button aria-label="Close preview" onClick={props.onClose}>Close</button>
     </div>
   ) : (
-    <div data-testid="preview">
+    <div data-testid="preview" aria-hidden={props.inert || undefined} inert={props.inert || undefined}>
+      <div data-testid="preview-header">{props.headerActions}{props.statusLabel && <span>{props.statusLabel}</span>}</div>
+      {props.checks && <div data-testid="preview-above-pdf">{props.checks}</div>}
       <span>{`${props.printInput?.allSchedules.length ?? 0} meetings`}</span>
-      <span>{`status:${props.status}`}</span>
       <span>{`canAct:${String(props.canAct)}`}</span>
+      <span>{`blocked:${props.approveBlockedReason ?? 'none'}`}</span>
+      <span>{`escape:${String(props.closeOnEscape ?? false)}`}</span>
       <button type="button" onClick={props.onReject}>Preview reject</button>
       <button type="button" onClick={props.onApprove}>Preview approve</button>
     </div>
   ),
 }));
 
-const payload = (submissionStatus: string, scheduleStatus: string) => ({
+const payload = (submissionStatus: string, scheduleStatus: string, revisionStatus = 'initial') => ({
   data: {
     active_semester: { id: 1 },
     departments: [{ id: 1, department_name: 'Information Technology' }],
@@ -78,12 +86,47 @@ const payload = (submissionStatus: string, scheduleStatus: string) => ({
       semester_id: 1,
       revision_number: 1,
       status: submissionStatus,
+      revision_status: revisionStatus,
       submitted_at: '2026-09-20 10:00:00',
       dean_reviewed_at: null,
       sections: [{ id: 10, section_name: 'IT-1A', department_id: 1, semester_id: 1 }],
     }],
   },
 });
+
+const conflictRow = (id: number) => ({
+  id, semester_id: 1, section_id: 10, course_id: 5, faculty_id: null, room_id: 9, department_id: 1, day: 'Monday',
+  start_time: '08:00:00', end_time: '09:00:00', mode: 'on-site', status: 'submitted', course_code: 'IT 101',
+  course_name: 'Programming', section_name: 'IT-1A', room_code: 'R1', faculty_name: null,
+});
+const openConflict = {
+  id: 'room_conflict:100:200', rule: 'room_conflict', semester_id: 1, day: 'Monday', overlap_start: '08:00', overlap_end: '09:00',
+  message: 'IT 101 and IT 102 share room R1.', resolution_options: [], schedules: [conflictRow(100), conflictRow(200)],
+};
+const diffChange = (index: number) => ({
+  change: 'added', before: null,
+  after: { day: 'Monday', start_time: '08:00', end_time: '09:00', mode: 'on-site', room: { room_code: 'R1' }, course: { course_code: `C${index}` } },
+});
+
+type Reply = unknown | Error;
+/** Answers each endpoint the approval page and its details call; an Error rejects that call. */
+function route(replies: { queue: unknown; conflicts?: Reply; issues?: Reply; diff?: Reply; changes?: Reply }) {
+  const reply = (value: Reply) => (value instanceof Error ? Promise.reject(value) : Promise.resolve(value));
+  mocks.apiGet.mockImplementation((url: string) => {
+    if (url === '/room-recovery/transfers') return Promise.resolve({ data: { transfers: [] } });
+    if (url === '/conflicts') return reply(replies.conflicts ?? { data: { conflicts: [] } });
+    if (url === '/conflicts/rule-issues') return reply(replies.issues ?? { data: { issues: [] } });
+    if (url.endsWith('/revision-diff')) return reply(replies.diff ?? { data: { data: { available: false, sections: [] } } });
+    if (url.endsWith('/changes')) return reply(replies.changes ?? { data: { data: [] } });
+    if (url.endsWith('/snapshot')) return Promise.resolve({ data: { data: { available: false, schedules: [] } } });
+    return Promise.resolve(replies.queue);
+  });
+}
+
+const pendingFor = (stage: 'dean' | 'vpaa', revision = 'initial') => {
+  mocks.user = { role: stage, department_id: stage === 'dean' ? 1 : undefined };
+  return payload(`pending_${stage}`, stage === 'dean' ? 'submitted' : 'approved_by_dean', revision);
+};
 
 describe('ScheduleApprovalPage', () => {
   afterEach(() => cleanup());
@@ -98,7 +141,7 @@ describe('ScheduleApprovalPage', () => {
   });
 
   it('previews a package the VPAA returned with its classes, not empty', async () => {
-    mocks.apiGet.mockResolvedValue(payload('rejected_by_vpaa', 'rejected_by_vpaa'));
+    route({ queue: payload('rejected_by_vpaa', 'rejected_by_vpaa'), changes: { data: { data: [] } } });
     render(<MemoryRouter><ScheduleApprovalPage stage="vpaa" /></MemoryRouter>);
 
     fireEvent.click(await screen.findByRole('button', { name: /^Rejected/ }));
@@ -106,8 +149,12 @@ describe('ScheduleApprovalPage', () => {
 
     const preview = await screen.findByTestId('preview');
     expect(preview.textContent).toContain('1 meetings');
-    expect(preview.textContent).toContain('status:rejected');
     expect(preview.textContent).toContain('canAct:false');
+    fireEvent.click(within(preview).getByRole('button', { name: 'View details' }));
+    const details = screen.getByRole('dialog', { name: 'Schedule details' });
+    expect(within(details).getByText('Rejected by VPAA')).toBeTruthy();
+    expect(await within(details).findByText('No changes to the working copy since this version.')).toBeTruthy();
+    expect(within(details).getByText(/Conflict and rule checks run while a schedule is awaiting your approval/)).toBeTruthy();
   });
 
   it('says so when the queue fails to load instead of showing an empty queue', async () => {
@@ -147,6 +194,112 @@ describe('ScheduleApprovalPage', () => {
     ));
     expect(await screen.findByText('This submission was already reviewed.')).toBeTruthy();
     expect((screen.getByLabelText(/Reason/) as HTMLTextAreaElement).value).toBe('Move the lab classes to the afternoon.');
+  });
+});
+
+describe.each(['dean', 'vpaa'] as const)('%s approval preview details', (stage) => {
+  afterEach(() => cleanup());
+  beforeEach(() => {
+    clearDataCache();
+    vi.clearAllMocks();
+    mocks.apiGet.mockReset();
+    mocks.apiPost.mockReset().mockResolvedValue({ data: {} });
+    mocks.confirm.mockReset().mockResolvedValue(false);
+  });
+
+  const openPreview = async () => {
+    render(<MemoryRouter><ScheduleApprovalPage stage={stage} /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'View' }));
+    return screen.findByTestId('preview');
+  };
+
+  it('keeps status, changes, and findings in View details instead of above the PDF', async () => {
+    route({
+      queue: pendingFor(stage, 'modified'),
+      diff: { data: { data: { available: true, sections: [{
+        section_id: 10, section_name: 'IT-1A', previous_status: 'rejected_by_dean', previous_revision_number: 1,
+        previous_rejection_reason: 'Spread the labs out.', changes: Array.from({ length: 30 }, (_, index) => diffChange(index)),
+      }] } } },
+    });
+    const preview = await openPreview();
+
+    // Only the title, View details, and close sit above the document.
+    expect(within(screen.getByTestId('preview-header')).getAllByRole('button').map(button => button.textContent)).toEqual(['View details']);
+    expect(screen.getByTestId('preview-header').textContent).toBe('View details');
+    expect(screen.queryByTestId('preview-above-pdf')).toBeNull();
+    expect(preview.textContent).toContain('escape:true');
+
+    const viewDetails = within(preview).getByRole('button', { name: 'View details' });
+    viewDetails.focus();
+    fireEvent.click(viewDetails);
+    const details = screen.getByRole('dialog', { name: 'Schedule details' });
+    expect(preview.getAttribute('aria-hidden')).toBe('true');
+
+    const info = within(details).getByRole('region', { name: 'Submission information' });
+    expect(within(info).getByText(stage === 'dean' ? 'Pending Dean Approval' : 'Pending VPAA Approval')).toBeTruthy();
+    expect(within(info).getByText('Revision: Modified')).toBeTruthy();
+
+    const changes = within(details).getByRole('region', { name: 'Changes' });
+    expect(await within(changes).findByText('Changes from the previous version (30 classes)')).toBeTruthy();
+    expect(within(changes).getByText('vs. returned version #1')).toBeTruthy();
+    expect(within(changes).getByText('Return reason: Spread the labs out.')).toBeTruthy();
+    const table = within(changes).getByRole('table', { name: 'Changes from the previous version' });
+    expect(within(table).getAllByRole('row')).toHaveLength(26);
+    fireEvent.click(within(changes).getByRole('button', { name: 'Next page' }));
+    expect(within(table).getByText('C29')).toBeTruthy();
+    expect(within(changes).queryByRole('button', { name: 'View details' })).toBeNull();
+
+    const checks = within(details).getByRole('region', { name: 'Scheduling checks' });
+    expect(await within(checks).findByText('No conflicts or scheduling issues found.')).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Schedule details' })).toBeNull());
+    expect(screen.getByTestId('preview')).toBe(preview);
+    expect(preview.getAttribute('aria-hidden')).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(within(preview).getByRole('button', { name: 'View details' })));
+  });
+
+  it('blocks approval from an open conflict even while details stay closed', async () => {
+    route({ queue: pendingFor(stage), conflicts: { data: { conflicts: [openConflict] } } });
+    const preview = await openPreview();
+
+    await waitFor(() => expect(preview.textContent).toContain('blocked:This schedule has 1 open conflict. Return it for revision.'));
+    expect(screen.queryByText('IT 101 and IT 102 share room R1.')).toBeNull();
+
+    fireEvent.click(within(preview).getByRole('button', { name: 'View details' }));
+    const checks = within(screen.getByRole('dialog', { name: 'Schedule details' })).getByRole('region', { name: 'Scheduling checks' });
+    expect(within(checks).getByRole('alert').textContent).toContain('Approval is blocked');
+    expect(within(checks).getByText('IT 101 and IT 102 share room R1.')).toBeTruthy();
+  });
+
+  it('shows empty and failed states inside details', async () => {
+    route({ queue: pendingFor(stage), conflicts: new Error('offline') });
+    const preview = await openPreview();
+    fireEvent.click(within(preview).getByRole('button', { name: 'View details' }));
+    const details = screen.getByRole('dialog', { name: 'Schedule details' });
+
+    expect(within(details).getByText('This is the first submitted version, so there are no changes from an earlier version.')).toBeTruthy();
+    expect(await within(details).findByText(/The pre-approval check could not run/)).toBeTruthy();
+    expect(preview.textContent).toContain('blocked:none');
+  });
+
+  it('says so in details when the changes cannot load', async () => {
+    route({ queue: pendingFor(stage, 'modified'), diff: new Error('offline') });
+    const preview = await openPreview();
+    fireEvent.click(within(preview).getByRole('button', { name: 'View details' }));
+    const changes = within(screen.getByRole('dialog', { name: 'Schedule details' })).getByRole('region', { name: 'Changes' });
+    expect(await within(changes).findByText('The changes from the previous version could not be loaded.')).toBeTruthy();
+  });
+
+  it('opens details from the Modified badge and returns focus to View details', async () => {
+    route({ queue: pendingFor(stage, 'modified') });
+    render(<MemoryRouter><ScheduleApprovalPage stage={stage} /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Modified' }));
+
+    const details = await screen.findByRole('dialog', { name: 'Schedule details' });
+    fireEvent.click(within(details).getByRole('button', { name: 'Close modal' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Schedule details' })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(within(screen.getByTestId('preview')).getByRole('button', { name: 'View details' })));
   });
 });
 
@@ -204,12 +357,25 @@ describe('Unified schedule and room schedule reassignment approval queue', () =>
     queue(stage);
     const details = await openTransfer();
     expect(screen.queryByRole('region', { name: 'Room schedule reassignment requests' })).toBeNull();
-    expect(within(details).getByText('PHYSICAL-CLASS · IT-1A')).toBeTruthy();
-    expect(within(details).getByText('ONLINE-CLASS · IT-1A · Linked online session')).toBeTruthy();
-    expect(within(details).getByRole('region', { name: 'Changes Summary' }).textContent).toContain('R1');
-    expect(within(details).getByRole('region', { name: 'Changes Summary' }).textContent).toContain('R2');
-    expect(within(details).getByText('1 schedule affected · 1 linked online session')).toBeTruthy();
+    expect(within(details).queryByRole('region', { name: 'Changes Summary' })).toBeNull();
+    expect(within(details).queryByText('PHYSICAL-CLASS · IT-1A')).toBeNull();
     expect(within(details).queryByRole('table')).toBeNull();
+    fireEvent.click(within(details).getByRole('button', { name: 'View Details' }));
+    const changes = screen.getByRole('dialog', { name: 'Room schedule reassignment changes' });
+    const summary = within(changes).getByRole('region', { name: 'Changes Summary' });
+    expect(summary.textContent).toContain('1affected meeting');
+    expect(summary.textContent).toContain('1linked online session');
+    expect(within(summary).getByText('Information Technology')).toBeTruthy();
+    expect(within(summary).getByText(`Pending ${stage === 'dean' ? 'Dean' : 'VPAA'} Approval`)).toBeTruthy();
+    expect(within(changes).getByText('PHYSICAL-CLASS')).toBeTruthy();
+    expect(within(changes).getByText('Room changed')).toBeTruthy();
+    expect(within(changes).getByText('R1')).toBeTruthy();
+    expect(within(changes).getByText('R2')).toBeTruthy();
+    expect(within(changes).getAllByText('Monday 8:00 AM–9:00 AM').length).toBeGreaterThanOrEqual(2);
+    expect(within(changes).getByText('ONLINE-CLASS')).toBeTruthy();
+    expect(within(changes).getByText('Linked online session — unchanged')).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Room schedule reassignment changes' })).toBeNull();
     fireEvent.click(within(details).getByRole('button', { name: 'Close preview' }));
     const regular = within(mainTable()).getAllByRole('row').find(row => row.textContent?.includes('Schedule Approval'))!;
     fireEvent.click(within(regular).getByRole('button', { name: 'View' }));
@@ -253,8 +419,9 @@ describe('Unified schedule and room schedule reassignment approval queue', () =>
     fireEvent.click(within(confirmation).getByRole('button', { name: 'Reject transfer' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     fireEvent.click(screen.getByRole('button', { name: /^Rejected/ }));
-    await openTransfer();
-    expect(screen.getAllByText('Rejection reason: Keep the current room.').length).toBeGreaterThan(0);
+    const rejected = await openTransfer();
+    fireEvent.click(within(rejected).getByRole('button', { name: 'View Details' }));
+    expect(within(screen.getByRole('dialog', { name: 'Room schedule reassignment changes' })).getByText('Rejection reason: Keep the current room.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^(Approve|Reject)$/ })).toBeNull();
     expect(mocks.apiPost).toHaveBeenCalledWith('/room-recovery/plans/transfer-1/reject', { reason: 'Keep the current room.' });
   });

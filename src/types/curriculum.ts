@@ -22,6 +22,30 @@ export type CurriculumLifecycle =
   | 'deactivated'
   | 'archived';
 
+/** A colour span over a note's text, in Unicode code points. `color` is #RRGGBB, or null when the source gives none or it is unknown. */
+export interface NoteRun {
+  length: number;
+  color: string | null;
+}
+
+/** Where a note belongs. Saved curricula name a course; import drafts name the draft row. */
+export type CurriculumNoteScope =
+  | { level: 'curriculum' }
+  | { level: 'year'; year_level: number }
+  | { level: 'term'; year_level: number; semester: number }
+  | { level: 'course'; course_id?: number; row_id?: string };
+
+/** A note printed on the curriculum document, kept as content: text exactly as printed, with its colours. */
+export interface CurriculumNote {
+  id: string;
+  text: string;
+  source_text: string | null;
+  runs: NoteRun[];
+  scope: CurriculumNoteScope;
+  provenance?: Record<string, unknown> | null;
+  flags?: string[];
+}
+
 export interface Curriculum {
   id: number;
   name: string;
@@ -33,6 +57,8 @@ export interface Curriculum {
   effective_school_year: string;
   status: CurriculumStatus;
   description: string | null;
+  /** Null for curricula that never recorded notes. */
+  notes?: CurriculumNote[] | null;
   courses_count: number;
   active_sections_count?: number;
   scheduled_sections_count?: number;

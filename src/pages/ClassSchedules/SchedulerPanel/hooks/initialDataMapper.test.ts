@@ -32,6 +32,26 @@ const payload = (courses: ApiCourseRecord[]): InitialDataResponse => ({
 const mapCourse = (record: ApiCourseRecord) =>
   mapInitialData(payload([record]), { isVpaa: true }).subjects[0];
 
+describe("mapInitialData curriculum placements", () => {
+  it("keeps every curriculum's placement so each section reads its own", () => {
+    const subject = mapCourse(course({
+      curriculum_placements: [
+        { curriculum_id: 19, year_level: "1", semester: "1st" },
+        { curriculum_id: "23", year_level: 2, semester: "1st" },
+      ],
+    }));
+
+    expect(subject.curriculumPlacements).toEqual([
+      { curriculumId: 19, yearLevel: 1, semester: "1st" },
+      { curriculumId: 23, yearLevel: 2, semester: "1st" },
+    ]);
+  });
+
+  it("leaves placements unknown when the payload has none", () => {
+    expect(mapCourse(course()).curriculumPlacements).toBeUndefined();
+  });
+});
+
 describe("mapInitialData teaching college", () => {
   it("keeps a GEC subject with the college that owns it when nothing is delegated", () => {
     const subject = mapCourse(course());

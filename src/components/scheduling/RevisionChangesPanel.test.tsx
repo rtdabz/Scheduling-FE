@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import RevisionChangesPanel from './RevisionChangesPanel';
 
@@ -63,12 +63,11 @@ describe('RevisionChangesPanel', () => {
 
     expect(await screen.findByText(/Changes to the working copy since this version \(3\)/)).toBeTruthy();
     expect(mocks.apiGet.mock.calls[0][0]).toBe('/schedule-submissions/7/changes');
-    // The list lives in the details modal, not inline.
-    expect(screen.queryByText('Sam Secretary')).toBeNull();
+    // The table is part of the panel; there is no nested dialog to open.
+    expect(screen.queryByRole('button', { name: 'View details' })).toBeNull();
+    expect(screen.getByRole('table', { name: 'Changes since this version' })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
-
-    expect(await screen.findByText('Sam Secretary')).toBeTruthy();
+    expect(screen.getByText('Sam Secretary')).toBeTruthy();
     expect(screen.getByText('Changed')).toBeTruthy();
     expect(screen.getAllByText(/Monday .*CIT 101/)).toHaveLength(1);
     expect(screen.getAllByText(/Thursday .*CIT 101/).length).toBeGreaterThan(0);

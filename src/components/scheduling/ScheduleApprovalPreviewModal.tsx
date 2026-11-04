@@ -10,12 +10,15 @@ type PreviewStatus = 'pending' | 'approved' | 'rejected';
 interface Props {
   open: boolean;
   title: string;
-  status: PreviewStatus;
-  statusLabel: string;
+  /** The header badge appears only when a label is given; approval previews show status in their details instead. */
+  status?: PreviewStatus;
+  statusLabel?: string;
   printInput: SchedulePdfInput | null;
   isLoading?: boolean;
   canAct: boolean;
   checks?: ReactNode;
+  /** Controls beside the close button, such as a View Details button. */
+  headerActions?: ReactNode;
   approveBlockedReason?: string | null;
   onApprove: () => void;
   onReject: () => void;
@@ -28,7 +31,7 @@ interface Props {
 type PdfState = { url: string | null; failed: boolean };
 
 export default function ScheduleApprovalPreviewModal({
-  open, title, status, statusLabel, printInput, isLoading = false, canAct, checks, approveBlockedReason = null, onApprove, onReject, onClose,
+  open, title, status = 'pending', statusLabel, printInput, isLoading = false, canAct, checks, headerActions, approveBlockedReason = null, onApprove, onReject, onClose,
   inert = false, closeOnEscape = false, emptyMessage = 'This department has no schedule entries.',
 }: Props) {
   const [pdf, setPdf] = useState<PdfState>({ url: null, failed: false });
@@ -73,9 +76,12 @@ export default function ScheduleApprovalPreviewModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3">
       <div inert={inert || undefined} role="dialog" aria-label={title} aria-modal={inert ? undefined : true} aria-hidden={inert || undefined} className="flex h-[95dvh] w-full max-w-7xl flex-col overflow-hidden rounded-xl border border-gray-300 bg-[#F7F4F0] shadow-2xl">
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-300 bg-white px-5 py-3">
-          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3"><h2 className="font-serif text-lg font-bold text-[#1A1410]">{title}</h2><span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase ${badge}`}>{statusLabel}</span></div>
-          <button type="button" onClick={onClose} aria-label="Close preview" className="shrink-0 rounded-lg p-1 text-gray-500 hover:bg-gray-100"><X size={20} /></button>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-300 bg-white px-4 py-2.5 sm:px-5 sm:py-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3"><h2 className="min-w-0 break-words font-serif text-base font-bold text-[#1A1410] sm:text-lg">{title}</h2>{statusLabel && <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase ${badge}`}>{statusLabel}</span>}</div>
+          <div className="flex shrink-0 items-center gap-2">
+            {headerActions}
+            <button type="button" onClick={onClose} aria-label="Close preview" className="shrink-0 rounded-lg p-1 text-gray-500 hover:bg-gray-100"><X size={20} /></button>
+          </div>
         </div>
         {checks && <div className="shrink-0 border-b border-gray-300 bg-white">{checks}</div>}
         <div className="flex min-h-0 flex-1 items-center justify-center bg-gray-100">

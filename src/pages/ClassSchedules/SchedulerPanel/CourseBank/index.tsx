@@ -1,5 +1,5 @@
 import type React from "react";
-import { AlertTriangle, BookOpen, CheckCircle2, Search } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Search } from "lucide-react";
 import type { Course, Section } from "../types";
 import type { SubjectClassification } from "../constants";
 import CategorySection from "./CategorySection";
@@ -29,6 +29,8 @@ interface CourseBankProps {
   handleDragStartFromBank: (e: React.DragEvent, id: string) => void;
   handleDragEnd: () => void;
   isLoading?: boolean;
+  /** Shown in the header: the selected section's curriculum picker. */
+  curriculumControl?: React.ReactNode;
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -57,7 +59,8 @@ export default function CourseBank({
   handleSubjectCardClick,
   handleDragStartFromBank,
   handleDragEnd,
-  isLoading = false
+  isLoading = false,
+  curriculumControl
 }: CourseBankProps) {
   if (!isCourseBankAvailable(isPhase2Active, currentStatus)) return null;
 
@@ -76,14 +79,12 @@ export default function CourseBank({
 
   return (
     <div id="schedule-builder-course-bank" className="flex h-[min(34rem,70vh)] w-full min-w-0 shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white lg:h-full lg:min-h-[24rem]">
-      <div className="shrink-0 border-b border-slate-200/80 px-4 py-3">
-        <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#4e0a10]/[0.07] text-[#4e0a10]">
-            <BookOpen className="h-4 w-4" />
-          </span>
+      <div className="relative shrink-0 border-b border-slate-200/80 px-4 py-3">
+        <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1 leading-tight">
             <h2 className="text-sm font-black text-slate-900">Manual Plotting</h2>
             <p className="mt-0.5 text-[11px] text-slate-500">Click a course, then a time slot — or drag it</p>
+            {!isLoading && curriculumControl && <div className="mt-2 flex">{curriculumControl}</div>}
           </div>
         </div>
 

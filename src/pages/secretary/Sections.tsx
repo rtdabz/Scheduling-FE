@@ -287,19 +287,24 @@ export default function SecretarySections() {
           header: 'Year Level',
           cell: info => <span className="font-bold text-gray-800">{yearLevelLabel(info.getValue() as string)}</span>
         },
+        // The section's term is always copied from its academic semester, so one column covers both.
         {
-          accessorKey: 'semester',
-          header: 'Semester',
-          cell: info => {
-            const val = info.getValue() as string;
-            return (
-              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border bg-blue-50 text-blue-700 border-blue-200 font-sans">
-                {val}
-              </span>
-            );
-          }
-        },
-        {
+          id: 'academic_semester',
+          accessorFn: (row) => row.academic_semester
+            ? `A.Y. ${row.academic_semester.academic_year} (${row.academic_semester.semester})`
+            : '—',
+          header: 'Academic Semester',
+          cell: info => (
+            <span className="text-gray-700 font-semibold text-xs">
+              {info.getValue() as string}
+            </span>
+          )
+        }
+      ];
+
+      // Non-VPAA users only see their own department's sections, so the column would repeat one value.
+      if (isVpaa) {
+        cols.push({
           accessorKey: 'department',
           header: 'Department',
           cell: info => {
@@ -310,35 +315,8 @@ export default function SecretarySections() {
               </span>
             );
           }
-        },
-        {
-          accessorKey: 'academic_semester',
-          header: 'Academic Semester',
-          cell: info => {
-            const semester = info.getValue() as Semester | null;
-            return (
-              <span className="text-gray-700 font-semibold text-xs">
-                {semester ? `A.Y. ${semester.academic_year} (${semester.semester})` : '—'}
-              </span>
-            );
-          }
-        },
-        {
-          accessorKey: 'status',
-          header: 'Status',
-          cell: info => {
-            const val = (info.getValue() as string) || 'active';
-            const badgeColor = val === 'active'
-              ? 'bg-green-50 text-green-700 border-green-200'
-              : 'bg-red-50 text-red-700 border-red-200';
-            return (
-              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${badgeColor}`}>
-                {val}
-              </span>
-            );
-          }
-        }
-      ];
+        });
+      }
 
       if (canManageSections) {
         cols.push({
@@ -378,7 +356,7 @@ export default function SecretarySections() {
 
       return cols;
     },
-    [canManageSections]
+    [canManageSections, isVpaa]
   );
 
   const table = useReactTable<Section>({
@@ -499,25 +477,11 @@ export default function SecretarySections() {
               <div className="py-12 text-center flex flex-col items-center justify-center">
                 <Users className="w-12 h-12 text-gray-300 mb-3" />
                 <h3 className="text-base font-bold text-gray-800">No sections added yet</h3>
-                <p className="text-xs text-gray-500 max-w-sm mt-1 mb-4">
+                <p className="text-xs text-gray-500 max-w-sm mt-1">
                   {canManageSections
                     ? "Get started by adding your department's first section to begin scheduling."
                     : 'Your department has not added any sections yet.'}
                 </p>
-                {canManageSections && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsEditMode(false);
-                      setEditingId(null);
-                      setIsModalOpen(true);
-                    }}
-                    className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
-                  >
-                    <Plus size={15} />
-                    <span>Add Section</span>
-                  </button>
-                )}
               </div>
             ) : undefined
           }

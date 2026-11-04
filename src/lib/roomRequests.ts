@@ -20,7 +20,16 @@ export interface RoomRequestRoom {
   room_code: string;
   building: string | null;
   room_type: string;
+  /** The room's current owner, which can differ from the request's recorded owner. */
   department_id: number | null;
+  is_archived?: boolean;
+}
+
+export interface RoomRequestSemester {
+  id: number;
+  academic_year: string;
+  semester: string;
+  is_active: boolean;
 }
 
 export interface RoomRequest {
@@ -29,9 +38,11 @@ export interface RoomRequest {
   purpose: string | null;
   review_remarks: string | null;
   room: RoomRequestRoom | null;
-  academic_semester: { id: number; academic_year: string; semester: string; is_active: boolean } | null;
+  academic_semester: RoomRequestSemester | null;
   requesting_department: RoomRequestDepartment | null;
   owner_department: RoomRequestDepartment | null;
+  /** The room was reassigned after this request was sent. */
+  owner_changed?: boolean;
   requester: { id: number; name: string } | null;
   reviewer: { id: number; name: string } | null;
   reviewed_at: string | null;
@@ -47,6 +58,7 @@ export interface RoomOccupancyBlock extends RoomRequestWindow {
 
 export interface RoomOccupancy {
   room: RoomRequestRoom;
+  semester?: RoomRequestSemester;
   opening_time: string;
   closing_time: string;
   occupied: RoomOccupancyBlock[];
@@ -87,31 +99,71 @@ export interface RoomOccupancySchedule {
 
 export interface RoomRequestInput {
   room_id: number;
+  semester_id?: number;
   purpose: string;
   windows: RoomRequestWindow[];
 }
 
 export const ROOM_REQUEST_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-export const fetchRoomRequests = async (params?: { status?: RoomRequestStatus }) =>
+export interface RoomRequestMutationResult {
+  message: string;
+  data: RoomRequest;
+  released_schedule_count?: number;
+  released_schedule_ids?: number[];
+}
+
+/** The active semester, or null when none is active. Other failures throw. */
+export const fetchActiveSemester = async (): Promise<RoomRequestSemester | null> => {
+  try {
+    return (await api.get<RoomRequestSemester>('/semesters/active')).data ?? null;
+  } catch (error) {
+    if ((error as { response?: { status?: number } })?.response?.status === 404) return null;
+    throw error;
+  }
+};
+
+export const fetchRoomRequests = async (params?: { status?: RoomRequestStatus; semester_id?: number }) =>
   (await api.get<RoomRequest[]>('/room-requests', { params })).data;
 
-export const fetchRoomOccupancy = async (roomId: number) =>
-  (await api.get<RoomOccupancy>(`/room-requests/rooms/${roomId}/occupancy`)).data;
+/** Omitting the semester lets the server default to the active one. */
+export const fetchRoomOccupancy = async (roomId: number, semesterId?: number | null) =>
+  (await api.get<RoomOccupancy>(
+    `/room-requests/rooms/${roomId}/occupancy`,
+    semesterId ? { params: { semester_id: semesterId } } : undefined,
+  )).data;
 
 export const submitRoomRequest = async (input: RoomRequestInput) =>
-  (await api.post<{ message: string; data: RoomRequest }>('/room-requests', input)).data;
+  (await api.post<RoomRequestMutationResult>('/room-requests', input)).data;
 
 export const cancelRoomRequest = async (id: number) =>
-  (await api.post<{ message: string; data: RoomRequest }>(`/room-requests/${id}/cancel`)).data;
+  (await api.post<RoomRequestMutationResult>(`/room-requests/${id}/cancel`)).data;
 
 export const reviewRoomRequest = async (id: number, action: 'approve' | 'reject' | 'revoke', remarks?: string) =>
-  (await api.post<{ message: string; data: RoomRequest }>(`/room-requests/${id}/${action}`, { remarks: remarks || undefined })).data;
+  (await api.post<RoomRequestMutationResult>(`/room-requests/${id}/${action}`, { remarks: remarks || undefined })).data;
+
+/** The recorded owner, falling back to the room's current owner for older rows. */
+export const getOwnerId = (request: RoomRequest): number | null =>
+  request.owner_department?.id ?? request.room?.department_id ?? null;
 
 export const toMinutes = (time: string): number => {
   const [hours, minutes] = time.split(':').map(Number);
   return (hours || 0) * 60 + (minutes || 0);
 };
+
+export const fromMinutes = (total: number): string =>
+  `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+
+export const formatDuration = (minutes: number): string => {
+  if (minutes <= 0) return '0 min';
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) return `${rest} min`;
+  return rest === 0 ? `${hours} hr` : `${hours} hr ${rest} min`;
+};
+
+export const formatSemester = (semester: { academic_year: string; semester: string } | null | undefined): string =>
+  semester ? `${semester.semester} Semester, AY ${semester.academic_year}` : 'Semester not set';
 
 export const formatClock = (time: string): string => {
   const total = toMinutes(time);
@@ -139,10 +191,23 @@ export const roomGrantFits = (
   );
 };
 
-export const windowConflicts = (window: RoomRequestWindow, occupied: RoomOccupancyBlock[]): RoomOccupancyBlock[] => {
+/** Exact-minute overlap; never rounds boundaries to the time grid. */
+export const windowConflicts = <T extends RoomRequestWindow>(window: RoomRequestWindow, occupied: T[]): T[] => {
   const start = toMinutes(window.start_time);
   const end = toMinutes(window.end_time);
   return occupied.filter(
     (block) => block.day === window.day && toMinutes(block.start_time) < end && start < toMinutes(block.end_time),
   );
 };
+
+/**
+ * Classes that would move to Room TBA when this grant ends: the borrower's classes in
+ * the room that overlap any granted window, matching the server's release rule.
+ */
+export const classesUnderGrant = (request: RoomRequest, schedules: RoomOccupancySchedule[]): RoomOccupancySchedule[] =>
+  schedules.filter(
+    (schedule) => schedule.department_id === request.requesting_department?.id
+      && schedule.room_id === request.room?.id
+      && (request.academic_semester == null || schedule.semester_id === request.academic_semester.id)
+      && request.windows.some((window) => windowConflicts(window, [schedule]).length > 0),
+  );

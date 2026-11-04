@@ -1,24 +1,54 @@
-import { ArrowRight } from 'lucide-react';
-import { isLinkedOnlineSession, roomTransferClassLabel, roomTransferDetailChanges, roomTransferMovedCount, type RoomTransferRequest } from '../../lib/roomRecovery';
-import { formatTime12h } from '../../lib/timeGrid';
+import { CalendarDays, CheckCircle2, Clock, OctagonAlert, XCircle } from 'lucide-react';
+import { roomTransferDetailChanges, roomTransferMovedCount, roomTransferStatusClass, ROOM_TRANSFER_STATUS_LABELS, type RoomTransferRequest } from '../../lib/roomRecovery';
 
-export default function RoomTransferChangesSummary({ request, onViewDetails }: { request: RoomTransferRequest; onViewDetails: (button: HTMLButtonElement) => void }) {
+const recordedAt = (value?: string | null) => (value ? new Date(value).toLocaleString() : null);
+const recorded = (facts: [string, string | null][]) => facts.filter((fact): fact is [string, string] => Boolean(fact[1]));
+
+function Facts({ facts, className }: { facts: [string, string][]; className: string }) {
+  return <dl className={`grid gap-x-6 gap-y-3 text-xs ${className}`}>
+    {facts.map(([label, value]) => <div key={label} className="min-w-0">
+      <dt className="font-semibold text-slate-500">{label}</dt>
+      <dd className="mt-0.5 break-words font-medium text-slate-900">{value}</dd>
+    </div>)}
+  </dl>;
+}
+
+// The request the listed changes belong to, as it was stored; fields it never recorded are left out.
+export default function RoomTransferChangesSummary({ request }: { request: RoomTransferRequest }) {
   const changes = roomTransferDetailChanges(request);
   const moved = roomTransferMovedCount(request);
-  const online = changes.filter(isLinkedOnlineSession).length;
-  const time = (row: typeof changes[number]['before']) => `${row.day} ${formatTime12h(row.start_time)}–${formatTime12h(row.end_time)}`;
-  return <section aria-label="Changes Summary" className="px-4 py-3 sm:px-5">
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h3 className="text-sm font-bold text-gray-800">Changes Summary</h3><p className="text-xs text-gray-600">{moved} {moved === 1 ? 'schedule' : 'schedules'} affected{online > 0 && ` · ${online} linked online ${online === 1 ? 'session' : 'sessions'}`}</p></div>
-      <button type="button" aria-haspopup="dialog" onClick={event => onViewDetails(event.currentTarget)} className="shrink-0 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:bg-slate-50">View Details</button>
+  const online = changes.length - moved;
+  const vpaaDecided = request.status === 'approved' || request.status === 'rejected_by_vpaa';
+  const StatusIcon = request.status.startsWith('pending_') ? Clock : request.status.startsWith('rejected_') ? XCircle : CheckCircle2;
+  const facts = recorded([
+    ['Department', request.department],
+    ['Academic year and semester', request.semester_label],
+    ['Requested by', request.submitted_by],
+    ['Submitted', recordedAt(request.submitted_at)],
+  ]);
+  const reviews = recorded([
+    ['Dean reviewed', recordedAt(request.dean_reviewed_at)],
+    ['VPAA reviewed', vpaaDecided ? recordedAt(request.reviewed_at) : null],
+  ]);
+  return <section aria-label="Changes Summary" className="shrink-0 space-y-3">
+    <div className="rounded-xl border border-slate-200 bg-white">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-slate-100 px-4 py-3">
+        <p className="flex items-center"><span className="sr-only">Approval status: </span>
+          <span className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-bold ${roomTransferStatusClass(request.status)}`}>
+            <StatusIcon size={14} aria-hidden="true" />{ROOM_TRANSFER_STATUS_LABELS[request.status]}
+          </span>
+        </p>
+        <p className="flex items-baseline gap-1.5 text-xs text-slate-600"><span className="text-lg font-bold tabular-nums text-[#5A1220]">{moved}</span><span>affected {moved === 1 ? 'meeting' : 'meetings'}</span></p>
+        <p className="flex items-baseline gap-1.5 text-xs text-slate-600"><span className="text-lg font-bold tabular-nums text-[#5A1220]">{online}</span><span>linked online {online === 1 ? 'session' : 'sessions'}</span></p>
+      </div>
+      <Facts facts={facts} className="px-4 py-3 sm:grid-cols-2 lg:grid-cols-4" />
+      {reviews.length > 0 && <Facts facts={reviews} className="border-t border-slate-100 px-4 py-3 sm:grid-cols-2 lg:grid-cols-4" />}
     </div>
-    {request.rejection_reason && <p className="mt-2 text-xs text-red-700">Rejection reason: {request.rejection_reason}</p>}
-    <div className="mt-2">
-      <ul className="divide-y divide-gray-100">{changes.slice(0, 2).map(change => <li key={change.schedule_id} className="grid gap-x-5 gap-y-1 py-2 text-xs sm:grid-cols-[minmax(8rem,1fr)_minmax(0,2fr)]">
-        <p className="font-semibold text-gray-800">{roomTransferClassLabel(change)}</p>
-        <div className="space-y-1 text-gray-600"><p className="flex flex-wrap items-center gap-x-2"><span><span className="sr-only">Original room: </span>{change.before.room}</span><ArrowRight size={12} aria-label="to" /><strong className="font-semibold text-[#4e0a10]"><span className="sr-only">Proposed room: </span>{change.after.room}</strong></p><p><span className="font-medium">Original:</span> {time(change.before)}<br className="sm:hidden" /><span className="hidden sm:inline"> · </span><span className="font-medium text-gray-800">Proposed:</span> {time(change.after)}</p></div>
-      </li>)}</ul>
-      {changes.length > 2 && <p className="pb-1 pt-2 text-xs text-gray-600">{changes.length - 2} more {changes.length - 2 === 1 ? 'schedule' : 'schedules'}. View Details to see all changes.</p>}
-    </div>
+    {request.enables_sunday && <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+      <CalendarDays size={14} aria-hidden="true" className="mt-px shrink-0" /><p>Final approval also enables Sunday classes for {request.department}.</p>
+    </div>}
+    {request.rejection_reason && <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+      <OctagonAlert size={14} aria-hidden="true" className="mt-px shrink-0" /><p>Rejection reason: {request.rejection_reason}</p>
+    </div>}
   </section>;
 }

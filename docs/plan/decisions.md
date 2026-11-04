@@ -106,12 +106,18 @@ records and must not be used to reconstruct authoritative workflow state.
 ## Access follows the role; Manage Access was removed
 
 At the adviser's request, User Management no longer has a per-account Manage
-Access matrix. Capabilities come from the role alone: Secretaries and Program
-Heads share one schedule-building set (view, create, update, delete, generate,
-submit, withdraw, instructor and cross-department assignment, room requests),
-Deans keep view and dean approval, and the VPAA keeps every capability.
-Cross-department assignment is included because existing secretaries relied on
-it. The capability middleware still guards every route, so moving to roles
+Access matrix. Capabilities come from the role alone (`config/capabilities.php`
+`role_defaults` in the backend): Secretaries and Program Heads share one
+schedule-building set (view, create, update, delete, generate, submit, withdraw,
+instructor and cross-department assignment, curriculum authoring). Only
+Secretaries additionally request other departments' rooms, review requests for
+their own department's rooms, and assign rooms to programs. Deans keep view and
+dean approval. The VPAA views, assigns instructors, approves schedules, and
+manages designations; it does not build schedules or take part in room
+requests, and is only notified of them. Cross-department assignment is included
+because existing secretaries relied on it. (Corrected 2026-11-03: this entry
+previously listed room requests for Program Heads and said the VPAA kept every
+capability; neither matched the enforced role defaults.) The capability middleware still guards every route, so moving to roles
 changed where grants come from, not how they are enforced.
 
 Migration `2026_09_15_000001` re-syncs the roles before deleting per-account

@@ -1,5 +1,5 @@
 import { AlertOctagon, Check } from 'lucide-react';
-import type { GroupTotals } from '../../../lib/curriculumImport/draft';
+import { totalsDiffer, type GroupTotals } from '../../../lib/curriculumImport/draft';
 import { TERM_LABELS, YEAR_LABELS } from '../../../lib/curriculumImport/normalize';
 import type { PlacementTerm } from '../../../lib/curriculumImport/types';
 
@@ -15,9 +15,6 @@ interface ImportTermRailProps {
 }
 
 const TERM_SHORT: Record<PlacementTerm, string> = { 1: 'First semester', 2: 'Second semester', 3: 'Summer' };
-
-const totalsDiffer = (group: GroupTotals) => !!group.reported
-  && (group.reported.lec !== group.calculated.lec || group.reported.lab !== group.calculated.lab || group.reported.tu !== group.calculated.tu);
 
 /**
  * Year → term navigation that doubles as the sheet's TOTAL CREDITS column: each term shows its calculated

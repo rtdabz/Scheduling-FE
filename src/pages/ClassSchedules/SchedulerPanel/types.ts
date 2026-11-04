@@ -64,6 +64,8 @@ export interface Course {
   labHours: number;
   /** Class minutes each curriculum recorded for the course on import, by curriculum id. */
   classMinutesByCurriculum?: Record<string, RecordedClassMinutes>;
+  /** Where each active curriculum places the course; absent when the payload predates them. */
+  curriculumPlacements?: CurriculumPlacement[];
   /** Set once the course is placed in a section's curriculum (placeCourse). */
   lectureMinutes?: number | null;
   laboratoryMinutes?: number | null;
@@ -83,6 +85,12 @@ export interface Course {
   status: "active" | "inactive";
 }
 export type Subject = Course;
+
+export interface CurriculumPlacement {
+  curriculumId: number;
+  yearLevel: YearLevel;
+  semester: SemesterPeriod;
+}
 
 export interface RecordedClassMinutes {
   lecture: number | null;
@@ -281,6 +289,7 @@ export interface ApiSemesterRecord {
 
 export interface ApiCourseRecord {
   class_minutes_by_curriculum?: Record<string, RecordedClassMinutes> | null;
+  curriculum_placements?: { curriculum_id: number | string; year_level: number | string; semester: SemesterPeriod }[] | null;
   id: number | string;
   course_code: string;
   subject_code?: string;

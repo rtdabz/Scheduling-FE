@@ -21,6 +21,7 @@ export const CACHE_GROUPS = {
   approvals: ['department-schedule-status:'],
   dashboards: ['dashboard:'],
   settings: ['page:settings', 'scheduler:scheduling-settings:'],
+  archive: ['page:archive:'],
 } as const;
 
 export type CacheGroupName = keyof typeof CACHE_GROUPS;

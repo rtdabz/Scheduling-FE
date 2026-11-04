@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Eye } from 'lucide-react';
 import {
@@ -18,7 +18,9 @@ import LoadErrorBanner from '../../components/ui/LoadErrorBanner';
 import TruncatedDataNotice from '../../components/ui/TruncatedDataNotice';
 import ScheduleApprovalPreviewModal from '../../components/scheduling/ScheduleApprovalPreviewModal';
 import ScheduleRejectionModal from '../../components/scheduling/ScheduleRejectionModal';
-import PreApprovalCheck from '../../components/scheduling/PreApprovalCheck';
+import ScheduleApprovalDetailsModal from '../../components/scheduling/ScheduleApprovalDetailsModal';
+import { PreApprovalCheckResults } from '../../components/scheduling/PreApprovalCheck';
+import { usePreApprovalCheck } from '../../components/scheduling/usePreApprovalCheck';
 import RevisionChangesPanel from '../../components/scheduling/RevisionChangesPanel';
 import RevisionDiffPanel from '../../components/scheduling/RevisionDiffPanel';
 import api from '../../lib/api';
@@ -224,12 +226,6 @@ const formatDate = (value: string | null) => {
   return `${date.toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: '2-digit', year: 'numeric' })} ${date.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}`;
 };
 
-const previewStatusOf = (status: ApprovalDisplayStatus, pending: boolean): 'pending' | 'approved' | 'rejected' => {
-  if (pending || status === 'revision' || status === 'submitted') return 'pending';
-  if (status === 'rejected' || status === 'rejected_by_dean') return 'rejected';
-  return 'approved';
-};
-
 const STAGE_ENDPOINT: Record<ApprovalStage, { approve: string; reject: string }> = {
   dean: { approve: 'approve-by-dean', reject: 'return-by-dean' },
   vpaa: { approve: 'approve-by-vpaa', reject: 'return-by-vpaa' },
@@ -271,7 +267,8 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
 
   const [viewEntry, setViewEntry] = useState<ScheduleApproval | null>(null);
-  const [viewCheck, setViewCheck] = useState<{ entryKey: string; open: number } | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const detailsButtonRef = useRef<HTMLButtonElement>(null);
   const [viewSnapshot, setViewSnapshot] = useState<{ submissionId: number; schedules: ScheduleItem[] | null } | null>(null);
   const [tbaApproval, setTbaApproval] = useState<ScheduleApproval | null>(null);
   const [tbaReason, setTbaReason] = useState('');
@@ -513,11 +510,35 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     };
   }, [inPackage, printSource, rawSchedules, viewEntry, viewSnapshotLoading, viewSnapshotSchedules]);
 
-  const viewEntryKey = viewEntry?.entryKey ?? null;
-  const reportViewConflicts = useCallback((open: number) => {
-    if (viewEntryKey !== null) setViewCheck({ entryKey: viewEntryKey, open });
-  }, [viewEntryKey]);
-  const viewOpenConflicts = viewCheck !== null && viewCheck.entryKey === viewEntryKey ? viewCheck.open : 0;
+  const viewPending = viewEntry !== null && !viewEntry.transfer && viewEntry.requestType === 'approval' && isPendingFor(stage, viewEntry.status);
+  // The check runs whenever a pending package is open, so approval stays blocked even while details are hidden.
+  const viewCheck = usePreApprovalCheck({
+    departmentId: viewEntry && !viewEntry.transfer ? viewEntry.id : null,
+    sectionIds: viewEntry?.workflowSectionIds ?? [],
+    enabled: viewPending,
+  });
+  const viewOpenConflicts = viewCheck.status === 'ready' ? viewCheck.result.open.length : 0;
+  const approveBlockedReason = viewOpenConflicts > 0
+    ? `This schedule has ${viewOpenConflicts} open conflict${viewOpenConflicts === 1 ? '' : 's'}. Return it for revision.`
+    : null;
+
+  const openView = useCallback((entry: ScheduleApproval, withDetails = false) => {
+    setViewEntry(entry);
+    setDetailsOpen(withDetails && !entry.transfer);
+  }, []);
+  const closeView = useCallback(() => {
+    setViewEntry(null);
+    setDetailsOpen(false);
+  }, []);
+  const closeDetails = useCallback(() => setDetailsOpen(false), []);
+
+  // Details can open straight from the queue's Modified badge; however they opened, closing them returns
+  // focus to View details in the preview rather than to the control behind the preview.
+  const detailsWasOpen = useRef(false);
+  useEffect(() => {
+    if (detailsWasOpen.current && !detailsOpen && viewEntry) detailsButtonRef.current?.focus();
+    detailsWasOpen.current = detailsOpen;
+  }, [detailsOpen, viewEntry]);
 
   const markEntry = (entry: ScheduleApproval, status: ApprovalDisplayStatus, submissionStatus: QueueSubmissionStatus) => {
     const now = new Date().toISOString();
@@ -690,7 +711,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
           <button
             type="button"
             title="See what changed from the previous version"
-            onClick={() => setViewEntry(info.row.original)}
+            onClick={() => openView(info.row.original, true)}
             className={`${badgeClass} cursor-pointer underline decoration-dotted underline-offset-2 hover:brightness-95`}
           >
             {REVISION_STATUS_LABELS[revision]}
@@ -706,13 +727,13 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       enableSorting: false,
       cell: ({ row }) => (
         <div className="flex justify-end">
-          <TableActionButton label="View" variant="view" onClick={() => setViewEntry(row.original)}>
+          <TableActionButton label="View" variant="view" onClick={() => openView(row.original)}>
             <Eye size={17} />
           </TableActionButton>
         </div>
       ),
     },
-  ], []);
+  ], [openView]);
 
   const table = useReactTable<ScheduleApproval>({
     data: filteredData,
@@ -728,7 +749,6 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
   });
 
   const selectClass = 'px-3.5 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors';
-  const viewPending = viewEntry !== null && !viewEntry.transfer && viewEntry.requestType === 'approval' && isPendingFor(stage, viewEntry.status);
   const viewTransferId = viewEntry ? viewEntry.transfer?.id : params.get('room_transfer');
   const viewTransfer = transfers.find(transfer => transfer.id === viewTransferId);
 
@@ -823,35 +843,67 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
 
       {viewTransfer && <RoomTransferRequests transfers={[viewTransfer]} stage={stage} onClose={closeTransfer} onReviewed={transferReviewed} />}
       {viewEntry && !viewEntry.transfer && (
-        <ScheduleApprovalPreviewModal
-          open
-          title={`${entryLabel(viewEntry)} Schedule${viewSnapshotSchedules ? ' (as submitted)' : ''}`}
-          status={previewStatusOf(viewEntry.status, viewPending)}
-          statusLabel={STATUS_LABELS[viewEntry.status]}
-          printInput={printInput}
-          isLoading={viewSnapshotLoading}
-          canAct={viewPending}
-          checks={viewPending ? (
-            <>
-              {viewEntry.revisionStatus === 'modified' && <RevisionDiffPanel submissionId={viewEntry.submissionId} />}
-              <PreApprovalCheck
-                departmentId={viewEntry.id}
-                sectionIds={viewEntry.workflowSectionIds}
-                onOpenConflicts={reportViewConflicts}
-              />
-            </>
-          ) : viewIsClosed ? (
-            <RevisionChangesPanel submissionId={viewEntry.submissionId} />
-          ) : viewEntry.revisionStatus === 'modified' ? (
-            <RevisionDiffPanel submissionId={viewEntry.submissionId} />
-          ) : undefined}
-          approveBlockedReason={viewOpenConflicts > 0
-            ? `This schedule has ${viewOpenConflicts} open conflict${viewOpenConflicts === 1 ? '' : 's'}. Return it for revision.`
-            : null}
-          onApprove={() => { void handleApprove(viewEntry); setViewEntry(null); }}
-          onReject={() => { openReject(viewEntry); setViewEntry(null); }}
-          onClose={() => setViewEntry(null)}
-        />
+        <>
+          <ScheduleApprovalPreviewModal
+            open
+            title={`${entryLabel(viewEntry)} Schedule${viewSnapshotSchedules ? ' (as submitted)' : ''}`}
+            printInput={printInput}
+            isLoading={viewSnapshotLoading}
+            canAct={viewPending}
+            inert={detailsOpen}
+            closeOnEscape
+            headerActions={(
+              <button
+                ref={detailsButtonRef}
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded={detailsOpen}
+                onClick={() => setDetailsOpen(true)}
+                className="whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A]"
+              >
+                View details
+              </button>
+            )}
+            approveBlockedReason={approveBlockedReason}
+            onApprove={() => { void handleApprove(viewEntry); closeView(); }}
+            onReject={() => { openReject(viewEntry); closeView(); }}
+            onClose={closeView}
+          />
+          <ScheduleApprovalDetailsModal
+            isOpen={detailsOpen}
+            onClose={closeDetails}
+            scheduleTitle={`${entryLabel(viewEntry)} Schedule${viewSnapshotSchedules ? ' (as submitted)' : ''}`}
+            status={{ label: STATUS_LABELS[viewEntry.status], badgeClassName: STATUS_BADGES[viewEntry.status] }}
+            revision={{ label: `Revision: ${REVISION_STATUS_LABELS[viewEntry.revisionStatus]}`, badgeClassName: REVISION_STATUS_BADGE[viewEntry.revisionStatus] }}
+            facts={[
+              { label: 'Sections', value: `${viewEntry.sectionCount} — ${viewEntry.section}` },
+              { label: 'Subjects scheduled', value: viewEntry.subjectsScheduled },
+              { label: 'Submitted by', value: viewEntry.submittedBy },
+              { label: 'Submitted', value: formatDate(viewEntry.submittedAt || null) },
+              { label: 'Dean reviewed', value: formatDate(viewEntry.deanReviewedAt) },
+              ...(viewSnapshotSchedules ? [{ label: 'Document shows', value: 'The version as submitted' }] : []),
+            ]}
+            changes={viewIsClosed ? (
+              <RevisionChangesPanel submissionId={viewEntry.submissionId} />
+            ) : viewEntry.revisionStatus === 'modified' ? (
+              <RevisionDiffPanel submissionId={viewEntry.submissionId} />
+            ) : (
+              <p className="text-xs font-semibold text-slate-500">
+                {viewEntry.revisionStatus === 'reset'
+                  ? 'This version was started over, so there is no earlier version to compare it with.'
+                  : 'This is the first submitted version, so there are no changes from an earlier version.'}
+              </p>
+            )}
+            checks={viewPending ? (
+              <PreApprovalCheckResults state={viewCheck} className="" />
+            ) : (
+              <p className="text-xs font-semibold text-slate-500">
+                Conflict and rule checks run while a schedule is awaiting your approval. This schedule is not pending your review.
+              </p>
+            )}
+            approveBlockedReason={viewPending ? approveBlockedReason : null}
+          />
+        </>
       )}
 
       <ConfirmModal

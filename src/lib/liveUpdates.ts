@@ -21,17 +21,17 @@ const DASHBOARD_TOPICS: ReadonlySet<LiveTopic> = new Set([
 ]);
 
 const TOPIC_CACHE_GROUPS: Record<LiveTopic, CacheGroupName[]> = {
-  schedules: ['schedules'],
+  schedules: ['schedules', 'archive'],
   approvals: ['approvals', 'schedules'],
   assignments: ['assignments'],
   sections: ['sections'],
-  rooms: ['rooms'],
-  faculty: ['faculty'],
-  courses: ['courses'],
+  rooms: ['rooms', 'archive'],
+  faculty: ['faculty', 'archive'],
+  courses: ['courses', 'archive'],
   curriculum: ['curriculum'],
-  departments: ['departments'],
-  users: ['users'],
-  settings: ['settings'],
+  departments: ['departments', 'archive'],
+  users: ['users', 'archive'],
+  settings: ['settings', 'archive'],
   notifications: [],
 };
 

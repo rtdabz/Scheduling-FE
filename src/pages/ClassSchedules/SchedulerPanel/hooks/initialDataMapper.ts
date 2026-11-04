@@ -221,6 +221,11 @@ export const mapApiCourse = (s: ApiCourseRecord): Subject => {
     lectureHours: toNumber(s.lecture_hours),
     labHours: toNumber(s.lab_hours),
     classMinutesByCurriculum: s.class_minutes_by_curriculum ?? undefined,
+    curriculumPlacements: s.curriculum_placements?.map((placement) => ({
+      curriculumId: Number(placement.curriculum_id),
+      yearLevel: normalizeYearLevel(placement.year_level),
+      semester: placement.semester,
+    })),
     category: ((s.course_category ?? s.subject_category) as string) === "major" ? "major" : "minor",
     semester: s.semester,
     departmentId: s.department_id ?? null,

@@ -286,7 +286,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
         </button>
       </div>
 
-      <nav id="primary-navigation" aria-label="Primary navigation" className="relative z-10 flex-1 overflow-y-auto overscroll-contain px-3 py-5 text-[#E8D5C4] md:[scrollbar-width:none] md:[&::-webkit-scrollbar]:hidden">
+      <nav id="primary-navigation" aria-label="Primary navigation" className="relative z-10 flex-1 overflow-y-auto overscroll-contain px-3 py-5 text-[#E8D5C4] [scrollbar-width:thin] [scrollbar-color:rgba(232,213,196,0.3)_transparent]">
         {navItems.map((section, sectionIdx) => (
           <div key={section.section} className="mb-4 last:mb-0">
             {sectionIdx > 0 && (

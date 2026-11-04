@@ -1,8 +1,10 @@
+import type { NoteRun } from '../../types/curriculum';
 import { isSuspiciousCode, isSummerHeading, parseCredit, stripFormBlanks, termOf, yearHeading } from './normalize';
+import { buildNote, DEFAULT_TEXT_COLOR, FORM_FURNITURE, NOTE_START, type NoteChar } from './notes';
 import { metadataFromLines } from './tabular';
-import type { Extraction, ExtractedGroup, ExtractedRow, ExtractionFlag, PlacementTerm, ReportedTotals } from './types';
+import type { Extraction, ExtractedGroup, ExtractedRow, ExtractionFlag, PlacementTerm, ReportedTotals, SourceNote, UnreadRegion } from './types';
 
-export const PDF_EXTRACTOR_VERSION = 'tcc-grid-pdfjs/1';
+export const PDF_EXTRACTOR_VERSION = 'tcc-grid-pdfjs/2';
 
 /** One positioned text run, in top-down page coordinates (points). */
 export interface PdfTextItem {
@@ -12,6 +14,8 @@ export interface PdfTextItem {
   y: number;
   width: number;
   height: number;
+  /** Fill colours over `str`; null when they could not be matched, absent when not read at all. */
+  colors?: NoteRun[] | null;
 }
 
 export interface PdfPageText {
@@ -19,6 +23,8 @@ export interface PdfPageText {
   width: number;
   height: number;
   items: PdfTextItem[];
+  /** Painted image bounds, top-down: [x0, y0, x1, y1]. */
+  images?: [number, number, number, number][];
 }
 
 interface Heading {
@@ -172,7 +178,8 @@ const joinText = (items: PdfTextItem[]) => items
   .replace(/\s+/g, ' ')
   .trim();
 
-const readTable = (header: TableHeader, items: PdfTextItem[], rows: ExtractedRow[], groups: ExtractedGroup[], notes: string[], warnings: string[]) => {
+const readTable = (header: TableHeader, items: PdfTextItem[], rows: ExtractedRow[], groups: ExtractedGroup[], consumed: Set<PdfTextItem>, warnings: string[]) => {
+  items.filter((item) => Math.abs(item.y - header.y) <= LINE_TOLERANCE && item.x >= header.left && item.x < header.right).forEach((item) => consumed.add(item));
   const columns = numericColumns(header);
   if (!columns) {
     warnings.push(`Page ${header.page}: a table near y=${Math.round(header.y)} has no Lec/Lab/TU headers; it was not read.`);
@@ -216,6 +223,7 @@ const readTable = (header: TableHeader, items: PdfTextItem[], rows: ExtractedRow
     if (header.term === null) flags.add('unmapped_term');
     if (header.year === null) flags.add('unmapped_year');
     const all = [anchor, ...cells];
+    all.forEach((item) => consumed.add(item));
     rows.push({
       year_level: header.year,
       semester: header.term,
@@ -236,16 +244,75 @@ const readTable = (header: TableHeader, items: PdfTextItem[], rows: ExtractedRow
   if (header.year !== null && header.term !== null) {
     let reported: ReportedTotals | null = null;
     if (total) {
+      region.filter((item) => sameLine(item, total)).forEach((item) => consumed.add(item));
       const totalNumbers = readNumbers(region.filter((item) => sameLine(item, total) && item.x >= titleRight && item.x < columns.numericRight), columns);
       reported = totalNumbers.values;
       if (totalNumbers.flags.includes('ambiguous_units')) warnings.push(`Year ${header.year}, term ${header.term}: the printed total could not be read unambiguously.`);
     }
     groups.push({ year_level: header.year, semester: header.term, reported });
   }
+};
 
-  for (const line of lines(region.filter((item) => item.y > rowLimit))) {
+const isColored = (item: PdfTextItem) => (item.colors ?? []).some((run) => run.color !== null && run.color !== DEFAULT_TEXT_COLOR);
+
+/** Characters of a line with their colours; items on one line are joined by a space, as laid out. */
+const lineChars = (line: PdfTextItem[]): NoteChar[] => line.flatMap((item, index) => {
+  const colors = item.colors ? item.colors.flatMap((run) => Array<string | null>(run.length).fill(run.color)) : [];
+  const chars = [...item.str].map((ch, offset) => ({ ch, color: colors[offset] ?? null }));
+  return index === 0 ? chars : [{ ch: ' ', color: chars[0]?.color ?? null }, ...chars];
+});
+
+/**
+ * Text left after courses, headers, totals, headings and the letterhead. A line opening with a note marker,
+ * or printed in a colour, starts a note; lines just below it continue it. Form furniture is skipped, and
+ * anything else is reported as unread so a reviewer sees it instead of it disappearing.
+ */
+const readNotes = (page: PdfPageText, remaining: PdfTextItem[], headers: TableHeader[], headings: Heading[], notes: SourceNote[], unread: UnreadRegion[]) => {
+  const groups: PdfTextItem[][][] = [];
+  let current: { lines: PdfTextItem[][]; x: number; lastY: number; lastHeight: number } | null = null;
+  for (const line of lines(remaining)) {
     const text = stripFormBlanks(lineText(line));
-    if (/^note\b/i.test(text)) notes.push(text);
+    if (text === '') continue;
+    if (line.every((item) => FORM_FURNITURE.test(stripFormBlanks(item.str)) || stripFormBlanks(item.str) === '')) {
+      current = null;
+      continue;
+    }
+    const starts = NOTE_START.test(text);
+    const continues = current !== null && line[0].y - current.lastY <= Math.max(current.lastHeight * 1.9, 10) && line[0].x >= current.x - 6;
+    if (current && continues && !starts) {
+      current.lines.push(line);
+      current.lastY = line[0].y;
+      current.lastHeight = line[0].height;
+    } else if (starts || line.some(isColored)) {
+      current = { lines: [line], x: line[0].x, lastY: line[0].y, lastHeight: line[0].height };
+      groups.push(current.lines);
+    } else {
+      current = null;
+      unread.push({ reason: 'unrecognized_text', page: page.page, bbox: bboxOf(line), text: lineText(line).slice(0, 500) });
+    }
+  }
+
+  for (const group of groups) {
+    const items = group.flat();
+    const [x0, y0] = bboxOf(items);
+    // Position is evidence, not a rule: a note inside a year's tables belongs to that year until reviewed.
+    const table = headers.find((header) => y0 > header.y && y0 < header.bottom && x0 >= header.left && x0 < header.right && header.year !== null);
+    const year = table?.year ?? headings.filter((heading) => heading.y < y0 && heading.year !== null).sort((a, b) => b.y - a.y)[0]?.year ?? null;
+    notes.push(buildNote(
+      `n${notes.length + 1}`,
+      group.map(lineChars),
+      { kind: 'pdf', page: page.page, bbox: bboxOf(items) },
+      year === null ? { level: 'curriculum' } : { level: 'year', year_level: year },
+      'read',
+    ));
+  }
+
+  // Images below the letterhead can hold notes that text extraction cannot see.
+  const bodyTop = Math.min(...headers.map((header) => header.y));
+  for (const [x0, y0, x1, y1] of page.images ?? []) {
+    if (x1 - x0 >= 20 && y1 - y0 >= 6 && y1 > bodyTop) {
+      unread.push({ reason: 'image', page: page.page, bbox: [x0, y0, x1, y1].map((value) => Math.round(value * 100) / 100) as [number, number, number, number] });
+    }
   }
 };
 
@@ -258,7 +325,8 @@ const readMetadata = (items: PdfTextItem[], firstTableY: number) => metadataFrom
 export const extractCurriculumLayout = (pages: PdfPageText[]): Extraction => {
   const rows: ExtractedRow[] = [];
   const groups: ExtractedGroup[] = [];
-  const notes: string[] = [];
+  const notes: SourceNote[] = [];
+  const unread: UnreadRegion[] = [];
   const warnings: string[] = [];
   let metadata: ReturnType<typeof readMetadata> | null = null;
 
@@ -270,8 +338,12 @@ export const extractCurriculumLayout = (pages: PdfPageText[]): Extraction => {
       if (items.length > 0) warnings.push(`Page ${page.page} has no recognizable curriculum table.`);
       continue;
     }
-    metadata ??= readMetadata(items, Math.min(...headings.map((heading) => heading.y), ...headers.map((header) => header.y)));
-    for (const header of headers) readTable(header, items, rows, groups, notes, warnings);
+    const firstTableY = Math.min(...headings.map((heading) => heading.y), ...headers.map((header) => header.y));
+    metadata ??= readMetadata(items, firstTableY);
+    // The letterhead and metadata above the first table, and the heading lines, are not notes.
+    const consumed = new Set(items.filter((item) => item.y < firstTableY || headings.some((heading) => Math.abs(item.y - heading.y) <= LINE_TOLERANCE)));
+    for (const header of headers) readTable(header, items, rows, groups, consumed, warnings);
+    readNotes(page, items.filter((item) => !consumed.has(item)), headers, headings, notes, unread);
   }
 
   if (pages.every((page) => page.items.every((item) => item.str.trim() === ''))) {
@@ -281,9 +353,11 @@ export const extractCurriculumLayout = (pages: PdfPageText[]): Extraction => {
   return {
     format: 'pdf',
     extractor_version: PDF_EXTRACTOR_VERSION,
-    metadata: { ...(metadata ?? metadataFromLines([])), notes },
+    metadata: { ...(metadata ?? metadataFromLines([])), notes: notes.map((note) => note.text) },
     groups,
     rows,
+    notes,
+    unread,
     warnings,
   };
 };

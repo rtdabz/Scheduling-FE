@@ -38,6 +38,7 @@ interface RoomViewModalProps {
   setRoomViewRoomId: (value: string) => void;
   schedules: ScheduleItem[];
   departments: Department[];
+  activeSemester?: { id: number | string } | null;
 }
 
 
@@ -49,6 +50,7 @@ export default function RoomViewModal({
   setRoomViewRoomId,
   schedules,
   departments,
+  activeSemester,
 }: RoomViewModalProps) {
   const SLOT_COUNT = slotCount();
   const [selectedSchedule, setSelectedSchedule] = useState<CalendarSchedule | null>(null);
@@ -71,7 +73,7 @@ export default function RoomViewModal({
   const lendableRoomId = room && (room.roomType === "lecture" || room.roomType === "laboratory") && isRoomViewOpen
     ? Number(room.id) || null
     : null;
-  const { grants } = useRoomGrants(lendableRoomId);
+  const { grants } = useRoomGrants(lendableRoomId, activeSemester ? Number(activeSemester.id) || null : null);
   const reservations = useMemo<GanttReservation[]>(() => grants
     .map((grant) => ({
       dayIndex: CALENDAR_DAYS.indexOf(grant.day as (typeof CALENDAR_DAYS)[number]),

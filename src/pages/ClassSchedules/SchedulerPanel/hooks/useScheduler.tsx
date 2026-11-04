@@ -26,7 +26,7 @@ import type {
   WithdrawalStage
 } from "../types";
 import { DEAN_REQUIRED_MESSAGE } from "../../../../hooks/useDepartmentScheduleStatus";
-import { consecutiveMeetingSlots, laboratoryComponentSlots, placeCourse, sortSplitMeetingsForEdit, type SchedulingRoomSettings } from "../courseSlotPlan";
+import { consecutiveMeetingSlots, courseInCurriculum, laboratoryComponentSlots, placeCourse, sortSplitMeetingsForEdit, type SchedulingRoomSettings } from "../courseSlotPlan";
 import { buildSectionClearCandidates } from "../sectionClearCandidates";
 import { buildSectionFinalizeCandidates, buildSectionReassignCandidates } from "../sectionFinalizeCandidates";
 import { getSubjectTotalSlots } from "../types";
@@ -710,11 +710,21 @@ export const useScheduler = () => {
     () => sections.find((s) => s.id === selectedSectionId),
     [sections, selectedSectionId]
   );
-  // Courses carry the class minutes the selected section's curriculum recorded on import.
+  // Courses carry the placement and class minutes the selected section's curriculum recorded.
+  const selectedCurriculumId = selectedSection?.curriculumId ?? null;
   const subjects = useMemo(
-    () => rawSubjects.map((subject) => placeCourse(subject, selectedSection?.curriculumId)),
-    [rawSubjects, selectedSection?.curriculumId]
+    () => rawSubjects.map((subject) => placeCourse(subject, selectedCurriculumId)),
+    [rawSubjects, selectedCurriculumId]
   );
+
+  // A course picked under another section or curriculum is not an option any more.
+  const courseScopeKey = `${selectedSectionId}:${selectedCurriculumId ?? ""}`;
+  const [lastCourseScopeKey, setLastCourseScopeKey] = useState(courseScopeKey);
+  if (lastCourseScopeKey !== courseScopeKey) {
+    setLastCourseScopeKey(courseScopeKey);
+    setPlacementSubjectId(null);
+    setDragSubjectId(null);
+  }
 
   const normalizeSemester = useCallback((sem?: string | null): string => {
     if (!sem) return "";
@@ -725,10 +735,12 @@ export const useScheduler = () => {
     return s;
   }, []);
 
+  // Each section reads its own curriculum, so two sections of one year level may differ.
   const coursesForSection = useCallback((section: Section) => {
     const sectionSemester = normalizeSemester(section.semester);
-    return subjects.filter((s) => {
+    return rawSubjects.map((subject) => placeCourse(subject, section.curriculumId)).filter((s) => {
       if (s.delegatedOnly) return false;
+      if (!courseInCurriculum(s, section.curriculumId)) return false;
       const isMinor = s.category === "minor";
       const matchesDept =
         isMinor ||
@@ -746,7 +758,7 @@ export const useScheduler = () => {
         normalizeSemester(s.semester) === sectionSemester;
       return matchesDept && matchesProgram && matchesYear && matchesSem;
     });
-  }, [subjects, normalizeSemester]);
+  }, [rawSubjects, normalizeSemester]);
 
   const sectionCourses = useMemo(
     () => (selectedSection ? coursesForSection(selectedSection) : subjects),
@@ -884,11 +896,7 @@ export const useScheduler = () => {
   const listCategories: Subject["category"][] = ["major", "minor"];
 
   const filteredSubjects = useMemo(() => {
-    return semesterSubjects.filter((subject) => {
-      if (selectedSection && subject.yearLevel !== selectedSection.yearLevel) {
-        return false;
-      }
-
+    return (selectedSection ? sectionCourses : semesterSubjects).filter((subject) => {
       if (subjectClassFilter !== "all" && getSubjectClassification(subject.category) !== subjectClassFilter) {
         return false;
       }
@@ -900,7 +908,7 @@ export const useScheduler = () => {
         subject.name.toLowerCase().includes(semester)
       );
     });
-  }, [semesterSubjects, selectedSection, subjectClassFilter, searchQuery]);
+  }, [semesterSubjects, sectionCourses, selectedSection, subjectClassFilter, searchQuery]);
 
   const effectiveFieldCourseCodes = useMemo(() => {
     if (!dropSubject) return fieldCourseCodes;

@@ -15,12 +15,14 @@
 
 ## Architecture & Decisions
 
-- [VPAA Archive improvement plan](vpaa_archive_improvement_plan.md) — Prioritized problems, diagnostic evidence, redesign structure, implementation phases, and acceptance checks; review completed 2026-11-01, implementation and browser verification outstanding.
+- [Schedule archive policy review](reports/schedule_archive_policy_review.md) — Delete/Clear behavior, permanent replacement exceptions, VPAA and Secretary recovery scope, verified risks, and recommended policy; review only, 2026-11-01.
+- [VPAA Archive improvement plan](vpaa_archive_improvement_plan.md) — Archive fixes A01–A12 and the `/archive` redesign implemented 2026-11-01: atomic restores, shared role-slot locking with a database backstop (verified under real MariaDB concurrency), server pagination, record details and provenance, accurate outcomes, Activity Log mapping, and browser/keyboard checks; remaining limitations listed in section 0.
 - [[decisions]]
 - [Dashboard integration plan](dashboard_integration_plan.md) — Role-specific content, metric definitions, and acceptance checks; Phases 1–2 implemented 2026-10-30, authenticated UI checks and backend contract sign-off outstanding.
 - [[curriculum_document_import_plan]] — Implemented reviewed curriculum import (PDF/CSV/XLSX/DOCX), classification rules, and conversion settings; Phase 2 scheduling integration deferred (see section 16).
 - [[scheduling_profile_removal_plan]] ? Completed course-driven replacement of the department Scheduling Profile and verification record.
-- [[room_request_implementation_plan]] — Planned phases for Room Request authorization, scheduling integrity, reliable responses, and frontend correctness.
+- [[room_request_implementation_plan]] — Room Request authorization, scheduling integrity, reliable responses, and frontend correctness; implemented 2026-11-03.
+- [Room Request follow-up review](reports/room_requests_followup_review_2026-11-03.md) — 2026-11-03 recheck and fix pass: nine issues resolved, with test, MariaDB, and browser evidence and remaining limits.
 - [[recommendation_engine_integration_plan]] — Completed shared engine integration, session policy, phase evidence, compatibility boundaries, and verification matrix.
 - [[scheduling_core_phase_0]]
 - [[scheduling_core_phase_1]]

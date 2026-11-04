@@ -353,6 +353,7 @@ Before a production migration:
 - The canonical curriculum table is singular: `curriculum`.
 - Several models use plural class names: `Departments`, `Rooms`, and `Sections`.
 - Some workflow invariants, including one active semester, are enforced by application workflows rather than database constraints.
+- One live, active dean or secretary per department and one live, active program head per program is enforced by `AdministrativeRoleSlots` (writers lock the owning department/program row, then recheck the holder) with a database backstop: the MySQL/MariaDB generated column `users.active_role_slot` with unique key `users_active_role_slot_unique`, or partial unique indexes on SQLite. Accounts without a department/program scope are not covered by the backstop.
 - Schedule status evolution contains MySQL-specific enum SQL; portability must be considered when adding statuses.
 
 Do not correct these exceptions through isolated renames. Any normalization must be a coordinated migration across models, queries, APIs, tests, and frontend consumers.

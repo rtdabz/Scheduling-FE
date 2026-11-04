@@ -255,7 +255,11 @@ function WorklistRow({
                   {item.eligible.length === 0 ? "No eligible instructor" : "Select an instructor"}
                 </option>
                 {item.eligible.map((faculty) => (
-                  <option key={faculty.id} value={faculty.id}>
+                  <option
+                    key={faculty.id}
+                    value={faculty.id}
+                    className={faculty.conflict ? "font-bold text-red-600" : "font-normal text-slate-900"}
+                  >
                     {instructorOptionLabel(faculty.name, faculty.employmentType, Boolean(faculty.conflict))}
                   </option>
                 ))}

@@ -1,3 +1,5 @@
+import type { NoteRun } from '../../types/curriculum';
+
 export type ImportFormat = 'pdf' | 'csv' | 'xlsx' | 'docx';
 
 export type PlacementTerm = 1 | 2 | 3;
@@ -54,6 +56,31 @@ export interface ExtractedGroup {
   reported: ReportedTotals | null;
 }
 
+export type NoteFlag = 'color_unknown' | 'manual';
+
+/** A source note in an import draft. Course scope names the draft row; it becomes the course on import. */
+export interface SourceNote {
+  id: string;
+  /** Text as read from the document, including form blanks. Null for notes typed by the reviewer. */
+  source_text: string | null;
+  /** Display text: the source with only leading form blanks removed. */
+  text: string;
+  runs: NoteRun[];
+  scope: { level: 'curriculum' } | { level: 'year'; year_level: number } | { level: 'term'; year_level: number; semester: PlacementTerm } | { level: 'course'; row_id: string };
+  provenance: Provenance | null;
+  flags: NoteFlag[];
+}
+
+/** Part of the source the extractor could not read; reviewed instead of silently dropped. */
+export interface UnreadRegion {
+  reason: 'image' | 'unrecognized_text';
+  page?: number;
+  bbox?: [number, number, number, number];
+  text?: string;
+  /** What the reviewer found there: a note they typed in, or none. Unresolved regions block the import. */
+  resolution?: 'transcribed' | 'no_note' | null;
+}
+
 export interface ExtractedMetadata {
   name: string | null;
   program_text: string | null;
@@ -70,6 +97,9 @@ export interface Extraction {
   metadata: ExtractedMetadata;
   groups: ExtractedGroup[];
   rows: ExtractedRow[];
+  /** Structured notes; older extractions carry only `metadata.notes` strings. */
+  notes?: SourceNote[];
+  unread?: UnreadRegion[];
   warnings: string[];
 }
 
@@ -115,10 +145,13 @@ export interface ImportDraft {
   detected: ExtractedMetadata;
   groups: ExtractedGroup[];
   rows: DraftRow[];
+  notes: SourceNote[];
+  unread: UnreadRegion[];
   warnings: string[];
 }
 
-export type IssueSeverity = 'error' | 'review' | 'warning';
+/** Errors block until the draft is corrected; notices and warnings are facts for the formal review. */
+export type IssueSeverity = 'error' | 'notice' | 'warning';
 
 export interface ImportIssue {
   key: string;
@@ -127,8 +160,24 @@ export interface ImportIssue {
   row_id: string | null;
   field: string | null;
   message: string;
-  acknowledged: boolean;
-  reason: string | null;
+}
+
+/**
+ * One line of the review comparison: Course | Field | Original | Will be imported. `draft` is set when a reused
+ * course's draft value differs from both the source and the catalog value that is actually kept.
+ */
+export interface ImportChange {
+  row_id: string;
+  code: string;
+  field: 'code' | 'title' | 'lecture_units' | 'lab_units' | 'total_units' | 'units' | 'placement' | 'row' | 'category';
+  original: string;
+  draft: string | null;
+  imported: string;
+  kind: 'correction' | 'unchanged' | 'catalog' | 'category';
+  flags: string[];
+  /** Differs only by spacing or capitalisation: shown under Information. */
+  formatting: boolean;
+  note: string | null;
 }
 
 export interface ResolvedRow {
@@ -167,8 +216,9 @@ export interface ValidationResult {
   settings: { lecture_minutes_per_unit: number; laboratory_minutes_per_unit: number };
   /** `code` is the server-assigned internal code preview; the commit may add a suffix if it is taken meanwhile. */
   metadata: { code: string; program_id: number | null };
-  counts: { errors: number; reviews: number; reviews_open: number; warnings: number };
+  counts: { errors: number; notices: number; warnings: number };
   issues: ImportIssue[];
+  changes: ImportChange[];
   rows: ResolvedRow[];
   groups: GroupSummary[];
   totals: {
@@ -196,7 +246,12 @@ export interface ImportResult {
   rows: Array<{ row_id: string; course_id: number; code: string; action: 'created' | 'reused' }>;
   groups: GroupSummary[];
   totals: ValidationResult['totals'];
-  acknowledged: Record<string, { reason: string; message: string }>;
+  changes?: ImportChange[];
+  notices?: ImportIssue[];
+  /** Recorded by the server for the single final confirmation. */
+  confirmation?: { user_id: number; user_name: string | null; confirmed_at: string; fingerprint: string };
+  /** Present only when replaying an import made before reasons were removed. */
+  acknowledged?: Record<string, { reason: string; message: string }>;
   replayed: boolean;
 }
 

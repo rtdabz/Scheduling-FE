@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   consecutiveMeetingSlots,
+  courseInCurriculum,
   placeCourse,
   getCourseSlotPlan,
   laboratoryComponentSlots,
@@ -65,6 +66,41 @@ describe("placeCourse", () => {
     expect(getCourseSlotPlan(placeCourse(course, null)).totalSlots).toBe(6);
     // Re-placing in another curriculum drops the previous curriculum's minutes.
     expect(getCourseSlotPlan(placeCourse(placeCourse(course, 19), 1)).totalSlots).toBe(6);
+  });
+
+  it("takes the year level and semester from the section's curriculum", () => {
+    const shared = {
+      ...course,
+      curriculumPlacements: [
+        { curriculumId: 19, yearLevel: 1 as const, semester: "2nd" as const },
+        { curriculumId: 23, yearLevel: 2 as const, semester: "1st" as const },
+      ],
+    };
+
+    expect(placeCourse(shared, 23)).toMatchObject({ yearLevel: 2, semester: "1st" });
+    expect(placeCourse(shared, 19)).toMatchObject({ yearLevel: 1, semester: "2nd" });
+    expect(placeCourse(shared, null)).toMatchObject({ yearLevel: 1, semester: "2nd" });
+  });
+});
+
+describe("courseInCurriculum", () => {
+  const course = {
+    id: "8", code: "IT 105", name: "Computer Programming 2", units: 3, lectureHours: 2, labHours: 1,
+    category: "major" as const, semester: "1st" as const, departmentId: 6, yearLevel: 1 as const,
+    roomTypeRequired: "lecture" as const, status: "active" as const,
+    curriculumPlacements: [{ curriculumId: 19, yearLevel: 1 as const, semester: "1st" as const }],
+  };
+
+  it("offers a course only to sections whose curriculum places it", () => {
+    expect(courseInCurriculum(course, 19)).toBe(true);
+    expect(courseInCurriculum(course, "19")).toBe(true);
+    expect(courseInCurriculum(course, 23)).toBe(false);
+    expect(courseInCurriculum({ ...course, curriculumPlacements: [] }, 19)).toBe(false);
+  });
+
+  it("allows when the section has no curriculum or the payload has no placements", () => {
+    expect(courseInCurriculum(course, null)).toBe(true);
+    expect(courseInCurriculum({ ...course, curriculumPlacements: undefined }, 23)).toBe(true);
   });
 });
 

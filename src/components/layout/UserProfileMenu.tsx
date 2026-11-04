@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, LogOut, Settings, User } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { ChevronDown, ChevronRight, LogOut, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { fetchCurrentUser, forgetCurrentUser } from '../../lib/currentUser';
 import { useToast } from '../../context/ToastContext';
@@ -64,12 +65,31 @@ export default function UserProfileMenu() {
         <ChevronDown className={`h-2.5 w-2.5 transition-transform ${open ? 'rotate-180' : ''}`} strokeWidth={3} />
       </span>
     </button>
-    {open && <div role="menu" className="absolute right-0 top-full z-[60] mt-3 max-h-[calc(100vh-5rem)] w-[min(15rem,calc(100vw-1rem))] overflow-y-auto rounded-xl border border-slate-200 bg-[#F7F4F0] text-slate-700 shadow-2xl">
-      <div className="flex items-center gap-2.5 border-b border-gray-100 bg-gray-50/50 p-2.5"><ProfileAvatar src={photo} className="h-9 w-9 rounded-full" /><div className="min-w-0"><p className="truncate text-xs font-bold">{user?.name || 'Administrator'}</p><p className="truncate text-[10px] text-gray-500">{user?.email || user?.username || ''}</p></div></div>
-      <div className="space-y-0.5 p-1.5"><button role="menuitem" type="button" onClick={() => { setMenuOpen(false); setProfileOpen(true); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold hover:bg-[#4e0a10]/5"><User size={14} /> My Profile</button>
-{role === 'vpaa' && <><button role="menuitem" type="button" onClick={() => { setMenuOpen(false); navigate('/settings'); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold hover:bg-[#4e0a10]/5"><Settings size={14} /> Settings</button></>}</div>
-      <div className="border-t border-gray-100 p-1.5"><button role="menuitem" type="button" disabled={loggingOut} onClick={logout} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50 disabled:opacity-50"><LogOut size={14} /> {loggingOut ? 'Signing out...' : 'Log Out'}</button></div>
+    {open && <div role="menu" className="absolute right-0 top-full z-[60] mt-2 max-h-[calc(100vh-5rem)] w-[min(22.5rem,calc(100vw-1rem))] overflow-y-auto rounded-xl bg-white p-4 text-slate-900 shadow-[0_12px_28px_rgba(0,0,0,0.2),0_2px_4px_rgba(0,0,0,0.1)]">
+      <div className="rounded-xl bg-white p-1 shadow-[0_2px_12px_rgba(0,0,0,0.15)]">
+        <button role="menuitem" type="button" onClick={() => { setMenuOpen(false); setProfileOpen(true); }} className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition hover:bg-slate-100">
+          <ProfileAvatar src={photo} className="h-10 w-10 rounded-full" />
+          <span className="min-w-0">
+            <span className="block truncate text-[15px] font-bold">{user?.name || 'Administrator'}</span>
+            <span className="block truncate text-xs text-slate-500">{roleLabel(user?.role)}{user?.email || user?.username ? ` · ${user?.email || user?.username}` : ''}</span>
+          </span>
+        </button>
+        <div className="mx-2 my-1 border-t border-slate-200" />
+        <button role="menuitem" type="button" onClick={() => { setMenuOpen(false); setProfileOpen(true); }} className="w-full rounded-lg px-2 py-2 text-left text-sm font-semibold text-[#4e0a10] transition hover:bg-slate-100">See your profile</button>
+      </div>
+      <div className="mt-3 space-y-0.5">
+        {role === 'vpaa' && <MenuRow icon={<Settings size={20} />} label="Settings" onClick={() => { setMenuOpen(false); navigate('/settings'); }} chevron />}
+        <MenuRow icon={<LogOut size={20} />} label={loggingOut ? 'Signing out...' : 'Log Out'} onClick={logout} disabled={loggingOut} />
+      </div>
     </div>}
     {profileOpen && <UserProfileModal onClose={() => setProfileOpen(false)} user={user} roleLabel={roleLabel(user?.role)} onSaved={handleProfileSaved} />}
   </div>;
+}
+
+function MenuRow({ icon, label, onClick, disabled = false, chevron = false }: { icon: ReactNode; label: string; onClick: () => void; disabled?: boolean; chevron?: boolean }) {
+  return <button role="menuitem" type="button" disabled={disabled} onClick={onClick} className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition hover:bg-slate-100 disabled:opacity-50">
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-900">{icon}</span>
+    <span className="flex-1 text-[15px] font-semibold">{label}</span>
+    {chevron && <ChevronRight size={22} className="text-slate-500" />}
+  </button>;
 }

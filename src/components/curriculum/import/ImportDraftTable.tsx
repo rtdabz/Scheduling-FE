@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { AlertOctagon, AlertTriangle, PanelRightOpen } from 'lucide-react';
 import DataTable from '../../ui/DataTable';
@@ -54,6 +54,12 @@ const hours = (minutes: number) => `${(minutes / 60).toLocaleString(undefined, {
 export default function ImportDraftTable({ mode, editing = false, rows, issuesByRow, resolved, validated, settings, selected, onToggleSelected, onChange, onOpenRow }: ImportDraftTableProps) {
   const allSelected = rows.length > 0 && rows.every((row) => selected.has(row.row_id));
   const someSelected = rows.some((row) => selected.has(row.row_id));
+  // Cells are rendered as components, so rebuilding the columns remounts them; keeping the rows out of the
+  // dependencies stops every keystroke from replacing the input being typed in.
+  const rowsRef = useRef(rows);
+  useLayoutEffect(() => {
+    rowsRef.current = rows;
+  });
 
   const columns = useMemo<ColumnDef<DraftRow>[]>(() => {
     const reviewColumn: ColumnDef<DraftRow> = {
@@ -64,14 +70,14 @@ export default function ImportDraftTable({ mode, editing = false, rows, issuesBy
       cell: ({ row }) => {
         const issues = issuesByRow.get(row.original.row_id) ?? [];
         const errors = issues.filter((issue) => issue.severity === 'error').length;
-        const open = issues.filter((issue) => issue.severity === 'review' && !issue.acknowledged).length;
+        const notices = issues.filter((issue) => issue.severity === 'notice').length;
         const flagged = row.original.source.flags.length > 0;
-        const label = `Open ${row.original.code || row.original.row_id}${errors ? `, ${errors} error${errors === 1 ? '' : 's'}` : ''}${open ? `, ${open} to review` : ''}`;
+        const label = `Open ${row.original.code || row.original.row_id}${errors ? `, ${errors} error${errors === 1 ? '' : 's'}` : ''}${notices ? `, ${notices} notice${notices === 1 ? '' : 's'}` : ''}`;
         return (
           <button type="button" onClick={() => onOpenRow(row.original.row_id)} aria-label={label} title={label} className="flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-parchment hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
             {errors > 0
               ? <AlertOctagon size={16} className="text-red-600" />
-              : open > 0 || flagged
+              : notices > 0 || flagged
                 ? <AlertTriangle size={16} className="text-accent" />
                 : <PanelRightOpen size={16} />}
           </button>
@@ -89,7 +95,7 @@ export default function ImportDraftTable({ mode, editing = false, rows, issuesBy
           cell: ({ row }) => {
             const issues = issuesByRow.get(row.original.row_id) ?? [];
             const errors = issues.filter((issue) => issue.severity === 'error').length;
-            const attention = issues.some((issue) => issue.severity === 'review' && !issue.acknowledged) || row.original.source.flags.length > 0;
+            const attention = issues.some((issue) => issue.severity === 'notice') || row.original.source.flags.length > 0;
             const problem = rowHasProblem(row.original) || errors > 0;
             if (problem) return <AlertOctagon size={16} className="text-red-600" role="img" aria-label={errors ? `${errors} error${errors === 1 ? '' : 's'}` : 'Has values to fix'} />;
             if (attention) return <AlertTriangle size={16} className="text-accent" role="img" aria-label="Needs review" />;
@@ -220,7 +226,7 @@ export default function ImportDraftTable({ mode, editing = false, rows, issuesBy
             aria-label="Select all courses in this view"
             checked={allSelected}
             ref={(element) => { if (element) element.indeterminate = !allSelected && someSelected; }}
-            onChange={(event) => onToggleSelected(rows.map((row) => row.row_id), event.target.checked)}
+            onChange={(event) => onToggleSelected(rowsRef.current.map((row) => row.row_id), event.target.checked)}
             className="h-4 w-4 accent-primary"
           />
         ),
@@ -326,7 +332,7 @@ export default function ImportDraftTable({ mode, editing = false, rows, issuesBy
         },
       },
     ];
-  }, [mode, issuesByRow, resolved, validated, settings, selected, allSelected, someSelected, rows, onChange, onOpenRow, onToggleSelected, editing]);
+  }, [mode, issuesByRow, resolved, validated, settings, selected, allSelected, someSelected, onChange, onOpenRow, onToggleSelected, editing]);
 
   const table = useDataTable({ data: rows, columns, pageSize: false, getRowId: (row) => row.row_id, enableSorting: false });
 

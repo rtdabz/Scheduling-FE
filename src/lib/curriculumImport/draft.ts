@@ -1,6 +1,7 @@
-import { compactCode, editDistance, isSuspiciousCode, normalizeCode, TERM_LABELS, termOrder } from './normalize';
+import { compactCode, editDistance, isSuspiciousCode, normalizeCode, TERM_LABELS, termOrder, YEAR_LABELS } from './normalize';
+import { plainNote } from './notes';
 import { prerequisiteTokens, type KnownCode } from './prerequisites';
-import type { DraftRow, DraftSource, Extraction, ImportDraft, PlacementTerm } from './types';
+import type { DraftMetadata, DraftRow, DraftSource, Extraction, ImportDraft, PlacementTerm } from './types';
 
 export const TOTAL_HOURS_PATTERN = /\(\s*(\d{2,5})\s*(?:hours?|hrs?)\s*\)/i;
 
@@ -62,6 +63,9 @@ export const buildDraft = (extraction: Extraction, source: Omit<DraftSource, 'ex
     detected,
     groups: extraction.groups,
     rows,
+    // Older extractions carried notes as plain strings: kept with no colour or place, never invented ones.
+    notes: extraction.notes ?? detected.notes.map((text, index) => plainNote(`n${index + 1}`, [text], null, { level: 'curriculum' }, 'none')),
+    unread: extraction.unread ?? [],
     warnings: extraction.warnings,
   };
 };
@@ -81,6 +85,11 @@ export const localProblems = (draft: ImportDraft): LocalProblem[] => {
   if (draft.metadata.cmo_series.trim() && !/^\d{4}$/.test(draft.metadata.cmo_series.trim())) {
     problems.push({ row_id: null, field: 'metadata.cmo_series', message: 'CMO series must be a four-digit year.' });
   }
+  // The CMO pair names the import code; the server rejects half of it the same way.
+  if (!draft.metadata.cmo_number.trim() !== !draft.metadata.cmo_series.trim()) {
+    const missing = draft.metadata.cmo_number.trim() ? 'series' : 'number';
+    problems.push({ row_id: null, field: `metadata.cmo_${missing}`, message: `Enter the CMO ${missing} too, or clear both CMO fields.` });
+  }
 
   for (const row of draft.rows) {
     const label = row.code || row.row_id;
@@ -94,6 +103,21 @@ export const localProblems = (draft: ImportDraft): LocalProblem[] => {
     }
   }
   return problems;
+};
+
+/** A row counts toward a year/term only with a year the curriculum has and a known term. */
+export const isPlaced = (row: Pick<DraftRow, 'year_level' | 'semester'>): row is DraftRow & { year_level: number; semester: PlacementTerm } =>
+  row.year_level !== null && row.year_level in YEAR_LABELS && row.semester !== null && row.semester in TERM_LABELS;
+
+/**
+ * Local preview of the server's CMO-based import code (CMO-25-2015). Only the server assigns the code and its
+ * collision suffix; null means the program/year fallback applies or the pair is incomplete.
+ */
+export const proposedImportCode = (metadata: Pick<DraftMetadata, 'cmo_number' | 'cmo_series'>): string | null => {
+  const segment = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const number = segment(metadata.cmo_number);
+  const series = metadata.cmo_series.trim();
+  return number && /^\d{4}$/.test(series) ? `CMO-${number}-${series}` : null;
 };
 
 export interface GroupTotals {
@@ -135,20 +159,50 @@ export const groupTotals = (draft: ImportDraft): GroupTotals[] => {
   return [...groups.values()].sort((a, b) => termOrder(a.year_level, a.semester) - termOrder(b.year_level, b.semester));
 };
 
+/** Preview shows one term, or the rows that have no valid year and term. Never all rows by default. */
+export type PreviewSelection = { year: number; term: PlacementTerm } | 'unassigned';
+
+export interface GroupAttention {
+  errors: number;
+  notices: number;
+}
+
+export const totalsDiffer = (group: GroupTotals) => !!group.reported
+  && (group.reported.lec !== group.calculated.lec || group.reported.lab !== group.calculated.lab || group.reported.tu !== group.calculated.tu);
+
+export const groupKey = (year: number, term: PlacementTerm) => `${year}-${term}`;
+
+/** Earliest populated term; otherwise Unassigned when rows need placement, then the earliest extracted group. */
+export const initialSelection = (totals: GroupTotals[], unassignedCount: number): PreviewSelection => {
+  const known = totals.filter((group) => group.year_level in YEAR_LABELS);
+  const first = known.find((group) => group.row_count > 0) ?? (unassignedCount > 0 ? null : known[0]);
+  return first ? { year: first.year_level, term: first.semester } : 'unassigned';
+};
+
+/** Keeps the term when that year has it; otherwise the year's first populated term, then its first extracted one. */
+export const selectionForYear = (totals: GroupTotals[], year: number, keepTerm: PlacementTerm | null): PreviewSelection | null => {
+  const groups = totals.filter((group) => group.year_level === year);
+  const kept = keepTerm === null ? undefined : groups.find((group) => group.semester === keepTerm);
+  const target = kept ?? groups.find((group) => group.row_count > 0) ?? groups[0];
+  return target ? { year, term: target.semester } : null;
+};
+
 const blankToNull = (value: string): string | null => (value.trim() === '' ? null : value.trim());
 
 export interface PayloadOptions {
-  acknowledgements: Record<string, string>;
   requestKey?: string;
   fingerprint?: string;
   expectedSettingsRevision?: number;
+  /** Set only on commit: the single confirmation of the reviewed outcome named by `fingerprint`. */
+  confirmed?: boolean;
 }
 
 export const toPayload = (draft: ImportDraft, options: PayloadOptions) => ({
   ...(options.requestKey ? { request_key: options.requestKey } : {}),
   ...(options.fingerprint ? { fingerprint: options.fingerprint } : {}),
   ...(options.expectedSettingsRevision ? { expected_settings_revision: options.expectedSettingsRevision } : {}),
-  source: draft.source,
+  ...(options.confirmed ? { confirmed: true } : {}),
+  source: draft.unread.length > 0 ? { ...draft.source, unread: draft.unread } : draft.source,
   metadata: {
     name: draft.metadata.name.trim(),
     program_id: draft.metadata.program_id,
@@ -156,8 +210,10 @@ export const toPayload = (draft: ImportDraft, options: PayloadOptions) => ({
     cmo_number: blankToNull(draft.metadata.cmo_number),
     cmo_series: blankToNull(draft.metadata.cmo_series) === null ? null : Number(draft.metadata.cmo_series),
     description: blankToNull(draft.metadata.description),
-    notes: draft.metadata.notes,
+    // Plain text for the import record, as before; the structured notes below are what is saved.
+    notes: draft.notes.map((note) => note.text),
   },
+  notes: draft.notes,
   groups: draft.groups,
   rows: draft.rows.map((row) => ({
     row_id: row.row_id,
@@ -183,7 +239,6 @@ export const toPayload = (draft: ImportDraft, options: PayloadOptions) => ({
       provenance: { ...row.source.provenance, raw: row.source.raw },
     },
   })),
-  acknowledgements: options.acknowledgements,
 });
 
 export type ImportPayload = ReturnType<typeof toPayload>;

@@ -20,8 +20,6 @@ import {
 } from "../schedulingConfigurationEligibility";
 import {
   consecutiveDayRuns,
-  DEFAULT_CONSECUTIVE_DAYS,
-  MIN_CONSECUTIVE_DAYS,
   runLabel,
   runStartForDay,
   runStartingOn,
@@ -126,6 +124,8 @@ interface DropModalProps {
     preferredPattern?: string | null
   ) => { conflictType: "section" | "room" | "faculty"; message: string } | null;
 }
+
+const MANUAL_MIN_CONSECUTIVE_DAYS = 3;
 
 const getDayIndex = (day: string): number => {
   const fullIndex = FULL_DAY_NAMES.findIndex((item) => item.toLowerCase() === day.toLowerCase());
@@ -604,6 +604,8 @@ export default function DropModal({
 
   const sundayEnabled = Boolean(manualSchedulingSettings?.sunday_classes_enabled);
   const maxConsecutiveDays = teachingWeek(sundayEnabled).length;
+  // Manual plotting offers runs of three days or more; a saved shorter run keeps its own option.
+  const firstConsecutiveOption = Math.min(MANUAL_MIN_CONSECUTIVE_DAYS, modalRun?.dayCount ?? MANUAL_MIN_CONSECUTIVE_DAYS);
 
   const handleConsecutiveDaysChange = (dayCount: number) => {
     if (!setModalConsecutiveDays) return;
@@ -652,7 +654,7 @@ export default function DropModal({
     if (meetingShape === "consecutive") setModalConsecutiveDays?.(null);
     if (next === "integrated") return handleIntegratedToggle(true);
     if (next === "split") return handleSplitToggle(true);
-    if (next === "consecutive") return handleConsecutiveDaysChange(DEFAULT_CONSECUTIVE_DAYS);
+    if (next === "consecutive") return handleConsecutiveDaysChange(MANUAL_MIN_CONSECUTIVE_DAYS);
     if (meetingShape === "integrated") handleIntegratedToggle(false);
     else if (meetingShape === "split") handleSplitToggle(false);
     else setModalDay1Duration(totalSlots);
@@ -951,8 +953,8 @@ export default function DropModal({
                       className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-[#5A1220] focus:ring-2 focus:ring-[#5A1220]/15 disabled:cursor-not-allowed disabled:bg-slate-50"
                     >
                       {Array.from(
-                        { length: Math.max(maxConsecutiveDays, modalRun.dayCount) - MIN_CONSECUTIVE_DAYS + 1 },
-                        (_, index) => index + MIN_CONSECUTIVE_DAYS,
+                        { length: Math.max(maxConsecutiveDays, modalRun.dayCount) - firstConsecutiveOption + 1 },
+                        (_, index) => index + firstConsecutiveOption,
                       ).map((count) => (
                         <option key={count} value={count}>{count} days</option>
                       ))}

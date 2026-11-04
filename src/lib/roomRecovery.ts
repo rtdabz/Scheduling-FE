@@ -27,10 +27,25 @@ export const roomTransferDetailChanges = (request: RoomTransferRequest) => reque
 export const isLinkedOnlineSession = (change: RoomTransferChange) => change.mode === 'online';
 export const roomTransferMovedCount = (request: RoomTransferRequest) => request.changes.filter(change => !isLinkedOnlineSession(change)).length;
 export const roomTransferClassLabel = (change: RoomTransferChange) => `${change.course} · ${change.section}${isLinkedOnlineSession(change) ? ' · Linked online session' : ''}`;
+// What the request changes for one meeting, compared from its stored original and proposed placements.
+export const roomTransferChangeLabel = (change: RoomTransferChange) => {
+  const time = (row: RoomTransferPlacement) => `${row.day} ${row.start_time.slice(0, 5)} ${row.end_time.slice(0, 5)}`;
+  const timeChanged = time(change.before) !== time(change.after);
+  if (isLinkedOnlineSession(change)) return timeChanged ? 'Linked online session — time changed' : 'Linked online session — unchanged';
+  const labels = [change.before.room !== change.after.room && 'Room changed', timeChanged && 'Time changed'].filter(Boolean);
+  return labels.length > 0 ? labels.join(' · ') : 'Unchanged';
+};
+// Lecture or laboratory as stored with the proposal, with the delivery mode; nothing is inferred when absent.
+export const roomTransferSessionType = (change: RoomTransferChange) => {
+  const meeting = change.preview_schedule?.meeting_type;
+  const mode = ({ 'on-site': 'On-site', online: 'Online', field: 'Field' } as Record<string, string>)[change.mode ?? ''] ?? null;
+  return [meeting === 'laboratory' ? 'Laboratory' : meeting === 'lecture' ? 'Lecture' : null, mode].filter(Boolean).join(' · ') || 'Not recorded';
+};
 export const ROOM_TRANSFER_STATUS_LABELS = {
   pending_dean: 'Pending Dean Approval', pending_vpaa: 'Pending VPAA Approval', approved: 'Approved', applied: 'Applied (before approval workflow)',
   rejected_by_dean: 'Rejected by Dean', rejected_by_vpaa: 'Rejected by VPAA',
 };
+export const roomTransferStatusClass = (status: RoomTransferRequest['status']) => status.startsWith('pending_') ? 'bg-amber-50 text-amber-900' : status.startsWith('rejected_') ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800';
 
 export function recoveryLink(caseId?: number, semesterId?: number, roomId?: number): string {
   const role = getStoredUser()?.role === 'program_head' ? 'program_head' : 'secretary';

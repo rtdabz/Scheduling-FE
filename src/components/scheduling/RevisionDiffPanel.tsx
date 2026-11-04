@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { GitCompare } from 'lucide-react';
 import LoadingSpinner from '../ui/LoadingSpinner';
-import ScheduleChangesModal, { type ScheduleChangeDetailRow } from './ScheduleChangesModal';
+import { ScheduleChangesTable, type ScheduleChangeDetailRow } from './ScheduleChangesModal';
 import api from '../../lib/api';
 import { formatTime12h } from '../../lib/timeGrid';
 
@@ -42,10 +42,10 @@ const meeting = (row: DiffRow | null): string => {
   return [time, room, row.mode].filter(Boolean).join(', ');
 };
 
-const CHANGE_STYLES: Record<MeetingChange['change'], { label: string; className: string }> = {
-  added: { label: 'Added', className: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
-  removed: { label: 'Removed', className: 'bg-red-50 text-red-700 ring-red-200' },
-  changed: { label: 'Changed', className: 'bg-amber-50 text-amber-700 ring-amber-200' },
+const CHANGE_LABELS: Record<MeetingChange['change'], string> = {
+  added: 'Added',
+  removed: 'Removed',
+  changed: 'Changed',
 };
 
 const previousLabel = (status: string): string => (
@@ -56,17 +56,20 @@ const toDetailRows = (sections: SectionDiff[]): ScheduleChangeDetailRow[] => sec
   section.changes.map((change, index) => ({
     key: `${section.section_id}-${index}`,
     section: section.section_name ?? 'Section',
-    change: CHANGE_STYLES[change.change].label,
+    change: CHANGE_LABELS[change.change],
     classLabel: (change.after ?? change.before)?.course?.course_code ?? 'Class',
     before: meeting(change.before) || '—',
     after: meeting(change.after) || '—',
   }))
 ));
 
+/**
+ * Changes from the recalled or returned version: totals, the previous version each section is compared
+ * with, its return reason, and every changed class in a paginated before/after table.
+ */
 export default function RevisionDiffPanel({ submissionId }: { submissionId: number }) {
   const [sections, setSections] = useState<SectionDiff[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const detailRows = useMemo(() => toDetailRows(sections ?? []), [sections]);
 
   useEffect(() => {
@@ -78,11 +81,11 @@ export default function RevisionDiffPanel({ submissionId }: { submissionId: numb
   }, [submissionId]);
 
   if (failed) {
-    return <p className="px-5 py-2 text-xs font-semibold text-amber-700">The changes from the previous version could not be loaded.</p>;
+    return <p role="status" className="text-xs font-semibold text-amber-700">The changes from the previous version could not be loaded.</p>;
   }
   if (sections === null) {
     return (
-      <p className="flex items-center gap-2 px-5 py-2 text-xs font-semibold text-gray-500">
+      <p role="status" className="flex items-center gap-2 text-xs font-semibold text-gray-500">
         <LoadingSpinner size={14} className="animate-spin" /> Loading changes from the previous version…
       </p>
     );
@@ -91,59 +94,36 @@ export default function RevisionDiffPanel({ submissionId }: { submissionId: numb
   const total = sections.reduce((sum, section) => sum + section.changes.length, 0);
 
   return (
-    <section aria-label="Changes from the previous version" className="max-h-56 space-y-2 overflow-y-auto px-5 py-2.5">
-      <div className="flex items-center justify-between gap-2">
-        <p className="flex items-center gap-2 text-xs font-bold text-violet-700">
-          <GitCompare className="h-4 w-4" />
-          {total === 0
-            ? 'No class changes from the previous version (instructor changes are not listed).'
-            : `Changes from the previous version (${total} class${total === 1 ? '' : 'es'})`}
-        </p>
-        {total > 0 && (
-          <button
-            type="button"
-            onClick={() => setDetailsOpen(true)}
-            className="shrink-0 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:bg-slate-50"
-          >
-            View details
-          </button>
-        )}
-      </div>
-      <ScheduleChangesModal data={detailRows} isOpen={detailsOpen} onClose={() => setDetailsOpen(false)} />
-      {sections.map((section) => (
-        <div key={section.section_id} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-          <p className="font-bold text-slate-800">
-            {section.section_name ?? 'Section'}
-            <span className="ml-1 font-semibold text-slate-500">
-              vs. {previousLabel(section.previous_status)} version{section.previous_revision_number ? ` #${section.previous_revision_number}` : ''}
-            </span>
-          </p>
-          {section.previous_rejection_reason && (
-            <p className="mt-0.5 text-[11px] italic text-slate-500">Return reason: {section.previous_rejection_reason}</p>
-          )}
-          <ul className="mt-1 space-y-1">
-            {section.changes.map((change, index) => {
-              const style = CHANGE_STYLES[change.change];
-              const row = change.after ?? change.before;
-              return (
-                <li key={index} className="flex flex-wrap items-baseline gap-1.5">
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ring-1 ring-inset ${style.className}`}>{style.label}</span>
-                  <span className="font-semibold">{row?.course?.course_code ?? 'Class'}</span>
-                  {change.change === 'changed' ? (
-                    <span>
-                      <span className="text-slate-500 line-through">{meeting(change.before)}</span>
-                      {' → '}
-                      <span className="font-semibold">{meeting(change.after)}</span>
-                    </span>
-                  ) : (
-                    <span className={change.change === 'removed' ? 'text-slate-500 line-through' : ''}>{meeting(row)}</span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      ))}
-    </section>
+    <div className="space-y-3">
+      <p className="flex items-center gap-2 text-xs font-bold text-violet-700">
+        <GitCompare className="h-4 w-4" />
+        {total === 0
+          ? 'No class changes from the previous version (instructor changes are not listed).'
+          : `Changes from the previous version (${total} class${total === 1 ? '' : 'es'})`}
+      </p>
+      {sections.length > 0 && (
+        <ul aria-label="Previous versions compared" className="grid gap-2 sm:grid-cols-2">
+          {sections.map((section) => (
+            <li key={section.section_id} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+              <p className="font-bold text-slate-800">
+                {section.section_name ?? 'Section'}
+                <span className="ml-1 font-semibold text-slate-500">
+                  vs. {previousLabel(section.previous_status)} version{section.previous_revision_number ? ` #${section.previous_revision_number}` : ''}
+                </span>
+              </p>
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                {section.changes.length} changed class{section.changes.length === 1 ? '' : 'es'}
+              </p>
+              {section.previous_rejection_reason && (
+                <p className="mt-0.5 text-[11px] italic text-slate-500">Return reason: {section.previous_rejection_reason}</p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {total > 0 && (
+        <ScheduleChangesTable data={detailRows} ariaLabel="Changes from the previous version" />
+      )}
+    </div>
   );
 }

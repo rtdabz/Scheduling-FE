@@ -18,6 +18,7 @@ import { useSearchParams } from "react-router-dom";
 import { useScheduler } from "./hooks/useScheduler";
 import { useWorkflowGuide } from "../../../hooks/useWorkflowGuide";
 import YearLevelGenerateScheduleWorkflow from "./GenerateSchedule/YearLevelGenerateScheduleWorkflow";
+import YearLevelCurriculumSelector from "./GenerateSchedule/YearLevelCurriculumSelector";
 import GenerationProgressDrawer from "./GenerateSchedule/GenerationProgressDrawer";
 import { GenerationRunProvider } from "./hooks/useGenerationRun";
 import { getStoredUser } from "../../../lib/storedUser";
@@ -78,6 +79,18 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
     !scheduler.isWideView && isCourseBankAvailable(scheduler.isPhase2Active, scheduler.currentStatus);
 
   const selectedSection = scheduler.sections.find((s) => s.id === scheduler.selectedSectionId);
+  const selectedYearLevelSections = useMemo(
+    () =>
+      selectedSection
+        ? scheduler.sections.filter(
+            (section) =>
+              Number(section.departmentId) === Number(selectedSection.departmentId) &&
+              Number(section.programId) === Number(selectedSection.programId) &&
+              Number(section.yearLevel) === Number(selectedSection.yearLevel),
+          )
+        : [],
+    [scheduler, selectedSection],
+  );
   const generatorDepartmentId = selectedSection?.departmentId ?? scheduler.sections[0]?.departmentId ?? null;
   const generatorDepartment = scheduler.departments.find(
     (department) => Number(department.id) === Number(generatorDepartmentId),
@@ -176,7 +189,22 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
             isCourseBankOpen ? "max-h-[70vh] opacity-100" : "max-h-0 opacity-0"
           }`}
         >
-          <CourseBank {...scheduler} />
+          <CourseBank
+            {...scheduler}
+          curriculumControl={selectedSection ? (
+            <YearLevelCurriculumSelector
+              scope="year_level"
+              variant="icon"
+              restrictToSections
+              departmentId={Number(selectedSection.departmentId)}
+              semesterId={scheduler.activeSemester ? Number(scheduler.activeSemester.id) : null}
+              yearLevel={Number(selectedSection.yearLevel)}
+              sections={selectedYearLevelSections}
+              disabled={!scheduler.isEditable}
+              onApplied={() => scheduler.refreshData({ silent: true })}
+            />
+          ) : undefined}
+          />
         </div>
         <TimetableGrid
           {...scheduler}

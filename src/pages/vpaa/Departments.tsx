@@ -771,13 +771,16 @@ export default function Departments() {
     <div id="departments-page">
       <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between mb-6">
 
-        <SearchInput
-          value={globalFilter}
-          onChange={(e) => setGlobalFilter(e.target.value)}
-          placeholder="Search department name..."
-        />
+        {/* Secretaries only see their own department, so there is nothing to search. */}
+        {userRole !== 'secretary' && (
+          <SearchInput
+            value={globalFilter}
+            onChange={(e) => setGlobalFilter(e.target.value)}
+            placeholder="Search department name..."
+          />
+        )}
 
-        <div className="flex items-center gap-3 justify-end ml-auto lg:ml-0">
+        <div className="flex items-center gap-3 justify-end ml-auto">
           <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1">
             <button
               type="button"

@@ -23,6 +23,21 @@ describe('TCC curriculum PDF layout', () => {
     expect(extraction.warnings).toEqual([]);
   });
 
+  it('keeps the red First Year note exactly, with its #C00000 colour, raw form blanks and position', () => {
+    const text = 'Note: Math prep(Pre-Calculus for NON-STEM(Algebra & Trigo) for GAS, HUMSS, ABM to be taken only';
+    expect(extraction.notes).toEqual([{
+      id: 'n1',
+      source_text: `_______${text}`,
+      text,
+      runs: [{ length: [...text].length, color: '#C00000' }],
+      scope: { level: 'year', year_level: 1 },
+      provenance: { kind: 'pdf', page: 1, bbox: expect.any(Array) },
+      flags: [],
+    }]);
+    // The letterhead colours, the course rows and the evaluation form are not notes, and nothing is left unread.
+    expect(extraction.unread).toEqual([]);
+  });
+
   it('accounts for all 59 course rows across ten populated groups, with no Year 1 or Year 4 Summer', () => {
     expect(extraction.rows).toHaveLength(59);
     const counts = new Map<string, number>();
@@ -133,6 +148,64 @@ describe('TCC curriculum PDF layout', () => {
     expect(result.rows[0].year_level).toBeNull();
     expect(result.rows[0].source.flags).toContain('unmapped_year');
     expect(result.warnings.some((warning) => warning.includes('year'))).toBe(true);
+  });
+
+  describe('notes beyond the sample', () => {
+    const item = (str: string, x: number, y: number, colors?: PdfTextItem['colors'], width = 60): PdfTextItem => ({ page: 1, str, x, y, width, height: 8, colors });
+    const black = (str: string) => [{ length: [...str].length, color: '#000000' }];
+    const table = [
+      item('F I R S T  Y E A R', 220, 40, black('F I R S T  Y E A R'), 150),
+      item('Course Code', 28.8, 60, black('Course Code'), 37), item('First Semester', 120, 60, black('First Semester'), 36),
+      item('Lec', 207.6, 60, black('Lec'), 9), item('Lab', 221.9, 60, black('Lab'), 9.3), item('TU', 237.6, 60, black('TU'), 7),
+      item('IT 101', 23.4, 72, black('IT 101'), 30), item('Intro', 72.8, 72, black('Intro'), 40),
+      item('2', 210.2, 72, black('2'), 4), item('1', 224.8, 72, black('1'), 4), item('3', 239.3, 72, black('3'), 4),
+      item('TOTAL CREDITS', 118, 82, black('TOTAL CREDITS'), 50), item('2', 210.2, 82, black('2'), 4), item('1', 224.8, 82, black('1'), 4), item('3', 239.3, 82, black('3'), 4),
+    ];
+    const run = (items: PdfTextItem[], images?: [number, number, number, number][]) => extractCurriculumLayout([{ page: 1, width: 612, height: 400, items: [...table, ...items], images }]);
+
+    it('joins a multiline note with line breaks and keeps mixed colours on the right characters', () => {
+      const result = run([
+        item('Note: Practicum ', 23, 95, [{ length: 6, color: '#000000' }, { length: 10, color: '#C00000' }]),
+        item('requires 486 hours', 23, 104, [{ length: 18, color: '#C00000' }]),
+        item('and an endorsement.', 23, 113, black('and an endorsement.')),
+        item('Evaluation Details', 230, 300, black('Evaluation Details')),
+        item('Evaluators', 135, 318, black('Evaluators')), item('Signature', 401, 318, black('Signature')),
+      ]);
+      expect(result.notes).toHaveLength(1);
+      const [note] = result.notes!;
+      // Text is kept as laid out, including the space that ends the first line.
+      expect(note.text).toBe('Note: Practicum \nrequires 486 hours\nand an endorsement.');
+      expect(note.runs).toEqual([{ length: 6, color: '#000000' }, { length: 29, color: '#C00000' }, { length: 20, color: '#000000' }]);
+      expect(note.scope).toEqual({ level: 'year', year_level: 1 });
+      expect(note.flags).toEqual([]);
+      // The evaluation form is furniture, not a note and not unread text.
+      expect(result.unread).toEqual([]);
+    });
+
+    it('keeps separate notes, including coloured text outside any table, in source order', () => {
+      const result = run([
+        item('* Electives follow the approved list.', 23, 95, black('* Electives follow the approved list.')),
+        item('Approved by the Board, 2020.', 300, 380, [{ length: 28, color: '#1F4E79' }]),
+      ]);
+      expect(result.notes!.map((note) => [note.text, note.runs[0].color, note.scope.level])).toEqual([
+        ['* Electives follow the approved list.', '#000000', 'year'],
+        ['Approved by the Board, 2020.', '#1F4E79', 'year'],
+      ]);
+    });
+
+    it('flags unknown colours and reports unread text and body images instead of dropping them', () => {
+      const result = run(
+        [item('Note: colour lost', 23, 95, null), item('Prepared for the registrar only', 23, 200, black('Prepared for the registrar only'))],
+        [[100, 10, 180, 30], [40, 150, 300, 220]],
+      );
+      expect(result.notes![0].flags).toEqual(['color_unknown']);
+      expect(result.notes![0].runs).toEqual([{ length: 17, color: null }]);
+      expect(result.unread).toEqual([
+        { reason: 'unrecognized_text', page: 1, bbox: expect.any(Array), text: 'Prepared for the registrar only' },
+        // The letterhead image above the tables is ignored; the one in the course area is reported.
+        { reason: 'image', page: 1, bbox: [40, 150, 300, 220] },
+      ]);
+    });
   });
 
   it('reports a text-less PDF as needing OCR rather than an empty success', () => {

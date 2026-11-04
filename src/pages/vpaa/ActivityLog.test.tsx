@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 
 const { get } = vi.hoisted(() => ({
@@ -78,5 +78,25 @@ describe('ActivityLog component', () => {
     // Log entry data rendered
     expect(await screen.findByText('Kyle Vestal')).toBeDefined();
     expect(screen.getByText('Schedule Created')).toBeDefined();
+  });
+
+  it('labels a restore by the restored entity and category instead of scheduling', async () => {
+    get.mockImplementation((url: string) => Promise.resolve(url === '/activity-log' ? {
+      data: {
+        data: [{
+          id: 'scheduling:9', source: 'scheduling', category: 'account_access', event: 'record_restored', status: 'completed',
+          occurred_at: '2026-11-01T10:00:00Z', actor: { id: 1, name: 'Kyle Vestal', username: 'kvestal', role: 'vpaa' },
+          department_id: 1, semester_id: null, target: { type: 'user', id: 42 }, metadata: { type: 'users', id: 42, label: 'Maria Santos' },
+        }],
+        meta: { current_page: 1, per_page: 25, total: 1, last_page: 1 },
+      },
+    } : { data: [] }));
+
+    render(<ActivityLog />);
+
+    expect(await screen.findByText('Account Restored')).toBeDefined();
+    expect(screen.getByText('Account & Access', { selector: 'span' })).toBeDefined();
+    fireEvent.click(screen.getByText('Account Restored'));
+    expect(await screen.findByText('Account #42 — Maria Santos')).toBeDefined();
   });
 });

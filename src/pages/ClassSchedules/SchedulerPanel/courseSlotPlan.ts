@@ -41,13 +41,32 @@ export const getCourseSlotPlan = (course?: CourseHours | null): CourseSlotPlan =
   };
 };
 
-/** The course as placed in a curriculum: it carries the class minutes that curriculum recorded on import. */
+const curriculumPlacement = (course: Course, curriculumId: number | string | null | undefined) =>
+  curriculumId == null
+    ? undefined
+    : course.curriculumPlacements?.find((placement) => String(placement.curriculumId) === String(curriculumId));
+
+/**
+ * The course as placed in a curriculum: it carries the year level, semester, and class minutes
+ * that curriculum recorded, not another active curriculum's.
+ */
 export const placeCourse = <T extends Course>(course: T, curriculumId: number | string | null | undefined): T => {
   const recorded = curriculumId == null ? undefined : course.classMinutesByCurriculum?.[String(curriculumId)];
-  return recorded
-    ? { ...course, lectureMinutes: recorded.lecture, laboratoryMinutes: recorded.laboratory }
-    : { ...course, lectureMinutes: undefined, laboratoryMinutes: undefined };
+  const placement = curriculumPlacement(course, curriculumId);
+  return {
+    ...course,
+    ...(placement ? { yearLevel: placement.yearLevel, semester: placement.semester } : {}),
+    lectureMinutes: recorded ? recorded.lecture : undefined,
+    laboratoryMinutes: recorded ? recorded.laboratory : undefined,
+  };
 };
+
+/**
+ * Whether the curriculum offers the course, matching the server's curriculum membership rule.
+ * A section without a curriculum, or a payload without placements, cannot tell, so it allows.
+ */
+export const courseInCurriculum = (course: Course, curriculumId: number | string | null | undefined): boolean =>
+  curriculumId == null || course.curriculumPlacements === undefined || curriculumPlacement(course, curriculumId) !== undefined;
 
 /** Each consecutive-day meeting's equal share of the Total Hours, or null when the days cannot split it. */
 export const consecutiveMeetingSlots = (course: CourseHours | null | undefined, dayCount: number): number | null => {

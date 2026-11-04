@@ -5,8 +5,10 @@ import { BookOpen } from 'lucide-react';
 
 import CurriculumHeader from '../../components/curriculum/CurriculumHeader';
 import SemesterCard from '../../components/curriculum/SemesterCard';
+import SourceNotes from '../../components/curriculum/SourceNotes';
 import { useCurriculumDetail } from '../../hooks/curriculum/useCurriculumDetail';
 import { canAuthorCurriculum } from '../../lib/curriculumAccess';
+import { notesForTerm, noteScopeLabel } from '../../lib/curriculumImport/notes';
 import { getStoredUserRole } from '../../lib/storedUser';
 
 export default function CurriculumDetailPage() {
@@ -39,6 +41,11 @@ export default function CurriculumDetailPage() {
   const canEditCourses = canAuthorCurriculum(curriculum) && searchParams.get('mode') === 'edit';
 
   const selectedCurriculumSemester = currentYearSemesters.find((semester) => semester.semester === selectedSemester) ?? currentYearSemesters[0];
+  const notes = curriculum?.notes ?? [];
+  const termCourses = selectedCurriculumSemester?.courses ?? [];
+  const termNotes = selectedCurriculumSemester
+    ? notesForTerm(notes, selectedYear, selectedCurriculumSemester.semester, new Set(termCourses.map((course) => course.id)))
+    : [];
 
   return (
     <div className="w-full">
@@ -70,6 +77,15 @@ export default function CurriculumDetailPage() {
             onActivate={handleActivate}
           />
 
+          <SourceNotes className="mb-4" notes={notes.filter((note) => note.scope.level === 'curriculum')} />
+          <SourceNotes
+            className="mb-4"
+            title="Notes for this term, from the curriculum document"
+            notes={termNotes.map((note) => ({
+              ...note,
+              label: noteScopeLabel(note.scope, termCourses.find((course) => course.id === (note.scope as { course_id?: number }).course_id)?.code),
+            }))}
+          />
           {selectedCurriculumSemester && (
             <SemesterCard
               semester={selectedCurriculumSemester}

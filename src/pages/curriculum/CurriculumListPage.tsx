@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Skeleton from '../../components/ui/Skeleton';
 import DataTable from '../../components/ui/DataTable';
 import SearchInput from '../../components/ui/SearchInput';
@@ -82,7 +82,19 @@ function CurriculumManagePage() {
   );
 
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
-  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+  // `?view=archived` (linked from the system Archive) opens archived curricula; restoring stays permission-gated.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [isArchiveOpen, setIsArchiveOpen] = useState(() => searchParams.get('view') === 'archived');
+  const closeArchive = useCallback(() => {
+    setIsArchiveOpen(false);
+    if (searchParams.has('view')) {
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current);
+        next.delete('view');
+        return next;
+      }, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
   const [printingCurriculumId, setPrintingCurriculumId] = useState<number | null>(null);
   const [viewCurriculumId, setViewCurriculumId] = useState<number | null>(null);
 
@@ -114,7 +126,7 @@ function CurriculumManagePage() {
     setConfirmModal({
       isOpen: true,
       title: 'Archive Curriculum',
-      message: `Are you sure you want to archive "${target.name}"?\n\nThis will remove it from the active list. You can restore it later from the Archive.`,
+      message: `Are you sure you want to archive "${target.name}"?\n\nThis will remove it from the active list. You can restore it later from Archived curricula (the Archive button on this page). Curricula do not appear in the system Archive.`,
       onConfirm: async () => {
         setConfirmModal((prev) => ({ ...prev, isOpen: false }));
         await handleArchive(id);
@@ -317,24 +329,31 @@ function CurriculumManagePage() {
     getPaginationRowModel: getPaginationRowModel(),
   });
 
-  const curriculumGuideSteps = useMemo(() => [
+  // Secretaries add curricula through Import only; manual creation and search are hidden for them.
+  const isSecretary = userRole === 'secretary';
+
+  const curriculumGuideSteps = useMemo(() => isSecretary ? [
+    { element: '#curriculum-import-button', action: 'click' as const, taskHint: 'Click Import to open the curriculum import page.', title: 'Import a curriculum', description: 'New curricula are added by importing a PDF, CSV, XLSX, or DOCX file.', side: 'bottom' as const },
+  ] : [
     { element: '#curriculum-create-button', action: 'click' as const, taskHint: 'Click Create Curriculum to open the form.', title: 'Start a curriculum', description: 'New curricula begin from this page. Open the form to see every field.', side: 'bottom' as const },
     { element: '#curriculum-name-input', action: 'input' as const, taskHint: 'Type a curriculum name to continue.', title: 'Name the curriculum', description: 'Use the official program name and curriculum year.', side: 'bottom' as const },
     { element: '#curriculum-code-input', action: 'input' as const, taskHint: 'Type a curriculum code to continue.', title: 'Give it a code', description: 'The code appears on lists, cards, and printouts.', side: 'bottom' as const },
     { element: '#curriculum-program-select', action: 'select' as const, skipIfMissing: true, taskHint: 'Choose the program you want to manage.', title: 'Select a program', description: 'Pick the program this curriculum is for, if your department has several.', side: 'bottom' as const },
     { element: '#curriculum-form', action: 'submit' as const, taskHint: 'Click Create Curriculum to save it.', title: 'Save the curriculum', description: 'Submit the form to create it. Great work — that is the whole flow.', side: 'top' as const },
-  ], []);
-  useWorkflowGuide({ id: 'curriculum', isReady: true, steps: curriculumGuideSteps, mission: 'Create a Curriculum' });
+  ], [isSecretary]);
+  useWorkflowGuide({ id: 'curriculum', isReady: true, steps: curriculumGuideSteps, mission: isSecretary ? 'Import a Curriculum' : 'Create a Curriculum' });
 
   return (
     <div className="w-full">
       <div id="curriculum-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md mb-6 font-sans flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 min-w-[18rem]">
-          <SearchInput
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search curriculum name or code..."
-          />
+          {!isSecretary && (
+            <SearchInput
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search curriculum name or code..."
+            />
+          )}
 
           <div className="flex items-center gap-1.5">
             <Filter size={13} className="text-gray-400" />
@@ -397,18 +416,20 @@ function CurriculumManagePage() {
                   <span>Import</span>
                 </button>
               )}
-              <button
-                id="curriculum-create-button"
-                onClick={() => {
-                  setEditingCurriculum(null);
-                  setIsEditMode(false);
-                  setIsFormModalOpen(true);
-                }}
-                className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
-              >
-                <Plus size={15} />
-                <span>Create Curriculum</span>
-              </button>
+              {!isSecretary && (
+                <button
+                  id="curriculum-create-button"
+                  onClick={() => {
+                    setEditingCurriculum(null);
+                    setIsEditMode(false);
+                    setIsFormModalOpen(true);
+                  }}
+                  className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
+                >
+                  <Plus size={15} />
+                  <span>Create Curriculum</span>
+                </button>
+              )}
             </>
           )}
         </div>
@@ -514,7 +535,7 @@ function CurriculumManagePage() {
 
       <CurriculumArchiveModal
         isOpen={isArchiveOpen}
-        onClose={() => setIsArchiveOpen(false)}
+        onClose={closeArchive}
         curriculumList={rawCurriculumList}
         onRestore={handleStatusChange}
         canRestore={canAuthorCurriculum}

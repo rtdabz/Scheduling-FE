@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../../lib/api';
-import { isLinkedOnlineSession, recoveryError, roomTransferClassLabel, roomTransferDetailChanges, roomTransferMovedCount, ROOM_TRANSFER_STATUS_LABELS, type RoomTransferPlacement, type RoomTransferRequest } from '../../lib/roomRecovery';
+import { isLinkedOnlineSession, recoveryError, roomTransferChangeLabel, roomTransferClassLabel, roomTransferDetailChanges, roomTransferMovedCount, roomTransferSessionType, ROOM_TRANSFER_STATUS_LABELS, type RoomTransferPlacement, type RoomTransferRequest } from '../../lib/roomRecovery';
 import { formatTime12h } from '../../lib/timeGrid';
 import { publishLiveTopics } from '../../lib/liveUpdates';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
@@ -12,7 +12,8 @@ import ScheduleRejectionModal from '../scheduling/ScheduleRejectionModal';
 import RoomTransferChangesSummary from './RoomTransferChangesSummary';
 import { roomTransferPreview } from '../../lib/roomTransferPreview';
 
-const placement = (row: RoomTransferPlacement) => `${row.room} · ${row.day} ${formatTime12h(row.start_time)}–${formatTime12h(row.end_time)}`;
+const meetingTime = (row: RoomTransferPlacement) => `${row.day} ${formatTime12h(row.start_time)}–${formatTime12h(row.end_time)}`;
+const placement = (row: RoomTransferPlacement) => `${row.room} · ${meetingTime(row)}`;
 
 export default function RoomTransferRequests({ transfers, stage, onClose, onReviewed }: {
   transfers?: RoomTransferRequest[]; stage?: 'dean' | 'vpaa'; onClose?: () => void; onReviewed?: () => void;
@@ -27,7 +28,7 @@ export default function RoomTransferRequests({ transfers, stage, onClose, onRevi
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const details = useRef<HTMLDivElement>(null);
+  const details = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   const [params] = useSearchParams();
   const live = useLiveRevision(['approvals', 'rooms']);
@@ -44,9 +45,11 @@ export default function RoomTransferRequests({ transfers, stage, onClose, onRevi
   const selectedRequest = items[0];
   const printInput = useMemo(() => selectedRequest ? roomTransferPreview(selectedRequest) : null, [selectedRequest]);
   const detailRows = useMemo(() => selectedRequest ? roomTransferDetailChanges(selectedRequest).map(change => ({
-    key: String(change.schedule_id), section: change.section, change: 'Changed', classLabel: isLinkedOnlineSession(change) ? `${change.course} (linked online session)` : change.course,
-    before: `${change.before.day} ${formatTime12h(change.before.start_time)}–${formatTime12h(change.before.end_time)}, ${change.before.room}, ${change.mode ?? 'on-site'}`,
-    after: `${change.after.day} ${formatTime12h(change.after.start_time)}–${formatTime12h(change.after.end_time)}, ${change.after.room}, ${change.mode ?? 'on-site'}`,
+    key: String(change.schedule_id), section: change.section, change: roomTransferChangeLabel(change), classLabel: change.course,
+    sessionType: roomTransferSessionType(change), before: placement(change.before), after: placement(change.after),
+    beforePlacement: { room: change.before.room, time: meetingTime(change.before) },
+    afterPlacement: { room: change.after.room, time: meetingTime(change.after) },
+    roomChanged: !isLinkedOnlineSession(change) && change.before.room !== change.after.room, timeChanged: meetingTime(change.before) !== meetingTime(change.after),
   })) : [], [selectedRequest]);
   useEffect(() => {
     if (!onClose) return;
@@ -102,16 +105,16 @@ export default function RoomTransferRequests({ transfers, stage, onClose, onRevi
       onClose={cancelDecision} onConfirm={() => { void decide(); }} />
   </>;
   if (review && onClose) return <>
-    {selectedRequest && <ScheduleApprovalPreviewModal open title="Room Schedule Reassignment Details"
-      status={selectedRequest.status.startsWith('rejected_') ? 'rejected' : selectedRequest.status === 'approved' || selectedRequest.status === 'applied' ? 'approved' : 'pending'}
-      statusLabel={ROOM_TRANSFER_STATUS_LABELS[selectedRequest.status]} printInput={printInput}
+    {selectedRequest && <ScheduleApprovalPreviewModal open title="Room Schedule Reassignment Details" printInput={printInput}
       canAct={selectedRequest.status === `pending_${stage}`} inert={decision !== null || detailsOpen} closeOnEscape onClose={onClose}
       emptyMessage="The proposed schedule preview is unavailable. View Details to review every proposed change."
-      checks={<div ref={details}><RoomTransferChangesSummary request={selectedRequest} onViewDetails={button => { returnFocus.current = button; setDetailsOpen(true); }} /></div>}
+      headerActions={<button ref={details} type="button" aria-haspopup="dialog" onClick={event => { returnFocus.current = event.currentTarget; setDetailsOpen(true); }}
+        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">View Details</button>}
       onApprove={() => { setDecision({ request: selectedRequest, action: 'approve' }); setReason(''); setError(''); }}
       onReject={() => { setDecision({ request: selectedRequest, action: 'reject' }); setReason(''); setError(''); }} />}
     <ScheduleChangesModal data={detailRows} isOpen={detailsOpen} onClose={() => setDetailsOpen(false)}
-      title="Room schedule reassignment changes" description="Every proposed room schedule reassignment, with the original and proposed schedule placements." />
+      title="Room schedule reassignment changes" description="Every meeting in this request, with its original and proposed room, day, and time as recorded."
+      summary={selectedRequest && <RoomTransferChangesSummary request={selectedRequest} />} beforeHeader="Original" afterHeader="Proposed" />
     {confirmation}
   </>;
   if (!review && items.length === 0) return null;

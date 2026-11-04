@@ -111,3 +111,49 @@ describe('file intake', () => {
     expect(() => detectFormat('c.csv', new ArrayBuffer(10 * 1024 * 1024 + 1))).toThrow(/10 MiB/);
   });
 });
+
+describe('notes in tabular sources', () => {
+  it('keeps CSV notes as text with no colour, since CSV has none, and never as a course', async () => {
+    const csv = `${TEMPLATE_HEADERS.join(',')}\n1,First Semester,IT 101,Intro,2,1,3,none\n"Note: Math prep for GAS, HUMSS, ABM",,,,,,,\ntaken in the first semester only,,,,,,,\n`;
+    const extraction = extractionOf(readTable(await readCsv(csv)));
+    expect(extraction.rows.map((row) => row.source.code)).toEqual(['IT 101']);
+    expect(extraction.notes).toEqual([{
+      id: 'n1',
+      source_text: 'Note: Math prep for GAS, HUMSS, ABM\ntaken in the first semester only',
+      text: 'Note: Math prep for GAS, HUMSS, ABM\ntaken in the first semester only',
+      runs: [{ length: 68, color: null }],
+      scope: { level: 'curriculum' },
+      provenance: { kind: 'csv', record: 3 },
+      flags: [],
+    }]);
+  });
+
+  it('marks XLSX and DOCX note colours unknown, because their readers drop styling, and reports DOCX images', () => {
+    const rows = [
+      ['F I R S T   Y E A R'],
+      ['Course Code', 'First Semester', 'Lec', 'Lab', 'TU', 'Preq'],
+      ['IT 101', 'Intro', '2', '1', '3', 'none'],
+      ['', 'TOTAL CREDITS', '2', '1', '3', ''],
+      ['_____Note: Math prep for non-STEM entrants'],
+    ];
+    const xlsx = extractionOf(readTable({ format: 'xlsx', label: 'Sheet1', rows, provenance: (row) => ({ kind: 'xlsx', sheet: 'Sheet1', row: row + 1 }), warnings: [] }));
+    expect(xlsx.notes![0]).toMatchObject({ source_text: '_____Note: Math prep for non-STEM entrants', text: 'Note: Math prep for non-STEM entrants', scope: { level: 'year', year_level: 1 }, flags: ['color_unknown'] });
+
+    const html = '<h1>F I R S T Y E A R</h1>'
+      + '<table><tr><td>Course Code</td><td>First Semester</td><td>Lec</td><td>Lab</td><td>TU</td><td>Preq</td></tr>'
+      + '<tr><td>IT 101</td><td>Intro</td><td>2</td><td>1</td><td>3</td><td>none</td></tr></table>'
+      + '<p>Note: see the attached scan.</p><p><img src=""></p>';
+    const docx = extractionOf(readTable(tableFromConvertedHtml(html)));
+    expect(docx.notes![0]).toMatchObject({ text: 'Note: see the attached scan.', flags: ['color_unknown'] });
+    expect(docx.unread).toEqual([{ reason: 'image' }]);
+  });
+
+  it('turns legacy string notes into plain notes in the draft without inventing colour or place', () => {
+    const draft = buildDraft(
+      { format: 'csv', extractor_version: 'old', metadata: { name: null, program_text: null, program_code: null, cmo_number: null, cmo_series: null, effective_school_year: null, notes: ['Note: legacy'] }, groups: [], rows: [], warnings: [] },
+      { filename: 'old.csv', size_bytes: 1, sha256: 'a'.repeat(64) },
+    );
+    expect(draft.notes).toEqual([{ id: 'n1', source_text: 'Note: legacy', text: 'Note: legacy', runs: [{ length: 12, color: null }], scope: { level: 'curriculum' }, provenance: null, flags: [] }]);
+    expect(draft.unread).toEqual([]);
+  });
+});

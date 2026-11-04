@@ -27,6 +27,15 @@ export const curriculumService = {
     return res.data;
   },
 
+  /** Changes one section's curriculum; the server refuses while its classes belong to another. */
+  async assignCurriculumToSection(
+    sectionId: number | string,
+    curriculumId: number
+  ): Promise<{ curriculum_id: number | null; curriculum?: { id: number; name: string } | null }> {
+    const res = await api.put(`/sections/${sectionId}`, { curriculum_id: curriculumId });
+    return res.data;
+  },
+
   async getCurriculumFull(id: number | string): Promise<CurriculumDetail> {
     const res = await api.get<CurriculumDetail>(`/curriculum/${id}/full`);
     return res.data;

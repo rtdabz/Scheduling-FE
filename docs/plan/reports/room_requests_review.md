@@ -1,5 +1,7 @@
 # Room Request frontend and backend review
 
+Latest recheck: [2026-11-03 follow-up review and fix report](room_requests_followup_review_2026-11-03.md). As of the 2026-11-03 fix pass, every finding in this review is resolved and regression-tested (as RR-01 to RR-07 there; the missing-lock finding was already fixed before that pass). The October evidence below is historical.
+
 Review date: 2026-10-12. Reviewed the current workspace, including existing uncommitted changes. This is a review and implementation backlog; application behavior was not changed.
 
 ## Assessment

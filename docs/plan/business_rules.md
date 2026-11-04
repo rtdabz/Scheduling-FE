@@ -12,7 +12,21 @@ Room structural updates, including the separate department-assignment route,
 validate the proposed room against affected timetable entries within the
 scheduling lock and transaction. Incompatible room type, lecture-use policy, or
 access changes require relocating classes first. Resolve program allocations
-and current pending/approved room requests before changing room ownership.
+and pending/approved room requests in the active or any enabled semester before
+changing room ownership; closed requests and requests in disabled semesters are
+history and do not block. Archiving a room or a building is refused while its
+rooms hold classes or such pending/approved room requests.
+
+Room requests (Secretary to Secretary, lecture rooms only) are bound to one
+explicit semester for listing, occupancy, and submission. Only the room's
+current owner can approve: a request whose room was reassigned after submission
+cannot be approved and must be cancelled and resubmitted. Returning or revoking
+a grant, allowed at any time, moves the borrower's overlapping classes to Room
+TBA without changing their schedule status, and records the change in schedule
+history (`room_grant_ended`), revision tracking when applicable, the scheduling
+audit log, and a room-recovery case, all in the grant transaction.
+Notifications for request actions are delivered by a queued, retried job after
+the action commits; a delivery failure never changes the action's response.
 Classes from past semesters do not prevent marking a room unavailable.
 
 Schedule restoration validates current scheduling rules and overlap conflicts
@@ -47,6 +61,23 @@ writing any assignment; one blocked change rejects the entire batch. Assigning
 the section's current curriculum is a no-op and remains allowed. Department,
 program, semester, year-level, and explicit section selection still determine
 which sections are targeted.
+
+## Section curriculum in manual scheduling
+
+Each section records the curriculum it follows, so two sections of one year
+level may follow different curricula in the same semester. The manual
+scheduler's Curriculum control changes only the selected section, through the
+ordinary section update (`PUT /api/sections/{id}`), and therefore keeps every
+structural-edit guard above: locked classes block the change, and draft classes
+from another curriculum or placement must be cleared first. Nothing is cleared
+automatically.
+
+Course options, year level, semester, and recorded class minutes come from the
+section's own curriculum (`curriculum_placements` and
+`class_minutes_by_curriculum` in `/api/initial-data`). When a section resolves
+to a curriculum, the rule engine rejects a class whose course that curriculum
+does not place (`curriculum_course_membership`); catalogue year and semester
+apply only to a section with no resolvable curriculum.
 
 ## Course teaching assignment
 

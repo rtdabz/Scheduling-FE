@@ -1,7 +1,8 @@
 import { isSuspiciousCode, isSummerHeading, parseCredit, parseTerm, parseYearLevel, stripFormBlanks, termOf, yearHeading } from './normalize';
-import type { Extraction, ExtractedGroup, ExtractedRow, ExtractionFlag, ImportFormat, PlacementTerm, Provenance, ReportedTotals } from './types';
+import { NOTE_START, plainNote } from './notes';
+import type { Extraction, ExtractedGroup, ExtractedRow, ExtractionFlag, ImportFormat, PlacementTerm, Provenance, ReportedTotals, SourceNote } from './types';
 
-export const TABULAR_EXTRACTOR_VERSION = 'tabular/1';
+export const TABULAR_EXTRACTOR_VERSION = 'tabular/2';
 
 export type TemplateField = 'year_level' | 'semester' | 'code' | 'title' | 'lec' | 'lab' | 'tu' | 'prerequisites';
 
@@ -66,6 +67,42 @@ export const detectTemplateHeader = (rows: string[][]): HeaderDetection | null =
 
 export type ProvenanceFor = (rowIndex: number) => Provenance;
 
+/**
+ * Collects note rows: a row opening with a note marker starts a note, and single-cell text rows right after it
+ * continue it, line by line. CSV carries no colour; the XLSX and DOCX readers drop it, so those notes say so.
+ */
+const noteCollector = (format: ImportFormat, provenance: ProvenanceFor) => {
+  const support = format === 'csv' ? 'none' : 'unknown';
+  const notes: SourceNote[] = [];
+  let open: { lines: string[]; index: number; scope: SourceNote['scope'] } | null = null;
+  const flush = () => {
+    if (open) notes.push(plainNote(`n${notes.length + 1}`, open.lines, provenance(open.index), open.scope, support));
+    open = null;
+  };
+  return {
+    /** True when the row was taken as (part of) a note. */
+    take: (row: string[], index: number, scope: SourceNote['scope']): boolean => {
+      const cells = row.map((cell) => cell.trim()).filter(Boolean);
+      const text = cells.join(' ');
+      if (cells.length > 0 && NOTE_START.test(stripFormBlanks(text))) {
+        flush();
+        open = { lines: [row.filter((cell) => cell.trim() !== '').join(' ')], index, scope };
+        return true;
+      }
+      if (open && cells.length === 1 && yearHeading(text) === null && !isSummerHeading(text) && !/^course\s*code$/i.test(text)) {
+        open.lines.push(cells[0]);
+        return true;
+      }
+      flush();
+      return false;
+    },
+    finish: (): SourceNote[] => {
+      flush();
+      return notes;
+    },
+  };
+};
+
 const isTotalRow = (code: string, title: string) => /^total\b/i.test(stripFormBlanks(code)) || /^total\s+(credits?|units?)$/i.test(title.trim());
 
 const creditCells = (values: Array<string | undefined>): { values: ReportedTotals; flags: ExtractionFlag[] } => {
@@ -92,10 +129,12 @@ export const rowsFromTemplate = (
   const extracted: ExtractedRow[] = [];
   const groups = new Map<string, ExtractedGroup>();
   const warnings: string[] = [];
+  const notes = noteCollector(format, provenance);
 
   rows.slice(detection.headerRow + 1).forEach((row, offset) => {
     const index = detection.headerRow + 1 + offset;
     if (row.every((value) => value.trim() === '')) return;
+    if (notes.take(row, index, { level: 'curriculum' })) return;
     const year = parseYearLevel(cell(row, 'year_level'));
     const term = parseTerm(cell(row, 'semester'));
     const code = cell(row, 'code');
@@ -131,12 +170,14 @@ export const rowsFromTemplate = (
     });
   });
 
+  const found = notes.finish();
   return {
     format,
     extractor_version: TABULAR_EXTRACTOR_VERSION,
-    metadata: { name: null, program_text: null, program_code: null, cmo_number: null, cmo_series: null, effective_school_year: null, notes: [] },
+    metadata: { name: null, program_text: null, program_code: null, cmo_number: null, cmo_series: null, effective_school_year: null, notes: found.map((note) => note.text) },
     groups: [...groups.values()],
     rows: extracted,
+    notes: found,
     warnings,
   };
 };
@@ -164,7 +205,7 @@ export const rowsFromGrid = (rows: string[][], format: ImportFormat, provenance:
   const extracted: ExtractedRow[] = [];
   const groups: ExtractedGroup[] = [];
   const warnings: string[] = [];
-  const notes: string[] = [];
+  const notes = noteCollector(format, provenance);
   let sawHeader = false;
 
   rows.forEach((row, index) => {
@@ -214,10 +255,8 @@ export const rowsFromGrid = (rows: string[][], format: ImportFormat, provenance:
       return;
     }
 
-    if (/^note\b/i.test(stripFormBlanks(joined))) {
-      notes.push(stripFormBlanks(joined));
-      return;
-    }
+    // A note between a year's tables belongs to that year until reviewed.
+    if (notes.take(row, index, year === null ? { level: 'curriculum' } : { level: 'year', year_level: year })) return;
 
     for (const block of blocks) {
       if (!block.open) continue;
@@ -253,6 +292,7 @@ export const rowsFromGrid = (rows: string[][], format: ImportFormat, provenance:
     }
   });
 
+  const found = notes.finish();
   if (!sawHeader) return null;
 
   // Blocks closed without a printed total still form a group, labelled as calculated only.
@@ -268,9 +308,10 @@ export const rowsFromGrid = (rows: string[][], format: ImportFormat, provenance:
   return {
     format,
     extractor_version: `${TABULAR_EXTRACTOR_VERSION}+grid`,
-    metadata: { name: null, program_text: null, program_code: null, cmo_number: null, cmo_series: null, effective_school_year: null, notes },
+    metadata: { name: null, program_text: null, program_code: null, cmo_number: null, cmo_series: null, effective_school_year: null, notes: found.map((note) => note.text) },
     groups,
     rows: extracted,
+    notes: found,
     warnings,
   };
 };

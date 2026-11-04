@@ -1,13 +1,11 @@
 import { useMemo } from 'react';
 import { getCoreRowModel, getPaginationRowModel, useReactTable, type ColumnDef } from '@tanstack/react-table';
 import DataTable from '../ui/DataTable';
-import { ROOM_TRANSFER_STATUS_LABELS, roomTransferClassLabel, roomTransferDetailChanges, type RoomTransferRequest } from '../../lib/roomRecovery';
+import { ROOM_TRANSFER_STATUS_LABELS, roomTransferClassLabel, roomTransferDetailChanges, roomTransferStatusClass as statusClass, type RoomTransferRequest } from '../../lib/roomRecovery';
 import { formatTime12h } from '../../lib/timeGrid';
 
-type Status = RoomTransferRequest['status'];
 type ScheduleRow = RoomTransferRequest['changes'][number] & { request: RoomTransferRequest };
 const time = (row: ScheduleRow['before']) => `${row.day} ${formatTime12h(row.start_time)}–${formatTime12h(row.end_time)}`;
-const statusClass = (status: Status) => status.startsWith('pending_') ? 'bg-amber-50 text-amber-900' : status.startsWith('rejected_') ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800';
 
 export default function RoomTransferSchedulesTable({ requests, loading = false }: { requests: RoomTransferRequest[]; loading?: boolean }) {
   const rows = useMemo(() => requests.flatMap(request => roomTransferDetailChanges(request).map(change => ({ ...change, request }))), [requests]);
