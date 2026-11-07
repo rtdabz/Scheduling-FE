@@ -26,10 +26,14 @@ export interface DepartmentScheduleStatusData {
   sections: SectionStatusItem[];
   has_dean?: boolean;
   cross_department_pending?: number;
+  cross_department_unlocked?: boolean;
 }
 
 export const DEAN_REQUIRED_MESSAGE =
   'Submission unavailable. Please assign a Department Dean before submitting the schedule.';
+
+export const CROSS_DEPARTMENT_LOCKED_MESSAGE =
+  'Cross-Department assignments will be available once all schedules are approved by the VPAA.';
 
 interface StageCounts {
   draft: number;
@@ -52,6 +56,8 @@ interface UseDepartmentScheduleStatusReturn {
   canSubmit: boolean;
   hasDean: boolean;
   crossDepartmentPending: number;
+  /** True once every schedule of the department has final VPAA approval. */
+  crossDepartmentUnlocked: boolean;
   loading: boolean;
   error: string | null;
   refetch: () => void;
@@ -73,6 +79,7 @@ export function useDepartmentScheduleStatus(
   const [departmentName, setDepartmentName] = useState(cachedStatus?.department_name ?? '');
   const [hasDean, setHasDean] = useState(cachedStatus?.has_dean ?? true);
   const [crossDepartmentPending, setCrossDepartmentPending] = useState(cachedStatus?.cross_department_pending ?? 0);
+  const [crossDepartmentUnlocked, setCrossDepartmentUnlocked] = useState(cachedStatus?.cross_department_unlocked ?? false);
   const [loading, setLoading] = useState(!!departmentId && !hasCachedData(statusCacheKey));
   const [error, setError] = useState<string | null>(null);
   const [fetchKey, setFetchKey] = useState(0);
@@ -104,6 +111,7 @@ export function useDepartmentScheduleStatus(
           setDepartmentName(data.department_name);
           setHasDean(data.has_dean ?? true);
           setCrossDepartmentPending(data.cross_department_pending ?? 0);
+          setCrossDepartmentUnlocked(data.cross_department_unlocked ?? false);
         }
       } catch {
         if (!cancelled) {
@@ -171,6 +179,7 @@ export function useDepartmentScheduleStatus(
     canSubmit,
     hasDean,
     crossDepartmentPending,
+    crossDepartmentUnlocked,
     loading,
     error,
     refetch,

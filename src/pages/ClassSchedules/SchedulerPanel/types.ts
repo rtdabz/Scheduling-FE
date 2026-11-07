@@ -221,6 +221,8 @@ export interface ScheduleItem {
   splitGroupId?: string | null;
   meetingType?: "lecture" | "laboratory" | null;
   meetingIndex?: number;
+  /** User who entered the row; printed as the "Prepared by" signatory. */
+  createdById?: number | null;
 }
 
 export interface DepartmentSectionProgress {
@@ -411,6 +413,7 @@ export interface ApiScheduleRecord {
   split_group_id?: string | null;
   meeting_type?: "lecture" | "laboratory" | null;
   meeting_index?: number;
+  created_by?: number | string | null;
   course?: {
     course_code?: string;
     subject_code?: string;

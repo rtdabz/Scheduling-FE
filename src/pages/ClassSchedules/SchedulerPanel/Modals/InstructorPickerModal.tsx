@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, Search, Users, X } from "lucide-react";
 import EmploymentBadge from "../EmploymentBadge";
+import { proBonoStatusOf } from "../../../../lib/facultyLoad";
 import type { Faculty } from "../types";
 
 const NO_PROGRAM = "__none__";
@@ -12,6 +13,10 @@ interface InstructorPickerModalProps {
   preferredDepartmentId?: number | null;
   preferredProgramId?: number | null;
   conflictFor: (facultyId: string) => string | null;
+  /** Units of the class being assigned, used to flag Pro-Bono and limit cases. */
+  incomingUnits?: number;
+  /** The instructor already holding the class; their load does not grow. */
+  currentFacultyId?: string | null;
   onSelect: (facultyId: string) => void;
   onClose: () => void;
 }
@@ -39,6 +44,8 @@ export default function InstructorPickerModal({
   preferredDepartmentId,
   preferredProgramId,
   conflictFor,
+  incomingUnits = 0,
+  currentFacultyId = null,
   onSelect,
   onClose,
 }: InstructorPickerModalProps) {
@@ -225,6 +232,9 @@ export default function InstructorPickerModal({
             const isSelected = faculty.id === selectedFacultyId;
             const conflict = conflictFor(faculty.id);
             const ceiling = faculty.unitCeiling ?? faculty.maxUnits;
+            const loadStatus = faculty.assignedUnits != null && faculty.unitCeiling != null && faculty.id !== currentFacultyId
+              ? proBonoStatusOf(faculty.assignedUnits, faculty.unitCeiling, incomingUnits)
+              : "within";
             return (
               <li key={faculty.id}>
                 <button
@@ -251,6 +261,16 @@ export default function InstructorPickerModal({
                         <span title={conflict} className="inline-flex items-center gap-1 rounded border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-orange-700">
                           <AlertTriangle className="h-3 w-3" />
                           Conflict
+                        </span>
+                      )}
+                      {loadStatus === "pro_bono" && (
+                        <span title="Allowed once: this class takes the instructor past their unit limit." className="inline-flex items-center rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                          Pro-Bono
+                        </span>
+                      )}
+                      {(loadStatus === "limit_reached" || loadStatus === "pro_bono_used") && (
+                        <span title={loadStatus === "pro_bono_used" ? "The one Pro-Bono assignment past the limit has been used." : "At the unit limit; Pro-Bono needs remaining capacity."} className="inline-flex items-center rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-700">
+                          {loadStatus === "pro_bono_used" ? "Pro-Bono used" : "At limit"}
                         </span>
                       )}
                     </span>

@@ -6,6 +6,7 @@ import AppLayout from './components/layout/AppLayout';
 import { fetchCurrentUser } from './lib/currentUser';
 import { getStoredUser, getStoredUserRole, requiresDepartmentProgram, type StoredUser } from './lib/storedUser';
 import LockedModuleView from './components/ui/LockedModuleView';
+import { CROSS_DEPARTMENT_LOCKED_MESSAGE, useDepartmentScheduleStatus } from './hooks/useDepartmentScheduleStatus';
 import { lazyPage, registerPagePrefetch } from './lib/pagePrefetch';
 
 const Dashboard = lazyPage(() => import('./pages/Dashboard'));
@@ -161,6 +162,25 @@ const CapabilityRoute = ({
   return <>{children}</>;
 };
 
+const CrossDepartmentApprovalRoute = ({
+  moduleName,
+  children,
+}: {
+  moduleName: string;
+  children: React.ReactNode;
+}) => {
+  const { crossDepartmentUnlocked, loading } = useDepartmentScheduleStatus(getStoredUser()?.department_id);
+
+  if (loading) {
+    return <div className="flex min-h-[60vh] items-center justify-center" aria-label="Checking schedule approval" />;
+  }
+
+  if (!crossDepartmentUnlocked) {
+    return <LockedModuleView moduleName={moduleName} message={CROSS_DEPARTMENT_LOCKED_MESSAGE} />;
+  }
+  return <>{children}</>;
+};
+
 const RoleRoute = ({
   role,
   moduleName,
@@ -252,7 +272,7 @@ export default function App() {
             <Route path="/secretary/reports" element={<CapabilityRoute capability="schedule.view" moduleName="Reports"><Reports /></CapabilityRoute>} />
             <Route path="/secretary/schedule-history" element={<CapabilityRoute capability="schedule.view" moduleName="Schedule History"><VpaaScheduleHistory /></CapabilityRoute>} />
             <Route path="/secretary/cross-department-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Cross-Department"><CrossDepartmentAssignments /></CapabilityRoute>} />
-            <Route path="/secretary/course-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Course Assignment"><CourseTeachingAssignments /></CapabilityRoute>} />
+            <Route path="/secretary/course-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Course Assignment"><CrossDepartmentApprovalRoute moduleName="Course Assignment"><CourseTeachingAssignments /></CrossDepartmentApprovalRoute></CapabilityRoute>} />
             <Route path="/secretary/settings" element={<Navigate to="/secretary/schedule-management" replace />} />
             
             <Route path="/program_head/dashboard" element={<DashboardRoute />} />
@@ -272,7 +292,7 @@ export default function App() {
             <Route path="/program_head/reports" element={<CapabilityRoute capability="schedule.view" moduleName="Reports"><Reports /></CapabilityRoute>} />
             <Route path="/program_head/schedule-history" element={<CapabilityRoute capability="schedule.view" moduleName="Schedule History"><VpaaScheduleHistory /></CapabilityRoute>} />
             <Route path="/program_head/cross-department-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Cross-Department"><CrossDepartmentAssignments /></CapabilityRoute>} />
-            <Route path="/program_head/course-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Course Assignment"><CourseTeachingAssignments /></CapabilityRoute>} />
+            <Route path="/program_head/course-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Course Assignment"><CrossDepartmentApprovalRoute moduleName="Course Assignment"><CourseTeachingAssignments /></CrossDepartmentApprovalRoute></CapabilityRoute>} />
             <Route path="/program_head/settings" element={<Navigate to="/program_head/schedule-management" replace />} />
 
             {LEGACY_REDIRECTS.map(([from, to]) => (

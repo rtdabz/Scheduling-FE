@@ -46,7 +46,7 @@ import { invalidateCacheGroups } from "../../lib/cacheGroups";
 import { publishLiveTopics } from "../../lib/liveUpdates";
 import { apiErrorMessage } from "../../lib/apiError";
 import { availabilityWarningMessage, coveredContinuously } from "../../lib/availabilityWindows";
-import type { LoadTier } from "../../lib/facultyLoad";
+import { proBonoOptionNote, type LoadTier } from "../../lib/facultyLoad";
 import ConfirmModal from "../../components/ui/ConfirmModal";
 import WeeklyTimetableGrid from "../../components/scheduling/WeeklyTimetableGrid";
 import { gridOpeningMinutes, slotCount, slotMinutes } from "../../lib/timeGrid";
@@ -194,6 +194,8 @@ interface AssignmentLoad {
   unit_ceiling: number;
   tier: LoadTier;
   tier_label: string;
+  pro_bono?: boolean;
+  pro_bono_units?: number;
 }
 
 interface AssignmentUpdateResponse {
@@ -201,6 +203,7 @@ interface AssignmentUpdateResponse {
   schedules?: ApiSchedule[];
   warnings?: AssignmentWarning[];
   load?: AssignmentLoad | null;
+  message?: string;
 }
 
 interface AssignmentSchedule extends ApiSchedule {
@@ -827,12 +830,19 @@ const selectedSchedule = assignmentSchedules.find(
       invalidateAssignmentDependents();
       setFacultyAssignmentPopup(null);
       resetConflictHelp();
-      toast.success(
-        facultyId === null ? "Instructor Removed" : "Instructor Assigned",
-        facultyId === null
-          ? "The instructor assignment was removed successfully."
-          : "The instructor was assigned successfully.",
-      );
+      if (facultyId !== null && load?.pro_bono) {
+        toast.warning(
+          "Assigned as Pro-Bono",
+          response.data.message ?? "This class takes the instructor past their unit limit. No further classes can be assigned to them.",
+        );
+      } else {
+        toast.success(
+          facultyId === null ? "Instructor Removed" : "Instructor Assigned",
+          facultyId === null
+            ? "The instructor assignment was removed successfully."
+            : "The instructor was assigned successfully.",
+        );
+      }
     } catch (err) {
       const conflict = facultyId === null ? null : instructorConflictFrom(err);
       if (conflict !== null && facultyId !== null) {
@@ -1026,6 +1036,9 @@ const selectedSchedule = assignmentSchedules.find(
           employmentType: faculty.employmentType,
           conflict: checkModalFacultyConflict(faculty.id, String(primary.id))
             ? "already scheduled"
+            : null,
+          loadNote: faculty.assignedUnits != null && faculty.unitCeiling != null && Number(faculty.id) !== primary.faculty_id
+            ? proBonoOptionNote(faculty.assignedUnits, faculty.unitCeiling, Number(primary.subject.units ?? 0))
             : null,
         })),
         restrictionNote: requiredProgramId === null

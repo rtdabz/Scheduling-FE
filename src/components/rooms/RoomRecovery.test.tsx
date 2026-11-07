@@ -508,6 +508,23 @@ describe('Room recovery workflow', () => {
     expect(screen.queryByText(/15434/)).toBeNull();
   });
 
+  it('labels classes moved online by a room closure and proposes the replacement room, not Online', async () => {
+    const temporary = { ...data.schedules[0], room: 'Online (temporary, Lab 1 unavailable)', mode: 'online', temporarily_online: true,
+      original_room: 'Lab 1', attention_reason: 'Temporarily online: room unavailable' };
+    vi.mocked(api.get).mockResolvedValue({ data: { ...data, schedules: [temporary] } });
+    const before = { ...row, room_id: null, mode: 'online' };
+    vi.mocked(api.post).mockResolvedValue({ data: { ...plan,
+      groups: [{ key: 'single-11', before: [before], after: [{ ...before, room_id: 2, mode: 'on-site' }] }],
+      meetings: [{ id: 11, course: 'SCI101', section: 'A', room: temporary.room, day: 'Monday', start_time: '08:00', end_time: '09:00', mode: 'online', temporarily_online: true }] } });
+    panel();
+    expect(await screen.findByText('Temporarily online: room unavailable')).toBeTruthy();
+    expect(screen.getByText('Meets online until a replacement room is approved')).toBeTruthy();
+    fireEvent.click(screen.getByText('Find suitable rooms'));
+    expect(await screen.findByText(/Current: Online \(temporary, Lab 1 unavailable\)/)).toBeTruthy();
+    expect(screen.getByText('Lab 2 · Monday 8:00 AM–9:00 AM')).toBeTruthy();
+    expect(screen.getByText('Returns to face-to-face after final approval')).toBeTruthy();
+  });
+
   it('does not show a failed alert request as an empty recovery queue', async () => {
     vi.mocked(api.get).mockRejectedValueOnce(new Error('Offline'));
     render(<MemoryRouter><RoomRecoveryAlerts /></MemoryRouter>);

@@ -49,6 +49,8 @@ interface AvailableSlotsResponse {
   placement_truncated: boolean;
   best_matches: AvailableSlot[];
   same_time_starts: AvailableSlot[] | null;
+  /** Set when no physical room fits and Online Class is offered instead. */
+  online_fallback?: { recommended: boolean; message: string } | null;
 }
 
 interface DropModalProps {
@@ -198,6 +200,7 @@ export default function DropModal({
   const [areSlotsTruncated, setAreSlotsTruncated] = useState(false);
   const [isSlotsLoading, setIsSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState<string | null>(null);
+  const [onlineFallbackMessage, setOnlineFallbackMessage] = useState<string | null>(null);
   const [roomFilter, setRoomFilter] = useState<string>(ALL_ROOMS);
   const [slotMeeting, setSlotMeeting] = useState<"first" | "second">("first");
   const [slotRequestKey, setSlotRequestKey] = useState<string | null>(null);
@@ -329,6 +332,7 @@ export default function DropModal({
     setAvailableSlots([]);
     setBestMatches([]);
     setPairSlots(null);
+    setOnlineFallbackMessage(null);
     if (activeRequestKey === null) {
       setAvailableSlotRooms([]);
       setAreSlotsTruncated(false);
@@ -355,9 +359,11 @@ export default function DropModal({
         setPairSlots(response.data.same_time_starts ?? null);
         setAvailableSlotRooms(response.data.placement_rooms ?? []);
         setAreSlotsTruncated(Boolean(response.data.placement_truncated));
+        setOnlineFallbackMessage(response.data.online_fallback?.recommended ? response.data.online_fallback.message : null);
       }).catch(() => {
         if (!active) return;
         setAvailableSlots([]);
+        setOnlineFallbackMessage(null);
         setAvailableSlotRooms([]);
         setAreSlotsTruncated(false);
         setSlotsError("Suggestions are unavailable right now. You can still adjust the placement by hand.");
@@ -394,7 +400,12 @@ export default function DropModal({
   };
 
   const splitPairStarts = isSameTimePair && modalDay2Duration > 0
-    ? (pairSlots ?? []).map((slot) => ({ startSlot: slot.start_slot, endSlot: slot.end_slot, roomLabel: pairRoomLabel(slot) }))
+    ? (pairSlots ?? []).map((slot) => ({
+        startSlot: slot.start_slot,
+        endSlot: slot.end_slot,
+        roomLabel: pairRoomLabel(slot),
+        modes: slot.group_rows?.length ? slot.group_rows.map((row) => row.mode ?? "on-site") : undefined,
+      }))
     : null;
 
   const applySplitPairStart = (startSlot: number): void => {
@@ -1222,6 +1233,7 @@ export default function DropModal({
         visibleSlots={visibleSlots}
         isSlotsLoading={isSlotsLoading}
         slotsError={slotsError}
+        onlineFallbackMessage={onlineFallbackMessage}
         areSlotsTruncated={areSlotsTruncated}
         roomFilter={roomFilter}
         onRoomFilterChange={setRoomFilter}

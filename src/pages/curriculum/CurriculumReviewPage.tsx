@@ -11,6 +11,7 @@ import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import DataTable from '../../components/ui/DataTable';
 import TableActionButton from '../../components/ui/TableActionButton';
 import CurriculumDetailModal from '../../components/curriculum/CurriculumDetailModal';
+import CurriculumStatusTabs, { type CurriculumStatusTab } from '../../components/curriculum/CurriculumStatusTabs';
 import { useCurriculum } from '../../hooks/curriculum/useCurriculum';
 import { curriculumService } from '../../services/curriculum/curriculumService';
 import { printCurriculum } from '../../lib/curriculumPrintable';
@@ -20,7 +21,7 @@ import { curriculumLifecycleBadge } from '../../types/curriculum';
 
 type ReviewTab = CurriculumStatus;
 
-const reviewTabs: Array<{ id: ReviewTab; label: string }> = [
+const reviewTabs: CurriculumStatusTab[] = [
   { id: 'active', label: 'Active' },
   { id: 'deactivated', label: 'Deactivated' },
   { id: 'archived', label: 'Archived' },
@@ -212,25 +213,16 @@ export default function CurriculumReviewPage() {
 
   return (
     <div className="relative">
-      <div id="curriculum-review-tabs" className="mb-4 flex flex-wrap gap-2 rounded-2xl border border-gray-150/70 bg-white p-2 shadow-sm">
-        {reviewTabs.map((tab) => {
-          const active = selectedTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => {
-                setSelectedTab(tab.id);
-                resetPage();
-              }}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold uppercase tracking-wide transition-colors ${active ? 'bg-[#4e0a10] text-white shadow-sm' : 'bg-gray-50 text-gray-600 hover:bg-[#4e0a10]/5 hover:text-[#4e0a10]'}`}
-            >
-              {tab.label}
-              <span className={`rounded-full px-2 py-0.5 text-[10px] ${active ? 'bg-white/20 text-white' : 'bg-white text-gray-500'}`}>{tabCounts[tab.id]}</span>
-            </button>
-          );
-        })}
-      </div>
+      <CurriculumStatusTabs
+        id="curriculum-review-tabs"
+        tabs={reviewTabs}
+        selected={selectedTab}
+        counts={tabCounts}
+        onSelect={(status) => {
+          setSelectedTab(status);
+          resetPage();
+        }}
+      />
 
       <div id="curriculum-review-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 mb-6">
         <div className="flex flex-col sm:flex-row gap-3 flex-1">

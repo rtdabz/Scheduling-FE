@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { basicLoadOf, loadBandsOf, loadLevelOf, loadTierForUnits, loadTierLabel } from './facultyLoad';
+import { basicLoadOf, loadBandsOf, loadLevelOf, loadTierForUnits, loadTierLabel, proBonoOptionNote, proBonoStatusOf } from './facultyLoad';
 
 /**
  * The same boundaries as `tests/Unit/FacultyLoadTierTest.php`, so the badge
@@ -55,7 +55,30 @@ describe('loadTierLabel', () => {
   it('uses the words the scheduling staff use', () => {
     expect(loadTierLabel('basic')).toBe('Basic Load');
     expect(loadTierLabel('overload')).toBe('Overload');
+    expect(loadTierLabel('pro_bono')).toBe('Pro-Bono');
     expect(loadTierLabel('beyond_ceiling')).toBe('Over limit');
+  });
+});
+
+describe('proBonoStatusOf', () => {
+  it('allows one class past the limit only while capacity remains', () => {
+    expect(proBonoStatusOf(34, 36, 3)).toBe('pro_bono');
+    expect(proBonoStatusOf(37, 36, 3)).toBe('pro_bono_used');
+    expect(proBonoStatusOf(36, 36, 3)).toBe('limit_reached');
+  });
+
+  it('leaves regular assignments alone', () => {
+    expect(proBonoStatusOf(30, 36, 3)).toBe('within');
+    expect(proBonoStatusOf(33, 36, 3)).toBe('within');
+    expect(proBonoStatusOf(40, 0, 3)).toBe('within');
+    expect(proBonoStatusOf(37, 36, 0)).toBe('within');
+  });
+
+  it('labels the option with the projected load', () => {
+    expect(proBonoOptionNote(34, 36, 3)).toBe('Pro-Bono 37/36');
+    expect(proBonoOptionNote(36, 36, 3)).toBe('At limit 36/36');
+    expect(proBonoOptionNote(37, 36, 3)).toBe('Pro-Bono used 37/36');
+    expect(proBonoOptionNote(12, 36, 3)).toBeNull();
   });
 });
 

@@ -191,6 +191,11 @@ export default function ArchiveRecordDialog({ target, initialStep = 'details', o
                       <li key={`${item.type}:${item.id}`} className="flex flex-wrap items-baseline gap-x-2 text-xs">
                         <span className="font-semibold text-gray-900">{item.label}</span>
                         <span className="text-gray-500">{item.relation}</span>
+                        {detail.type === 'buildings' && item.archived && (
+                          <button type="button" onClick={() => openRecord(item)} className="rounded font-bold text-[#5A1220] underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220]">
+                            Restore this room only
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>

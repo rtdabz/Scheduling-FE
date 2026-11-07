@@ -129,6 +129,7 @@ interface ApiFacultyMember {
   suffix?: string | null;
   employment_type: 'full-time' | 'part-time';
   department_id: number;
+  program_id?: number | null;
   department?: { id: number; department_code?: string; department_name?: string } | null;
   profile_picture?: string | null;
   administrative_role?: string | null;
@@ -204,7 +205,8 @@ export default function Departments() {
   const [isLoadingFaculties, setIsLoadingFaculties] = useState(false);
   const [activeFacultyTab, setActiveFacultyTab] = useState<'full-time' | 'part-time'>('full-time');
   const [facultyPage, setFacultyPage] = useState(0);
-  
+  const [facultyProgramFilter, setFacultyProgramFilter] = useState<Program | null>(null);
+
   const [globalFilter, setGlobalFilter] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -288,6 +290,7 @@ export default function Departments() {
   const openDepartmentDetail = (department: Department) => {
     setSelectedDeptForDetail(department);
     setFacultyPage(0);
+    setFacultyProgramFilter(null);
     closeProgramForm();
     setIsDetailModalOpen(true);
   };
@@ -321,9 +324,17 @@ export default function Departments() {
   const deptFaculties = useMemo(() => {
     if (!selectedDeptForDetail) return [];
     return faculties.filter(
-      (f) => f.department_id === selectedDeptForDetail.id || f.department?.id === selectedDeptForDetail.id
+      (f) =>
+        (f.department_id === selectedDeptForDetail.id || f.department?.id === selectedDeptForDetail.id) &&
+        // Instructors without a program are shared across the department's programs.
+        (facultyProgramFilter === null || f.program_id == null || Number(f.program_id) === facultyProgramFilter.id)
     );
-  }, [faculties, selectedDeptForDetail]);
+  }, [faculties, selectedDeptForDetail, facultyProgramFilter]);
+
+  const toggleFacultyProgramFilter = (program: Program) => {
+    setFacultyProgramFilter((current) => (current?.id === program.id ? null : program));
+    setFacultyPage(0);
+  };
 
   const headsByProgramId = useMemo(() => {
     const map = new Map<number, string[]>();
@@ -1257,12 +1268,22 @@ export default function Departments() {
                     </div>
 
                     {selectedDeptForDetail.programHeads.length > 0 ? (
-                      selectedDeptForDetail.programHeads.map((head, index) => (
-                        <div
-                          key={`${head.name}-${head.program?.id ?? 'none'}-${index}`}
-                          className={`flex items-center gap-3 rounded-xl border border-l-4 border-slate-200/80 bg-white px-3 py-2 shadow-sm ${head.program
-                            ? 'border-l-[#C9952A]'
-                            : 'border-l-slate-300'}`}
+                      selectedDeptForDetail.programHeads.map((head, index) => {
+                        const program = head.program ?? null;
+                        const isFiltering = program !== null && facultyProgramFilter?.id === program.id;
+                        return (
+                        <button
+                          type="button"
+                          key={`${head.name}-${program?.id ?? 'none'}-${index}`}
+                          disabled={!program}
+                          aria-pressed={isFiltering}
+                          title={program ? (isFiltering ? 'Show all instructors' : `Show ${programLabelShort(program)} instructors`) : undefined}
+                          onClick={() => program && toggleFacultyProgramFilter(program)}
+                          className={`flex w-full items-center gap-3 rounded-xl border border-l-4 px-3 py-2 text-left shadow-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#C9952A]/40 ${program
+                            ? 'border-l-[#C9952A] cursor-pointer'
+                            : 'border-l-slate-300 cursor-default'} ${isFiltering
+                            ? 'border-[#C9952A] bg-[#C9952A]/[0.08] ring-2 ring-[#C9952A]/20'
+                            : `border-slate-200/80 bg-white ${program ? 'hover:border-[#C9952A]/50' : ''}`}`}
                         >
                           <PersonInitials name={head.name} accent />
                           <div className="min-w-0 flex-1">
@@ -1280,8 +1301,9 @@ export default function Departments() {
                               <p className="mt-0.5 text-[10px] font-semibold text-slate-400">No program assigned</p>
                             )}
                           </div>
-                        </div>
-                      ))
+                        </button>
+                        );
+                      })
                     ) : (
                       <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 px-3 py-4 text-center">
                         <p className="text-xs font-semibold text-slate-500">No program heads assigned.</p>

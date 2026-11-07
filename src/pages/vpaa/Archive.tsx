@@ -171,7 +171,7 @@ export default function Archive() {
           <div className="max-w-2xl">
             <h2 id="archive-scope-title" className="text-sm font-bold text-gray-900">Deleted records that can be recovered</h2>
             <p className="mt-1 text-xs leading-5 text-gray-600">
-              Accounts, departments, programs, rooms, instructors, designations, courses, semesters, and class schedules removed with Archive or Delete.
+              Accounts, departments, programs, buildings, rooms, instructors, designations, courses, semesters, and class schedules removed with Archive or Delete.
               Restoring brings a record back <strong className="font-semibold text-gray-800">without changing whether it is active</strong>; inspect a record to see its blockers and exact outcome first.
             </p>
             <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs">
@@ -199,7 +199,7 @@ export default function Archive() {
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
           <div className="col-span-2 flex flex-col gap-1 sm:col-span-3 lg:col-span-2">
             <label htmlFor="archive-search" className={labelClass}>Search</label>
-            <SearchInput id="archive-search" value={searchDraft} maxLength={100} onChange={(event) => setSearchDraft(event.target.value)} placeholder="Name, username, code, room…" containerClassName="relative" className="!py-2 !text-xs" />
+            <SearchInput id="archive-search" value={searchDraft} maxLength={100} onChange={(event) => setSearchDraft(event.target.value)} placeholder="Name, username, code, building, room…" containerClassName="relative" className="!py-2 !text-xs" />
           </div>
           <div className="col-span-2 flex flex-col gap-1 sm:col-span-1">
             <label htmlFor="archive-type" className={labelClass}>Record type</label>

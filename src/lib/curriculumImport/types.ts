@@ -6,8 +6,6 @@ export type PlacementTerm = 1 | 2 | 3;
 
 export type CourseCategory = 'major' | 'minor';
 
-export type SchedulingBasis = 'weekly' | 'total_hours';
-
 export type ExtractionFlag =
   | 'ambiguous_units'
   | 'blank_cell'
@@ -113,8 +111,6 @@ export interface DraftRow {
   lab_units: number | null;
   total_units: number | null;
   category: CourseCategory | null;
-  scheduling_basis: SchedulingBasis | null;
-  total_hours: number | null;
   /** Reference text exactly as the document gives it; never classified or enforced. */
   prerequisites: string | null;
   code_suggestion: string | null;
@@ -192,8 +188,6 @@ export interface ResolvedRow {
   category: CourseCategory | null;
   rule: { id: number | null; match_kind: 'exact' | 'prefix'; match_value: string; category: CourseCategory } | null;
   catalog: { action: 'create' | 'reuse' | 'blocked'; course_id: number | null; course: Record<string, unknown> | null };
-  scheduling_basis: SchedulingBasis;
-  total_hours: number | null;
   lecture_minutes: number | null;
   laboratory_minutes: number | null;
   weekly_contact_minutes: number | null;
@@ -255,12 +249,11 @@ export interface ImportResult {
   replayed: boolean;
 }
 
+/** Every rule is an enabled prefix match; the longest matching prefix wins. */
 export interface ClassificationRule {
   id?: number;
-  match_kind: 'exact' | 'prefix';
   match_value: string;
   category: CourseCategory;
-  enabled: boolean;
   sample_matches?: string[];
 }
 
@@ -273,5 +266,5 @@ export interface ImportSettings {
   max_minutes_per_unit: number;
   can_manage: boolean;
   rules: ClassificationRule[];
-  overlaps: Array<{ broader: string; specific: string; specific_kind: string; broader_category: string; specific_category: string }>;
+  overlaps: Array<{ broader: string; specific: string; broader_category: string; specific_category: string }>;
 }

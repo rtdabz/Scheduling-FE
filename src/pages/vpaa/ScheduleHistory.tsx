@@ -154,6 +154,7 @@ const gridCard = (
       sectionId: String(item.section_id ?? number(item.snapshot, "section_id")),
       roomId: value(item.snapshot, "room_id"),
       isHybrid: bool(item.snapshot.is_hybrid),
+      createdById: number(item.snapshot, "created_by") || null,
     },
     subject: {
       id: courseId,

@@ -184,13 +184,13 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
                     <td role="cell" className="transfer-select-cell"><label className="transfer-checkbox-target"><input aria-label={`Select ${row.course} ${row.section}, ${meetingTime(row)}`} type="checkbox" disabled={busy || !canEdit || !!row.pending_transfer_id || (!selected.includes(row.id) && selected.length >= 30)} checked={selected.includes(row.id)} onChange={() => { invalidate(); setSelected(ids => ids.includes(row.id) ? ids.filter(id => id !== row.id) : [...ids, row.id]); }} /></label></td>
                     <td role="cell" className="transfer-class-cell"><p className="transfer-course">{row.course}</p><p>{row.section}</p><p className="transfer-meta">{roomTypeLabel(row.required_room_type ?? row.meeting_type)}</p></td>
                     <td role="cell" className="transfer-room-cell"><p className="transfer-room-name">{row.room}</p><p className="transfer-meta transfer-meeting-time">{meetingTime(row)}</p></td>
-                    <td role="cell" className="transfer-status-cell"><span className="transfer-notice">{row.pending_transfer_id ? ROOM_TRANSFER_STATUS_LABELS[row.pending_transfer_status ?? 'pending_dean'] : row.attention_reason ?? 'Room needs attention'}</span>{row.status === 'faculty_assignment' && <p className="transfer-meta">Day/time changes allowed when enabled</p>}{(row.revision_required ?? !['draft', 'completed', 'revision', 'faculty_assignment'].includes(row.status)) && <p className="transfer-meta">Revision required</p>}</td>
+                    <td role="cell" className="transfer-status-cell"><span className="transfer-notice">{row.pending_transfer_id ? ROOM_TRANSFER_STATUS_LABELS[row.pending_transfer_status ?? 'pending_dean'] : row.attention_reason ?? 'Room needs attention'}</span>{row.temporarily_online && <p className="transfer-meta">Meets online until a replacement room is approved</p>}{row.status === 'faculty_assignment' && <p className="transfer-meta">Day/time changes allowed when enabled</p>}{(row.revision_required ?? !['draft', 'completed', 'revision', 'faculty_assignment'].includes(row.status)) && <p className="transfer-meta">Revision required</p>}</td>
                   </tr>)}
                   {affected.length === 0 && <tr><td colSpan={4} className="transfer-table-empty"><CheckCircle2 size={22} aria-hidden="true" /><p>{data.schedules.length === 0 ? 'No on-site schedules in this semester.' : 'No room schedule reassignments needed.'}</p></td></tr>}
                 </tbody>
               </table>
             </div>
-            <p className="transfer-help"><Info size={15} aria-hidden="true" /><span>Lab classes need a lab. Locked schedules require revision.</span></p>
+            <p className="transfer-help"><Info size={15} aria-hidden="true" /><span>Lab classes need a lab. Locked schedules require revision. Classes moved online by a room closure return to face-to-face after final approval.</span></p>
           </section>
           <section aria-label="Review proposed room schedule reassignments" className="transfer-review">
             <div className="transfer-section-heading"><h3><span className="transfer-step" aria-hidden="true">2</span>Review proposed room schedule reassignments</h3></div>
@@ -217,16 +217,19 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
                         const label = meeting(row.id);
                         const sameTime = meetingTime(before) === meetingTime(row);
                         const unchanged = sameTime && before.room_id === row.room_id;
-                        const location = label?.mode === 'online' ? 'Online' : roomName(before.room_id, label?.room);
+                        // Classes moved online by a room closure keep their temporary label; planned online sessions stay "Online".
+                        const location = label?.temporarily_online ? label.room : label?.mode === 'online' ? 'Online' : roomName(before.room_id, label?.room);
+                        const online = (row.mode ?? label?.mode) === 'online';
                         const replacement = data.rooms.find(room => room.id === row.room_id);
                         return <div key={row.id} className="transfer-proposal-meeting">
                           <p className="transfer-course">{label ? `${label.course} · ${label.section}` : 'Linked meeting'}</p>
                           {unchanged ? <p className="transfer-meta">{location} · {meetingTime(row)} · Unchanged linked meeting</p> : <>
                             <p className="transfer-meta">Current: {location} · {meetingTime(before)}</p>
-                            <div className="transfer-replacement"><p className="transfer-meta">Replacement</p><p><strong>{label?.mode === 'online' ? 'Online' : roomName(row.room_id)} · {meetingTime(row)}</strong></p>
-                              {label?.mode !== 'online' && <p className="transfer-meta">{replacement ? roomTypeLabel(replacement.room_type) : 'Room type not recorded'} · Capacity not recorded</p>}
+                            <div className="transfer-replacement"><p className="transfer-meta">Replacement</p><p><strong>{online ? 'Online' : roomName(row.room_id)} · {meetingTime(row)}</strong></p>
+                              {!online && <p className="transfer-meta">{replacement ? roomTypeLabel(replacement.room_type) : 'Room type not recorded'} · Capacity not recorded</p>}
                               <p className="transfer-available"><CheckCircle2 size={14} aria-hidden="true" />Available for this schedule</p>
                             </div>
+                            {label?.temporarily_online && !online && <p className="transfer-meta">Returns to face-to-face after final approval</p>}
                             {sameTime && <p className="transfer-meta">Day and time unchanged</p>}
                             {row.day === 'Sunday' && before.day !== 'Sunday' && <p className="transfer-meta">Moves to Sunday. If Sunday classes are off for your department, final approval turns them on.</p>}
                           </>}
@@ -239,7 +242,7 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
                       const classes = [...new Set(meetings.map(row => `${row.course} · ${row.section}`))];
                       return <div key={index} className="transfer-unresolved">
                         <p className="font-semibold">Could not transfer: {classes.join(', ') || 'Class details unavailable'}</p>
-                        <ul>{meetings.map(row => <li key={row.id}>{meetingTime(row)} · {row.mode === 'online' ? 'Online' : row.room}</li>)}</ul>
+                        <ul>{meetings.map(row => <li key={row.id}>{meetingTime(row)} · {row.mode === 'online' && !row.temporarily_online ? 'Online' : row.room}</li>)}</ul>
                         <p>{item.reason}</p>
                       </div>;
                     })}

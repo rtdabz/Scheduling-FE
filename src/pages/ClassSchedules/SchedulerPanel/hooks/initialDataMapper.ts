@@ -188,7 +188,8 @@ export const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
     preferredPattern: item.preferred_pattern ?? null,
     splitGroupId: item.split_group_id ?? null,
     meetingType: item.meeting_type ?? null,
-    meetingIndex: item.meeting_index ?? 1
+    meetingIndex: item.meeting_index ?? 1,
+    createdById: item.created_by != null ? Number(item.created_by) : null,
   };
 };
 

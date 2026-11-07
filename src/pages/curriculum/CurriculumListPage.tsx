@@ -31,6 +31,7 @@ import CurriculumFormModal from '../../components/curriculum/CurriculumFormModal
 import CurriculumCard from '../../components/curriculum/CurriculumCard';
 import CurriculumArchiveModal from '../../components/curriculum/CurriculumArchiveModal';
 import CurriculumDetailModal from '../../components/curriculum/CurriculumDetailModal';
+import CurriculumStatusTabs, { type CurriculumStatusTab } from '../../components/curriculum/CurriculumStatusTabs';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import TableActionButton from '../../components/ui/TableActionButton';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
@@ -45,6 +46,12 @@ import { hasStoredCapability } from '../../lib/storedUser';
 import CurriculumReviewPage from './CurriculumReviewPage';
 
 const GRID_PAGE_SIZE = 9;
+
+// Archived curricula stay in the Archive modal, so the Secretary's buttons cover only the listed statuses.
+const secretaryStatusTabs: CurriculumStatusTab[] = [
+  { id: 'active', label: 'Active' },
+  { id: 'deactivated', label: 'Deactivated' },
+];
 
 const statusColors: Record<string, string> = {
   active: 'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -332,6 +339,17 @@ function CurriculumManagePage() {
   // Secretaries add curricula through Import only; manual creation and search are hidden for them.
   const isSecretary = userRole === 'secretary';
 
+  const statusCounts = useMemo(() => ({
+    active: rawCurriculumList.filter((item) => item.status === 'active').length,
+    deactivated: rawCurriculumList.filter((item) => item.status === 'deactivated').length,
+  }), [rawCurriculumList]);
+
+  const selectStatus = (status: string) => {
+    setStatusFilter(status);
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+    setGridPage(1);
+  };
+
   const curriculumGuideSteps = useMemo(() => isSecretary ? [
     { element: '#curriculum-import-button', action: 'click' as const, taskHint: 'Click Import to open the curriculum import page.', title: 'Import a curriculum', description: 'New curricula are added by importing a PDF, CSV, XLSX, or DOCX file.', side: 'bottom' as const },
   ] : [
@@ -347,6 +365,17 @@ function CurriculumManagePage() {
     <div className="w-full">
       <div id="curriculum-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md mb-6 font-sans flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 min-w-[18rem]">
+          {isSecretary && (
+            <CurriculumStatusTabs
+              id="curriculum-status-tabs"
+              className="flex flex-wrap gap-2"
+              tabs={secretaryStatusTabs}
+              selected={statusFilter === 'deactivated' ? 'deactivated' : 'active'}
+              counts={statusCounts}
+              onSelect={selectStatus}
+            />
+          )}
+
           {!isSecretary && (
             <SearchInput
               value={searchQuery}
@@ -355,6 +384,7 @@ function CurriculumManagePage() {
             />
           )}
 
+          {!isSecretary && (
           <div className="flex items-center gap-1.5">
             <Filter size={13} className="text-gray-400" />
             <select
@@ -367,6 +397,7 @@ function CurriculumManagePage() {
               <option value="deactivated">Deactivated</option>
             </select>
           </div>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2 shrink-0">

@@ -3,13 +3,6 @@ import { plainNote } from './notes';
 import { prerequisiteTokens, type KnownCode } from './prerequisites';
 import type { DraftMetadata, DraftRow, DraftSource, Extraction, ImportDraft, PlacementTerm } from './types';
 
-export const TOTAL_HOURS_PATTERN = /\(\s*(\d{2,5})\s*(?:hours?|hrs?)\s*\)/i;
-
-export const describedTotalHours = (row: Pick<DraftRow, 'title' | 'source'>): number | null => {
-  const match = `${row.source.title} ${row.title}`.match(TOTAL_HOURS_PATTERN);
-  return match ? Number(match[1]) : null;
-};
-
 const finite = (value: number | null): number | null => (value === null || Number.isNaN(value) ? null : value);
 
 const codeSuggestion = (code: string, candidates: string[]): string | null => {
@@ -40,8 +33,6 @@ export const buildDraft = (extraction: Extraction, source: Omit<DraftSource, 'ex
       lab_units: finite(row.source.lab),
       total_units: finite(row.source.tu),
       category: null,
-      scheduling_basis: null,
-      total_hours: null,
       prerequisites: row.source.prerequisites,
       code_suggestion: codeSuggestion(row.source.code, unmatchedTokens),
       source: row.source,
@@ -159,33 +150,26 @@ export const groupTotals = (draft: ImportDraft): GroupTotals[] => {
   return [...groups.values()].sort((a, b) => termOrder(a.year_level, a.semester) - termOrder(b.year_level, b.semester));
 };
 
-/** Preview shows one term, or the rows that have no valid year and term. Never all rows by default. */
-export type PreviewSelection = { year: number; term: PlacementTerm } | 'unassigned';
-
 export interface GroupAttention {
   errors: number;
   notices: number;
 }
 
+/** Spoken summary of a group's findings, e.g. "2 with errors, 1 notice". */
+export const attentionLabel = (value: GroupAttention | undefined) => [
+  value?.errors ? `${value.errors} with errors` : null,
+  value?.notices ? `${value.notices} notice${value.notices === 1 ? '' : 's'}` : null,
+].filter(Boolean).join(', ');
+
+/** Values the reviewer must fix by hand: blanks, missing placement, or units that do not add up. */
+export const rowHasProblem = (row: DraftRow): boolean => !row.code.trim() || !row.title.trim() || !row.year_level || !row.semester
+  || row.lecture_units === null || row.lab_units === null || row.total_units === null
+  || row.lecture_units + row.lab_units !== row.total_units;
+
 export const totalsDiffer = (group: GroupTotals) => !!group.reported
   && (group.reported.lec !== group.calculated.lec || group.reported.lab !== group.calculated.lab || group.reported.tu !== group.calculated.tu);
 
 export const groupKey = (year: number, term: PlacementTerm) => `${year}-${term}`;
-
-/** Earliest populated term; otherwise Unassigned when rows need placement, then the earliest extracted group. */
-export const initialSelection = (totals: GroupTotals[], unassignedCount: number): PreviewSelection => {
-  const known = totals.filter((group) => group.year_level in YEAR_LABELS);
-  const first = known.find((group) => group.row_count > 0) ?? (unassignedCount > 0 ? null : known[0]);
-  return first ? { year: first.year_level, term: first.semester } : 'unassigned';
-};
-
-/** Keeps the term when that year has it; otherwise the year's first populated term, then its first extracted one. */
-export const selectionForYear = (totals: GroupTotals[], year: number, keepTerm: PlacementTerm | null): PreviewSelection | null => {
-  const groups = totals.filter((group) => group.year_level === year);
-  const kept = keepTerm === null ? undefined : groups.find((group) => group.semester === keepTerm);
-  const target = kept ?? groups.find((group) => group.row_count > 0) ?? groups[0];
-  return target ? { year, term: target.semester } : null;
-};
 
 const blankToNull = (value: string): string | null => (value.trim() === '' ? null : value.trim());
 
@@ -225,8 +209,6 @@ export const toPayload = (draft: ImportDraft, options: PayloadOptions) => ({
     lab_units: row.lab_units,
     total_units: row.total_units,
     category: row.category,
-    scheduling_basis: row.scheduling_basis,
-    total_hours: row.total_hours,
     prerequisites: row.prerequisites,
     source: {
       code: row.source.code,

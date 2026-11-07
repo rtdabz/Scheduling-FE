@@ -41,6 +41,22 @@ describe('LockedModuleView', () => {
     expect(screen.getByText(/Required: schedule\.approve_dean/)).toBeTruthy();
   });
 
+  it('shows a workflow lock message in place of the permission explanation', () => {
+    render(
+      <MemoryRouter>
+        <LockedModuleView
+          moduleName="Cross-Department"
+          message="Cross-Department assignments will be available once all schedules are approved by the VPAA."
+        />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText('Cross-Department is Locked')).toBeTruthy();
+    expect(screen.getByText(/available once all schedules are approved by the VPAA/i)).toBeTruthy();
+    expect(screen.queryByText(/Your role does not include access/i)).toBeNull();
+    expect(screen.queryByText(/Required:/)).toBeNull();
+  });
+
   it('navigates back to user dashboard when Return button is clicked', () => {
     render(
       <MemoryRouter>

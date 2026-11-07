@@ -8,6 +8,8 @@ export interface NavItem {
   children?: NavItem[]
   requiredCapability?: string | string[]
   isLocked?: boolean
+  /** Shown instead of the permission message when a workflow, not a capability, locks the item. */
+  lockedMessage?: string
   badge?: string
 }
 

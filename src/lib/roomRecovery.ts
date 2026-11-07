@@ -5,10 +5,11 @@ import type { ApiDepartmentRecord, ApiScheduleRecord, ApiSectionRecord, Semester
 
 export interface RecoveryCase { id: number; room_code: string; reason: string; trigger: string; semester_id: number; semester_label: string; meeting_count: number; schedule_ids: number[] }
 export interface RecoveryRoom { id: number; room_code: string; room_type: string; status: string }
-export interface RecoveryMeeting { id: number; course: string; section: string; room: string; day: string; start_time: string; end_time: string; mode?: string }
-export interface RecoverySchedule extends RecoveryMeeting { meeting_type: string | null; status: string; needs_attention: boolean; room_status?: string | null; attention_reason?: string | null; required_room_type?: string | null; revision_required?: boolean; pending_transfer_id?: string | null; pending_transfer_status?: 'pending_dean' | 'pending_vpaa' | null }
+// temporarily_online: a face-to-face class meeting online only because its room was closed (unlike classes planned online).
+export interface RecoveryMeeting { id: number; course: string; section: string; room: string; day: string; start_time: string; end_time: string; mode?: string; temporarily_online?: boolean }
+export interface RecoverySchedule extends RecoveryMeeting { meeting_type: string | null; status: string; needs_attention: boolean; room_status?: string | null; attention_reason?: string | null; required_room_type?: string | null; revision_required?: boolean; original_room?: string | null; displaced_at?: string | null; pending_transfer_id?: string | null; pending_transfer_status?: 'pending_dean' | 'pending_vpaa' | null }
 export interface RecoveryData { cases: RecoveryCase[]; semester_id: number; pending_count?: number; semesters: { id: number; academic_year: string; semester: string; is_active?: boolean | number }[]; rooms: RecoveryRoom[]; new_rooms: RecoveryRoom[]; schedules: RecoverySchedule[]; transfers?: RoomTransferRequest[] }
-export interface RecoveryRow { id: number; room_id: number | null; day: string; start_time: string; end_time: string }
+export interface RecoveryRow { id: number; room_id: number | null; day: string; start_time: string; end_time: string; mode?: string }
 export interface RecoveryPlan { plan_id: string; groups: { key: string; before: RecoveryRow[]; after: RecoveryRow[] }[]; meetings?: RecoveryMeeting[]; unresolved: { schedule_ids: number[]; reason: string; reason_code?: string }[]; search_limit_reached: boolean; expires_at: string }
 export interface RoomTransferPlacement { room: string; day: string; start_time: string; end_time: string }
 export interface RoomTransferRequest {
@@ -17,7 +18,7 @@ export interface RoomTransferRequest {
   enables_sunday?: boolean;
   semester_label: string; submitted_by: string; submitted_at: string; dean_reviewed_at?: string | null; reviewed_at: string | null; rejection_reason: string | null;
   preview_semester?: Semester; preview_department?: ApiDepartmentRecord; preview_users?: UserSummary[];
-  schedule_ids: number[]; changes: { schedule_id: number; mode?: string; course: string; section: string; before: RoomTransferPlacement; after: RoomTransferPlacement; preview_schedule?: ApiScheduleRecord & { section: ApiSectionRecord } }[];
+  schedule_ids: number[]; changes: { schedule_id: number; mode?: string; temporarily_online?: boolean; course: string; section: string; before: RoomTransferPlacement; after: RoomTransferPlacement; preview_schedule?: ApiScheduleRecord & { section: ApiSectionRecord } }[];
   // Every class of the affected sections with the proposal applied, printed like Schedule Approval.
   preview_schedules?: (ApiScheduleRecord & { section: ApiSectionRecord | null })[];
 }
@@ -32,7 +33,9 @@ export const roomTransferChangeLabel = (change: RoomTransferChange) => {
   const time = (row: RoomTransferPlacement) => `${row.day} ${row.start_time.slice(0, 5)} ${row.end_time.slice(0, 5)}`;
   const timeChanged = time(change.before) !== time(change.after);
   if (isLinkedOnlineSession(change)) return timeChanged ? 'Linked online session — time changed' : 'Linked online session — unchanged';
-  const labels = [change.before.room !== change.after.room && 'Room changed', timeChanged && 'Time changed'].filter(Boolean);
+  // A class moved online by a room closure goes back to face-to-face in the approved room.
+  const roomLabel = change.temporarily_online ? 'Returns face-to-face' : 'Room changed';
+  const labels = [change.before.room !== change.after.room && roomLabel, timeChanged && 'Time changed'].filter(Boolean);
   return labels.length > 0 ? labels.join(' · ') : 'Unchanged';
 };
 // Lecture or laboratory as stored with the proposal, with the delivery mode; nothing is inferred when absent.

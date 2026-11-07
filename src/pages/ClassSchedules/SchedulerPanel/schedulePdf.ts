@@ -57,6 +57,8 @@ const PAGE_TOP_Y = 15;
 const PAGE_FOOTER_Y = 192;
 const CONTENT_BOTTOM_Y = 185;
 const MIN_SECTION_START_SPACE = 28;
+// Approvers sign their own slots, so an edit by them never makes them the schedule's preparer.
+const APPROVER_ROLES = new Set(["dean", "vpaa", "admin"]);
 
 const buildSignatories = (
   settings: InstitutionSettings,
@@ -133,12 +135,24 @@ export async function buildSchedulePdf({
   const printedProgramIds = Array.from(new Set(targetSections.map((section) => section.programId ?? null)));
   const singleProgramId = printedProgramIds.length === 1 ? printedProgramIds[0] : null;
   const singleProgramTitle = singleProgramId !== null && targetSections[0] ? programTitleOf(targetSections[0]) : null;
-  // The official schedule is prepared by the Program Head of each printed program, whoever entered it.
-  const preparedByName = printedProgramIds
-    .map((programId) => programId === null ? undefined
-      : users.find((user) => user.role?.toLowerCase() === "program_head" && Number(user.program_id) === Number(programId)))
-    .map((head) => head?.name?.trim().toUpperCase())
-    .filter((name): name is string => Boolean(name))
+  // "Prepared by" is whoever entered each printed program's schedule (program head or secretary).
+  // Rows with no recorded creator fall back to that program's Program Head.
+  const usersById = new Map(users.map((user) => [Number(user.id), user]));
+  const sectionProgramIds = new Map(targetSections.map((section) => [section.id, section.programId ?? null]));
+  const preparerOf = (programId: number | null): string[] => {
+    const creators = allSchedules
+      .filter((schedule) => sectionProgramIds.has(schedule.sectionId) && sectionProgramIds.get(schedule.sectionId) === programId)
+      .map((schedule) => schedule.createdById != null ? usersById.get(Number(schedule.createdById)) : undefined)
+      .filter((user) => user && !APPROVER_ROLES.has(user.role?.toLowerCase() ?? ""))
+      .map((user) => user?.name?.trim() ?? "");
+    if (creators.some(Boolean)) return creators;
+    const head = programId === null ? undefined
+      : users.find((user) => user.role?.toLowerCase() === "program_head" && Number(user.program_id) === Number(programId));
+    return [head?.name?.trim() ?? ""];
+  };
+  const preparedByName = [...new Set(printedProgramIds.flatMap(preparerOf)
+    .map((name) => name.toUpperCase())
+    .filter(Boolean))]
     .join(" / ");
   const departmentLogoUrl = activeDepartment?.logo || null;
   const departmentTitle = (() => {

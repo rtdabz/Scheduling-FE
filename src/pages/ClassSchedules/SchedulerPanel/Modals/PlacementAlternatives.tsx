@@ -19,6 +19,8 @@ export interface SplitPairStart {
   startSlot: number;
   endSlot: number;
   roomLabel: string;
+  /** Each meeting's delivery in this option; absent means the pair keeps the form's deliveries. */
+  modes?: DeliveryMode[];
 }
 
 export interface PlacementAlternativesProps {
@@ -30,6 +32,8 @@ export interface PlacementAlternativesProps {
   visibleSlots: AvailableSlot[];
   isSlotsLoading: boolean;
   slotsError: string | null;
+  /** Shown above the options when no physical room fits and Online Class is offered instead. */
+  onlineFallbackMessage?: string | null;
   areSlotsTruncated: boolean;
   roomFilter: string;
   onRoomFilterChange: (value: string) => void;
@@ -69,6 +73,7 @@ export default function PlacementAlternatives({
   visibleSlots,
   isSlotsLoading,
   slotsError,
+  onlineFallbackMessage = null,
   areSlotsTruncated,
   roomFilter,
   onRoomFilterChange,
@@ -175,6 +180,15 @@ export default function PlacementAlternatives({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4" role="tabpanel" aria-label={VIEWS.find((item) => item.value === view)?.label}>
+          {!isSlotsLoading && !slotsError && onlineFallbackMessage && (
+            <div role="status" className="mb-3 flex items-start gap-2 rounded-xl border border-[#c9952a]/40 bg-[#c9952a]/10 p-3">
+              <Monitor className="mt-0.5 h-4 w-4 shrink-0 text-[#7a4c08]" />
+              <p className="text-xs font-semibold leading-5 text-[#5c3906]">
+                {onlineFallbackMessage}
+                <span className="block font-normal text-[#7a4c08]">Choose an online option below to fill in the form, then confirm the schedule.</span>
+              </p>
+            </div>
+          )}
           {isSlotsLoading ? (
             <div className="space-y-2" aria-busy="true">
               {Array.from({ length: 3 }).map((_, index) => (
@@ -430,12 +444,19 @@ function SplitPairStarts({
         </p>
       ) : (
         <ul className="space-y-1.5">
-          {shown.map(({ startSlot, endSlot, roomLabel }, index) => (
-            <li key={`pair-${startSlot}`}>
+          {shown.map(({ startSlot, endSlot, roomLabel, modes }, index) => {
+            const first = modes?.[0] ?? firstMode;
+            const second = modes?.[1] ?? secondMode;
+            // Moving the pair online at its current time is still a change to apply.
+            const isCurrent = startSlot === currentStartSlot && first === firstMode && second === secondMode;
+            const isOnline = first === "online" && second === "online";
+
+            return (
+            <li key={`pair-${startSlot}-${first}-${second}`}>
               <button
                 type="button"
                 onClick={() => onApply(startSlot)}
-                disabled={startSlot === currentStartSlot}
+                disabled={isCurrent}
                 className="flex w-full flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-[#E2D9D0] bg-white px-3 py-2 text-left transition-colors hover:border-[#5A1220] hover:bg-[#5A1220]/[0.04] disabled:cursor-default disabled:border-emerald-200 disabled:bg-emerald-50/50"
               >
                 <span className="shrink-0 text-[10px] font-black uppercase text-[#5A1220]">
@@ -449,15 +470,16 @@ function SplitPairStarts({
                 )}
                 <MeetingTypeChip label="Split · both meetings" />
                 <span className="flex shrink-0 items-center gap-1 text-[11px] text-slate-500">
-                  <MapPin className="h-3 w-3" />
+                  {isOnline ? <Monitor className="h-3 w-3" /> : <MapPin className="h-3 w-3" />}
                   {roomLabel}
                 </span>
                 <span className="shrink-0 text-[11px] font-bold text-[#7a4c08]">
-                  {DELIVERY_SHORT_LABEL[firstMode]} | {DELIVERY_SHORT_LABEL[secondMode]}
+                  {DELIVERY_SHORT_LABEL[first]} | {DELIVERY_SHORT_LABEL[second]}
                 </span>
               </button>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
     </section>

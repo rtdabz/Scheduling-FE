@@ -163,4 +163,39 @@ describe("PlacementAlternatives", () => {
     expect(pairs.getByText("Split · both meetings")).toBeTruthy();
     expect(pairs.getByText("F2F | Online")).toBeTruthy();
   });
+
+  it("recommends Online Class when no physical room fits and lets it be chosen", () => {
+    const onApplySlot = vi.fn();
+    const online: AvailableSlot = { ...slots[0], mode: "online", room_id: null, room_code: "Online", room_type: "online" };
+    render(<PlacementAlternatives {...props({
+      availableSlots: [online], visibleSlots: [online], bestMatches: [online], onApplySlot,
+      onlineFallbackMessage: "No physical rooms available. Online Class is recommended as an alternative.",
+    })} />);
+
+    expect(screen.getByRole("status").textContent).toContain("No physical rooms available. Online Class is recommended as an alternative.");
+    fireEvent.click(within(screen.getByRole("list", { name: "Best matches" })).getByRole("button", { name: "Use this option" }));
+    expect(onApplySlot).toHaveBeenCalledWith(online);
+  });
+
+  it("hides the Online Class notice while physical rooms are offered", () => {
+    render(<PlacementAlternatives {...props()} />);
+
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("offers an online pair at the current time as a selectable change", () => {
+    const onApplySplitPairStart = vi.fn();
+    render(<PlacementAlternatives {...props({
+      splitPairStarts: [{ startSlot: 0, endSlot: 3, roomLabel: "Online | Online", modes: ["online", "online"] }],
+      splitStartSlot: 0,
+      onApplySplitPairStart,
+    })} />);
+
+    const pairs = within(screen.getByRole("region", { name: "Valid split times" }));
+    expect(pairs.getByText("Online | Online", { selector: "span.font-bold" })).toBeTruthy();
+    const button = pairs.getByRole("button") as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    expect(onApplySplitPairStart).toHaveBeenCalledWith(0);
+  });
 });

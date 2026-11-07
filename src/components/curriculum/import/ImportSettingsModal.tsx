@@ -17,8 +17,6 @@ type DraftRule = ClassificationRule & { key: string };
 
 const control = 'h-9 rounded-lg border border-border bg-white px-2.5 text-[13px] text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:bg-parchment disabled:text-muted';
 
-const KIND_LABELS: Record<ClassificationRule['match_kind'], string> = { prefix: 'Prefix', exact: 'Exact code' };
-
 const hoursLabel = (minutes: number) => {
   if (!Number.isFinite(minutes) || minutes <= 0) return '—';
   const hours = minutes / 60;
@@ -26,13 +24,20 @@ const hoursLabel = (minutes: number) => {
   return `${text} hour${hours === 1 ? '' : 's'}`;
 };
 
+const formatHours = (hours: number) => hours.toLocaleString('en-US', { maximumFractionDigits: 2, useGrouping: false });
+
+/** Rates are entered in hours per unit and stored in minutes. Blank or non-numeric text becomes NaN. */
+const toMinutes = (hoursText: string) => (hoursText.trim() === '' ? Number.NaN : Number(hoursText) * 60);
+
 let nextKey = 0;
 const withKey = (rule: ClassificationRule): DraftRule => ({ ...rule, key: rule.id ? `saved-${rule.id}` : `new-${nextKey++}` });
 
 export default function ImportSettingsModal({ settings, onClose, onSaved }: ImportSettingsModalProps) {
   const { confirm } = useToast();
-  const [lecture, setLecture] = useState(settings.lecture_minutes_per_unit);
-  const [laboratory, setLaboratory] = useState(settings.laboratory_minutes_per_unit);
+  const [lectureHours, setLectureHours] = useState(() => formatHours(settings.lecture_minutes_per_unit / 60));
+  const [laboratoryHours, setLaboratoryHours] = useState(() => formatHours(settings.laboratory_minutes_per_unit / 60));
+  const lecture = toMinutes(lectureHours);
+  const laboratory = toMinutes(laboratoryHours);
   const [rules, setRules] = useState<DraftRule[]>(() => settings.rules.map(withKey));
   const [acknowledgeOverlaps, setAcknowledgeOverlaps] = useState(false);
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
@@ -49,20 +54,22 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
     rules.forEach((rule, index) => {
       const value = normalizeCode(rule.match_value);
       if (!value) {
-        errors.set(rule.key, 'Enter a code or prefix.');
+        errors.set(rule.key, 'Enter a prefix.');
         return;
       }
-      const identity = `${rule.match_kind}|${value}`;
-      const first = seen.get(identity);
+      const first = seen.get(value);
       if (first !== undefined) errors.set(rule.key, `Same as rule ${first + 1}.`);
-      else seen.set(identity, index);
+      else seen.set(value, index);
     });
     return errors;
   }, [rules]);
 
-  const rateError = (value: number) => {
-    if (!Number.isInteger(value) || value < step || value > settings.max_minutes_per_unit) return `Use ${step} to ${settings.max_minutes_per_unit} minutes.`;
-    if (value % step !== 0) return `Use steps of ${step} minutes.`;
+  const stepHours = formatHours(step / 60);
+  const maxHours = formatHours(settings.max_minutes_per_unit / 60);
+  const rateError = (minutes: number) => {
+    if (!Number.isFinite(minutes) || minutes < step || minutes > settings.max_minutes_per_unit) return `Use ${stepHours} to ${maxHours} hours.`;
+    const slots = minutes / step;
+    if (Math.abs(slots - Math.round(slots)) > 1e-9) return `Use steps of ${stepHours} hour.`;
     return null;
   };
   const lectureError = rateError(lecture) ?? serverErrors.lecture_minutes_per_unit ?? null;
@@ -75,7 +82,7 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
   };
 
   const addRule = () => {
-    const rule = withKey({ match_kind: 'prefix', match_value: '', category: 'major', enabled: true });
+    const rule = withKey({ match_value: '', category: 'major' });
     setRules((current) => [...current, rule]);
     window.setTimeout(() => valueInputs.current.get(rule.key)?.focus(), 0);
   };
@@ -85,7 +92,7 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
       const label = normalizeCode(rule.match_value) || 'this rule';
       const confirmed = await confirm({
         title: 'Delete classification rule?',
-        message: `The ${KIND_LABELS[rule.match_kind].toLowerCase()} rule "${label}" stops applying once you save. Existing courses and curricula keep their categories.`,
+        message: `The prefix rule "${label}" stops applying once you save. Existing courses and curricula keep their categories.`,
         confirmLabel: 'Delete rule',
         variant: 'danger',
       });
@@ -103,9 +110,9 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
     try {
       const saved = await curriculumImportService.updateSettings({
         expected_revision: settings.revision,
-        lecture_minutes_per_unit: lecture,
-        laboratory_minutes_per_unit: laboratory,
-        rules: rules.map(({ match_kind, match_value, category, enabled }) => ({ match_kind, match_value, category, enabled })),
+        lecture_minutes_per_unit: Math.round(lecture),
+        laboratory_minutes_per_unit: Math.round(laboratory),
+        rules: rules.map(({ match_value, category }) => ({ match_value, category })),
         acknowledge_overlaps: acknowledgeOverlaps,
       });
       onSaved(saved);
@@ -119,31 +126,28 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
     }
   };
 
-  const conversion = (id: 'lecture_minutes_per_unit' | 'laboratory_minutes_per_unit', label: string, value: number, setValue: (value: number) => void, error: string | null) => (
+  const conversion = (id: 'lecture_minutes_per_unit' | 'laboratory_minutes_per_unit', label: string, value: string, setValue: (value: string) => void, error: string | null) => (
     <div className="rounded-xl border border-border bg-white p-4">
       <label htmlFor={id} className="block text-[13px] font-bold text-text">{label}</label>
-      <p className="text-xs text-muted">Minutes per unit</p>
+      <p className="text-xs text-muted">Hours per unit</p>
       <div className="mt-2 flex items-center gap-3">
         <div className={`flex h-10 items-center rounded-lg border bg-white focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 ${error ? 'border-red-300' : 'border-border'}`}>
           <input
             id={id}
             type="number"
-            inputMode="numeric"
-            min={step}
-            max={settings.max_minutes_per_unit}
-            step={step}
-            value={Number.isFinite(value) ? value : ''}
+            inputMode="decimal"
+            min={step / 60}
+            max={settings.max_minutes_per_unit / 60}
+            step={step / 60}
+            value={value}
             disabled={readOnly}
             aria-invalid={error ? true : undefined}
-            aria-describedby={`${id}-equivalent${error ? ` ${id}-error` : ''}`}
-            onChange={(event) => setValue(event.target.value === '' ? Number.NaN : Number(event.target.value))}
+            aria-describedby={error ? `${id}-error` : undefined}
+            onChange={(event) => setValue(event.target.value)}
             className="h-full w-16 rounded-l-lg bg-transparent pl-3 text-[15px] font-bold tabular-nums text-text focus:outline-none disabled:cursor-not-allowed disabled:text-muted [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
           />
-          <span className="pr-3 text-xs text-muted">min</span>
+          <span className="pr-3 text-xs text-muted">hr</span>
         </div>
-        <p id={`${id}-equivalent`} className="rounded-lg bg-parchment px-3 py-2 text-[13px] text-text">
-          = <span className="font-bold tabular-nums">{hoursLabel(value)}</span> per unit
-        </p>
       </div>
       {error
         ? <p id={`${id}-error`} className="mt-2 text-xs font-semibold text-red-700">{error}</p>
@@ -181,10 +185,10 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
 
         <section aria-labelledby="conversion-heading">
           <h3 id="conversion-heading" className="text-[15px] font-semibold text-text">Credit-to-time conversion</h3>
-          <p className="mt-0.5 text-[13px] text-muted">How many minutes of class each credit unit becomes in future imports.</p>
+          <p className="mt-0.5 text-[13px] text-muted">How many hours of class each credit unit becomes in future imports.</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            {conversion('lecture_minutes_per_unit', 'Lecture', lecture, setLecture, lectureError)}
-            {conversion('laboratory_minutes_per_unit', 'Laboratory', laboratory, setLaboratory, laboratoryError)}
+            {conversion('lecture_minutes_per_unit', 'Lecture', lectureHours, setLectureHours, lectureError)}
+            {conversion('laboratory_minutes_per_unit', 'Laboratory', laboratoryHours, setLaboratoryHours, laboratoryError)}
           </div>
           <p className="mt-2 text-xs text-muted tabular-nums">
             Example: 2 lecture + 1 lab unit = {hoursLabel(exampleLecture)} + {hoursLabel(exampleLab)} = {hoursLabel(exampleLecture + exampleLab)} a week.
@@ -197,7 +201,7 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
               <h3 id="rules-heading" className="text-[15px] font-semibold text-text">
                 Classification rules <span className="font-sans text-[13px] font-normal text-muted tabular-nums">{rules.length}</span>
               </h3>
-              <p className="mt-0.5 text-[13px] text-muted">Suggest Major or Minor from the course code. An exact code beats a prefix.</p>
+              <p className="mt-0.5 text-[13px] text-muted">Suggest Major or Minor from the start of the course code. The longest matching prefix wins.</p>
             </div>
             {!readOnly && (
               <button type="button" onClick={addRule} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary bg-white px-3 text-[13px] font-bold text-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
@@ -207,44 +211,35 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
           </div>
 
           <div className="mt-3 max-h-[19rem] overflow-auto rounded-xl border border-border bg-white">
-            <table className="w-full min-w-[34rem] text-[13px]">
+            <table className="w-full min-w-[22rem] text-[13px]">
               <thead className="sticky top-0 z-10 bg-parchment text-left text-xs text-muted">
                 <tr>
-                  <th scope="col" className="w-36 px-3 py-2 font-semibold">Match type</th>
-                  <th scope="col" className="px-3 py-2 font-semibold">Code or prefix</th>
+                  <th scope="col" className="px-3 py-2 font-semibold">Prefix</th>
                   <th scope="col" className="w-32 px-3 py-2 font-semibold">Classification</th>
-                  <th scope="col" className="w-32 px-3 py-2 font-semibold">Status</th>
                   <th scope="col" className="w-12 px-3 py-2"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
                 {rules.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-[13px] text-muted">
+                    <td colSpan={3} className="px-4 py-6 text-center text-[13px] text-muted">
                       No rules yet. Every imported course will need its category chosen by hand.
                     </td>
                   </tr>
                 )}
                 {rules.map((rule, index) => {
                   const error = ruleErrors.get(rule.key) ?? serverErrors[`rules.${index}.match_value`] ?? null;
-                  const dim = rule.enabled ? '' : 'opacity-60';
                   return (
-                    <tr key={rule.key} className={`border-t border-border align-top ${rule.enabled ? '' : 'bg-parchment/60'}`}>
-                      <td className={`px-3 py-2 ${dim}`}>
-                        <select aria-label={`Match type for rule ${index + 1}`} value={rule.match_kind} disabled={readOnly} onChange={(event) => updateRule(rule.key, { match_kind: event.target.value as ClassificationRule['match_kind'] })} className={`${control} w-full`}>
-                          <option value="prefix">Prefix</option>
-                          <option value="exact">Exact code</option>
-                        </select>
-                      </td>
-                      <td className={`px-3 py-2 ${dim}`}>
+                    <tr key={rule.key} className="border-t border-border align-top">
+                      <td className="px-3 py-2">
                         <input
                           ref={(element) => { if (element) valueInputs.current.set(rule.key, element); else valueInputs.current.delete(rule.key); }}
-                          aria-label={`Code or prefix for rule ${index + 1}`}
+                          aria-label={`Prefix for rule ${index + 1}`}
                           aria-invalid={error ? true : undefined}
                           value={rule.match_value}
                           disabled={readOnly}
                           maxLength={64}
-                          placeholder={rule.match_kind === 'prefix' ? 'e.g. IT' : 'e.g. IT 101'}
+                          placeholder="e.g. IT"
                           onChange={(event) => updateRule(rule.key, { match_value: event.target.value })}
                           className={`${control} w-full font-semibold uppercase placeholder:font-normal placeholder:normal-case ${error ? 'border-red-300 bg-red-50/60' : ''}`}
                         />
@@ -252,27 +247,11 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
                           ? <p className="mt-1 text-xs font-semibold text-red-700">{error}</p>
                           : rule.sample_matches && rule.sample_matches.length > 0 && <p className="mt-1 truncate text-xs text-muted">Matches {rule.sample_matches.join(', ')}</p>}
                       </td>
-                      <td className={`px-3 py-2 ${dim}`}>
+                      <td className="px-3 py-2">
                         <select aria-label={`Classification for rule ${index + 1}`} value={rule.category} disabled={readOnly} onChange={(event) => updateRule(rule.key, { category: event.target.value as ClassificationRule['category'] })} className={`${control} w-full`}>
                           <option value="major">Major</option>
                           <option value="minor">Minor</option>
                         </select>
-                      </td>
-                      <td className="px-3 py-2">
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={rule.enabled}
-                          aria-label={`Rule ${index + 1} enabled`}
-                          disabled={readOnly}
-                          onClick={() => updateRule(rule.key, { enabled: !rule.enabled })}
-                          className="flex h-9 items-center gap-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed"
-                        >
-                          <span className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${rule.enabled ? 'bg-primary' : 'bg-border'}`}>
-                            <span className={`absolute left-0 top-0.5 h-4 w-4 rounded-full bg-white transition-transform motion-reduce:transition-none ${rule.enabled ? 'translate-x-[1.125rem]' : 'translate-x-0.5'}`} />
-                          </span>
-                          <span className={`text-xs font-semibold ${rule.enabled ? 'text-text' : 'text-muted'}`}>{rule.enabled ? 'Enabled' : 'Disabled'}</span>
-                        </button>
                       </td>
                       <td className="px-3 py-2 text-right">
                         {!readOnly && (
@@ -299,7 +278,7 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
           {!readOnly && (serverErrors.acknowledge_overlaps || settings.overlaps.length > 0) && (
             <label className="mt-3 flex items-start gap-2 text-xs text-text">
               <input type="checkbox" checked={acknowledgeOverlaps} onChange={(event) => setAcknowledgeOverlaps(event.target.checked)} className="mt-0.5 h-4 w-4 accent-primary" />
-              <span>{serverErrors.acknowledge_overlaps ?? 'I confirm the more specific rules above intentionally override broader prefixes.'}</span>
+              <span>{serverErrors.acknowledge_overlaps ?? 'I confirm the longer prefixes above intentionally override shorter ones.'}</span>
             </label>
           )}
         </section>

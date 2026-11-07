@@ -1,5 +1,5 @@
 export const ARCHIVE_TYPES = [
-  'users', 'departments', 'programs', 'rooms', 'faculties',
+  'users', 'departments', 'programs', 'buildings', 'rooms', 'faculties',
   'designations', 'courses', 'semesters', 'schedules', 'schedule-splits',
 ] as const;
 
@@ -9,6 +9,7 @@ export const ARCHIVE_TYPE_LABELS: Record<ArchiveType, string> = {
   users: 'Accounts',
   departments: 'Departments',
   programs: 'Programs',
+  buildings: 'Buildings',
   rooms: 'Rooms',
   faculties: 'Instructors',
   designations: 'Designations',
@@ -19,7 +20,7 @@ export const ARCHIVE_TYPE_LABELS: Record<ArchiveType, string> = {
 };
 
 /** Types whose records carry a program or term, used to show only relevant filters. */
-export const PROGRAM_TYPES: readonly ArchiveType[] = ['users', 'programs', 'rooms', 'faculties', 'courses', 'schedules', 'schedule-splits'];
+export const PROGRAM_TYPES: readonly ArchiveType[] = ['users', 'programs', 'buildings', 'rooms', 'faculties', 'courses', 'schedules', 'schedule-splits'];
 export const TERM_TYPES: readonly ArchiveType[] = ['semesters', 'schedules', 'schedule-splits'];
 
 export interface ArchiveRef {

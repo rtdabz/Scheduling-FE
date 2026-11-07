@@ -212,9 +212,8 @@ export function RoomsTable<T extends RoomListRow>({
                 <Pencil size={15} />
               </TableActionButton>
               {!['online', 'field'].includes(row.original.room_type) && (
-                <TableActionButton label={row.original.status === 'available' ? 'Mark Unavailable' : 'Mark Available'} variant={row.original.status === 'available' ? 'danger' : 'success'} className="w-auto gap-1.5 px-3 text-xs font-semibold" onClick={() => onAvailabilityChange(row.original)}>
+                <TableActionButton label={row.original.status === 'available' ? 'Mark Unavailable' : 'Mark Available'} variant={row.original.status === 'available' ? 'danger' : 'success'} onClick={() => onAvailabilityChange(row.original)}>
                   {row.original.status === 'available' ? <Ban size={15} /> : <CheckCircle2 size={15} />}
-                  <span>{row.original.status === 'available' ? 'Mark Unavailable' : 'Mark Available'}</span>
                 </TableActionButton>
               )}
             </>

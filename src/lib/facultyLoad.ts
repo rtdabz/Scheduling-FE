@@ -1,4 +1,4 @@
-export type LoadTier = 'basic' | 'overload' | 'beyond_ceiling';
+export type LoadTier = 'basic' | 'overload' | 'pro_bono' | 'beyond_ceiling';
 
 export interface LoadAllowances {
   basicLoad: number;
@@ -17,6 +17,7 @@ export const loadTierForUnits = (allowances: LoadAllowances, units: number): Loa
 export const LOAD_TIER_LABELS: Record<LoadTier, string> = {
   basic: 'Basic Load',
   overload: 'Overload',
+  pro_bono: 'Pro-Bono',
   beyond_ceiling: 'Over limit',
 };
 
@@ -28,7 +29,34 @@ export const basicLoadOf = (maxUnits?: number | null, deloadUnits?: number | nul
 export const LOAD_TIER_BADGE_CLASSES: Record<LoadTier, string> = {
   basic: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   overload: 'bg-red-50 text-red-600 border-red-200',
+  pro_bono: 'bg-amber-50 text-amber-800 border-amber-200',
   beyond_ceiling: 'bg-rose-50 text-rose-700 border-rose-200',
+};
+
+/**
+ * What assigning one more class would mean for an instructor's load, mirroring
+ * `SchedulingPolicy::proBonoDecision()` on the server. An instructor below the
+ * ceiling may take one Pro-Bono class that carries them past it; at or past the
+ * ceiling nothing more can be assigned.
+ */
+export type ProBonoStatus = 'within' | 'pro_bono' | 'limit_reached' | 'pro_bono_used';
+
+export const proBonoStatusOf = (assignedUnits: number, ceiling: number, incomingUnits: number): ProBonoStatus => {
+  if (ceiling <= 0 || incomingUnits <= 0 || assignedUnits + incomingUnits <= ceiling) return 'within';
+  if (assignedUnits > ceiling) return 'pro_bono_used';
+  if (assignedUnits === ceiling) return 'limit_reached';
+  return 'pro_bono';
+};
+
+/** A short note for an instructor option, or null when the class fits normally. */
+export const proBonoOptionNote = (assignedUnits: number, ceiling: number, incomingUnits: number): string | null => {
+  const status = proBonoStatusOf(assignedUnits, ceiling, incomingUnits);
+  const projected = assignedUnits + incomingUnits;
+
+  if (status === 'pro_bono') return `Pro-Bono ${projected}/${ceiling}`;
+  if (status === 'limit_reached') return `At limit ${assignedUnits}/${ceiling}`;
+  if (status === 'pro_bono_used') return `Pro-Bono used ${assignedUnits}/${ceiling}`;
+  return null;
 };
 
 export interface LoadBands {

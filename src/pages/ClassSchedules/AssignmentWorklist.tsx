@@ -24,6 +24,8 @@ export interface WorklistEligibleFaculty {
   name: string;
   employmentType?: "full-time" | "part-time";
   conflict: string | null;
+  /** Pro-Bono or workload-limit note for this class, e.g. "Pro-Bono 37/36". */
+  loadNote?: string | null;
 }
 
 export interface WorklistClass {
@@ -261,6 +263,7 @@ function WorklistRow({
                     className={faculty.conflict ? "font-bold text-red-600" : "font-normal text-slate-900"}
                   >
                     {instructorOptionLabel(faculty.name, faculty.employmentType, Boolean(faculty.conflict))}
+                    {faculty.loadNote ? ` - ${faculty.loadNote}` : ""}
                   </option>
                 ))}
               </select>

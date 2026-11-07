@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { AlertTriangle, Info } from 'lucide-react';
 import SourceNotes from '../SourceNotes';
+import ImportCoursesTable from './ImportCoursesTable';
 import { noteScopeLabel } from '../../../lib/curriculumImport/notes';
 import type { ImportChange, ImportDraft, ValidationResult } from '../../../lib/curriculumImport/types';
 
@@ -33,6 +34,11 @@ const FLAG_LABELS: Record<string, string> = {
   unmapped_term: 'no term read',
   malformed_row: 'irregular row',
   merged_cells: 'merged cells',
+};
+
+const perUnitHours = (minutes: number) => {
+  const hours = minutes / 60;
+  return `${hours.toLocaleString(undefined, { maximumFractionDigits: 2 })} hour${hours === 1 ? '' : 's'}`;
 };
 
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
@@ -89,20 +95,20 @@ function ChangeTable({ changes, label }: { changes: ImportChange[]; label: strin
  */
 export default function ImportReviewSummary({ draft, validation, programName }: ImportReviewSummaryProps) {
   const reused = validation.rows.filter((row) => row.catalog.action === 'reuse');
+  const inactiveReused = reused.filter((row) => row.catalog.course?.status !== 'active').length;
   const created = validation.rows.length - reused.length;
   const material = validation.changes.filter((change) => !change.formatting);
   const formatting = validation.changes.filter((change) => change.formatting);
   const notices = validation.issues.filter((issue) => issue.severity === 'notice');
   const warnings = validation.issues.filter((issue) => issue.severity === 'warning');
   const majors = validation.rows.filter((row) => row.category === 'major').length;
-  const totalHours = validation.rows.filter((row) => row.scheduling_basis === 'total_hours');
   const codes = new Map(validation.rows.map((row) => [row.row_id, row.code]));
   const unknownColour = draft.notes.some((note) => note.flags.includes('color_unknown'));
   const anyColour = draft.notes.some((note) => note.runs.some((run) => run.color !== null));
   const resolved = draft.unread.filter((region) => region.resolution);
 
   return (
-    <div className="mt-5 space-y-4">
+    <div className="space-y-4">
       <Section id="review-curriculum" title="Curriculum">
         <dl className="grid gap-x-8 gap-y-2 text-[13px] sm:grid-cols-3">
           <div><dt className="text-xs text-muted">Name</dt><dd className="font-semibold text-text">{draft.metadata.name}</dd></div>
@@ -115,20 +121,12 @@ export default function ImportReviewSummary({ draft, validation, programName }: 
       </Section>
 
       <Section id="review-courses" title="Courses">
-        <p className="text-[13px] text-text">
-          <span className="font-semibold tabular-nums">{validation.rows.length}</span> courses: <span className="font-semibold tabular-nums">{created}</span> new
-          {reused.length > 0 && <>, <span className="font-semibold tabular-nums">{reused.length}</span> existing {reused.length === 1 ? 'course' : 'courses'} reused unchanged</>}.
+        <p className="mb-2 text-[13px] text-muted">
+          {validation.rows.length} courses: {created} new
+          {reused.length > 0 && <>, {reused.length} existing {reused.length === 1 ? 'course' : 'courses'} reused unchanged</>}
+          {inactiveReused > 0 && <> ({inactiveReused} inactive, {inactiveReused === 1 ? 'stays' : 'stay'} inactive)</>}.
         </p>
-        {reused.length > 0 && (
-          <ul className="mt-1 list-disc pl-5 text-[13px] text-muted">
-            {reused.map((row) => (
-              <li key={row.row_id}>
-                <span className="font-semibold text-text">{String(row.catalog.course?.code ?? row.code)}</span> {String(row.catalog.course?.title ?? '')}
-                {row.catalog.course?.status !== 'active' && ' (inactive, stays inactive)'}
-              </li>
-            ))}
-          </ul>
-        )}
+        <ImportCoursesTable rows={validation.rows} />
       </Section>
 
       <Section id="review-changes" title={`Changes from the document (${material.length})`}>
@@ -140,13 +138,8 @@ export default function ImportReviewSummary({ draft, validation, programName }: 
       <Section id="review-classification" title="Categories and class time">
         <p className="text-[13px] text-text">
           <span className="font-semibold tabular-nums">{majors}</span> major and <span className="font-semibold tabular-nums">{validation.rows.length - majors}</span> minor courses.
-          {' '}Weekly class time uses {validation.settings.lecture_minutes_per_unit} min per lecture unit and {validation.settings.laboratory_minutes_per_unit} min per laboratory unit.
+          {' '}Weekly class time uses {perUnitHours(validation.settings.lecture_minutes_per_unit)} per lecture unit and {perUnitHours(validation.settings.laboratory_minutes_per_unit)} per laboratory unit.
         </p>
-        {totalHours.length > 0 && (
-          <ul className="mt-1 list-disc pl-5 text-[13px] text-text">
-            {totalHours.map((row) => <li key={row.row_id}><span className="font-semibold">{row.code}</span>: recorded as {row.total_hours} total hours, with no weekly minutes</li>)}
-          </ul>
-        )}
       </Section>
 
       <Section id="review-notes" title={`Notes from the document (${draft.notes.length})`}>

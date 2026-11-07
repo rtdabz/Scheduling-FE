@@ -9,7 +9,7 @@ import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { fetchCurrentUser } from '../../lib/currentUser';
 import { hasStoredCapability, lockedModuleMessage } from '../../lib/storedUser';
-import { useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
+import { CROSS_DEPARTMENT_LOCKED_MESSAGE, useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import { programLabel, programName } from '../../lib/programLabel';
 import { prefetchPage } from '../../lib/pagePrefetch';
@@ -65,7 +65,22 @@ const getStoredUser = (): StoredUser | null => {
   }
 };
 
-export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarProps) {
+// Only Course Assignment (handing courses to another college) waits on VPAA
+// approval; the Cross-Department page stays available.
+const CROSS_DEPARTMENT_NAV_IDS = new Set(['sidebar-course-teaching-assignments']);
+
+const lockCrossDepartmentItems = (items: NavItem[]): NavItem[] => items.map((item) => (
+  CROSS_DEPARTMENT_NAV_IDS.has(item.id ?? '')
+    ? {
+      ...item,
+      isLocked: true,
+      lockedMessage: item.lockedMessage ?? CROSS_DEPARTMENT_LOCKED_MESSAGE,
+      children: item.children ? lockCrossDepartmentItems(item.children) : undefined,
+    }
+    : { ...item, children: item.children ? lockCrossDepartmentItems(item.children) : undefined }
+));
+
+export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItems }: SidebarProps) {
   const location = useLocation();
   const { toast } = useToast();
   const [currentUser, setCurrentUser] = useState<StoredUser | null>(getStoredUser());
@@ -97,9 +112,17 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
 
   const canAssignCrossDepartment = (role === 'secretary' || role === 'program_head')
     && hasStoredCapability('schedule.assign_instructor_cross_department');
-  const { crossDepartmentPending } = useDepartmentScheduleStatus(
+  const {
+    crossDepartmentPending,
+    crossDepartmentUnlocked,
+    loading: crossDepartmentStatusLoading,
+  } = useDepartmentScheduleStatus(
     canAssignCrossDepartment ? user?.department_id : null,
   );
+  const crossDepartmentLocked = canAssignCrossDepartment && !crossDepartmentStatusLoading && !crossDepartmentUnlocked;
+  const navItems = crossDepartmentLocked
+    ? baseNavItems.map((section) => ({ ...section, items: lockCrossDepartmentItems(section.items) }))
+    : baseNavItems;
 
   const approvalsRevision = useLiveRevision(['approvals']);
   const roomsRevision = useLiveRevision(['rooms']);
@@ -314,7 +337,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
                         type="button"
                         onClick={() => {
                           if (item.isLocked) {
-                            toast.warning('Access Restricted', lockedModuleMessage(item.requiredCapability));
+                            toast.warning('Access Restricted', item.lockedMessage ?? lockedModuleMessage(item.requiredCapability));
                             return;
                           }
                           if (!isOpen) {
@@ -336,7 +359,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
                           ${item.isLocked ? 'opacity-50' : ''}
                         `}
                         aria-expanded={expanded}
-                        title={item.isLocked ? `Locked: Requires permission` : item.label}
+                        title={item.isLocked ? (item.lockedMessage ?? `Locked: Requires permission`) : item.label}
                       >
                         <div className="relative flex items-center justify-center w-5 h-5 shrink-0">
                           {item.icon && <item.icon size={18} className="flex-shrink-0" aria-hidden="true" />}
@@ -390,14 +413,14 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems }: SidebarPr
                                 onClick={(e) => {
                                   if (child.isLocked) {
                                     e.preventDefault();
-                                    toast.warning('Access Restricted', lockedModuleMessage(child.requiredCapability));
+                                    toast.warning('Access Restricted', child.lockedMessage ?? lockedModuleMessage(child.requiredCapability));
                                     return;
                                   }
                                   if (window.innerWidth < 768) {
                                     onClose();
                                   }
                                 }}
-                                title={child.isLocked ? `Locked: Requires permission` : child.badge ? `${child.label} (${child.badge})` : child.label}
+                                title={child.isLocked ? (child.lockedMessage ?? `Locked: Requires permission`) : child.badge ? `${child.label} (${child.badge})` : child.label}
                               >
                                 {child.badge ? (
                                   <span className="flex min-w-0 flex-col leading-tight">

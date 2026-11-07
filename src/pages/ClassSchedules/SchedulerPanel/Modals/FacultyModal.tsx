@@ -6,6 +6,7 @@ import EmploymentBadge from "../EmploymentBadge";
 import InstructorPickerModal from "./InstructorPickerModal";
 import { eligibleFacultiesForSubject, majorTeachingDepartmentId, requiredTeachingProgramId } from "../facultyEligibility";
 import { AVAILABILITY_WARNING_TITLE, isAvailabilityWarning } from "../../../../lib/availabilityWindows";
+import { proBonoStatusOf } from "../../../../lib/facultyLoad";
 import type { FacultyAssignmentPopupState, ScheduleItem, Subject, Faculty } from "../types";
 
 interface FacultyModalProps {
@@ -84,6 +85,13 @@ export default function FacultyModal({
       ? `No instructor in the ${subject?.programCode ?? "assigned"} program is available for this major yet — set the program on the instructor's profile first.`
       : `Only ${subject?.programCode ?? "the assigned"} program instructors can teach this major.`;
   const isSameAssignedFaculty = Boolean(schedule.facultyId && facultyAssignmentPopup.facultyId === schedule.facultyId);
+  const incomingUnits = Number(subject?.units ?? schedule.totalUnits ?? 0);
+  const selectedCeiling = selectedFaculty?.unitCeiling ?? 0;
+  const selectedAssigned = selectedFaculty?.assignedUnits ?? 0;
+  const proBonoStatus = selectedFaculty && !isSameAssignedFaculty
+    ? proBonoStatusOf(selectedAssigned, selectedCeiling, incomingUnits)
+    : "within";
+  const loadBlocked = proBonoStatus === "limit_reached" || proBonoStatus === "pro_bono_used";
   const meetingSchedules = schedules
     .filter((item) =>
       item.semesterId === schedule.semesterId &&
@@ -268,6 +276,32 @@ export default function FacultyModal({
             </div>
           )}
 
+          {proBonoStatus === "pro_bono" && selectedFaculty && (
+            <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-wider">Pro-Bono assignment</div>
+                <div className="text-[10px] font-semibold mt-0.5 leading-relaxed">
+                  {selectedFaculty.name} has {selectedAssigned} of {selectedCeiling} units. This class brings the load to {selectedAssigned + incomingUnits}/{selectedCeiling}, which is allowed once as Pro-Bono. No further classes can be assigned to this instructor afterwards.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {loadBlocked && selectedFaculty && (
+            <div className="flex items-start gap-2 p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-wider">Workload limit</div>
+                <div className="text-[10px] font-semibold mt-0.5 leading-relaxed">
+                  {proBonoStatus === "pro_bono_used"
+                    ? `${selectedFaculty.name} already carries ${selectedAssigned} of ${selectedCeiling} units: the one Pro-Bono assignment past the limit has been used. Choose another instructor.`
+                    : `${selectedFaculty.name} has already reached the ${selectedCeiling}-unit limit, so Pro-Bono is not available. Choose another instructor.`}
+                </div>
+              </div>
+            </div>
+          )}
+
           {popupValidationError && (
             <div className="flex items-center gap-1.5 p-2 bg-rose-50 border border-rose-200 rounded-xl text-rose-700">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
@@ -278,11 +312,11 @@ export default function FacultyModal({
           <div className="flex gap-2 pt-1">
             <button
               type="submit"
-              disabled={isSavingFaculty || !canManageFaculty || isSameAssignedFaculty || Boolean(popupConflictWarning)}
+              disabled={isSavingFaculty || !canManageFaculty || isSameAssignedFaculty || Boolean(popupConflictWarning) || loadBlocked}
               className={`flex-1 px-4 py-2.5 text-white rounded-lg text-sm font-bold shadow-xs transition-colors flex items-center justify-center gap-2 ${
                 "bg-[#4e0a10] hover:bg-[#3a0809]"
               } ${
-                isSavingFaculty || !canManageFaculty || isSameAssignedFaculty || popupConflictWarning ? "cursor-not-allowed opacity-75" : ""
+                isSavingFaculty || !canManageFaculty || isSameAssignedFaculty || popupConflictWarning || loadBlocked ? "cursor-not-allowed opacity-75" : ""
               }`}
             >
               {isSavingFaculty ? (
@@ -316,6 +350,8 @@ export default function FacultyModal({
           preferredDepartmentId={majorTeachingDepartmentId(subject, schedule.departmentId ?? null)}
           preferredProgramId={requiredProgramId}
           conflictFor={(facultyId) => checkFacultyConflict(facultyId, schedule.id)}
+          incomingUnits={incomingUnits}
+          currentFacultyId={schedule.facultyId ?? null}
           onSelect={(facultyId) => {
             handlePopupFacultyChange(facultyId);
             setPickerScheduleId(null);

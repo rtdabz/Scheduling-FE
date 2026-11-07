@@ -126,7 +126,7 @@ describe('roomTransferPreview', () => {
     expect(pdf).not.toContain('Changed day, time and room values are highlighted.');
     expect(pdf).not.toContain('This document does not apply changes.');
     expect(pdf).not.toContain('(Department Secretary)');
-    // The Program Head prepares the official schedule even when the Secretary entered it.
+    // Rows with no recorded creator fall back to the Program Head, never to another department user.
     input.users = input.users.filter(user => user.role !== 'program_head');
     const withoutHead = await readPdf();
     expect(withoutHead).toContain('(Program Head)');
@@ -154,5 +154,28 @@ describe('roomTransferPreview', () => {
     expect(pdf).toContain('(PROGRAM LEAD / SECOND LEAD)');
     expect(pdf).toContain('(Program Head)');
     expect(pdf).not.toContain('(DEPARTMENT STAFF)');
+  });
+  it('prints whoever created the schedule as preparer, ignoring approvers', async () => {
+    vi.stubGlobal('Image', class {
+      onerror: (() => void) | null = null;
+      constructor() { queueMicrotask(() => this.onerror?.()); }
+    });
+    const transfer = request();
+    const proposedRow = transfer.changes[0].preview_schedule!;
+    proposedRow.created_by = 2;
+    // A row the Dean added during review must not make the Dean the preparer.
+    transfer.preview_schedules = [{ ...proposedRow, id: 16, course_id: 6, created_by: 3,
+      course: { ...proposedRow.course, course_code: 'SCI102' } }];
+    const blob = await buildSchedulePdf(roomTransferPreview(transfer)!);
+    const pdf = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = reject;
+      reader.readAsText(blob);
+    });
+    expect(pdf).toContain('(DEPARTMENT STAFF)');
+    expect(pdf).toContain('(Program Head)');
+    expect(pdf).not.toContain('(PROGRAM LEAD)');
+    expect(pdf).not.toContain('(DEPARTMENT STAFF / COLLEGE DEAN)');
   });
 });

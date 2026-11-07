@@ -111,7 +111,7 @@ describe('TCC curriculum PDF layout', () => {
     expect(draft.rows.every((row) => row.prerequisites === row.source.prerequisites)).toBe(true);
     expect(byCode('IT 113').prerequisites).toBe('IT108/109/110');
     expect(byCode('Prac 101').prerequisites).toBe('100% Completed Core Courses');
-    expect(byCode('Prac 101').scheduling_basis).toBeNull();
+    expect(byCode('Prac 101')).not.toHaveProperty('scheduling_basis');
     expect(draft.rows.every((row) => row.category === null)).toBe(true);
     expect(localProblems(draft)).toEqual([]);
   });

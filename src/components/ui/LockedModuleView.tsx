@@ -5,9 +5,11 @@ import { getStoredUser, lockedModuleMessage } from '../../lib/storedUser';
 interface LockedModuleViewProps {
   moduleName?: string;
   requiredCapability?: string | string[];
+  /** Replaces the permission explanation when the module is locked by workflow state. */
+  message?: string;
 }
 
-export default function LockedModuleView({ moduleName = 'This Module', requiredCapability }: LockedModuleViewProps) {
+export default function LockedModuleView({ moduleName = 'This Module', requiredCapability, message }: LockedModuleViewProps) {
   const navigate = useNavigate();
   const user = getStoredUser();
   const role = user?.role?.toLowerCase() || '';
@@ -43,8 +45,8 @@ export default function LockedModuleView({ moduleName = 'This Module', requiredC
         </h2>
 
         <p className="text-sm text-gray-600 leading-relaxed mb-6 max-w-sm">
-          {lockedModuleMessage(requiredCapability)}
-          {capabilities && (
+          {message ?? lockedModuleMessage(requiredCapability)}
+          {!message && capabilities && (
             <span className="block mt-2 font-mono text-xs text-gray-500 bg-gray-100 py-1 px-2.5 rounded-lg border border-gray-200/80 inline-block">
               Required: {capabilities}
             </span>

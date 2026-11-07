@@ -1,5 +1,5 @@
 import { useRef, useState, type DragEvent, type ReactNode } from 'react';
-import { AlertOctagon, Download, FileSpreadsheet, FileText, FileUp, Loader2, X } from 'lucide-react';
+import { AlertOctagon, FileSpreadsheet, FileText, FileUp, Loader2, X } from 'lucide-react';
 import { ACCEPT_ATTRIBUTE } from '../../../lib/curriculumImport/adapters';
 
 interface SelectedFile {
@@ -14,7 +14,6 @@ interface ImportUploaderProps {
   error: string | null;
   onFile: (file: File) => void;
   onCancel: () => void;
-  onDownloadTemplate: () => void;
   children?: ReactNode;
 }
 
@@ -27,7 +26,7 @@ const FORMATS = [
 
 const size = (bytes: number) => (bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
 
-export default function ImportUploader({ file, progress, error, onFile, onCancel, onDownloadTemplate, children }: ImportUploaderProps) {
+export default function ImportUploader({ file, progress, error, onFile, onCancel, children }: ImportUploaderProps) {
   const input = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const busy = progress !== null;
@@ -116,13 +115,6 @@ export default function ImportUploader({ file, progress, error, onFile, onCancel
             ))}
           </ul>
           <p className="mt-2 text-xs text-muted">Scanned PDFs need OCR first. Macro-enabled and legacy .xls or .doc files are not accepted.</p>
-        </div>
-        <div className="border-t border-border pt-4">
-          <h3 className="font-sans text-[13px] font-bold text-text">No matching file?</h3>
-          <p className="mt-1 text-xs text-muted">Fill in the CSV template: one row per course with year, term, code, title, and units.</p>
-          <button type="button" onClick={onDownloadTemplate} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-primary px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
-            <Download size={13} aria-hidden="true" /> Download CSV template
-          </button>
         </div>
       </aside>
     </div>

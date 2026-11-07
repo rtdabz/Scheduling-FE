@@ -6,7 +6,7 @@ export interface SettingsUpdate {
   expected_revision: number;
   lecture_minutes_per_unit: number;
   laboratory_minutes_per_unit: number;
-  rules: Array<Pick<ClassificationRule, 'match_kind' | 'match_value' | 'category' | 'enabled'>>;
+  rules: Array<Pick<ClassificationRule, 'match_value' | 'category'>>;
   acknowledge_overlaps?: boolean;
 }
 

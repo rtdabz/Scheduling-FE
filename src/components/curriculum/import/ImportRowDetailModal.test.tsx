@@ -16,8 +16,6 @@ const row = (overrides: Partial<DraftRow> = {}): DraftRow => ({
   lab_units: 1,
   total_units: 3,
   category: null,
-  scheduling_basis: null,
-  total_hours: null,
   prerequisites: 'IT102/IT103',
   code_suggestion: null,
   source: {

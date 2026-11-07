@@ -31,7 +31,8 @@ export function useCurriculum() {
 
   const canManageCurriculum = useMemo(() => hasStoredCapability('curriculum.manage'), []);
 
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  // Secretaries filter with Active/Deactivated status buttons, so their list opens on Active.
+  const [statusFilter, setStatusFilter] = useState<string>(() => (userRole === 'secretary' ? 'active' : 'all'));
   const [searchQuery, setSearchQuery] = useState('');
 
   const fetchCurriculumList = useCallback(

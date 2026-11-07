@@ -33,6 +33,7 @@ import { apiErrorMessage } from '../../lib/apiError';
 import { photoDataUrl } from '../../lib/imageDataUrl';
 import { fetchDesignations, type Designation } from '../../lib/designations';
 import DesignationPicker from '../../components/faculty/DesignationPicker';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
@@ -60,6 +61,11 @@ interface User {
 }
 
 type FacultyMode = 'create' | 'link' | 'none';
+type TeachingChoice = Exclude<FacultyMode, 'none'>;
+
+// Deans and program heads carry a teaching load; other roles teach only when the
+// account is explicitly marked as teaching.
+const TEACHING_ROLES = new Set(['Dean', 'Program Head']);
 
 interface LinkableFaculty {
   id: number;
@@ -165,11 +171,24 @@ const formInput = (hasError = false) =>
 const FieldError = ({ message }: { message: string }) =>
   message ? <p className="text-[11px] text-red-500 mt-0.5 font-semibold">{message}</p> : null;
 
-const TEACHING_OPTIONS: { mode: FacultyMode; title: string; hint: string }[] = [
-  { mode: 'link', title: 'Link existing instructor', hint: 'Use the roster record, keeping its load and class history.' },
-  { mode: 'create', title: 'Create new instructor profile', hint: 'Adds a new full-time instructor (21 units) to the roster.' },
-  { mode: 'none', title: 'Non-teaching account', hint: 'No instructor profile. Classes cannot be assigned to this account.' },
-];
+const FormSection = ({ title, aside, children }: { title: string; aside?: React.ReactNode; children: React.ReactNode }) => (
+  <section className="space-y-3">
+    <div className="flex items-center justify-between gap-2 border-b border-gray-200 pb-1.5">
+      <h3 className="text-xs font-bold uppercase tracking-wider text-[#4e0a10]">{title}</h3>
+      {aside}
+    </div>
+    {children}
+  </section>
+);
+
+const linkableFacultyDetail = (f: LinkableFaculty) =>
+  [
+    f.employment_type ? f.employment_type.charAt(0).toUpperCase() + f.employment_type.slice(1) : null,
+    f.max_units != null ? `${f.max_units} units` : null,
+    f.status === 'inactive' ? 'Inactive' : null,
+  ].filter(Boolean).join(' · ');
+
+type FieldErrors = Partial<Record<string, string[]>>;
 
 
 export default function VpaaUsers() {
@@ -210,12 +229,15 @@ export default function VpaaUsers() {
   const [firstNameError, setFirstNameError] = useState('');
   const [lastNameError, setLastNameError] = useState('');
   const [middleInitialError, setMiddleInitialError] = useState('');
+  const [emailError, setEmailError] = useState('');
   const [deptError, setDeptError] = useState('');
   const [programError, setProgramError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [facultyMode, setFacultyMode] = useState<FacultyMode>('create');
+  const [facultyMode, setFacultyMode] = useState<TeachingChoice>('create');
   const [facultyModeTouched, setFacultyModeTouched] = useState(false);
+  const [teachesClasses, setTeachesClasses] = useState(false);
+  const [defaultMaxUnits, setDefaultMaxUnits] = useState<number | null>(null);
   const [linkFacultyId, setLinkFacultyId] = useState('');
   const [designationIds, setDesignationIds] = useState<string[]>([]);
   const [linkableFaculty, setLinkableFaculty] = useState<LinkableFaculty[]>([]);
@@ -226,6 +248,7 @@ export default function VpaaUsers() {
   const resetTeachingProfile = () => {
     setFacultyMode('create');
     setFacultyModeTouched(false);
+    setTeachesClasses(false);
     setLinkFacultyId('');
     setDesignationIds([]);
     setFacultyLinkError('');
@@ -313,6 +336,13 @@ export default function VpaaUsers() {
       .catch(() => setDesignations([]));
   }, [isCreatingAccount, designations.length]);
 
+  useEffect(() => {
+    if (!isCreatingAccount || defaultMaxUnits !== null) return;
+    api.get<{ default_max_units: number }>('/user/instructor-defaults')
+      .then((res) => setDefaultMaxUnits(res.data.default_max_units))
+      .catch(() => setDefaultMaxUnits(null));
+  }, [isCreatingAccount, defaultMaxUnits]);
+
   const matchingInstructor = useMemo(() => {
     const first = formData.first_name.trim().toLowerCase();
     const last = formData.last_name.trim().toLowerCase();
@@ -322,9 +352,27 @@ export default function VpaaUsers() {
     ) ?? null;
   }, [linkableFaculty, formData.first_name, formData.last_name]);
 
+  const isTeachingRole = TEACHING_ROLES.has(formData.role);
+  const teachingApplies = isTeachingRole || teachesClasses;
+  const effectiveFacultyMode: FacultyMode = teachingApplies ? facultyMode : 'none';
+  const duplicatesRosterInstructor = effectiveFacultyMode === 'create' && matchingInstructor !== null;
+
   const designationMaxUnits = facultyMode === 'link'
     ? linkableFaculty.find((f) => String(f.id) === linkFacultyId)?.max_units ?? undefined
-    : 21;
+    : defaultMaxUnits ?? undefined;
+
+  const instructorOptions = useMemo(
+    () => linkableFaculty.map((f) => ({ value: String(f.id), label: linkableFacultyName(f), detail: linkableFacultyDetail(f) })),
+    [linkableFaculty],
+  );
+
+  const switchToLinkMatch = () => {
+    if (!matchingInstructor) return;
+    setFacultyModeTouched(true);
+    setFacultyMode('link');
+    setLinkFacultyId(String(matchingInstructor.id));
+    setFacultyLinkError('');
+  };
 
   useEffect(() => {
     if (!isCreatingAccount || facultyModeTouched) return;
@@ -370,11 +418,17 @@ export default function VpaaUsers() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
 
     let hasError = false;
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
-      toast.error('Email required', 'Enter a valid institutional email address.');
+    if (!formData.email.trim()) {
+      setEmailError('Institutional email is required');
       hasError = true;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+      setEmailError('Enter a valid email address');
+      hasError = true;
+    } else {
+      setEmailError('');
     }
     if (!formData.last_name.trim()) {
       setLastNameError('Last name is required');
@@ -418,8 +472,11 @@ export default function VpaaUsers() {
       setProgramError('');
     }
 
-    if (!isEditMode && facultyMode === 'link' && !linkFacultyId) {
+    if (!isEditMode && effectiveFacultyMode === 'link' && !linkFacultyId) {
       setFacultyLinkError('Select the instructor this account belongs to');
+      hasError = true;
+    } else if (!isEditMode && duplicatesRosterInstructor) {
+      setFacultyLinkError('This person is already on the roster. Link the existing instructor instead.');
       hasError = true;
     } else {
       setFacultyLinkError('');
@@ -465,9 +522,9 @@ export default function VpaaUsers() {
           program_id: isProgramHeadRole ? parseInt(formData.program_id) : null,
           is_active: formData.status === 'Active',
           profile_picture: profilePicture,
-          faculty_mode: facultyMode,
-          faculty_id: facultyMode === 'link' ? parseInt(linkFacultyId) : null,
-          designation_ids: facultyMode !== 'none' ? designationIds.map(Number) : [],
+          faculty_mode: effectiveFacultyMode,
+          faculty_id: effectiveFacultyMode === 'link' ? parseInt(linkFacultyId) : null,
+          designation_ids: effectiveFacultyMode !== 'none' ? designationIds.map(Number) : [],
         });
         const createdUser = mapApiUser(res.data.data);
         setUsers(prev => {
@@ -484,12 +541,37 @@ export default function VpaaUsers() {
       setIsEditMode(false);
       setEditingId(null);
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { message?: string } } };
+      const err = error as { response?: { data?: { message?: string; errors?: FieldErrors } } };
       const message = err?.response?.data?.message || 'Failed to save user account';
-      toast.error('Error', message);
+      if (!showServerFieldErrors(err?.response?.data?.errors)) toast.error('Error', message);
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Puts 422 messages (duplicate email, taken instructor, ...) next to their fields.
+  // Returns false when none of them belongs to a visible field.
+  const showServerFieldErrors = (errors?: FieldErrors) => {
+    if (!errors) return false;
+    const first = (key: string) => errors[key]?.[0] ?? '';
+    const setters: [string[], (message: string) => void][] = [
+      [['email'], setEmailError],
+      [['first_name'], setFirstNameError],
+      [['last_name'], setLastNameError],
+      [['middle_initial'], setMiddleInitialError],
+      [['department_id'], setDeptError],
+      [['program_id'], setProgramError],
+      [['faculty_id', 'faculty_mode', 'designation_ids'], setFacultyLinkError],
+    ];
+    let shown = false;
+    for (const [keys, setter] of setters) {
+      const message = keys.map(first).find(Boolean);
+      if (message) {
+        setter(message);
+        shown = true;
+      }
+    }
+    return shown;
   };
 
   const handleEditClick = (user: User) => {
@@ -510,6 +592,7 @@ export default function VpaaUsers() {
     setFirstNameError('');
     setLastNameError('');
     setMiddleInitialError('');
+    setEmailError('');
     setDeptError('');
     setProgramError('');
     setEditingId(user.id);
@@ -853,7 +936,9 @@ export default function VpaaUsers() {
               setFirstNameError('');
               setLastNameError('');
               setMiddleInitialError('');
+              setEmailError('');
               setDeptError('');
+              setProgramError('');
               resetTeachingProfile();
               setIsModalOpen(true);
             }}
@@ -1018,326 +1103,419 @@ export default function VpaaUsers() {
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
-          <div className={`bg-[#F7F4F0] rounded-2xl w-full ${isEditMode ? 'max-w-2xl' : 'max-w-5xl'} max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200`}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="user-form-title"
+            className={`bg-[#F7F4F0] rounded-2xl w-full ${isEditMode ? 'max-w-2xl' : 'max-w-4xl'} max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200`}
+          >
             <div className="px-5 py-3.5 flex justify-between items-center bg-[#4e0a10] shrink-0">
-              <h2 className="text-lg font-bold text-white font-display">
+              <h2 id="user-form-title" className="text-lg font-bold text-white font-display">
                 {isEditMode ? 'Edit User Account' : 'Create New Account'}
               </h2>
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 cursor-pointer"
+                disabled={isSubmitting}
+                aria-label="Close"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <X size={20} />
               </button>
             </div>
             <form onSubmit={handleSubmit} noValidate className="flex flex-col min-h-0 flex-1">
-              <div className={`min-h-0 flex-1 overflow-y-auto p-5 grid gap-5 ${isEditMode ? '' : 'lg:grid-cols-[1.15fr_1fr]'}`}>
-                <div className="space-y-3">
-                  <div className="flex gap-4 items-start">
-                    <div className="relative shrink-0">
-                      <div
-                        onClick={() => fileInputRef.current?.click()}
-                        className="w-[4.5rem] h-[4.5rem] rounded-full border-2 border-dashed border-gray-300 hover:border-[#5A1220] bg-white shadow-sm overflow-hidden flex items-center justify-center transition-all cursor-pointer"
-                        title={profilePicture ? 'Click photo to change' : 'Click to upload user profile photo'}
-                      >
-                        {profilePicture ? (
-                          <img src={profilePicture} alt="User Preview" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="flex flex-col items-center justify-center text-gray-400 hover:text-[#5A1220] transition-colors">
-                            <Camera size={20} />
-                            <span className="text-[9px] font-bold mt-0.5 uppercase tracking-wider">Photo</span>
-                          </div>
-                        )}
-                      </div>
-                      {profilePicture && (
+              <div className={`min-h-0 flex-1 overflow-y-auto px-5 py-4 grid gap-x-6 gap-y-5 ${isEditMode ? '' : 'lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]'}`}>
+                <div className="min-w-0 space-y-5">
+                  <FormSection title="Personal Information">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                      <div className="relative shrink-0 self-center sm:self-start">
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setProfilePicture(null);
-                            if (fileInputRef.current) fileInputRef.current.value = '';
-                          }}
-                          className="absolute -top-1 -right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-md transition-transform hover:scale-110 cursor-pointer"
-                          title="Remove Photo"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="w-16 h-16 rounded-full border-2 border-dashed border-gray-300 hover:border-[#5A1220] bg-white overflow-hidden flex items-center justify-center transition-colors cursor-pointer"
+                          title={profilePicture ? 'Change photo' : 'Upload profile photo'}
+                          aria-label={profilePicture ? 'Change profile photo' : 'Upload profile photo'}
                         >
-                          <X size={10} />
+                          {profilePicture ? (
+                            <img src={profilePicture} alt="Profile preview" className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="flex flex-col items-center justify-center text-gray-400 hover:text-[#5A1220] transition-colors">
+                              <Camera size={18} />
+                              <span className="text-[9px] font-bold mt-0.5 uppercase tracking-wider">Photo</span>
+                            </span>
+                          )}
                         </button>
-                      )}
+                        {profilePicture && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setProfilePicture(null);
+                              if (fileInputRef.current) fileInputRef.current.value = '';
+                            }}
+                            className="absolute -top-1 -right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-md cursor-pointer"
+                            title="Remove photo"
+                            aria-label="Remove photo"
+                          >
+                            <X size={10} />
+                          </button>
+                        )}
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          accept="image/*"
+                          onChange={handlePhotoUpload}
+                          className="hidden"
+                        />
+                      </div>
+
+                      <div className="grid flex-1 min-w-0 gap-3 grid-cols-2 sm:grid-cols-[1fr_1fr_3.5rem_5.5rem]">
+                        <div>
+                          <label htmlFor="user-last-name" className={FORM_LABEL}>
+                            Last Name <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            id="user-last-name"
+                            type="text"
+                            value={formData.last_name}
+                            onChange={(e) => {
+                              setFormData({ ...formData, last_name: capitalizeNameInput(e.target.value) });
+                              setLastNameError('');
+                            }}
+                            placeholder="e.g. Dela Cruz"
+                            className={formInput(!!lastNameError)}
+                          />
+                          <FieldError message={lastNameError} />
+                        </div>
+                        <div>
+                          <label htmlFor="user-first-name" className={FORM_LABEL}>
+                            First Name <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            id="user-first-name"
+                            type="text"
+                            value={formData.first_name}
+                            onChange={(e) => {
+                              setFormData({ ...formData, first_name: capitalizeNameInput(e.target.value) });
+                              setFirstNameError('');
+                            }}
+                            placeholder="e.g. Juan"
+                            className={formInput(!!firstNameError)}
+                          />
+                          <FieldError message={firstNameError} />
+                        </div>
+                        <div>
+                          <label htmlFor="user-middle-initial" className={FORM_LABEL}>M.I.</label>
+                          <input
+                            id="user-middle-initial"
+                            type="text"
+                            maxLength={1}
+                            value={formData.middle_initial}
+                            onChange={(e) => {
+                              setFormData({ ...formData, middle_initial: e.target.value.toUpperCase() });
+                              setMiddleInitialError('');
+                            }}
+                            placeholder="D"
+                            className={`${formInput(!!middleInitialError)} uppercase text-center`}
+                          />
+                          <FieldError message={middleInitialError} />
+                        </div>
+                        <div>
+                          <label htmlFor="user-suffix" className={FORM_LABEL}>Suffix</label>
+                          <select
+                            id="user-suffix"
+                            value={formData.suffix}
+                            onChange={(e) => setFormData({ ...formData, suffix: e.target.value })}
+                            className={`${formInput()} cursor-pointer`}
+                          >
+                            <option value="">None</option>
+                            {NAME_SUFFIXES.map((option) => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </FormSection>
+
+                  <FormSection title="Account Details">
+                    <div>
+                      <label htmlFor="user-email" className={FORM_LABEL}>
+                        Institutional Email <span className="text-red-500">*</span>
+                      </label>
                       <input
-                        type="file"
-                        ref={fileInputRef}
-                        accept="image/*"
-                        onChange={handlePhotoUpload}
-                        className="hidden"
+                        id="user-email"
+                        type="email"
+                        required
+                        value={formData.email}
+                        onChange={(e) => {
+                          setFormData({ ...formData, email: e.target.value });
+                          setEmailError('');
+                        }}
+                        placeholder="name@school.edu.ph"
+                        className={formInput(!!emailError)}
                       />
+                      <FieldError message={emailError} />
                     </div>
 
-                    <div className="grid gap-3 grid-cols-[1fr_1fr_3.5rem_5.5rem] flex-1 min-w-0">
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className={FORM_LABEL}>
-                          Last Name <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={formData.last_name}
-                          onChange={(e) => {
-                            setFormData({ ...formData, last_name: capitalizeNameInput(e.target.value) });
-                            setLastNameError('');
-                          }}
-                          placeholder="e.g. Dela Cruz"
-                          className={formInput(!!lastNameError)}
-                        />
-                        <FieldError message={lastNameError} />
-                      </div>
-                      <div>
-                        <label className={FORM_LABEL}>
-                          First Name <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={formData.first_name}
-                          onChange={(e) => {
-                            setFormData({ ...formData, first_name: capitalizeNameInput(e.target.value) });
-                            setFirstNameError('');
-                          }}
-                          placeholder="e.g. Juan"
-                          className={formInput(!!firstNameError)}
-                        />
-                        <FieldError message={firstNameError} />
-                      </div>
-                      <div>
-                        <label className={FORM_LABEL}>M.I.</label>
-                        <input
-                          type="text"
-                          maxLength={1}
-                          value={formData.middle_initial}
-                          onChange={(e) => {
-                            setFormData({ ...formData, middle_initial: e.target.value.toUpperCase() });
-                            setMiddleInitialError('');
-                          }}
-                          placeholder="D"
-                          className={`${formInput(!!middleInitialError)} uppercase text-center`}
-                        />
-                        <FieldError message={middleInitialError} />
-                      </div>
-                      <div>
-                        <label className={FORM_LABEL}>Suffix</label>
+                        <label htmlFor="user-role" className={FORM_LABEL}>Role</label>
                         <select
-                          value={formData.suffix}
-                          onChange={(e) => setFormData({ ...formData, suffix: e.target.value })}
+                          id="user-role"
+                          value={formData.role}
+                          onChange={(e) => {
+                            const nextRole = e.target.value;
+                            setFormData({
+                              ...formData,
+                              role: nextRole,
+                              program_id: nextRole === 'Program Head' ? formData.program_id : '',
+                            });
+                            setProgramError('');
+                            setFacultyLinkError('');
+                          }}
                           className={`${formInput()} cursor-pointer`}
                         >
-                          <option value="">None</option>
-                          {NAME_SUFFIXES.map((option) => <option key={option} value={option}>{option}</option>)}
+                          <option value="Dean">Dean</option>
+                          <option value="Program Head">Program Head</option>
+                          <option value="Secretary">Secretary</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label htmlFor="user-status" className={FORM_LABEL}>Status</label>
+                        <select
+                          id="user-status"
+                          value={formData.status}
+                          onChange={(e) => setFormData({ ...formData, status: e.target.value as 'Active' | 'Inactive' })}
+                          className={`${formInput()} cursor-pointer`}
+                        >
+                          <option value="Active">Active</option>
+                          <option value="Inactive">Inactive</option>
                         </select>
                       </div>
                     </div>
-                  </div>
 
-                  <div>
-                    <label className={FORM_LABEL}>
-                      Institutional Email <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      placeholder="name@school.edu.ph"
-                      className={formInput()}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className={FORM_LABEL}>Role</label>
-                      <select
-                        value={formData.role}
-                        onChange={(e) => {
-                          const nextRole = e.target.value;
-                          setFormData({
-                            ...formData,
-                            role: nextRole,
-                            program_id: nextRole === 'Program Head' ? formData.program_id : '',
-                          });
-                          setProgramError('');
-                        }}
-                        className={`${formInput()} cursor-pointer`}
-                      >
-                        <option value="Dean">Dean</option>
-                        <option value="Program Head">Program Head</option>
-                        <option value="Secretary">Secretary</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className={FORM_LABEL}>Status</label>
-                      <select
-                        value={formData.status}
-                        onChange={(e) => setFormData({ ...formData, status: e.target.value as 'Active' | 'Inactive' })}
-                        className={`${formInput()} cursor-pointer`}
-                      >
-                        <option value="Active">Active</option>
-                        <option value="Inactive">Inactive</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className={`grid gap-3 ${isProgramHeadRole ? 'grid-cols-2' : ''}`}>
-                    <div>
-                      <label className={FORM_LABEL}>
-                        Assigned Department <span className="text-red-500">*</span>
-                      </label>
-                      <select
-                        value={formData.department_id}
-                        onChange={(e) => {
-                          setFormData({ ...formData, department_id: e.target.value, program_id: '' });
-                          setDeptError('');
-                          setProgramError('');
-                        }}
-                        className={`${formInput(!!deptError)} cursor-pointer`}
-                      >
-                        <option value="">Select a department...</option>
-                        {departments.map((dept) => (
-                          <option key={dept.id} value={dept.id}>{dept.department_name}</option>
-                        ))}
-                      </select>
-                      <FieldError message={deptError} />
-                    </div>
-
-                    {isProgramHeadRole && (
+                    <div className={`grid gap-3 ${isProgramHeadRole ? 'sm:grid-cols-2' : ''}`}>
                       <div>
-                        <label className={FORM_LABEL}>
-                          Program / Major <span className="text-red-500">*</span>
+                        <label htmlFor="user-department" className={FORM_LABEL}>
+                          Assigned Department <span className="text-red-500">*</span>
                         </label>
                         <select
-                          value={formData.program_id}
-                          disabled={!formData.department_id}
+                          id="user-department"
+                          value={formData.department_id}
                           onChange={(e) => {
-                            setFormData({ ...formData, program_id: e.target.value });
+                            setFormData({ ...formData, department_id: e.target.value, program_id: '' });
+                            setDeptError('');
                             setProgramError('');
+                            setFacultyLinkError('');
                           }}
-                          className={formInput(!!programError)}
+                          className={`${formInput(!!deptError)} cursor-pointer`}
                         >
-                          <option value="">
-                            {formData.department_id ? 'Select a program or major...' : 'Select a department first'}
-                          </option>
-                          {selectedDepartmentPrograms.map((program) => (
-                            <option key={program.id} value={program.id}>
-                              {programLabel(program)}
-                            </option>
+                          <option value="">Select a department...</option>
+                          {departments.map((dept) => (
+                            <option key={dept.id} value={dept.id}>{dept.department_name}</option>
                           ))}
                         </select>
-                        <FieldError message={programError} />
-                        {formData.department_id && selectedDepartmentPrograms.length === 0 && !programError && (
-                          <p className="text-[11px] text-gray-500 mt-0.5 font-semibold">
-                            No programs yet. Add one in Department Management.
-                          </p>
-                        )}
+                        <FieldError message={deptError} />
                       </div>
-                    )}
-                  </div>
 
-                  <p className="text-[11px] font-semibold text-gray-500">
-                    Google login is enabled for every account. It links on first sign-in and must match the email above.
-                  </p>
+                      {isProgramHeadRole && (
+                        <div>
+                          <label htmlFor="user-program" className={FORM_LABEL}>
+                            Program / Major <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            id="user-program"
+                            value={formData.program_id}
+                            disabled={!formData.department_id}
+                            onChange={(e) => {
+                              setFormData({ ...formData, program_id: e.target.value });
+                              setProgramError('');
+                            }}
+                            className={formInput(!!programError)}
+                          >
+                            <option value="">
+                              {formData.department_id ? 'Select a program or major...' : 'Select a department first'}
+                            </option>
+                            {selectedDepartmentPrograms.map((program) => (
+                              <option key={program.id} value={program.id}>
+                                {programLabel(program)}
+                              </option>
+                            ))}
+                          </select>
+                          <FieldError message={programError} />
+                          {formData.department_id && selectedDepartmentPrograms.length === 0 && !programError && (
+                            <p className="text-[11px] text-gray-500 mt-0.5 font-semibold">
+                              No programs yet. Add one in Department Management.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <p className="text-[11px] text-gray-500">
+                      Google sign-in links on first login and must match this email.
+                    </p>
+                  </FormSection>
                 </div>
 
                 {!isEditMode && (
-                  <section className="rounded-xl border border-[#C9952A]/25 bg-white/70 p-4 space-y-3 self-start w-full">
-                    <div>
-                      <h3 className="text-sm font-bold text-[#4e0a10]">Teaching Profile</h3>
-                      <p className="mt-0.5 text-[11px] text-gray-500">
-                        Link the person if they are already on the instructor roster, so they are not scheduled twice.
-                      </p>
-                    </div>
-
-                    <div role="radiogroup" aria-label="Teaching profile" className="grid gap-2">
-                      {TEACHING_OPTIONS.map((option) => (
-                        <label
-                          key={option.mode}
-                          className={`flex items-start gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
-                            facultyMode === option.mode ? 'border-[#5A1220] bg-[#5A1220]/5' : 'border-gray-200 bg-white hover:bg-gray-50'
-                          }`}
-                        >
+                  <div className="min-w-0 lg:border-l lg:border-gray-200 lg:pl-6">
+                    <FormSection
+                      title="Teaching Profile"
+                      aside={(
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                          {isTeachingRole ? 'Required' : 'Optional'}
+                        </span>
+                      )}
+                    >
+                      {isTeachingRole ? (
+                        <p className="text-[11px] text-gray-500">
+                          {formData.role}s carry a teaching load, so this account needs an instructor record.
+                        </p>
+                      ) : (
+                        <label className="flex items-start gap-2.5 cursor-pointer">
                           <input
-                            type="radio"
-                            name="faculty_mode"
-                            value={option.mode}
-                            checked={facultyMode === option.mode}
-                            onChange={() => {
-                              setFacultyModeTouched(true);
-                              setFacultyMode(option.mode);
+                            type="checkbox"
+                            checked={teachesClasses}
+                            onChange={(e) => {
+                              setTeachesClasses(e.target.checked);
                               setFacultyLinkError('');
                             }}
-                            className="mt-0.5 h-4 w-4 accent-[#5A1220]"
+                            className="mt-0.5 h-4 w-4 shrink-0 accent-[#5A1220] cursor-pointer"
                           />
-                          <span className="min-w-0">
-                            <span className="block text-sm font-bold text-gray-800">{option.title}</span>
-                            <span className="block text-[11px] text-gray-500">{option.hint}</span>
+                          <span>
+                            <span className="block text-sm font-semibold text-gray-800">This account also teaches classes</span>
+                            <span className="block text-[11px] text-gray-500">Leave unchecked if they have no teaching load.</span>
                           </span>
                         </label>
-                      ))}
-                    </div>
+                      )}
 
-                    {facultyMode === 'link' && (
-                      <div>
-                        <label className={FORM_LABEL}>
-                          Instructor <span className="text-red-500">*</span>
-                        </label>
-                        <select
-                          value={linkFacultyId}
-                          disabled={!formData.department_id || isLoadingLinkable}
-                          onChange={(e) => {
-                            setFacultyModeTouched(true);
-                            setLinkFacultyId(e.target.value);
-                            setFacultyLinkError('');
-                          }}
-                          className={formInput(!!facultyLinkError)}
-                        >
-                          <option value="">
-                            {!formData.department_id
-                              ? 'Select a department first'
-                              : isLoadingLinkable
-                                ? 'Loading instructors...'
-                                : 'Select an instructor...'}
-                          </option>
-                          {linkableFaculty.map((f) => (
-                            <option key={f.id} value={f.id}>
-                              {linkableFacultyName(f)}{f.status === 'inactive' ? ' (inactive)' : ''}
-                            </option>
-                          ))}
-                        </select>
-                        <FieldError message={facultyLinkError} />
-                        {matchingInstructor && String(matchingInstructor.id) === linkFacultyId && !facultyLinkError && (
-                          <p className="text-[11px] text-[#8a6412] mt-0.5 font-semibold">
-                            Matched by name to an instructor already on this department's roster.
-                          </p>
-                        )}
-                        {formData.department_id && !isLoadingLinkable && linkableFaculty.length === 0 && (
-                          <p className="text-[11px] text-gray-500 mt-0.5 font-semibold">
-                            Every instructor in this department is already linked to an account.
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {facultyMode !== 'none' && designations.length > 0 && (
-                      <div>
-                        <label className={FORM_LABEL}>Designations</label>
-                        <DesignationPicker designations={designations} value={designationIds} onChange={setDesignationIds} maxUnits={designationMaxUnits} />
-                        <p className="text-[11px] text-gray-500 mt-0.5">
-                          {facultyMode === 'link' && designationIds.length === 0
-                            ? 'Leave empty to keep the instructor\'s current designations.'
-                            : 'Deans and program heads usually carry a reduced load.'}
+                      {!teachingApplies && matchingInstructor && (
+                        <p className="text-[11px] font-semibold text-[#8a6412]">
+                          {linkableFacultyName(matchingInstructor)} is on this department's roster. Check the box above to link them.
                         </p>
-                      </div>
-                    )}
-                  </section>
+                      )}
+
+                      {teachingApplies && (
+                        <>
+                          <div role="radiogroup" aria-label="Instructor record" className="space-y-1">
+                            {([
+                              { mode: 'link', title: 'Link existing instructor', hint: 'Keeps their teaching load and schedule history.' },
+                              {
+                                mode: 'create',
+                                title: 'Create new instructor profile',
+                                hint: defaultMaxUnits !== null
+                                  ? `Adds a full-time instructor with a ${defaultMaxUnits}-unit load.`
+                                  : 'Adds a full-time instructor with the default load.',
+                              },
+                            ] as const).map((option) => {
+                              const isSelected = facultyMode === option.mode;
+                              return (
+                                <label
+                                  key={option.mode}
+                                  className={`flex items-start gap-2.5 rounded-lg px-2.5 py-2 cursor-pointer transition-colors ${
+                                    isSelected ? 'bg-[#5A1220]/[0.06]' : 'hover:bg-white/70'
+                                  }`}
+                                >
+                                  <input
+                                    type="radio"
+                                    name="faculty_mode"
+                                    value={option.mode}
+                                    checked={isSelected}
+                                    onChange={() => {
+                                      setFacultyModeTouched(true);
+                                      setFacultyMode(option.mode);
+                                      setFacultyLinkError('');
+                                    }}
+                                    className="mt-0.5 h-4 w-4 shrink-0 accent-[#5A1220] cursor-pointer"
+                                  />
+                                  <span className="min-w-0">
+                                    <span className={`block text-sm font-semibold ${isSelected ? 'text-[#5A1220]' : 'text-gray-800'}`}>{option.title}</span>
+                                    <span className="block text-[11px] text-gray-500">{option.hint}</span>
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+
+                          {facultyMode === 'link' && (
+                            <div>
+                              <span className={FORM_LABEL}>
+                                Instructor <span className="text-red-500">*</span>
+                              </span>
+                              <SearchableSelect
+                                aria-label="Instructor"
+                                options={instructorOptions}
+                                value={linkFacultyId}
+                                disabled={!formData.department_id || isLoadingLinkable}
+                                hasError={!!facultyLinkError}
+                                placeholder={!formData.department_id
+                                  ? 'Select a department first'
+                                  : isLoadingLinkable
+                                    ? 'Loading instructors...'
+                                    : 'Select an instructor...'}
+                                searchPlaceholder="Search by name"
+                                emptyText="No instructor matches that name"
+                                onChange={(value) => {
+                                  setFacultyModeTouched(true);
+                                  setLinkFacultyId(value);
+                                  setFacultyLinkError('');
+                                }}
+                              />
+                              <FieldError message={facultyLinkError} />
+                              {matchingInstructor && String(matchingInstructor.id) === linkFacultyId && !facultyLinkError && (
+                                <p className="text-[11px] text-[#8a6412] mt-0.5 font-semibold">
+                                  Matched by name to an instructor on this department's roster.
+                                </p>
+                              )}
+                              {formData.department_id && !isLoadingLinkable && linkableFaculty.length === 0 && (
+                                <p className="text-[11px] text-gray-500 mt-0.5 font-semibold">
+                                  Every instructor in this department is already linked to an account.
+                                </p>
+                              )}
+                            </div>
+                          )}
+
+                          {facultyMode === 'create' && (
+                            <>
+                              {duplicatesRosterInstructor && matchingInstructor && (
+                                <p
+                                  role={facultyLinkError ? 'alert' : undefined}
+                                  className={`rounded-lg border px-3 py-2 text-[11px] ${
+                                    facultyLinkError ? 'border-red-300 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-900'
+                                  }`}
+                                >
+                                  <span className="font-semibold">{linkableFacultyName(matchingInstructor)}</span> is already on this department's roster.{' '}
+                                  <button
+                                    type="button"
+                                    onClick={switchToLinkMatch}
+                                    className="font-bold text-[#5A1220] underline underline-offset-2 cursor-pointer"
+                                  >
+                                    Link instead
+                                  </button>
+                                </p>
+                              )}
+                              {!duplicatesRosterInstructor && <FieldError message={facultyLinkError} />}
+                            </>
+                          )}
+
+                          {designations.length > 0 && (
+                            <div>
+                              <span className={FORM_LABEL}>Designations</span>
+                              <DesignationPicker designations={designations} value={designationIds} onChange={setDesignationIds} maxUnits={designationMaxUnits} />
+                              <p className="text-[11px] text-gray-500 mt-0.5">
+                                {facultyMode === 'link' && designationIds.length === 0
+                                  ? 'Leave empty to keep the instructor\'s current designations.'
+                                  : 'Deans and program heads usually carry a reduced load.'}
+                              </p>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </FormSection>
+                  </div>
                 )}
               </div>
 
-              <div className="flex justify-end gap-3 px-5 py-3.5 border-t border-gray-200/80 bg-gray-50/50 shrink-0">
+              <div className="flex flex-wrap justify-end gap-3 px-5 py-3.5 border-t border-gray-200/80 bg-gray-50/50 shrink-0">
                 {isEditMode && editingUser && (
                   <button
                     type="button"
@@ -1354,14 +1532,16 @@ export default function VpaaUsers() {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="min-w-[8rem] px-4 py-2 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm font-semibold cursor-pointer"
+                  disabled={isSubmitting}
+                  className="min-w-[8rem] px-4 py-2 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="min-w-[8rem] flex items-center justify-center gap-2 px-4 py-2 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] transition-colors disabled:opacity-50 text-sm font-semibold cursor-pointer"
+                  aria-busy={isSubmitting}
+                  className="min-w-[8rem] flex items-center justify-center gap-2 px-4 py-2 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold cursor-pointer"
                 >
                   {isSubmitting && <Loader2 size={16} className="animate-spin" />}
                   {isSubmitting
