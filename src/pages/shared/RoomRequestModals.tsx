@@ -33,10 +33,12 @@ import {
   formatSemester,
   fromMinutes,
   getOwnerId,
+  REQUEST_DURATIONS,
   reviewRoomRequest,
   submitRoomRequest,
   toMinutes,
   windowConflicts,
+  type RoomBorrowingStatus,
   type RoomOccupancyBlock,
   type RoomOccupancySchedule,
   type RoomRequest,
@@ -152,6 +154,7 @@ interface OccupancyData {
   key: string;
   blocks: RoomOccupancyBlock[];
   schedules: RoomOccupancySchedule[];
+  borrowing: RoomBorrowingStatus | null;
 }
 
 type OccupancyStatus = 'idle' | 'loading' | 'ready' | 'stale' | 'error';
@@ -169,7 +172,7 @@ function useOccupancy(roomId: number | null, semesterId: number | null) {
     fetchRoomOccupancy(roomId, semesterId)
       .then((response) => {
         if (!active) return;
-        setData({ key, blocks: response.occupied, schedules: response.schedules });
+        setData({ key, blocks: response.occupied, schedules: response.schedules, borrowing: response.borrowing ?? null });
         setFailure((current) => (current?.key === key ? null : current));
       })
       .catch((error) => {
@@ -191,6 +194,10 @@ function useOccupancy(roomId: number | null, semesterId: number | null) {
     status,
     blocks: current?.blocks ?? [],
     schedules: current?.schedules ?? [],
+    /** Set while the owner's timetable still awaits final VPAA approval. */
+    borrowingClosed: current?.borrowing?.open === false
+      ? current.borrowing.message ?? 'This room is not yet available for borrowing.'
+      : null,
     message: failed ? failure.message : null,
     retry: () => setAttempt((value) => value + 1),
   };
@@ -201,16 +208,11 @@ function useOccupancy(roomId: number | null, semesterId: number | null) {
 /* ------------------------------------------------------------------ */
 
 /** A recurring weekday window for the displayed semester, not a calendar date. */
-interface ScheduleChoice {
+export interface ScheduleChoice {
   day: string;
   start: string;
   duration: number;
 }
-
-const REQUEST_DURATIONS = [
-  { minutes: 90, label: '1.5 hours' },
-  { minutes: 180, label: '3 hours' },
-] as const;
 
 const PICKER_SLOT_HEIGHT_PX = 20;
 
@@ -455,17 +457,20 @@ function SchedulePickerModal({
 export function RequestRoomModal({
   room,
   semester,
+  initialChoice = null,
   onClose,
   onSubmitted,
 }: {
   room: LendableRoom;
   semester: RoomRequestSemester | null;
+  /** A free slot picked from the room's availability list; still re-checked before sending. */
+  initialChoice?: ScheduleChoice | null;
   onClose: () => void;
   onSubmitted: (result: RoomRequestMutationResult) => void;
 }) {
   const { toast } = useToast();
   const ids = useId();
-  const [choice, setChoice] = useState<ScheduleChoice | null>(null);
+  const [choice, setChoice] = useState<ScheduleChoice | null>(initialChoice);
   const [isPicking, setIsPicking] = useState(false);
   const scheduleButtonRef = useRef<HTMLButtonElement>(null);
   const wasPicking = useRef(false);
@@ -483,11 +488,14 @@ export function RequestRoomModal({
   }, [isPicking]);
 
   const conflicts = choice ? windowConflicts(choiceWindow(choice), occupancy.blocks) : [];
-  const choiceValid = choice !== null && occupancy.status === 'ready' && fitsSchedule(choice, occupancy.blocks);
+  const borrowingClosed = occupancy.borrowingClosed;
+  const choiceValid = choice !== null && occupancy.status === 'ready' && borrowingClosed === null && fitsSchedule(choice, occupancy.blocks);
   const purposeMissing = purpose.trim() === '';
   const canSubmit = semester !== null && choiceValid && !purposeMissing && !isSubmitting;
   const submitHint = semester === null
     ? 'There is no active semester to request a room for.'
+    : borrowingClosed !== null
+      ? borrowingClosed
     : choice === null
       ? 'Choose a schedule to continue.'
       : occupancy.status === 'loading' || occupancy.status === 'idle'
@@ -581,12 +589,17 @@ export function RequestRoomModal({
 
           <section aria-labelledby={`${ids}-time-title`}>
             <SectionTitle><span id={`${ids}-time-title`}>Requested time</span></SectionTitle>
+            {borrowingClosed !== null && (
+              <div className="mb-3" role="alert">
+                <Notice tone="warning" icon={<AlertTriangle size={14} />}>{borrowingClosed}</Notice>
+              </div>
+            )}
             {choice === null ? (
               <div className="flex flex-col items-start gap-3 rounded-xl border border-dashed border-gray-300 bg-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm font-semibold text-gray-500">
                   Pick a weekly day and time, 1.5 or 3 hours long, from {room.room_code}’s timetable.
                 </p>
-                <button ref={scheduleButtonRef} type="button" onClick={() => setIsPicking(true)} disabled={semester === null} className={`${primaryButton} shrink-0 whitespace-nowrap`}>
+                <button ref={scheduleButtonRef} type="button" onClick={() => setIsPicking(true)} disabled={semester === null || borrowingClosed !== null} className={`${primaryButton} shrink-0 whitespace-nowrap`}>
                   <CalendarClock size={15} /> Choose Schedule
                 </button>
               </div>
@@ -604,7 +617,7 @@ export function RequestRoomModal({
                     </p>
                   </div>
                 </div>
-                <button ref={scheduleButtonRef} type="button" onClick={() => setIsPicking(true)} className={`${secondaryButton} shrink-0 whitespace-nowrap`}>
+                <button ref={scheduleButtonRef} type="button" onClick={() => setIsPicking(true)} disabled={borrowingClosed !== null} className={`${secondaryButton} shrink-0 whitespace-nowrap`}>
                   <CalendarClock size={15} /> Change Schedule
                 </button>
               </div>
@@ -619,7 +632,7 @@ export function RequestRoomModal({
                   Availability could not be confirmed. Retry before sending.
                 </Notice>
               )}
-              {choice !== null && occupancy.status === 'ready' && !choiceValid && (
+              {choice !== null && occupancy.status === 'ready' && borrowingClosed === null && !choiceValid && (
                 <Notice tone="danger" icon={<XCircle size={14} />}>
                   <p>This time is no longer free{conflicts.length > 0 ? ':' : '.'}</p>
                   {conflicts.length > 0 && (

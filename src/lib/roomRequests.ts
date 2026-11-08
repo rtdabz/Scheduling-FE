@@ -56,9 +56,18 @@ export interface RoomOccupancyBlock extends RoomRequestWindow {
   label: string;
 }
 
+export interface RoomBorrowingStatus {
+  /** False until the owning department's whole timetable has final VPAA approval. */
+  open: boolean;
+  /** Why it is closed: before the owner's first approval, or while it recalls and revises. */
+  reason?: 'awaiting_approval' | 'owner_updating' | null;
+  message: string | null;
+}
+
 export interface RoomOccupancy {
   room: RoomRequestRoom;
   semester?: RoomRequestSemester;
+  borrowing?: RoomBorrowingStatus;
   opening_time: string;
   closing_time: string;
   occupied: RoomOccupancyBlock[];
@@ -68,8 +77,9 @@ export interface RoomOccupancy {
 export interface RoomOccupancySchedule {
   id: number;
   semester_id: number;
-  section_id: number;
-  course_id: number;
+  /** Null when the class belongs to another department and its details are withheld. */
+  section_id: number | null;
+  course_id: number | null;
   faculty_id: number | null;
   room_id: number;
   department_id: number;
@@ -79,6 +89,8 @@ export interface RoomOccupancySchedule {
   mode: string;
   meeting_type?: 'lecture' | 'laboratory' | null;
   status: string;
+  /** Another department's class: only its time is shown, as "Occupied". */
+  is_masked?: boolean;
   section?: { id: number; section_name: string } | null;
   course?: {
     id: number;
@@ -199,6 +211,52 @@ export const windowConflicts = <T extends RoomRequestWindow>(window: RoomRequest
     (block) => block.day === window.day && toMinutes(block.start_time) < end && start < toMinutes(block.end_time),
   );
 };
+
+export interface MinuteRange {
+  start: number;
+  end: number;
+}
+
+/** The parts of `range` not covered by any of `cuts`, in order. Touching edges do not overlap. */
+export const subtractRanges = (range: MinuteRange, cuts: MinuteRange[]): MinuteRange[] => {
+  const sorted = cuts
+    .filter((cut) => cut.start < range.end && range.start < cut.end)
+    .sort((a, b) => a.start - b.start);
+  const parts: MinuteRange[] = [];
+  let cursor = range.start;
+  for (const cut of sorted) {
+    if (cut.start > cursor) parts.push({ start: cursor, end: cut.start });
+    cursor = Math.max(cursor, cut.end);
+  }
+  if (cursor < range.end) parts.push({ start: cursor, end: range.end });
+  return parts;
+};
+
+/** Requestable lengths, shortest first; a free window shorter than the first cannot be requested. */
+export const REQUEST_DURATIONS = [
+  { minutes: 90, label: '1.5 hours' },
+  { minutes: 180, label: '3 hours' },
+] as const;
+
+/**
+ * Free time on `day` within operating hours that clears every booking (classes and
+ * borrowed windows), compared to the exact minute. Windows shorter than `minMinutes` are dropped.
+ */
+export const freeWindows = (
+  day: string,
+  booked: RoomRequestWindow[],
+  openingMinutes: number,
+  closingMinutes: number,
+  minMinutes = 1,
+): RoomRequestWindow[] =>
+  subtractRanges(
+    { start: openingMinutes, end: closingMinutes },
+    booked
+      .filter((block) => block.day === day)
+      .map((block) => ({ start: toMinutes(block.start_time), end: toMinutes(block.end_time) })),
+  )
+    .filter((range) => range.end - range.start >= minMinutes)
+    .map((range) => ({ day, start_time: fromMinutes(range.start), end_time: fromMinutes(range.end) }));
 
 /**
  * Classes that would move to Room TBA when this grant ends: the borrower's classes in

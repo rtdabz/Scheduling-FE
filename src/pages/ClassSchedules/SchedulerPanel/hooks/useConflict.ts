@@ -4,7 +4,7 @@ import { getSubjectTotalSlots } from "../types";
 import { getCourseSlotPlan, SLOT_MINUTES } from "../courseSlotPlan";
 import { buildPreferredPattern, closingTimeLabel, consecutiveDayCount, fieldEndMinutes, formatTime12h, FULL_DAY_NAMES, gridOpeningMinutes, isFixedSplitPattern, parsePreferredPattern, slotCount, slotMinutes, slotToTime24h, timeToSlotUnclamped } from "../../../../lib/timeGrid";
 import { instructorConflictMessage, onlineCourseConflictMessage, roomConflictMessage, sectionConflictMessage, type ConflictBooking, type RequestedSlot } from "../../../../lib/conflictMessages";
-import { describeWindow, roomGrantFits } from "../../../../lib/roomRequests";
+import { describeWindow, roomGrantFits, windowConflicts } from "../../../../lib/roomRequests";
 import { isLabMeetingRoomType, labRoomTypes } from "../../../../lib/labRoomPolicy";
 import { AVAILABILITY_WARNING_TITLE, availabilityWarningMessage, coveredContinuously } from "../../../../lib/availabilityWindows";
 
@@ -183,6 +183,67 @@ export const checkRoomGrantWindow = (
   return {
     conflictType: "room",
     message: `Room access: ${room.name} is borrowed and only usable ${room.grantWindows.map(describeWindow).join(", ")}.`
+  };
+};
+
+const slotWindow = (dayIndex: number, startSlot: number, durationSlots: number) => ({
+  day: FULL_DAY_NAMES[dayIndex] ?? "",
+  start_time: slotToTime24h(startSlot),
+  end_time: slotToTime24h(startSlot + durationSlots),
+});
+
+/**
+ * The owner's own room during time it has lent out under an approved request. The loan
+ * stays reserved even while the owner revises a recalled timetable, mirroring the server's
+ * refusal, and the message suggests the nearest free time in this room or another free room.
+ */
+export const checkRoomLentWindow = (
+  room: Room | undefined,
+  rooms: Room[],
+  schedules: ScheduleItem[],
+  dayIndex: number,
+  startSlot: number,
+  durationSlots: number,
+  excludeScheduleId?: string | string[]
+): ConflictResult => {
+  if (!room?.lentWindows?.length) return null;
+  const lent = windowConflicts(slotWindow(dayIndex, startSlot, durationSlots), room.lentWindows)[0];
+  if (!lent) return null;
+
+  const excluded = new Set(excludeScheduleId === undefined ? [] : [excludeScheduleId].flat());
+  const isFree = (candidate: Room, start: number): boolean => {
+    const window = slotWindow(dayIndex, start, durationSlots);
+    return windowConflicts(window, candidate.lentWindows ?? []).length === 0
+      && roomGrantFits(candidate, dayIndex, start, durationSlots)
+      && !schedules.some((s) => !excluded.has(s.id)
+        && String(s.roomId) === String(candidate.id)
+        && s.dayIndex === dayIndex
+        && s.startSlot < start + durationSlots
+        && start < s.startSlot + s.durationSlots);
+  };
+
+  const lastStart = slotCount() - durationSlots;
+  const sameRoomStart = Array.from({ length: Math.max(0, lastStart + 1) }, (_, slot) => slot)
+    .filter((slot) => isFree(room, slot))
+    .sort((a, b) => Math.abs(a - startSlot) - Math.abs(b - startSlot) || a - b)[0];
+  const otherRooms = rooms
+    .filter((candidate) => String(candidate.id) !== String(room.id)
+      && candidate.roomType === room.roomType
+      && (candidate.status ?? "available") === "available"
+      && isFree(candidate, startSlot))
+    .slice(0, 2)
+    .map((candidate) => candidate.name);
+
+  const suggestions = [
+    ...(sameRoomStart === undefined ? [] : [`${describeWindow(slotWindow(dayIndex, sameRoomStart, durationSlots)).slice(4)} in ${room.name}`]),
+    ...(otherRooms.length ? [`${otherRooms.join(" or ")} at this time`] : []),
+  ];
+
+  return {
+    conflictType: "room",
+    title: "Reserved for Borrowing",
+    message: `Room ${room.name} is lent to ${lent.borrower ?? "another department"} on ${describeWindow(lent)} under an approved room request, so this time stays reserved. `
+      + (suggestions.length ? `Try ${suggestions.join(", or ")}.` : "Choose another time or room."),
   };
 };
 
@@ -447,6 +508,10 @@ export const useConflict = ({
       const grantWindowConflict = checkRoomGrantWindow(room, dayIndex, startSlot, durationSlots);
       if (grantWindowConflict) {
         return grantWindowConflict;
+      }
+      const lentWindowConflict = checkRoomLentWindow(room, rooms, schedules, dayIndex, startSlot, durationSlots, excludeScheduleId);
+      if (lentWindowConflict) {
+        return lentWindowConflict;
       }
       if (room && room.status && room.status !== "available") {
         return {

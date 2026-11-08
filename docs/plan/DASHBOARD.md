@@ -37,6 +37,7 @@
 
 ## Workflows
 
+- [Tour Guide repair plan](tour_guide_repair_plan.md) — Proposed repair of all 12 workflow guides: progress/target reliability, accurate instructions, safe action boundaries, accessibility, and end-to-end acceptance checks; 2026-11-08.
 - [Course Assignment redesign plan](course_assignment_redesign_plan.md) — Proposed table-first bulk assignment workspace, explicit origin/teaching labels, selection safeguards, reuse scope, and acceptance checks; 2026-11-08.
 - [Schedule Approval View Details redesign plan](schedule_approval_details_redesign_plan.md) — Schedule-first modal, shared Dean TanStack schedule table, wider layout, and verification results; implemented 2026-11-08.
 - [Schedule recall and approval fix plan](schedule_recall_approval_fix_plan.md) — Backend concurrency and stale-dialog fixes, regression matrix, and verification evidence; implemented 2026-11-08, browser check outstanding.

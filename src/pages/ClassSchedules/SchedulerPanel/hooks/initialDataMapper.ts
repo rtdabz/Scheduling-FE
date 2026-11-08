@@ -344,6 +344,7 @@ export const mapInitialData = (
     status: r.status,
     ...(r.allow_lecture_usage ? { allowLectureUsage: true } : {}),
     ...(r.grant_windows?.length ? { grantWindows: r.grant_windows } : {}),
+    ...(r.lent_windows?.length ? { lentWindows: r.lent_windows } : {}),
   }));
 
   const rawCourses = initialData.courses ?? initialData.subjects ?? [];

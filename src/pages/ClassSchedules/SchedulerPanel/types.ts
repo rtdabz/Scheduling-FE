@@ -177,12 +177,18 @@ export interface Room {
   status: RoomStatus;
   allowLectureUsage?: boolean;
   grantWindows?: RoomGrantWindow[];
+  /** Times of this department's own room that are lent out under an approved request: reserved. */
+  lentWindows?: RoomLentWindow[];
 }
 
 export interface RoomGrantWindow {
   day: string;
   start_time: string;
   end_time: string;
+}
+
+export interface RoomLentWindow extends RoomGrantWindow {
+  borrower: string | null;
 }
 
 export interface ScheduleItem {
@@ -411,6 +417,7 @@ export interface ApiRoomRecord {
   status: RoomStatus;
   department_id: number | null;
   grant_windows?: RoomGrantWindow[];
+  lent_windows?: RoomLentWindow[];
 }
 
 export interface ApiScheduleRecord {

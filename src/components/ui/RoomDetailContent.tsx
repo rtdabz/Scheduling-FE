@@ -9,12 +9,24 @@ import {
   CheckCircle2,
   XCircle,
   HelpCircle,
+  Lock,
+  Send,
 } from 'lucide-react';
 import Skeleton from './Skeleton';
 import WeeklyTimetableGrid from '../scheduling/WeeklyTimetableGrid';
 import ScheduleCard from '../../pages/ClassSchedules/SchedulerPanel/TimetableGrid/ScheduleCard';
 import { DAYS, GRID_HEADER_HEIGHT_PX, SLOT_HEIGHT_PX } from '../../pages/ClassSchedules/SchedulerPanel/constants';
-import { slotCount, slotToTimeLabel, timeToSlot } from '../../lib/timeGrid';
+import { gridOpeningMinutes, slotCount, slotMinutes, slotToTimeLabel, timeToSlot } from '../../lib/timeGrid';
+import {
+  formatDuration,
+  fromMinutes,
+  freeWindows,
+  REQUEST_DURATIONS,
+  subtractRanges,
+  toMinutes,
+  type MinuteRange,
+  type RoomRequestWindow,
+} from '../../lib/roomRequests';
 import { useRoomGrants } from '../../hooks/useRoomGrants';
 import type { LinkedSlot } from '../../lib/notificationLink';
 import type {
@@ -43,8 +55,8 @@ interface Room {
 interface Schedule {
   id: number;
   semester_id: number;
-  section_id: number;
-  course_id: number;
+  section_id: number | null;
+  course_id: number | null;
   faculty_id: number | null;
   room_id: number;
   department_id: number;
@@ -54,6 +66,8 @@ interface Schedule {
   mode: string;
   meeting_type?: 'lecture' | 'laboratory' | null;
   status: string;
+  /** Another department's class: its details are withheld and it shows only as "Occupied". */
+  is_masked?: boolean;
   section?: {
     id: number;
     section_name: string;
@@ -83,6 +97,47 @@ interface RoomDetailContentProps {
   highlightSlots?: LinkedSlot[];
   /** Semester whose borrowing grants are shown; defaults to the active one. */
   semesterId?: number | null;
+  /**
+   * What List View shows: the room's classes, or only the free time a department can
+   * request (clear of classes and borrowed windows, at least the shortest request length).
+   */
+  listMode?: 'classes' | 'availability';
+  /** Offered on each free window in availability mode; the request is re-validated on send. */
+  onRequestSlot?: (choice: { day: string; start: string; duration: number }) => void;
+  /**
+   * Set while the owning department's timetable awaits final VPAA approval: no free
+   * time is offered for borrowing, and this message is shown instead.
+   */
+  borrowingClosedMessage?: string | null;
+}
+
+const ALL_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+const toHHMM = (time: string) => time.slice(0, 5);
+
+/** Overlapping or touching ranges joined into one. */
+const mergeRanges = (ranges: MinuteRange[]): MinuteRange[] => {
+  const merged: MinuteRange[] = [];
+  for (const range of [...ranges].sort((a, b) => a.start - b.start)) {
+    const last = merged[merged.length - 1];
+    if (last && range.start <= last.end) last.end = Math.max(last.end, range.end);
+    else merged.push({ ...range });
+  }
+  return merged;
+};
+
+const rangeOf = (block: { start_time: string; end_time: string }): MinuteRange => ({
+  start: toMinutes(block.start_time),
+  end: toMinutes(block.end_time),
+});
+
+interface GridBand {
+  key: string;
+  kind: 'occupied' | 'borrowed';
+  dayIndex: number;
+  start: number;
+  end: number;
+  label: string;
 }
 
 const formatTime = (timeStr: string) => {
@@ -106,7 +161,7 @@ const noop = () => undefined;
 
 const NO_SLOTS: LinkedSlot[] = [];
 
-export default function RoomDetailContent({ room, schedules, isLoading, initialViewMode = 'list', highlightSlots = NO_SLOTS, semesterId }: RoomDetailContentProps) {
+export default function RoomDetailContent({ room, schedules, isLoading, initialViewMode = 'list', highlightSlots = NO_SLOTS, semesterId, listMode = 'classes', onRequestSlot, borrowingClosedMessage = null }: RoomDetailContentProps) {
   const [activeTabDay, setActiveTabDay] = useState<string>(() => {
     if (highlightSlots[0]) return highlightSlots[0].day;
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -142,7 +197,7 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
     if (!room) return [];
 
     return schedules
-      .filter((schedule) => schedule.room_id === room.id)
+      .filter((schedule) => schedule.room_id === room.id && !schedule.is_masked)
       .map((schedule): { schedule: ScheduleItem; subject: Subject } | null => {
         const dayIndex = DAYS.indexOf(schedule.day);
         if (dayIndex < 0) return null;
@@ -204,6 +259,62 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
       })
       .filter((item): item is { schedule: ScheduleItem; subject: Subject } => item !== null);
   }, [room, schedules]);
+
+  /**
+   * Background bands drawn beside the class cards without ever overlapping them:
+   * a borrowed window shows only where no visible class already fills it, and another
+   * department's class shows only as "Occupied" outside any borrowed window.
+   */
+  const gridBands = useMemo<GridBand[]>(() => {
+    if (!room) return [];
+    const bands: GridBand[] = [];
+    DAYS.forEach((day, dayIndex) => {
+      const daySchedules = schedules.filter((s) => s.room_id === room.id && s.day === day);
+      const cards = daySchedules.filter((s) => !s.is_masked).map(rangeOf);
+      const dayGrants = roomGrants.filter((grant) => grant.day === day);
+      dayGrants.forEach((grant, grantIndex) => {
+        subtractRanges(rangeOf(grant), cards).forEach((part, partIndex) => {
+          bands.push({
+            key: `grant-${day}-${grantIndex}-${partIndex}`,
+            kind: 'borrowed',
+            dayIndex,
+            ...part,
+            label: `Borrowed by ${grant.department_code ?? 'another dept'}`,
+          });
+        });
+      });
+      const taken = [...cards, ...dayGrants.map(rangeOf)];
+      mergeRanges(daySchedules.filter((s) => s.is_masked).map(rangeOf)).forEach((range, rangeIndex) => {
+        subtractRanges(range, taken).forEach((part, partIndex) => {
+          bands.push({ key: `occupied-${day}-${rangeIndex}-${partIndex}`, kind: 'occupied', dayIndex, ...part, label: 'Occupied' });
+        });
+      });
+    });
+    return bands;
+  }, [room, schedules, roomGrants]);
+
+  /** Every booking in the room: the same set the request picker and the server check against. */
+  const bookedWindows = useMemo<RoomRequestWindow[]>(() => {
+    if (!room) return [];
+    return [
+      ...schedules
+        .filter((s) => s.room_id === room.id)
+        .map((s) => ({ day: s.day, start_time: toHHMM(s.start_time), end_time: toHHMM(s.end_time) })),
+      ...roomGrants.map((grant) => ({ day: grant.day, start_time: toHHMM(grant.start_time), end_time: toHHMM(grant.end_time) })),
+    ];
+  }, [room, schedules, roomGrants]);
+
+  const roomStatus = room?.status;
+  const availableByDay = useMemo<Record<string, RoomRequestWindow[]>>(() => {
+    const opening = gridOpeningMinutes();
+    const closing = opening + slotCount() * slotMinutes();
+    return Object.fromEntries(ALL_DAYS.map((day) => [
+      day,
+      roomStatus === 'available' ? freeWindows(day, bookedWindows, opening, closing, REQUEST_DURATIONS[0].minutes) : [],
+    ]));
+  }, [roomStatus, bookedWindows]);
+
+  const showAvailability = listMode === 'availability';
 
   const schedulerRoom = useMemo<SchedulerRoom | null>(() => room ? ({
     id: String(room.id),
@@ -324,6 +435,13 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
         </div>
       )}
 
+      {borrowingClosedMessage && (
+        <div role="status" className="mt-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 font-sans text-xs font-semibold text-amber-800">
+          <Lock size={14} className="shrink-0" />
+          <span>{borrowingClosedMessage}</span>
+        </div>
+      )}
+
       <div className="room-detail-print-grid flex-1 flex flex-col min-h-0 bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm font-sans mt-3">
         <div className="room-print-title hidden px-2 pb-2 text-base font-bold uppercase text-slate-900">
           {room.room_code} {room.building ? `- ${room.building}` : ''}
@@ -357,6 +475,13 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
 
         {viewMode === 'grid' ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-auto p-4 sm:p-5">
+            <ul className="mb-3 flex flex-wrap items-center gap-4 text-[11px] font-bold text-gray-500" aria-label="Legend">
+              {!borrowingClosedMessage && (
+                <li className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border border-slate-200 bg-white" /> Available</li>
+              )}
+              <li className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border border-slate-300 bg-slate-100" /> Occupied</li>
+              <li className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border-2 border-dashed border-orange-300 bg-orange-50" /> Borrowed</li>
+            </ul>
             <WeeklyTimetableGrid
               days={DAYS}
               slotCount={Math.max(slotCount(), ...roomGridCards.map(({ schedule }) => schedule.startSlot + schedule.durationSlots))}
@@ -367,23 +492,27 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
               getTimeLabel={slotToTimeLabel}
               getDayCount={(dayIndex) => roomGridCards.filter(({ schedule }) => schedule.dayIndex === dayIndex).length}
             >
-              {roomGrants.map((block, index) => {
-                const dayIndex = DAYS.indexOf(block.day);
-                if (dayIndex < 0) return null;
-                const startSlot = timeToSlot(block.start_time);
-                const span = Math.max(1, timeToSlot(block.end_time) - startSlot);
+              {gridBands.map((band) => {
+                const startSlot = timeToSlot(fromMinutes(band.start));
+                const span = Math.max(1, timeToSlot(fromMinutes(band.end)) - startSlot);
+                const range = `${formatTime(fromMinutes(band.start))} - ${formatTime(fromMinutes(band.end))}`;
                 return (
                   <div
-                    key={`grant-${block.day}-${block.start_time}-${index}`}
-                    title={`Borrowed by ${block.department_code ?? 'another department'} · ${formatTime(block.start_time)} - ${formatTime(block.end_time)}`}
-                    className="m-0.5 overflow-hidden rounded-lg border-2 border-dashed border-orange-300 bg-orange-50/80 px-2 py-1 text-orange-800"
-                    style={{ gridColumn: dayIndex + 2, gridRow: `${startSlot + 2} / span ${span}` }}
+                    key={band.key}
+                    title={`${band.label} · ${range}`}
+                    aria-label={`${band.label}, ${DAYS[band.dayIndex]} ${range}`}
+                    className={`m-0.5 select-none overflow-hidden rounded-lg px-2 py-1 ${
+                      band.kind === 'borrowed'
+                        ? 'border-2 border-dashed border-orange-300 bg-orange-50/80 text-orange-800'
+                        : 'border border-slate-300 bg-slate-100 bg-[repeating-linear-gradient(135deg,transparent,transparent_6px,rgba(100,116,139,0.08)_6px,rgba(100,116,139,0.08)_12px)] text-slate-600'
+                    }`}
+                    style={{ gridColumn: band.dayIndex + 2, gridRow: `${startSlot + 2} / span ${span}` }}
                   >
                     <p className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wide">
-                      <ArrowLeftRight size={11} />
-                      Borrowed by {block.department_code ?? 'another dept'}
+                      {band.kind === 'borrowed' ? <ArrowLeftRight size={11} /> : <Lock size={11} />}
+                      <span className="truncate">{band.label}</span>
                     </p>
-                    <p className="text-[10px] font-semibold">{formatTime(block.start_time)} - {formatTime(block.end_time)}</p>
+                    <p className="text-[10px] font-semibold">{range}</p>
                   </div>
                 );
               })}
@@ -432,7 +561,9 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
           <div className="flex-1 flex flex-col min-h-0">
             <div className="flex border-b border-gray-200 overflow-x-auto bg-gray-50/50">
               {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day) => {
-                const count = schedules.filter(s => s.room_id === room.id && s.day === day).length;
+                const count = showAvailability
+                  ? (borrowingClosedMessage ? 0 : availableByDay[day].length)
+                  : schedules.filter(s => s.room_id === room.id && s.day === day).length;
                 const isActive = activeTabDay === day;
                 return (
                   <button
@@ -449,9 +580,14 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
                       <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-[#C9952A]" aria-label="Requested slot" />
                     )}
                     {count > 0 && (
-                      <span className={`ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
-                        isActive ? 'bg-[#5A1220] text-white' : 'bg-gray-200 text-gray-600'
-                      }`}>
+                      <span
+                        title={showAvailability ? `${count} available time slot${count === 1 ? '' : 's'}` : undefined}
+                        className={`ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                          showAvailability
+                            ? (isActive ? 'bg-emerald-600 text-white' : 'bg-emerald-100 text-emerald-700')
+                            : (isActive ? 'bg-[#5A1220] text-white' : 'bg-gray-200 text-gray-600')
+                        }`}
+                      >
                         {count}
                       </span>
                     )}
@@ -478,6 +614,67 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
                   ))}
                 </div>
               )}
+              {showAvailability ? (
+                borrowingClosedMessage ? (
+                  <div className="py-8 flex flex-col items-center justify-center text-center">
+                    <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center border border-amber-200 mb-3">
+                      <Lock size={18} />
+                    </div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-amber-800">Unavailable for borrowing</p>
+                    <p className="text-[11px] text-gray-500 mt-1 max-w-md">{borrowingClosedMessage}</p>
+                  </div>
+                ) : grantsError ? (
+                  <div role="alert" className="py-8 text-center text-xs font-semibold text-amber-800">
+                    Available times cannot be shown until borrowed-room reservations load. Use Retry above.
+                  </div>
+                ) : availableByDay[activeTabDay].length === 0 ? (
+                  <div className="py-8 flex flex-col items-center justify-center text-center text-gray-400">
+                    <div className="w-10 h-10 bg-gray-50 text-gray-400 rounded-full flex items-center justify-center border border-gray-200 mb-3">
+                      <Calendar size={18} />
+                    </div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-gray-500">No available time slots</p>
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      {room.status !== 'available'
+                        ? `${room.room_code} is not available for scheduling.`
+                        : `Every window of at least ${formatDuration(REQUEST_DURATIONS[0].minutes)} on ${activeTabDay} is occupied or borrowed. Try another day.`}
+                    </p>
+                  </div>
+                ) : (
+                  <ul className="space-y-2" aria-label={`Available time slots on ${activeTabDay}`}>
+                    {availableByDay[activeTabDay].map((slot) => {
+                      const length = toMinutes(slot.end_time) - toMinutes(slot.start_time);
+                      const duration = [...REQUEST_DURATIONS].reverse().find((option) => option.minutes <= length)?.minutes
+                        ?? REQUEST_DURATIONS[0].minutes;
+                      return (
+                        <li
+                          key={`${slot.day}-${slot.start_time}`}
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3"
+                        >
+                          <div className="flex items-center gap-3">
+                            <CheckCircle2 size={16} className="text-emerald-600" />
+                            <div>
+                              <p className="text-sm font-bold text-gray-800">{formatTime(slot.start_time)} - {formatTime(slot.end_time)}</p>
+                              <p className="text-[11px] font-semibold text-emerald-700">Available · {formatDuration(length)} free</p>
+                            </div>
+                          </div>
+                          {onRequestSlot && (
+                            <button
+                              type="button"
+                              onClick={() => onRequestSlot({ day: slot.day, start: slot.start_time, duration })}
+                              aria-label={`Request ${activeTabDay} from ${formatTime(slot.start_time)}`}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-[#5A1220] px-3 py-1.5 text-xs font-extrabold text-white shadow-sm transition hover:bg-[#4e0a10] cursor-pointer"
+                            >
+                              <Send size={13} />
+                              Request
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )
+              ) : (
+              <>
               {activeDayGrants.length > 0 && (
                 <div className="mb-5 space-y-2">
                   {activeDayGrants.map((block, index) => (
@@ -571,6 +768,8 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
                     );
                   })}
                 </div>
+              )}
+              </>
               )}
             </div>
           </div>

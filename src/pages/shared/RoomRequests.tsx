@@ -36,6 +36,7 @@ import {
   fetchRoomOccupancy,
   fetchRoomRequests,
   getOwnerId,
+  type RoomBorrowingStatus,
   type RoomOccupancySchedule,
   type RoomRequest,
   type RoomRequestMutationResult,
@@ -46,6 +47,7 @@ import {
   RequestRoomModal,
   RequestsModal,
   type RequestsLoadStatus,
+  type ScheduleChoice,
 } from './RoomRequestModals';
 import { useDataTable } from '../../components/ui/useDataTable';
 import { parseLinkedSlots, type LinkedSlot } from '../../lib/notificationLink';
@@ -134,6 +136,7 @@ export default function RoomRequests() {
   const [selectedDepartment, setSelectedDepartment] = useState<DepartmentRecord | null>(null);
   const [selectedRoom, setSelectedRoom] = useState<RoomRecord | null>(null);
   const [requestRoom, setRequestRoom] = useState<RoomRecord | null>(null);
+  const [requestChoice, setRequestChoice] = useState<ScheduleChoice | null>(null);
   const [showRequests, setShowRequests] = useState(false);
   const [previewRequest, setPreviewRequest] = useState<RoomRequest | null>(null);
 
@@ -209,7 +212,7 @@ export default function RoomRequests() {
     };
   }, [loadData]);
 
-  const [roomSchedules, setRoomSchedules] = useState<{ key: string; schedules: RoomOccupancySchedule[] } | null>(null);
+  const [roomSchedules, setRoomSchedules] = useState<{ key: string; schedules: RoomOccupancySchedule[]; borrowing: RoomBorrowingStatus | null } | null>(null);
   const [roomSchedulesError, setRoomSchedulesError] = useState<{ key: string; message: string } | null>(null);
   const [roomScheduleVersion, setRoomScheduleVersion] = useState(0);
   const selectedRoomId = selectedRoom?.id ?? null;
@@ -222,7 +225,7 @@ export default function RoomRequests() {
     fetchRoomOccupancy(selectedRoomId, semesterId)
       .then((data) => {
         if (!active) return;
-        setRoomSchedules({ key: roomScheduleKey, schedules: data.schedules });
+        setRoomSchedules({ key: roomScheduleKey, schedules: data.schedules, borrowing: data.borrowing ?? null });
         setRoomSchedulesError((current) => (current?.key === roomScheduleKey ? null : current));
       })
       .catch((error) => {
@@ -608,6 +611,11 @@ export default function RoomRequests() {
   );
 
   if (selectedRoom) {
+    const loadedBorrowing = roomSchedules?.key === roomScheduleKey ? roomSchedules.borrowing : null;
+    const borrowingClosedMessage = loadedBorrowing?.open === false
+      ? loadedBorrowing.message ?? 'This room is not yet available for borrowing.'
+      : null;
+    const canRequestSelected = canRequest && isLendable(selectedRoom, departmentId);
     return (
       <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -620,11 +628,13 @@ export default function RoomRequests() {
           >
             <ArrowLeft size={16} />
           </button>
-          {canRequest && isLendable(selectedRoom, departmentId) && (
+          {canRequestSelected && (
             <button
               type="button"
               onClick={() => setRequestRoom(selectedRoom)}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#5A1220] px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#4e0a10] cursor-pointer"
+              disabled={borrowingClosedMessage !== null}
+              title={borrowingClosedMessage ?? undefined}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#5A1220] px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#4e0a10] cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#5A1220]"
             >
               <Send size={16} />
               Request Room
@@ -659,6 +669,11 @@ export default function RoomRequests() {
               initialViewMode="grid"
               highlightSlots={linkedHighlight?.roomId === selectedRoom.id ? linkedHighlight.slots : undefined}
               semesterId={semesterId}
+              listMode="availability"
+              borrowingClosedMessage={canRequestSelected ? borrowingClosedMessage : null}
+              onRequestSlot={canRequestSelected && borrowingClosedMessage === null
+                ? (choice) => { setRequestChoice(choice); setRequestRoom(selectedRoom); }
+                : undefined}
             />
           </>
         )}
@@ -666,8 +681,9 @@ export default function RoomRequests() {
           <RequestRoomModal
             room={requestRoom}
             semester={semester}
-            onClose={() => setRequestRoom(null)}
-            onSubmitted={handleSubmitted}
+            initialChoice={requestChoice}
+            onClose={() => { setRequestRoom(null); setRequestChoice(null); }}
+            onSubmitted={(result) => { setRequestChoice(null); handleSubmitted(result); }}
           />
         )}
       </div>

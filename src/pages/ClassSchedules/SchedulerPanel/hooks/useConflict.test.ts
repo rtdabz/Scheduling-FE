@@ -4,6 +4,7 @@ import { configureTimeGrid, resetTimeGrid } from "../../../../lib/timeGrid";
 import {
   checkFieldEveningWindow,
   checkRoomGrantWindow,
+  checkRoomLentWindow,
   isFieldSubject,
   isLaboratorySubject,
   requiredRoomTypeForMeeting,
@@ -336,6 +337,49 @@ describe("checkFieldEveningWindow", () => {
 
   it("ignores non-field placements", () => {
     expect(checkFieldEveningWindow(false, 26)).toBeNull();
+  });
+});
+
+describe("checkRoomLentWindow", () => {
+  // Default grid: 7:00 AM opening, 30-minute slots. Monday 7:00-10:00 AM is lent to CAS.
+  const owned: Room = {
+    id: "4", name: "BA 201", departmentId: 2, roomType: "lecture", status: "available",
+    lentWindows: [{ day: "Monday", start_time: "07:00", end_time: "10:00", borrower: "CAS" }],
+  };
+  const spare: Room = { id: "5", name: "BA 202", departmentId: 2, roomType: "lecture", status: "available" };
+  const lab: Room = { id: "6", name: "LAB 1", departmentId: 2, roomType: "laboratory", status: "available" };
+  const booked = (id: string, roomId: string, startSlot: number, durationSlots: number): ScheduleItem => ({
+    ...onlineSchedule(id, id), roomId, mode: "on-site", startSlot, durationSlots,
+  });
+
+  it("names the borrower, room and reserved time, and suggests a free time and another room", () => {
+    const result = checkRoomLentWindow(owned, [owned, spare, lab], [], 0, 2, 3);
+
+    expect(result?.conflictType).toBe("room");
+    expect(result?.title).toBe("Reserved for Borrowing");
+    expect(result?.message).toContain("Room BA 201 is lent to CAS on Mon 7:00 AM – 10:00 AM");
+    expect(result?.message).toContain("10:00 AM – 11:30 AM in BA 201");
+    expect(result?.message).toContain("BA 202 at this time");
+    expect(result?.message).not.toContain("LAB 1");
+  });
+
+  it("allows the owner's adjacent and other-day placements", () => {
+    expect(checkRoomLentWindow(owned, [owned], [], 0, 6, 3)).toBeNull();
+    expect(checkRoomLentWindow(owned, [owned], [], 1, 2, 3)).toBeNull();
+    expect(checkRoomLentWindow(spare, [owned, spare], [], 0, 2, 3)).toBeNull();
+  });
+
+  it("only suggests time and rooms that are actually free", () => {
+    const schedules = [booked("90", "4", 6, 3), booked("91", "5", 2, 3)];
+    const message = checkRoomLentWindow(owned, [owned, spare], schedules, 0, 2, 3)?.message ?? "";
+
+    expect(message).toContain("11:30 AM – 1:00 PM in BA 201");
+    expect(message).not.toContain("BA 202");
+  });
+
+  it("does not count the class being moved as busy", () => {
+    const moving = booked("92", "4", 6, 3);
+    expect(checkRoomLentWindow(owned, [owned], [moving], 0, 2, 3, "92")?.message).toContain("10:00 AM – 11:30 AM in BA 201");
   });
 });
 

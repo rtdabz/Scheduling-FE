@@ -585,6 +585,10 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   const selectedDepartment = selectedDepartmentId
     ? departmentMap.get(selectedDepartmentId) ?? null
     : null;
+  // A college that recalls its timetable leaves the list until re-approved; return to the list.
+  if (!isLoading && selectedDepartmentId !== null && !departmentMap.has(selectedDepartmentId)) {
+    setSelectedDepartmentId(null);
+  }
   const departmentSchedules = useMemo(
     () => assignmentSchedules.filter(
       (schedule) => Number(schedule.department_id) === Number(selectedDepartmentId),
