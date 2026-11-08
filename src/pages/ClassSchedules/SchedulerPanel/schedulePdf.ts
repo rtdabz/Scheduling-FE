@@ -2,7 +2,7 @@ import type jsPDF from "jspdf";
 import type { RowInput } from "jspdf-autotable";
 import tccLogo from "../../../assets/logo.jpg";
 import municipalLogo from "../../../assets/municipal-logo.png";
-import type { ApiDepartmentRecord, ScheduleItem, Section, Semester, UserSummary } from "./types";
+import type { ApiDepartmentRecord, ScheduleItem, ScheduleSignatories, Section, Semester, UserSummary } from "./types";
 import { fetchInstitutionSettings, type InstitutionSettings } from "../../../lib/institutionSettings";
 import { formatTime12h } from "../../../lib/timeGrid";
 import { programName } from "../../../lib/programLabel";
@@ -23,6 +23,12 @@ export interface SchedulePdfInput {
   users: UserSummary[];
   activeSemester: Semester | null;
   printAllSections?: boolean;
+  /**
+   * The officials recorded for this exact document (a submission or a history entry). When omitted, each
+   * printed row signs with the officials recorded on its own submission, and unsigned drafts with the
+   * officials in office now.
+   */
+  signatories?: ScheduleSignatories | null;
 }
 
 export const getSchedulePdfFilename = (input: SchedulePdfInput): string => {
@@ -60,18 +66,20 @@ const MIN_SECTION_START_SPACE = 28;
 // Approvers sign their own slots, so an edit by them never makes them the schedule's preparer.
 const APPROVER_ROLES = new Set(["dean", "vpaa", "admin"]);
 
-const buildSignatories = (
-  settings: InstitutionSettings,
-  preparedByName: string,
-  preparedByRole: string,
-  reviewedByName: string,
-  recommendedByName: string,
-) => [
-  { label: "Prepared by:", name: preparedByName, role: preparedByRole },
-  { label: "Reviewed by:", name: reviewedByName, role: "Dean" },
-  { label: "Recommended by:", name: recommendedByName, role: "Vice-President for Academic Affairs" },
-  { label: "Approved by:", name: settings.president_name, role: settings.president_title },
-];
+const PREPARED_TITLE = "Program Head";
+const REVIEWED_TITLE = "Dean";
+const RECOMMENDED_TITLE = "Vice-President for Academic Affairs";
+
+type SignatorySlot = { name: string; title: string };
+
+/** Distinct names in print order, joined the way the signature block shows shared slots. */
+const joinNames = (names: string[], uppercase = true): string =>
+  [...new Set(names.map((name) => (uppercase ? name.trim().toUpperCase() : name.trim())).filter(Boolean))].join(" / ");
+
+const slotFrom = (slots: Array<SignatorySlot | null | undefined>, fallbackTitle: string, uppercase = true): SignatorySlot => {
+  const present = slots.filter((slot): slot is SignatorySlot => Boolean(slot));
+  return { name: joinNames(present.map((slot) => slot.name), uppercase), title: present.find((slot) => slot.title)?.title ?? fallbackTitle };
+};
 
 const absoluteAssetUrl = (asset: string): string =>
   asset.startsWith("data:") || asset.startsWith("http:") || asset.startsWith("https:")
@@ -95,6 +103,7 @@ export async function buildSchedulePdf({
   users,
   activeSemester,
   printAllSections = false,
+  signatories: recordedSignatories = null,
 }: SchedulePdfInput): Promise<Blob> {
   const activeSection = sections.find((section) => section.id === selectedSectionId);
   const activeDepartment = departments.find((department) => Number(department.id) === Number(activeSection?.departmentId));
@@ -135,13 +144,24 @@ export async function buildSchedulePdf({
   const printedProgramIds = Array.from(new Set(targetSections.map((section) => section.programId ?? null)));
   const singleProgramId = printedProgramIds.length === 1 ? printedProgramIds[0] : null;
   const singleProgramTitle = singleProgramId !== null && targetSections[0] ? programTitleOf(targetSections[0]) : null;
-  // "Prepared by" is whoever entered each printed program's schedule (program head or secretary).
-  // Rows with no recorded creator fall back to that program's Program Head.
+  // Signatories of a submitted schedule are the officials recorded by the approval workflow, so replacing
+  // an official or renaming their account never rewrites a past schedule. Only rows not yet submitted
+  // (drafts, or a recalled schedule back in revision) sign with the officials in office now.
   const usersById = new Map(users.map((user) => [Number(user.id), user]));
   const sectionProgramIds = new Map(targetSections.map((section) => [section.id, section.programId ?? null]));
-  const preparerOf = (programId: number | null): string[] => {
-    const creators = allSchedules
-      .filter((schedule) => sectionProgramIds.has(schedule.sectionId) && sectionProgramIds.get(schedule.sectionId) === programId)
+  const printedSchedules = allSchedules.filter((schedule) => sectionProgramIds.has(schedule.sectionId));
+  const recordedFor = (schedule: ScheduleItem): ScheduleSignatories | null => recordedSignatories ?? schedule.signatories ?? null;
+  const unsignedSchedules = printedSchedules.filter((schedule) => !recordedFor(schedule));
+  const signedSets = recordedSignatories
+    ? [recordedSignatories]
+    : [...new Set(printedSchedules.map(recordedFor).filter((set): set is ScheduleSignatories => Boolean(set)))];
+  // Current officials stand in only when something printed has no recorded signatories.
+  const needsCurrentOfficials = signedSets.length === 0 || unsignedSchedules.length > 0;
+  // "Prepared by" is whoever entered each printed program's schedule (program head or secretary).
+  // Rows with no recorded creator fall back to that program's Program Head.
+  const currentPreparersOf = (programId: number | null): string[] => {
+    const creators = unsignedSchedules
+      .filter((schedule) => sectionProgramIds.get(schedule.sectionId) === programId)
       .map((schedule) => schedule.createdById != null ? usersById.get(Number(schedule.createdById)) : undefined)
       .filter((user) => user && !APPROVER_ROLES.has(user.role?.toLowerCase() ?? ""))
       .map((user) => user?.name?.trim() ?? "");
@@ -150,10 +170,16 @@ export async function buildSchedulePdf({
       : users.find((user) => user.role?.toLowerCase() === "program_head" && Number(user.program_id) === Number(programId));
     return [head?.name?.trim() ?? ""];
   };
-  const preparedByName = [...new Set(printedProgramIds.flatMap(preparerOf)
-    .map((name) => name.toUpperCase())
-    .filter(Boolean))]
-    .join(" / ");
+  const recordedPreparersOf = (programId: number | null): string[] => signedSets.flatMap((set) => {
+    const forProgram = set.prepared.filter((entry) => (entry.program_id ?? null) === programId);
+    return (forProgram.length ? forProgram : recordedSignatories ? set.prepared : []).map((entry) => entry.name);
+  });
+  const preparedByName = joinNames(printedProgramIds.flatMap((programId) => {
+    const recorded = recordedPreparersOf(programId);
+    const hasUnsigned = unsignedSchedules.some((schedule) => sectionProgramIds.get(schedule.sectionId) === programId);
+    return recorded.length && !hasUnsigned ? recorded : [...recorded, ...currentPreparersOf(programId)];
+  }));
+  const preparedByTitle = signedSets.flatMap((set) => set.prepared).find((entry) => entry.title)?.title ?? PREPARED_TITLE;
   const departmentLogoUrl = activeDepartment?.logo || null;
   const departmentTitle = (() => {
     const name = printAllSections ? "ALL DEPARTMENTS" : (activeDepartment?.department_name?.trim() || "INFORMATION TECHNOLOGY");
@@ -166,16 +192,27 @@ export async function buildSchedulePdf({
     loadImgSafe(absoluteAssetUrl(tccLogo)),
     loadImgSafe(absoluteAssetUrl(municipalLogo)),
     departmentLogoUrl ? loadImgSafe(departmentLogoUrl) : Promise.resolve(null),
-    fetchInstitutionSettings(),
+    needsCurrentOfficials ? fetchInstitutionSettings() : Promise.resolve<InstitutionSettings | null>(null),
   ]);
 
-  const signatories = buildSignatories(
-    settings,
-    preparedByName,
-    "Program Head",
-    byRole("dean")?.name?.trim().toUpperCase() ?? "",
-    users.find((user) => user.role?.toLowerCase() === "vpaa")?.name?.trim().toUpperCase() ?? "",
+  const currentDean = byRole("dean")?.name?.trim();
+  const currentVpaa = users.find((user) => user.role?.toLowerCase() === "vpaa")?.name?.trim();
+  const current = (name: string | null | undefined, title: string): SignatorySlot | null =>
+    needsCurrentOfficials && name ? { name, title } : null;
+  const reviewed = slotFrom([...signedSets.map((set) => set.reviewed), current(currentDean, REVIEWED_TITLE)], REVIEWED_TITLE);
+  const recommended = slotFrom([...signedSets.map((set) => set.recommended), current(currentVpaa, RECOMMENDED_TITLE)], RECOMMENDED_TITLE);
+  const approved = slotFrom(
+    [...signedSets.map((set) => set.approved), settings ? { name: settings.president_name, title: settings.president_title } : null],
+    settings?.president_title ?? "",
+    // The President is printed exactly as entered in Document Signatories.
+    false,
   );
+  const signatories = [
+    { label: "Prepared by:", name: preparedByName, role: preparedByTitle },
+    { label: "Reviewed by:", name: reviewed.name, role: reviewed.title },
+    { label: "Recommended by:", name: recommended.name, role: recommended.title },
+    { label: "Approved by:", name: approved.name, role: approved.title },
+  ];
   const doc = new PdfDocument({ orientation: "landscape", format: "a4" });
   const { hasSans, hasDisplay } = registerSystemPdfFonts(doc);
 

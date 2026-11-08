@@ -223,6 +223,26 @@ export interface ScheduleItem {
   meetingIndex?: number;
   /** User who entered the row; printed as the "Prepared by" signatory. */
   createdById?: number | null;
+  /** Officials recorded on the row's submission; absent while the row is an unsigned draft. */
+  signatories?: ScheduleSignatories | null;
+}
+
+/** One official in a schedule's signature block, as recorded when they acted. */
+export interface SignatoryEntry {
+  user_id?: number | null;
+  program_id?: number | null;
+  name: string;
+  title: string;
+  acted_at?: string | null;
+}
+
+/** The signature block recorded by the approval workflow (Prepared, Reviewed, Recommended, Approved by). */
+export interface ScheduleSignatories {
+  prepared: SignatoryEntry[];
+  reviewed: SignatoryEntry | null;
+  recommended: SignatoryEntry | null;
+  approved: SignatoryEntry | null;
+  frozen?: boolean;
 }
 
 export interface DepartmentSectionProgress {
@@ -414,6 +434,8 @@ export interface ApiScheduleRecord {
   meeting_type?: "lecture" | "laboratory" | null;
   meeting_index?: number;
   created_by?: number | string | null;
+  /** The submission whose recorded officials sign this row; set once the row has been submitted. */
+  signatories_submission_id?: number | string | null;
   course?: {
     course_code?: string;
     subject_code?: string;

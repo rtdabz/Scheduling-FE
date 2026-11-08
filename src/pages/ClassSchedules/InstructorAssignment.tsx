@@ -225,6 +225,9 @@ const storedViewMode = (): AssignmentView => {
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const ASSIGNMENT_STATUSES = [...INSTRUCTOR_ASSIGNABLE_STATUSES, "finalized"];
+const isAssignmentEditable = (schedule: ApiSchedule): boolean =>
+  INSTRUCTOR_ASSIGNABLE_STATUSES.some((status) => status === schedule.status)
+  && !schedule.faculty_assignment_done;
 
 const getStoredUser = (): StoredUser => {
   const raw = localStorage.getItem("user") || sessionStorage.getItem("user");
@@ -396,7 +399,7 @@ export interface InstructorAssignmentWorkspaceState {
 export default function InstructorAssignment({ assignmentLocked, headerActions, footerActions, onWorkspaceStateChange, workflowGuideId = "instructor-assignment", onWorkflowReady, refreshToken = 0, scrollableTimetable = true }: InstructorAssignmentProps = {}) {
   const { toast } = useToast();
   const user = getStoredUser();
-  const assignmentsCacheKey = `page:instructor-assignments:v5:${user.department_id ?? "all"}:${user.program_id ?? "all"}`;
+  const assignmentsCacheKey = `page:instructor-assignments:v6:${user.department_id ?? "all"}:${user.program_id ?? "all"}`;
   const cachedAssignmentData = getCachedData<AssignmentResponse>(assignmentsCacheKey);
   const [departments, setDepartments] = useState<ApiDepartment[]>(cachedAssignmentData?.departments ?? []);
   const [subjects, setSubjects] = useState<ApiSubject[]>(cachedAssignmentData?.subjects ?? []);
@@ -537,12 +540,16 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
       !subject ||
       !department ||
       Number(subject.teaching_department_id ?? subject.department_id) !== Number(currentDepartmentId) ||
-      !ASSIGNMENT_STATUSES.includes(schedule.status)
+      (!ASSIGNMENT_STATUSES.includes(schedule.status) && schedule.faculty_id === null)
     ) {
       return [];
     }
-    return [{ ...schedule, subject, department }];
-  }), [currentDepartmentId, departmentMap, schedules, subjectMap]);
+    const isCrossDepartment = Number(schedule.department_id) !== Number(currentDepartmentId);
+    const isCrossProgram = subject.teaching_program_id != null
+      && Number(subject.teaching_program_id) !== Number(subject.program_id ?? 0)
+      && (user.role !== "program_head" || Number(subject.teaching_program_id) === Number(user.program_id));
+    return isCrossDepartment || isCrossProgram ? [{ ...schedule, subject, department }] : [];
+  }), [currentDepartmentId, departmentMap, schedules, subjectMap, user.program_id, user.role]);
 
   const awaitingIncomingCourses = useMemo(
     () => incomingCourses.filter((course) => !assignmentSchedules.some(
@@ -558,10 +565,7 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
         (schedule) => Number(schedule.department_id) === Number(department.id),
       ),
     }))
-    .filter((item) => (
-      Number(item.department.id) !== Number(currentDepartmentId)
-      && item.schedules.length > 0
-    )), [assignmentSchedules, currentDepartmentId, departments]);
+    .filter((item) => item.schedules.length > 0), [assignmentSchedules, departments]);
   const offeredSchedules = useMemo(
     () => offeringDepartments.flatMap((item) => item.schedules),
     [offeringDepartments],
@@ -616,9 +620,10 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   });
   const clearableSectionSchedules = sectionSchedules.filter((schedule) => (
     schedule.faculty_id !== null
-    && schedule.status !== "finalized"
-    && !schedule.faculty_assignment_done
+    && isAssignmentEditable(schedule)
   ));
+  // Section-wide clearing also reaches local courses outside this program-delegation view.
+  const isCrossProgramWorkspace = Number(selectedDepartmentId) === Number(currentDepartmentId);
   const ganttSchedules = useMemo<CalendarSchedule[]>(() => visibleSchedules.map((schedule) => ({
     id: schedule.id,
     day: schedule.day,
@@ -773,7 +778,7 @@ const selectedSchedule = assignmentSchedules.find(
   };
 
   const openAssignment = (schedule: AssignmentSchedule) => {
-    if (assignmentLocked || schedule.status === "finalized" || Boolean(schedule.faculty_assignment_done)) return;
+    if (assignmentLocked || !isAssignmentEditable(schedule)) return;
     resetConflictHelp();
     setFacultyAssignmentPopup({
       scheduleId: String(schedule.id),
@@ -793,6 +798,7 @@ const selectedSchedule = assignmentSchedules.find(
     schedule: AssignmentSchedule,
     facultyId: number | null
   ) => {
+    if (assignmentLocked || !isAssignmentEditable(schedule)) return;
     setIsSaving(true);
     setSavingScheduleId(schedule.id);
     setError("");
@@ -903,6 +909,7 @@ const selectedSchedule = assignmentSchedules.find(
   };
 
   const requestClearSection = () => {
+    if (assignmentLocked || isCrossProgramWorkspace) return;
     const sectionIds = [...new Set(
       clearableSectionSchedules.map((schedule) => Number(schedule.section_id ?? 0)).filter((id) => id > 0),
     )];
@@ -915,7 +922,7 @@ const selectedSchedule = assignmentSchedules.find(
   };
 
   const clearSectionInstructors = async () => {
-    if (!clearSectionTarget || isClearingSection) return;
+    if (!clearSectionTarget || isClearingSection || assignmentLocked || isCrossProgramWorkspace) return;
     setIsClearingSection(true);
     setError("");
     try {
@@ -1017,9 +1024,7 @@ const selectedSchedule = assignmentSchedules.find(
         sectionName: primary.section?.section_name ?? "Unspecified section",
         facultyId: primary.faculty_id,
         facultyName: getFacultyName(primary),
-        locked: Boolean(assignmentLocked)
-          || primary.status === "finalized"
-          || Boolean(primary.faculty_assignment_done),
+        locked: Boolean(assignmentLocked) || meetings.some((meeting) => !isAssignmentEditable(meeting)),
         meetings: meetings
           .slice()
           .sort((left, right) => DAYS.indexOf(left.day) - DAYS.indexOf(right.day))
@@ -1125,7 +1130,7 @@ const selectedSchedule = assignmentSchedules.find(
                 </span>
               </div>
               <p className="mt-2 text-xs font-medium leading-relaxed text-slate-500">
-                Use this workspace to assign instructors from your department to approved schedules for courses assigned to your department.
+                Assign your instructors to approved schedules and review existing cross-department assignments.
               </p>
               {workflowGuideId === "instructor-assignment" && <WorkflowGuideButton guideId="instructor-assignment" />}
             </div>
@@ -1373,9 +1378,11 @@ const selectedSchedule = assignmentSchedules.find(
               <button
                 type="button"
                 onClick={requestClearSection}
-                disabled={Boolean(assignmentLocked) || isSaving || isClearingSection || clearableSectionSchedules.length === 0}
+                disabled={Boolean(assignmentLocked) || isSaving || isClearingSection || isCrossProgramWorkspace || clearableSectionSchedules.length === 0}
                 className="inline-flex h-9 items-center gap-2 rounded-xl border border-red-200 bg-white px-3 text-xs font-bold text-red-700 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                title={selectedSection === "all"
+                title={isCrossProgramWorkspace
+                  ? "Remove cross-program instructor assignments individually to preserve local assignments."
+                  : selectedSection === "all"
                   ? "Remove every instructor assignment you can manage in all sections"
                   : "Remove every instructor assignment you can manage in this section"}
               >
@@ -1514,7 +1521,9 @@ const selectedSchedule = assignmentSchedules.find(
           saveAssignment();
         }}
         handleRemoveFaculty={removeAssignment}
-        canManageScheduleFaculty={() => !assignmentLocked}
+        canManageScheduleFaculty={(schedule) => !assignmentLocked
+          && INSTRUCTOR_ASSIGNABLE_STATUSES.includes(schedule.status)
+          && !schedule.facultyAssignmentDone}
         getFacultyRestrictionMessage={() => "Only the assigned teaching department can change this instructor."}
         checkFacultyConflict={checkModalFacultyConflict}
         subjects={modalSubjects}

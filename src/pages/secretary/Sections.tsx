@@ -3,7 +3,6 @@ import { useToast } from '../../context/ToastContext';
 import DataTable from '../../components/ui/DataTable';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import TableActionButton from '../../components/ui/TableActionButton';
-import SearchInput from '../../components/ui/SearchInput';
 import {
   Pencil,
   Trash2,
@@ -29,6 +28,7 @@ import SectionModal from './SectionModal';
 import { yearLevelLabel } from '../../lib/semesterLabel';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
+import FilterBar from '../../components/ui/FilterBar';
 
 interface Department {
   id: number;
@@ -80,7 +80,15 @@ interface SectionsPageData {
   semesters: Semester[];
 }
 
-const mapApiSection = (s: ApiSection): Section => ({
+const YEAR_LEVEL_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: '1', label: '1st Year' },
+  { value: '2', label: '2nd Year' },
+  { value: '3', label: '3rd Year' },
+  { value: '4', label: '4th Year' },
+] as const;
+
+const mapApiSection =(s: ApiSection): Section => ({
   id: s.id,
   section_name: s.section_name,
   year_level: s.year_level,
@@ -119,9 +127,9 @@ export default function SecretarySections() {
 
   const [yearLevelFilter, setYearLevelFilter] = useState('all');
   const [programFilter, setProgramFilter] = useState('all');
-  const [semesterFilter, setSemesterFilter] = useState('all');
 
-  const filteredSections = useMemo(() => {
+  // Sections in scope before the year-level filter, so each year button can show its count.
+  const scopedSections = useMemo(() => {
     let list = sections;
     if (!isVpaa) {
       if (!user?.department_id) return [];
@@ -132,20 +140,27 @@ export default function SecretarySections() {
       list = list.filter(s => s.program_id !== null && Number(s.program_id) === Number(user.program_id));
     }
 
-    if (yearLevelFilter !== 'all') {
-      list = list.filter(s => String(s.year_level) === yearLevelFilter);
-    }
     if (programFilter !== 'all') {
       list = list.filter(s => String(s.program_id) === programFilter);
     }
-    if (semesterFilter !== 'all') {
-      list = list.filter(s => s.semester === semesterFilter);
-    }
 
     return list;
-  }, [sections, isVpaa, user?.department_id, user?.program_id, isProgramHead, yearLevelFilter, programFilter, semesterFilter]);
+  }, [sections, isVpaa, user?.department_id, user?.program_id, isProgramHead, programFilter]);
 
-  const [globalFilter, setGlobalFilter] = useState('');
+  const yearLevelCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: scopedSections.length, '1': 0, '2': 0, '3': 0, '4': 0 };
+    scopedSections.forEach((s) => {
+      const key = String(s.year_level);
+      if (key in counts) counts[key] += 1;
+    });
+    return counts;
+  }, [scopedSections]);
+
+  const filteredSections = useMemo(
+    () => (yearLevelFilter === 'all' ? scopedSections : scopedSections.filter(s => String(s.year_level) === yearLevelFilter)),
+    [scopedSections, yearLevelFilter],
+  );
+
   const [sorting, setSorting] = useState<SortingState>([]);
   const [pagination, setPagination] = useState({
     pageIndex: 0,
@@ -286,19 +301,6 @@ export default function SecretarySections() {
           accessorKey: 'year_level',
           header: 'Year Level',
           cell: info => <span className="font-bold text-gray-800">{yearLevelLabel(info.getValue() as string)}</span>
-        },
-        // The section's term is always copied from its academic semester, so one column covers both.
-        {
-          id: 'academic_semester',
-          accessorFn: (row) => row.academic_semester
-            ? `A.Y. ${row.academic_semester.academic_year} (${row.academic_semester.semester})`
-            : '—',
-          header: 'Academic Semester',
-          cell: info => (
-            <span className="text-gray-700 font-semibold text-xs">
-              {info.getValue() as string}
-            </span>
-          )
         }
       ];
 
@@ -363,11 +365,9 @@ export default function SecretarySections() {
     data: filteredSections,
     columns,
     state: {
-      globalFilter,
       sorting,
       pagination
     },
-    onGlobalFilterChange: setGlobalFilter,
     onSortingChange: setSorting,
     onPaginationChange: setPagination,
     autoResetPageIndex: false,
@@ -378,7 +378,7 @@ export default function SecretarySections() {
   });
 
   const sectionGuideSteps = useMemo(() => [
-    { element: '#sections-toolbar input[type="text"]', action: 'input' as const, taskHint: 'Type in the search box to continue.', title: 'Find a section', description: 'Search for a section by name or semester before scheduling.', side: 'bottom' as const },
+    { element: '#sections-year-tabs', action: 'click' as const, taskHint: 'Pick a year level to continue.', title: 'Browse by year level', description: 'Each button shows how many sections that year level has.', side: 'bottom' as const },
     { element: '#sections-add-button', action: 'click' as const, taskHint: 'Click Add Section to open the form.', title: 'Add a section', description: 'New sections are created from this page.', side: 'bottom' as const },
     { element: '#section-program-select', waitFor: '#section-form', action: 'select' as const, taskHint: 'Choose the program to continue.', title: 'Select a program', description: 'The section belongs to a program in your department.', side: 'bottom' as const },
     { element: '[data-tour="section-row-name"]', waitFor: '#section-form', action: 'input' as const, taskHint: 'Type a section name to continue.', title: 'Name the section', description: 'Use the official section code, e.g. BSIT 1A.', side: 'bottom' as const },
@@ -389,12 +389,37 @@ export default function SecretarySections() {
 
   return (
     <div>
-      <div id="sections-toolbar" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans mb-6">
-        <SearchInput
-          value={globalFilter}
-          onChange={(e) => setGlobalFilter(e.target.value)}
-          placeholder="Search section name, semester, etc..."
-        />
+      <FilterBar id="sections-toolbar" className="mb-6">
+        <div id="sections-year-tabs" role="group" aria-label="Filter by year level" className="flex flex-wrap items-center gap-2">
+          {YEAR_LEVEL_OPTIONS.map(({ value, label }) => {
+            const isActive = yearLevelFilter === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => {
+                  setYearLevelFilter(value);
+                  setPagination((p) => ({ ...p, pageIndex: 0 }));
+                }}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-bold transition-colors cursor-pointer ${
+                  isActive
+                    ? 'bg-[#5A1220] border-[#5A1220] text-white shadow-sm'
+                    : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                }`}
+              >
+                <span>{label}</span>
+                <span
+                  className={`min-w-[1.375rem] px-1.5 py-0.5 rounded-full text-[10px] leading-none text-center tabular-nums ${
+                    isActive ? 'bg-white/20 text-white' : 'bg-[#C9952A]/15 text-[#9a7020]'
+                  }`}
+                >
+                  {yearLevelCounts[value] ?? 0}
+                </span>
+              </button>
+            );
+          })}
+        </div>
 
         <div className="flex flex-wrap items-center gap-3">
           {selectablePrograms.length > 1 && (
@@ -414,37 +439,6 @@ export default function SecretarySections() {
             </div>
           )}
 
-          <div className="flex items-center gap-1.5">
-            <Filter size={13} className="text-gray-400" />
-            <select
-              value={yearLevelFilter}
-              onChange={(e) => setYearLevelFilter(e.target.value)}
-              title="Filter by Year Level"
-              className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
-            >
-              <option value="all">All Year Levels</option>
-              <option value="1">1st Year</option>
-              <option value="2">2nd Year</option>
-              <option value="3">3rd Year</option>
-              <option value="4">4th Year</option>
-            </select>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <Filter size={13} className="text-gray-400" />
-            <select
-              value={semesterFilter}
-              onChange={(e) => setSemesterFilter(e.target.value)}
-              title="Filter by Semester"
-              className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
-            >
-              <option value="all">All Semesters</option>
-              <option value="1st">1st Semester</option>
-              <option value="2nd">2nd Semester</option>
-              <option value="summer">Summer</option>
-            </select>
-          </div>
-
           {canManageSections && (
             <button
               id="sections-add-button"
@@ -461,7 +455,7 @@ export default function SecretarySections() {
             </button>
           )}
         </div>
-      </div>
+      </FilterBar>
 
       <WorkflowGuideButton guideId="sections" />
       <div id="sections-table" className="font-sans">
@@ -471,7 +465,7 @@ export default function SecretarySections() {
           totalLabel="sections"
           ariaLabel="Sections"
           emptyTitle="No sections found."
-          emptyDescription={canManageSections ? 'Try adjusting your search criteria or add a new section.' : 'Try adjusting your search criteria.'}
+          emptyDescription={canManageSections ? 'Try another year level or add a new section.' : 'Try another year level.'}
           emptyState={
             !isLoading && sections.length === 0 ? (
               <div className="py-12 text-center flex flex-col items-center justify-center">

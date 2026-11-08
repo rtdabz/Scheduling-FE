@@ -43,6 +43,7 @@ import api from '../../lib/api';
 import { logoDataUrl } from '../../lib/imageDataUrl';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import { programLabel, programMajorLabel, programName } from '../../lib/programLabel';
+import FilterBar from '../../components/ui/FilterBar';
 
 const DEPARTMENT_COLORS: Record<string, { bg: string; modal: string }> = {
   'INFORMATION TECHNOLOGY':      { bg: 'bg-blue-100 border-blue-400 text-blue-900',          modal: 'bg-blue-600'    },
@@ -778,67 +779,69 @@ export default function Departments() {
     getPaginationRowModel: getPaginationRowModel(),
   });
 
+  const viewToggle = (
+    <div className={`flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1 ${userRole === 'secretary' ? 'w-fit ml-auto mb-4' : ''}`}>
+      <button
+        type="button"
+        onClick={() => setViewMode('grid')}
+        className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+          viewMode === 'grid'
+            ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+            : 'text-gray-500 hover:text-gray-800'
+        }`}
+        title="Grid View"
+      >
+        <LayoutGrid size={15} />
+      </button>
+      <button
+        type="button"
+        onClick={() => setViewMode('list')}
+        className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+          viewMode === 'list'
+            ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+            : 'text-gray-500 hover:text-gray-800'
+        }`}
+        title="List View"
+      >
+        <List size={15} />
+      </button>
+    </div>
+  );
+
   return (
     <div id="departments-page">
-      <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between mb-6">
-
-        {/* Secretaries only see their own department, so there is nothing to search. */}
-        {userRole !== 'secretary' && (
+      {userRole === 'secretary' ? viewToggle : (
+        <FilterBar className="mb-6">
           <SearchInput
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
             placeholder="Search department name..."
           />
-        )}
 
-        <div className="flex items-center gap-3 justify-end ml-auto">
-          <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1">
-            <button
-              type="button"
-              onClick={() => setViewMode('grid')}
-              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
-                viewMode === 'grid'
-                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
-                  : 'text-gray-500 hover:text-gray-800'
-              }`}
-              title="Grid View"
-            >
-              <LayoutGrid size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
-                viewMode === 'list'
-                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
-                  : 'text-gray-500 hover:text-gray-800'
-              }`}
-              title="List View"
-            >
-              <List size={15} />
-            </button>
+          <div className="flex items-center gap-3 justify-end ml-auto">
+            {viewToggle}
+
+            {canManageDepartments && (
+              <button
+                onClick={() => {
+                  setIsEditMode(false);
+                  setEditingId(null);
+                  setName('');
+                  setCode('');
+                  setLogo(null);
+                  setNameError('');
+                  setCodeError('');
+                  setIsModalOpen(true);
+                }}
+                className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
+              >
+                <Plus size={15} />
+                <span>Add Department</span>
+              </button>
+            )}
           </div>
-
-          {canManageDepartments && (
-            <button 
-              onClick={() => {
-                setIsEditMode(false);
-                setEditingId(null);
-                setName('');
-                setCode('');
-                setLogo(null);
-                setNameError('');
-                setCodeError('');
-                setIsModalOpen(true);
-              }}
-              className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
-            >
-              <Plus size={15} />
-              <span>Add Department</span>
-            </button>
-          )}
-        </div>
-      </div>
+        </FilterBar>
+      )}
 
       {viewMode === 'grid' ? (
         <div className="space-y-6">

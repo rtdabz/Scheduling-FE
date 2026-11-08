@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useToast } from '../../context/ToastContext';
 import DataTable from '../../components/ui/DataTable';
+import CourseCategoryBadge from '../../components/curriculum/CourseCategoryBadge';
 import SearchInput from '../../components/ui/SearchInput';
 import { Filter } from 'lucide-react';
 import {
@@ -17,6 +18,7 @@ import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCach
 import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
+import FilterBar from '../../components/ui/FilterBar';
 
 interface Department {
   id: number;
@@ -184,14 +186,7 @@ export default function CourseManager() {
           cell: info => {
             const raw = (info.getValue() as string) || '';
             const val = raw.toLowerCase() === 'major' ? 'major' : 'minor';
-            const badgeColor = val === 'minor'
-              ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-              : 'bg-rose-50 text-rose-700 border-rose-200';
-            return (
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${badgeColor}`}>
-                {val}
-              </span>
-            );
+            return <CourseCategoryBadge category={val} />;
           }
         },
         {
@@ -204,7 +199,7 @@ export default function CourseManager() {
         },
         {
           id: 'hours',
-          header: 'Lec / Lab Hours',
+          header: 'Lec / Lab',
           accessorFn: row => `${row.lecture_hours} / ${row.lab_hours}`,
           cell: info => <span className="text-gray-600 font-medium text-xs">{info.getValue() as string} hrs</span>
         },
@@ -270,7 +265,7 @@ export default function CourseManager() {
 
   return (
     <div className="w-full">
-      <div id="course-list-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans mb-6">
+      <FilterBar id="course-list-filters" className="mb-6">
         <SearchInput
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}
@@ -323,7 +318,7 @@ export default function CourseManager() {
             </select>
           </div>
         </div>
-      </div>
+      </FilterBar>
 
       <WorkflowGuideButton guideId="course-list" />
       <div id="course-list-table">
@@ -334,7 +329,8 @@ export default function CourseManager() {
           ariaLabel="Courses"
           emptyTitle="No courses found in the active curriculum."
           emptyDescription="Ensure an active curriculum is set with assigned courses."
-          cellClassName={(columnId) => (columnId === 'course_code' ? 'whitespace-nowrap' : '')}
+          scrollClassName="overflow-x-auto"
+          cellClassName={() => 'whitespace-nowrap'}
         />
       </div>
     </div>

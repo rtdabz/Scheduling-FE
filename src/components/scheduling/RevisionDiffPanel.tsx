@@ -94,28 +94,24 @@ export default function RevisionDiffPanel({ submissionId }: { submissionId: numb
   const total = sections.reduce((sum, section) => sum + section.changes.length, 0);
 
   return (
-    <div className="space-y-3">
-      <p className="flex items-center gap-2 text-xs font-bold text-violet-700">
+    <div className="space-y-2">
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-bold text-violet-700">
         <GitCompare className="h-4 w-4" />
         {total === 0
-          ? 'No class changes from the previous version (instructor changes are not listed).'
-          : `Changes from the previous version (${total} class${total === 1 ? '' : 'es'})`}
+          ? 'No class changes from the previous version.'
+          : `${total} changed class${total === 1 ? '' : 'es'}`}
+        <span className="font-semibold text-slate-500">Instructor changes are not included.</span>
       </p>
       {sections.length > 0 && (
-        <ul aria-label="Previous versions compared" className="grid gap-2 sm:grid-cols-2">
+        <ul aria-label="Previous versions compared" className="space-y-1 text-xs text-slate-700">
           {sections.map((section) => (
-            <li key={section.section_id} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
-              <p className="font-bold text-slate-800">
-                {section.section_name ?? 'Section'}
-                <span className="ml-1 font-semibold text-slate-500">
-                  vs. {previousLabel(section.previous_status)} version{section.previous_revision_number ? ` #${section.previous_revision_number}` : ''}
-                </span>
-              </p>
-              <p className="mt-0.5 text-[11px] text-slate-500">
-                {section.changes.length} changed class{section.changes.length === 1 ? '' : 'es'}
-              </p>
+            <li key={section.section_id}>
+              <span className="font-bold text-slate-800">{section.section_name ?? 'Section'}</span>
+              <span className="ml-1 font-semibold text-slate-500">
+                vs. {previousLabel(section.previous_status)} version{section.previous_revision_number ? ` #${section.previous_revision_number}` : ''}
+              </span>
               {section.previous_rejection_reason && (
-                <p className="mt-0.5 text-[11px] italic text-slate-500">Return reason: {section.previous_rejection_reason}</p>
+                <p className="text-[11px] font-semibold text-slate-600">Return reason: {section.previous_rejection_reason}</p>
               )}
             </li>
           ))}

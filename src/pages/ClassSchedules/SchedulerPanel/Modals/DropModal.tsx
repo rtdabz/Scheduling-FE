@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CalendarClock, CalendarPlus, CheckCircle2, Clock, Info, Lightbulb, Loader2, MapPin, Save, Sparkles, X } from "lucide-react";
-import { DAYS, getCategoryStyles, slotToTimeStr } from "../constants";
+import { DAYS, slotToTimeStr } from "../constants";
+import CourseCategoryBadge from "../../../../components/curriculum/CourseCategoryBadge";
 import api from "../../../../lib/api";
 import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
 import { laboratoryServesLecture, requiredRoomTypeForMeeting } from "../hooks/useConflict";
@@ -514,7 +515,6 @@ export default function DropModal({
   };
 
 
-  const dropStyles = getCategoryStyles(dropSubject.category);
   const isDisabled = hasConflict || isModalLoading;
 
   const onSiteRoomOptions = rooms.filter((r) => {
@@ -885,9 +885,7 @@ export default function DropModal({
                     <span className="rounded-md bg-[#F7F4F0] px-1.5 py-0.5 text-[11px] font-bold text-slate-600">
                       {dropSubject.units} units
                     </span>
-                    <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-black tracking-wider ${dropStyles.typeBadge}`}>
-                      {dropStyles.label}
-                    </span>
+                    <CourseCategoryBadge category={dropSubject.category} />
                   </div>
                   <p className="mt-0.5 truncate text-sm text-slate-500" title={dropSubject.name}>{dropSubject.name}</p>
                 </div>

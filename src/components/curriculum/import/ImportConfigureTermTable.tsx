@@ -1,4 +1,5 @@
 import { Pencil } from 'lucide-react';
+import { COURSE_CATEGORY_TONES } from '../courseCategoryStyles';
 import { HIGHLIGHT_CLASSES } from '../../../lib/curriculumImport/sheetNavigation';
 import { CONFIGURE_STATUS_LABELS, configureStatus, type ConfigureStatus } from '../../../lib/curriculumImport/configureStatus';
 import type { CourseCategory, DraftRow, ImportIssue, ImportSettings, ResolvedRow } from '../../../lib/curriculumImport/types';
@@ -22,11 +23,6 @@ const CATEGORY_LABELS: Record<CourseCategory, string> = { major: 'Major', minor:
 const control = 'h-8 w-full rounded-md border px-1.5 text-[12.5px] focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
 const neutral = 'border-border bg-white text-text hover:border-muted/50';
 const bad = 'border-red-300 bg-red-50/60 text-text';
-// The category the course will be saved with reads at a glance: Major in the theme colour, Minor plain.
-const CATEGORY_TONE: Record<CourseCategory, string> = {
-  major: 'border-primary/40 bg-primary/[0.06] font-semibold text-primary',
-  minor: 'border-border bg-parchment/60 font-semibold text-text',
-};
 const STATUS_TONE: Record<ConfigureStatus, string> = {
   unchecked: 'text-muted',
   invalid: 'font-bold text-red-700',
@@ -106,7 +102,7 @@ function CourseRow({ row, showPlacement, issues, resolvedRow, validated, setting
           aria-label={`Category for ${code}`}
           value={row.category ?? ''}
           onChange={(event) => onChange(id, { category: (event.target.value || null) as DraftRow['category'] })}
-          className={`${control} ${status === 'needs_category' || (validated && !effective) ? bad : effective ? CATEGORY_TONE[effective] : neutral}`}
+          className={`${control} ${status === 'needs_category' || (validated && !effective) ? bad : effective ? `font-semibold ${COURSE_CATEGORY_TONES[effective]}` : neutral}`}
         >
           <option value="">{rule ? `${CATEGORY_LABELS[rule.category]} (rule)` : validated ? 'Choose…' : 'Department rule'}</option>
           <option value="major">Major</option>

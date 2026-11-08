@@ -40,6 +40,7 @@ import {
   mapApiCourse,
   mapApiFaculty,
   mapApiScheduleToItem,
+  mapApiSchedulesWithSignatories,
   mapApiSections,
   mapInitialData,
   slotToTime24h
@@ -414,7 +415,7 @@ export const useScheduler = () => {
 
   const refreshSchedules = useCallback(async () => {
     try {
-      const res = await api.get<Pick<InitialDataResponse, "schedules" | "schedules_truncated">>('/initial-data', {
+      const res = await api.get<Pick<InitialDataResponse, "schedules" | "schedules_truncated" | "schedule_signatories">>('/initial-data', {
         params: { ...SCHEDULER_INITIAL_DATA_PARAMS, include: 'schedules' },
       });
       if (!Array.isArray(res.data.schedules)) return;
@@ -423,7 +424,7 @@ export const useScheduler = () => {
       if (activeSemester) {
         apiData = apiData.filter((item) => Number(item.semester_id) === Number(activeSemester.id));
       }
-      const mapped = apiData.map(mapApiScheduleToItem);
+      const mapped = mapApiSchedulesWithSignatories(apiData, res.data.schedule_signatories);
       const signature = scheduleSignature(mapped);
       if (signature === scheduleSignature(schedulesRef.current)) return;
       setSchedules(mapped);
@@ -2353,9 +2354,18 @@ export const useScheduler = () => {
     }
 
     try {
-      const response = await api.put<FacultyAssignResponse>(`/schedules/${slotId}`, {
-        faculty_id: facultyId === null ? null : Number(facultyId)
-      });
+      const subject = subjects.find((item) => item.id === targetSchedule.subjectId);
+      const delegated = Number(targetSchedule.departmentId) !== Number(user?.department_id)
+        || (subject?.teachingProgramId != null
+          && Number(subject.teachingProgramId) !== Number(subject.programId)
+          && !ownsProgram(sections.find((section) => section.id === targetSchedule.sectionId)?.programId));
+      const faculty_id = facultyId === null ? null : Number(facultyId);
+      // Delegated classes use teaching-department permissions; ordinary local edits retain their history path.
+      const response = delegated
+        ? await api.patch<FacultyAssignResponse>("/schedules/batch-faculty", {
+          assignments: [{ schedule_ids: [Number(slotId)], faculty_id }],
+        })
+        : await api.put<FacultyAssignResponse>(`/schedules/${slotId}`, { faculty_id });
       const resData = response.data;
       const rawList: ApiScheduleRecord[] = resData.schedules
         ?? (resData.schedule ? [resData.schedule] : (resData.id ? [resData as ApiScheduleRecord] : []));

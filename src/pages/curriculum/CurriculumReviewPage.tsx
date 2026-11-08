@@ -18,6 +18,7 @@ import { printCurriculum } from '../../lib/curriculumPrintable';
 import { useToast } from '../../context/ToastContext';
 import type { Curriculum, CurriculumStatus } from '../../types/curriculum';
 import { curriculumLifecycleBadge } from '../../types/curriculum';
+import FilterBar from '../../components/ui/FilterBar';
 
 type ReviewTab = CurriculumStatus;
 
@@ -119,7 +120,10 @@ export default function CurriculumReviewPage() {
         accessorKey: 'code',
         header: 'Code',
         cell: (info) => (
-          <span className="bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-full text-xs font-mono font-bold uppercase border border-[#C9952A]/20">
+          <span
+            title={info.getValue() as string}
+            className="w-fit max-w-[220px] bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-xl text-xs leading-snug font-mono font-bold uppercase border border-[#C9952A]/20 break-words line-clamp-2"
+          >
             {info.getValue() as string}
           </span>
         ),
@@ -127,13 +131,13 @@ export default function CurriculumReviewPage() {
       {
         accessorKey: 'name',
         header: 'Curriculum',
-        cell: (info) => <span className="font-bold text-gray-800">{info.getValue() as string}</span>,
+        cell: (info) => <span className="font-bold text-gray-800 whitespace-nowrap">{info.getValue() as string}</span>,
       },
       {
         id: 'department',
         accessorFn: (row) => departmentName(row),
         header: 'Department',
-        cell: (info) => <span className="text-gray-600 font-medium">{info.getValue() as string}</span>,
+        cell: (info) => <span className="text-gray-600 font-medium whitespace-nowrap">{info.getValue() as string}</span>,
       },
       {
         accessorKey: 'effective_school_year',
@@ -224,7 +228,7 @@ export default function CurriculumReviewPage() {
         }}
       />
 
-      <div id="curriculum-review-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 mb-6">
+      <FilterBar id="curriculum-review-filters" breakpoint="sm" className="mb-6">
         <div className="flex flex-col sm:flex-row gap-3 flex-1">
           {listedDepartments.length > 1 && (
             <select
@@ -264,7 +268,7 @@ export default function CurriculumReviewPage() {
         >
           Reset Filters
         </button>
-      </div>
+      </FilterBar>
 
       <div id="curriculum-review-list">
         <DataTable

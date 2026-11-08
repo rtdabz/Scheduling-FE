@@ -20,6 +20,7 @@ import type {
   ApiDepartmentRecord,
   DeliveryMode,
   ScheduleItem,
+  ScheduleSignatories,
   UserSummary,
   Section,
   Subject,
@@ -68,6 +69,9 @@ type Entry = {
   action: string;
   rejection_reason?: string | null;
   department?: ApiDepartmentRecord | null;
+  /** Officials recorded when this decision was made. */
+  signatories?: ScheduleSignatories | null;
+  /** Current officials, used only for entries recorded before signatories were kept. */
   users?: UserSummary[];
   snapshot: Record<string, unknown>;
   actor: { name: string; username: string; role: string } | null;
@@ -206,6 +210,7 @@ const pdfInputFor = (entry: Entry): SchedulePdfInput => {
     selectedSectionId: sections[0]?.id ?? "",
     departments,
     users: entry.users ?? [],
+    signatories: entry.signatories ?? null,
     activeSemester: {
       id: entry.semester_id ?? 0,
       academic_year: entry.academic_year || "",

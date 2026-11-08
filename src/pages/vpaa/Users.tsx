@@ -38,6 +38,7 @@ import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../
 import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import { programLabel } from '../../lib/programLabel';
+import FilterBar from '../../components/ui/FilterBar';
 
 interface User {
   id: number;
@@ -892,7 +893,7 @@ export default function VpaaUsers() {
 
   return (
     <div>
-      <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans mb-6">
+      <FilterBar className="mb-6">
         <SearchInput
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}
@@ -948,7 +949,7 @@ export default function VpaaUsers() {
             <span>Add User</span>
           </button>
         </div>
-      </div>
+      </FilterBar>
 
       {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">

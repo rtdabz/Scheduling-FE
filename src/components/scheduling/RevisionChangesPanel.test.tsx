@@ -61,7 +61,9 @@ describe('RevisionChangesPanel', () => {
 
     render(<RevisionChangesPanel submissionId={7} />);
 
-    expect(await screen.findByText(/Changes to the working copy since this version \(3\)/)).toBeTruthy();
+    expect(await screen.findByRole('table', { name: 'Changes since this version' })).toBeTruthy();
+    // The table counts change rows; there is no second count of audit entries to disagree with it.
+    expect(screen.queryByText(/since this version \(3\)/)).toBeNull();
     expect(mocks.apiGet.mock.calls[0][0]).toBe('/schedule-submissions/7/changes');
     // The table is part of the panel; there is no nested dialog to open.
     expect(screen.queryByRole('button', { name: 'View details' })).toBeNull();

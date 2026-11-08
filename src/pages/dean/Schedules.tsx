@@ -1,18 +1,17 @@
 import { useMemo, useState, useEffect } from "react";
-import {
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  useReactTable,
-  type ColumnDef,
-  type SortingState,
-} from "@tanstack/react-table";
+import type { SortingState } from "@tanstack/react-table";
 import { AlertTriangle, Calendar, GanttChart, Info, Layers, List, MapPin, RefreshCw, User, X } from "lucide-react";
 import api from "../../lib/api";
 import { getStoredUser } from "../../lib/storedUser";
 import Skeleton from "../../components/ui/Skeleton";
-import DataTable from "../../components/ui/DataTable";
+import ScheduleMeetingsTable from "../../components/scheduling/ScheduleMeetingsTable";
+import {
+  getConflictLabels,
+  getModeLabel,
+  useScheduleTable,
+  type ScheduleConflictState,
+  type ScheduleTableRow,
+} from "../../components/scheduling/scheduleTableColumns";
 import SearchInput from "../../components/ui/SearchInput";
 import { getCachedData, hasCachedData, isCacheFresh, setCachedData } from "../../lib/dataCache";
 import { useLiveRevision } from "../../hooks/useLiveRefresh";
@@ -29,7 +28,7 @@ import {
 import type { ZoomLevel } from "../vpaa/calendar/ganttPresentation";
 import LoadErrorBanner from "../../components/ui/LoadErrorBanner";
 import TruncatedDataNotice from "../../components/ui/TruncatedDataNotice";
-import { conflictFlagsBySchedule, fetchConflicts, type ConflictFlags, type ScheduleConflict } from "../../lib/conflicts";
+import { conflictFlagsBySchedule, fetchConflicts, type ScheduleConflict } from "../../lib/conflicts";
 import { gridOpeningMinutes, slotCount, slotMinutes, slotToTimeLabel, timeToSlot } from "../../lib/timeGrid";
 
 interface Section {
@@ -161,35 +160,6 @@ const parseTimeToSlot = (time: string): number => {
   return Math.max(0, ((hour * 60 + minutes) - gridOpeningMinutes()) / slotMinutes());
 };
 
-const getModeLabel = (mode: Schedule["mode"]) => {
-  if (mode === "on-site") return "On-Site";
-  if (mode === "online") return "Online";
-  return "Field";
-};
-
-const getGridModeBadgeClass = (mode: Schedule["mode"]) => {
-  switch (mode) {
-    case "on-site":
-      return "bg-blue-100 text-blue-700";
-    case "online":
-      return "bg-green-100 text-green-700";
-    case "field":
-      return "bg-orange-100 text-orange-700";
-    default:
-      return "bg-slate-100 text-slate-700";
-  }
-};
-
-const getConflictLabels = (info?: ConflictFlags) => {
-  if (!info) return [];
-  return [
-    info.faculty ? "Instructor Conflict" : "",
-    info.room ? "Room Conflict" : "",
-    info.section ? "Section Conflict" : "",
-    info.online ? "Online Class Conflict" : "",
-  ].filter(Boolean);
-};
-
 const scheduleSortKey = (schedule: Schedule) => DAYS.indexOf(schedule.day) * 10_000 + parseTimeToSlot(schedule.startTime);
 
 type ViewMode = "table" | "grid";
@@ -255,10 +225,8 @@ export default function DeanScheduleViewer() {
   const [serverConflicts, setServerConflicts] = useState<ScheduleConflict[]>([]);
 
   useEffect(() => {
-    if (liveRevision === 0 && reloadKey === 0 && isCacheFresh(deanSchedulesCacheKey)) {
-      setIsLoading(false);
-      return;
-    }
+    // A fresh cache entry means isLoading already started false; nothing to load.
+    if (liveRevision === 0 && reloadKey === 0 && isCacheFresh(deanSchedulesCacheKey)) return;
 
     const loadData = async () => {
       setLoadError(null);
@@ -365,90 +333,22 @@ export default function DeanScheduleViewer() {
   }, [schedules, userDeptId]);
   const conflictMap = useMemo(() => conflictFlagsBySchedule(serverConflicts), [serverConflicts]);
 
-  const tableRows = useMemo(
-    () => [...filteredSchedules].sort((left, right) => scheduleSortKey(left) - scheduleSortKey(right)),
+  // The department page always shows its latest conflict list; Details passes its own check state instead.
+  const conflictState = useMemo<ScheduleConflictState>(() => ({ status: "ready", flags: conflictMap }), [conflictMap]);
+  const tableRows = useMemo<ScheduleTableRow[]>(
+    () => filteredSchedules.map((schedule) => ({ ...schedule, sortKey: scheduleSortKey(schedule) })),
     [filteredSchedules],
   );
 
-  const columns = useMemo<ColumnDef<Schedule>[]>(() => [
-    {
-      id: "course",
-      header: "Course",
-      accessorFn: (row) => `${row.subjectCode} ${row.subjectName}`,
-      cell: ({ row }) => {
-        const schedule = row.original;
-        const showMeetingType = schedule.subjectCategory === "major" && !!schedule.meetingType;
-        return (
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <span className="font-black text-slate-800">{schedule.subjectCode}</span>
-              {showMeetingType && (
-                <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold ${schedule.meetingType === "laboratory" ? "border-violet-200 bg-violet-50 text-violet-700" : "border-sky-200 bg-sky-50 text-sky-700"}`}>
-                  {schedule.meetingType === "laboratory" ? "Lab" : "Lec"}
-                </span>
-              )}
-            </div>
-            <p className="max-w-[260px] truncate text-[11px] font-medium text-slate-500" title={schedule.subjectName}>{schedule.subjectName}</p>
-          </div>
-        );
-      },
-    },
-    { id: "section", header: "Section", accessorFn: (row) => row.sectionName || "Unassigned" },
-    {
-      id: "schedule",
-      header: "Day & Time",
-      accessorFn: (row) => `${row.day} ${row.startTime} - ${row.endTime}`,
-      sortingFn: (left, right) => scheduleSortKey(left.original) - scheduleSortKey(right.original),
-      cell: ({ row }) => (
-        <div>
-          <p className="font-bold text-slate-800">{row.original.day}</p>
-          <p className="text-[11px] font-medium text-slate-500">{row.original.startTime} - {row.original.endTime}</p>
-        </div>
-      ),
-    },
-    { id: "room", header: "Room", accessorFn: (row) => row.roomName || "Unassigned" },
-    { id: "faculty", header: "Instructor", accessorFn: (row) => row.facultyName || "Unassigned" },
-    {
-      id: "mode",
-      header: "Mode",
-      accessorFn: (row) => getModeLabel(row.mode),
-      cell: ({ row }) => (
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${getGridModeBadgeClass(row.original.mode)}`}>
-          {getModeLabel(row.original.mode)}
-        </span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      accessorFn: (row) => getConflictLabels(conflictMap.get(row.id)).join(", ") || "No conflict",
-      cell: ({ row }) => {
-        const labels = getConflictLabels(conflictMap.get(row.original.id));
-        return labels.length > 0 ? (
-          <div className="flex flex-wrap gap-1">
-            {labels.map((label) => (
-              <span key={label} className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600">{label}</span>
-            ))}
-          </div>
-        ) : (
-          <span className="text-[11px] font-bold text-emerald-700">No conflict</span>
-        );
-      },
-    },
-  ], [conflictMap]);
-
-  const table = useReactTable<Schedule>({
-    data: tableRows,
-    columns,
-    state: { globalFilter: searchTerm, sorting, pagination },
-    onGlobalFilterChange: setSearchTerm,
+  const table = useScheduleTable({
+    rows: tableRows,
+    conflicts: conflictState,
+    searchTerm,
+    onSearchTermChange: setSearchTerm,
+    sorting,
     onSortingChange: setSorting,
+    pagination,
     onPaginationChange: setPagination,
-    autoResetPageIndex: false,
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
   });
 
   const resetPage = () => setPagination((current) => ({ ...current, pageIndex: 0 }));
@@ -465,7 +365,7 @@ export default function DeanScheduleViewer() {
     () => (filteredSchedules.some((schedule) => schedule.day === "Sunday") ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4, 5]),
     [filteredSchedules],
   );
-  const ganttStandardHours = useMemo(currentStandardHours, []);
+  const ganttStandardHours = useMemo(() => currentStandardHours(), []);
   const ganttDays = useMemo(
     () => buildGanttDays(ganttSchedules, ganttGroupBy, ganttVisibleDays),
     [ganttSchedules, ganttGroupBy, ganttVisibleDays],
@@ -560,16 +460,12 @@ export default function DeanScheduleViewer() {
         </div>
 
         {!showGrid ? (
-          <DataTable
+          <ScheduleMeetingsTable
             table={table}
+            conflicts={conflictState}
             isLoading={isLoading}
-            variant="embedded"
-            totalLabel="classes"
             ariaLabel="Department schedules"
-            emptyTitle="No schedules match the selected filters."
-            emptyDescription="Try another search, section, or class mode."
-            onRowClick={setSelectedSchedule}
-            rowClassName={(row) => (getConflictLabels(conflictMap.get(row.id)).length > 0 ? "!bg-red-50/60" : "")}
+            onRowClick={(row) => setSelectedSchedule(scheduleById.get(Number(row.id)) ?? null)}
           />
         ) : isLoading ? (
           <div className="p-4"><Skeleton className="h-[420px] w-full rounded-xl" /></div>

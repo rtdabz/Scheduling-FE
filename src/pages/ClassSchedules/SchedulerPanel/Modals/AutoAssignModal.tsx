@@ -597,7 +597,7 @@ export default function AutoAssignModal({
                     return { value: course.id, label: `${course.code} - ${course.name}${programs ? ` (${programs})` : ""}` };
                   })} placeholder="Select course" />
                 </div>
-                <SectionTable groups={courseGroups} selectedKeys={selectedKeys} getIssue={getIssue} getConflict={getConflict} getConflictMeetings={getConflictMeetings} clashPartners={clashPartners} onToggle={toggleGroup} onSelectAll={selectAllGroups} selectAllChecked={allSelectableGroupsSelected} selectAllDisabled={selectableCourseGroupKeys.length === 0} onRemove={onRemoveAssignment ? removeClassAssignment : undefined} removalBlockedReason={removalBlockedReason} busy={isSaving} />
+                <SectionTable groups={courseGroups} selectedKeys={selectedKeys} queuedKeys={queuedKeys} getIssue={getIssue} getConflict={getConflict} getConflictMeetings={getConflictMeetings} clashPartners={clashPartners} onToggle={toggleGroup} onSelectAll={selectAllGroups} selectAllChecked={allSelectableGroupsSelected} selectAllDisabled={selectableCourseGroupKeys.length === 0} onRemoveQueued={removeAssignment} onRemove={onRemoveAssignment ? removeClassAssignment : undefined} removalBlockedReason={removalBlockedReason} busy={isSaving} />
                 <div className="assign-selection-actions" data-selected={selectedGroups.length > 0}>
                   {selectedFaculty ? (
                     <div className="min-w-0 flex-1 text-xs text-slate-600" role="status">
@@ -839,7 +839,7 @@ function SelectField({ label, value, onChange, options, placeholder, allValue }:
   return <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}<div className="relative mt-1"><select value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-8 text-sm font-semibold normal-case tracking-normal text-slate-800 outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/25"><option value={allValue ?? ""}>{placeholder}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><ChevronDown className="pointer-events-none absolute right-2.5 top-3 h-4 w-4 text-slate-400" /></div></label>;
 }
 
-function SectionTable({ groups, selectedKeys, getIssue, getConflict, getConflictMeetings, clashPartners, onToggle, onSelectAll, selectAllChecked, selectAllDisabled, onRemove, removalBlockedReason, busy }: { groups: SectionGroup[]; selectedKeys: string[]; getIssue: (group: SectionGroup) => string | null; getConflict: (group: SectionGroup) => string | null; getConflictMeetings: (group: SectionGroup) => Set<string>; clashPartners: Map<string, string[]>; onToggle: (group: SectionGroup) => void; onSelectAll: () => void; selectAllChecked: boolean; selectAllDisabled: boolean; onRemove?: (group: SectionGroup) => void; removalBlockedReason: (group: SectionGroup) => string | null; busy: boolean }) {
+function SectionTable({ groups, selectedKeys, queuedKeys, getIssue, getConflict, getConflictMeetings, clashPartners, onToggle, onSelectAll, selectAllChecked, selectAllDisabled, onRemoveQueued, onRemove, removalBlockedReason, busy }: { groups: SectionGroup[]; selectedKeys: string[]; queuedKeys: Set<string>; getIssue: (group: SectionGroup) => string | null; getConflict: (group: SectionGroup) => string | null; getConflictMeetings: (group: SectionGroup) => Set<string>; clashPartners: Map<string, string[]>; onToggle: (group: SectionGroup) => void; onSelectAll: () => void; selectAllChecked: boolean; selectAllDisabled: boolean; onRemoveQueued: (key: string) => void; onRemove?: (group: SectionGroup) => void; removalBlockedReason: (group: SectionGroup) => string | null; busy: boolean }) {
   const columns = useMemo<ColumnDef<SectionGroup>[]>(() => [
     {
       id: "selected",
@@ -919,31 +919,36 @@ function SectionTable({ groups, selectedKeys, getIssue, getConflict, getConflict
         );
       },
     },
-    ...(onRemove ? [{
+    {
       id: "actions",
       header: () => <span className="sr-only">Actions</span>,
       size: 56,
       enableSorting: false,
       meta: { align: "right" as const, stopRowClick: true },
       cell: ({ row }: { row: { original: SectionGroup } }) => {
-        if (!onRemove || !row.original.assignedFacultyId) return null;
-        const blocked = removalBlockedReason(row.original);
+        const queued = queuedKeys.has(row.original.key);
+        if (!queued && (!onRemove || !row.original.assignedFacultyId)) return null;
+        const blocked = queued ? null : removalBlockedReason(row.original);
         return (
           <div className="flex justify-end">
             <TableActionButton
-              label={blocked ?? "Remove instructor"}
-              aria-label={`Remove instructor from ${row.original.courseCode} ${row.original.sectionName}`}
+              label={queued ? "Remove from list" : blocked ?? "Remove instructor"}
+              aria-label={queued ? `Remove ${row.original.courseCode} ${row.original.sectionName}` : `Remove instructor from ${row.original.courseCode} ${row.original.sectionName}`}
               variant="remove"
               disabled={Boolean(blocked) || busy}
-              onClick={(event) => { event.stopPropagation(); onRemove(row.original); }}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (queued) onRemoveQueued(row.original.key);
+                else onRemove?.(row.original);
+              }}
             >
               <X size={15} />
             </TableActionButton>
           </div>
         );
       },
-    } satisfies ColumnDef<SectionGroup>] : []),
-  ], [busy, clashPartners, getConflict, getConflictMeetings, getIssue, onRemove, onToggle, removalBlockedReason, selectedKeys]);
+    },
+  ], [busy, clashPartners, getConflict, getConflictMeetings, getIssue, onRemove, onRemoveQueued, onToggle, queuedKeys, removalBlockedReason, selectedKeys]);
 
   const table = useDataTable({
     data: groups,

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Eye } from 'lucide-react';
+import { Eye, Undo2 } from 'lucide-react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -33,6 +33,7 @@ import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache
 import {
   scheduleStatusesForSubmission,
   splitSubmission,
+  stageOfScheduleStatuses,
   submissionDisplayStatus,
   type ApprovalDisplayStatus,
   type QueueSubmissionStatus,
@@ -45,8 +46,13 @@ import {
   type RevisionStatus,
 } from '../../lib/submissionStatus';
 import { mapApiScheduleToItem, mapInitialData, type InitialDataResponse, type SchedulerCacheData } from '../ClassSchedules/SchedulerPanel/hooks/initialDataMapper';
-import type { ApiScheduleRecord, ScheduleItem } from '../ClassSchedules/SchedulerPanel/types';
+import type { ApiScheduleRecord, ScheduleItem, ScheduleSignatories } from '../ClassSchedules/SchedulerPanel/types';
 import type { SchedulePdfInput } from '../ClassSchedules/SchedulerPanel/schedulePdf';
+import FilterBar from '../../components/ui/FilterBar';
+import type { RecalledSectionDetail } from '../../components/scheduling/ScheduleApprovalDetailsModal';
+import type { ScheduleConflictState } from '../../components/scheduling/scheduleTableColumns';
+import { conflictFlagsBySchedule } from '../../lib/conflicts';
+import { academicYearLabel, semesterLabel } from '../../lib/semesterLabel';
 
 export type ApprovalStage = 'dean' | 'vpaa';
 
@@ -71,7 +77,13 @@ interface ScheduleApproval {
   revisionStatus: RevisionStatus;
   workflowSectionIds: string[];
   sectionCount: number;
+  /** Every section the submission was sent with, recalled ones included. */
+  originalSectionCount: number;
+  /** Sections recalled from the submission; kept on its record, excluded from its approval. */
+  recalledSections: Array<{ id: string; name: string }>;
   transfer?: RoomTransferRequest;
+  /** Officials recorded on the submission; its print never uses whoever holds the office later. */
+  signatories?: ScheduleSignatories | null;
 }
 
 interface RawDepartment {
@@ -115,6 +127,7 @@ interface RawScheduleSubmission {
   revision_status?: string;
   sections: Array<RawSection & { pivot?: { state?: 'included' | 'withdrawn' } }>;
   submitter?: { name?: string } | null;
+  signatories?: ScheduleSignatories | null;
 }
 
 interface ApprovalPayload {
@@ -226,10 +239,77 @@ const formatDate = (value: string | null) => {
   return `${date.toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: '2-digit', year: 'numeric' })} ${date.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}`;
 };
 
+/** Where a recalled section is now, read from its current meetings (a resubmission moves them on). */
+const recalledSectionDetail = (section: { id: string; name: string }, statuses: string[]): RecalledSectionDetail => {
+  const stage = stageOfScheduleStatuses(statuses);
+  if (stage === 'pending_dean') return { ...section, status: 'Resubmitted · Pending Dean approval', tone: 'pending' };
+  if (stage === 'pending_vpaa') return { ...section, status: 'Resubmitted · Pending VPAA approval', tone: 'pending' };
+  if (stage === 'approved') return { ...section, status: 'Resubmitted · Approved', tone: 'approved' };
+  if (statuses.some((status) => status === 'rejected' || status === 'rejected_by_dean')) {
+    return { ...section, status: 'Resubmitted · Returned for revision', tone: 'returned' };
+  }
+  if (statuses.length === 0) return { ...section, status: 'Status not loaded', tone: 'revision' };
+  return { ...section, status: statuses.every((status) => status === 'revision') ? 'Awaiting revision' : 'Being revised', tone: 'revision' };
+};
+
+const countLabel = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+/** One line describing which sections an entry's review covers; recalled history says so instead. */
+const detailsScope = (entry: ScheduleApproval): { summary: string; exclusionNote: string | null } => {
+  const original = entry.originalSectionCount;
+  const recalled = entry.recalledSections.length;
+  if (entry.requestType === 'withdrawal') {
+    const count = entry.workflowSectionIds.length;
+    return { summary: `${countLabel(count, 'recalled section')}${count < original ? ` of ${original}` : ''}`, exclusionNote: null };
+  }
+  if (recalled > 0) {
+    return {
+      summary: `${original - recalled} of ${original} sections included · ${recalled} recalled`,
+      exclusionNote: entry.requestType === 'approval' ? 'Recalled sections are excluded from this approval.' : null,
+    };
+  }
+  return { summary: countLabel(original, 'section'), exclusionNote: null };
+};
+
 const STAGE_ENDPOINT: Record<ApprovalStage, { approve: string; reject: string }> = {
   dean: { approve: 'approve-by-dean', reject: 'return-by-dean' },
   vpaa: { approve: 'approve-by-vpaa', reject: 'return-by-vpaa' },
 };
+
+/**
+ * A queue slice's identity across refreshes. One submission can show as a recalled slice and an
+ * active one at the same time, and its entry key changes from `7` to `7:active` after a partial
+ * recall, so neither the submission ID nor the entry key alone identifies what the reviewer opened.
+ */
+const selectionKeyOf = (entry: ScheduleApproval): string => (
+  entry.transfer ? `room-transfer:${entry.transfer.id}` : `${entry.submissionId}:${entry.requestType}`
+);
+
+const sectionScopeOf = (entry: ScheduleApproval): string => (
+  [...entry.workflowSectionIds].sort((left, right) => Number(left) - Number(right)).join(',')
+);
+
+/** What one approval or return confirmation authorizes: this slice, at this stage, with exactly these sections. */
+interface ReviewIntent {
+  key: string;
+  submissionId: number;
+  status: ApprovalDisplayStatus;
+  sectionScope: string;
+}
+
+const intentFor = (entry: ScheduleApproval): ReviewIntent => ({
+  key: selectionKeyOf(entry),
+  submissionId: entry.submissionId,
+  status: entry.status,
+  sectionScope: sectionScopeOf(entry),
+});
+
+const errorCodeOf = (error: unknown): string | undefined => (
+  (error as { response?: { data?: { error_code?: string } } })?.response?.data?.error_code
+);
+
+const SCHEDULE_CHANGED_MESSAGE = 'This schedule changed while you were reviewing it. Open it again to review the current version.';
+const QUEUE_REFRESHING_MESSAGE = 'The approval queue is refreshing. Confirm again once it has loaded.';
 
 interface ApprovalQueueCache {
   entries: ScheduleApproval[];
@@ -240,7 +320,7 @@ interface ApprovalQueueCache {
 }
 
 export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }) {
-  const { toast, confirm } = useToast();
+  const { toast } = useToast();
   const [params, setParams] = useSearchParams();
   const user = useMemo(() => getStoredUser(), []);
   const scopeDepartmentId = stage === 'dean' ? user?.department_id ?? null : null;
@@ -266,20 +346,29 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
   const [sorting, setSorting] = useState<SortingState>([]);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
 
-  const [viewEntry, setViewEntry] = useState<ScheduleApproval | null>(null);
+  // Selections hold an identity, never a copied entry: what is shown and acted on is read from the latest queue.
+  const [viewKey, setViewKey] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [changesFirst, setChangesFirst] = useState(false);
   const detailsButtonRef = useRef<HTMLButtonElement>(null);
   const [viewSnapshot, setViewSnapshot] = useState<{ submissionId: number; schedules: ScheduleItem[] | null } | null>(null);
-  const [tbaApproval, setTbaApproval] = useState<ScheduleApproval | null>(null);
+  const [approval, setApproval] = useState<{ intent: ReviewIntent; roomTba: boolean } | null>(null);
   const [tbaReason, setTbaReason] = useState('');
-  const [tbaError, setTbaError] = useState('');
+  const [approvalError, setApprovalError] = useState('');
   const [isApproving, setIsApproving] = useState(false);
-  const [rejectEntry, setRejectEntry] = useState<ScheduleApproval | null>(null);
+  const [rejectIntent, setRejectIntent] = useState<ReviewIntent | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [rejectError, setRejectError] = useState('');
   const [isRejecting, setIsRejecting] = useState(false);
+  const mutationRunning = useRef(false);
 
   const liveRevision = useLiveRevision(['approvals', 'schedules']);
+  // Approval and return act only on a queue loaded for the current request. A live event or refresh
+  // changes the request immediately, so actions wait until that reload succeeds. Cached data can be
+  // shown but never makes an action available.
+  const requestKey = `${cacheKey}|${liveRevision}|${reloadKey}`;
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const queueFresh = loadedKey === requestKey;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -357,6 +446,12 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
               requestType: requestTypeOf(submission.status),
               revisionStatus: isRevisionStatus(submission.revision_status) ? submission.revision_status : 'initial',
               workflowSectionIds: sectionIds,
+              originalSectionCount: submission.sections.length,
+              recalledSections: submission.sections
+                .filter((section) => section.pivot?.state === 'withdrawn')
+                .map((section) => ({ id: String(section.id), name: section.section_name }))
+                .sort((left, right) => left.name.localeCompare(right.name)),
+              signatories: submission.signatories ?? null,
             };
           });
 
@@ -369,6 +464,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
         setRawSchedules(schedules);
         setEntries(mapped);
         setIsTruncated(data.schedules_truncated === true);
+        setLoadedKey(requestKey);
         setCachedData<ApprovalQueueCache>(cacheKey, {
           entries: mapped,
           rawSchedules: schedules,
@@ -387,11 +483,11 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     };
     void load();
     return () => { active = false; };
-  }, [cacheKey, liveRevision, reloadKey, scopeDepartmentId, stage, toast]);
+  }, [cacheKey, liveRevision, reloadKey, requestKey, scopeDepartmentId, stage, toast]);
 
   const refresh = useCallback(() => setReloadKey((key) => key + 1), []);
   const closeTransfer = useCallback(() => {
-    setViewEntry(null);
+    setViewKey(null);
     setParams(current => { const next = new URLSearchParams(current); next.delete('room_transfer'); return next; }, { replace: true });
   }, [setParams]);
   const transferReviewed = useCallback(() => { closeTransfer(); refresh(); }, [closeTransfer, refresh]);
@@ -408,6 +504,8 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       program: formatProgramSummary(sectionRecords, sectionRecords.map(section => String(section.id))),
       section: sections.join(', '),
       sectionCount: sections.length,
+      originalSectionCount: sections.length,
+      recalledSections: [],
       subjectsScheduled: new Set(changes.map(change => change.course)).size,
       submittedBy: transfer.submitted_by,
       submittedAt: transfer.submitted_at,
@@ -463,10 +561,23 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     && entry.workflowSectionIds.includes(String(schedule.section_id))
   ), []);
 
+  const viewEntry = useMemo(
+    () => (viewKey === null ? null : queueEntries.find((entry) => selectionKeyOf(entry) === viewKey) ?? null),
+    [queueEntries, viewKey],
+  );
+  // The opened slice left the current queue (recalled in full, or advanced out of it): close its preview.
+  if (viewKey !== null && viewEntry === null && queueFresh && !transfersLoading) {
+    setViewKey(null);
+    setDetailsOpen(false);
+  }
+
+  const snapshotSubmissionId = viewEntry && !viewEntry.transfer && CLOSED_SUBMISSION_STATUSES.has(viewEntry.submissionStatus)
+    ? viewEntry.submissionId
+    : null;
   useEffect(() => {
-    if (!viewEntry || viewEntry.transfer || !CLOSED_SUBMISSION_STATUSES.has(viewEntry.submissionStatus)) return undefined;
+    if (snapshotSubmissionId === null) return undefined;
     let active = true;
-    const { submissionId } = viewEntry;
+    const submissionId = snapshotSubmissionId;
     api.get<SubmissionSnapshotResponse>(`/schedule-submissions/${submissionId}/snapshot`)
       .then(({ data }) => {
         if (!active) return;
@@ -481,7 +592,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
         setViewSnapshot({ submissionId, schedules: null });
       });
     return () => { active = false; };
-  }, [toast, viewEntry]);
+  }, [toast, snapshotSubmissionId]);
 
   const viewIsClosed = viewEntry !== null && !viewEntry.transfer && CLOSED_SUBMISSION_STATUSES.has(viewEntry.submissionStatus);
   const viewSnapshotLoaded = viewSnapshot !== null && viewSnapshot.submissionId === viewEntry?.submissionId;
@@ -507,8 +618,18 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       departments: printSource.departments,
       users: printSource.users,
       activeSemester: printSource.activeSemester,
+      signatories: viewEntry.signatories ?? null,
     };
   }, [inPackage, printSource, rawSchedules, viewEntry, viewSnapshotLoading, viewSnapshotSchedules]);
+
+  const viewRecalled = useMemo(() => (viewEntry?.recalledSections ?? []).map((section) => recalledSectionDetail(
+    section,
+    rawSchedules.filter((schedule) => String(schedule.section_id) === section.id).map((schedule) => schedule.status),
+  )), [rawSchedules, viewEntry]);
+  const activeSemester = printSource?.activeSemester;
+  const termLabel = activeSemester?.academic_year
+    ? `${semesterLabel(activeSemester.semester)}, ${academicYearLabel(activeSemester.academic_year)}`
+    : '—';
 
   const viewPending = viewEntry !== null && !viewEntry.transfer && viewEntry.requestType === 'approval' && isPendingFor(stage, viewEntry.status);
   // The check runs whenever a pending package is open, so approval stays blocked even while details are hidden.
@@ -517,17 +638,27 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     sectionIds: viewEntry?.workflowSectionIds ?? [],
     enabled: viewPending,
   });
+  // The details table may say "No conflict" only after this package's check succeeded.
+  const detailsConflicts = useMemo<ScheduleConflictState>(() => {
+    if (!viewPending) return { status: 'not-checked' };
+    if (viewCheck.status === 'ready') return { status: 'ready', flags: conflictFlagsBySchedule(viewCheck.result.open) };
+    return { status: viewCheck.status === 'failed' ? 'failed' : 'loading' };
+  }, [viewCheck, viewPending]);
+  // A closed record whose submitted snapshot could not be read prints the current working copy instead.
+  const viewSnapshotFellBack = viewIsClosed && viewSnapshotLoaded && viewSnapshotSchedules === null;
   const viewOpenConflicts = viewCheck.status === 'ready' ? viewCheck.result.open.length : 0;
   const approveBlockedReason = viewOpenConflicts > 0
     ? `This schedule has ${viewOpenConflicts} open conflict${viewOpenConflicts === 1 ? '' : 's'}. Return it for revision.`
     : null;
 
   const openView = useCallback((entry: ScheduleApproval, withDetails = false) => {
-    setViewEntry(entry);
+    setViewKey(selectionKeyOf(entry));
     setDetailsOpen(withDetails && !entry.transfer);
+    // Opened from the Modified badge: the reviewer asked to see what changed, so start with it expanded.
+    setChangesFirst(withDetails);
   }, []);
   const closeView = useCallback(() => {
-    setViewEntry(null);
+    setViewKey(null);
     setDetailsOpen(false);
   }, []);
   const closeDetails = useCallback(() => setDetailsOpen(false), []);
@@ -540,105 +671,163 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
     detailsWasOpen.current = detailsOpen;
   }, [detailsOpen, viewEntry]);
 
-  const markEntry = (entry: ScheduleApproval, status: ApprovalDisplayStatus, submissionStatus: QueueSubmissionStatus) => {
-    const now = new Date().toISOString();
-    setEntries((prev) => prev.map((item) => (item.entryKey === entry.entryKey
-      ? { ...item, status, submissionStatus, deanReviewedAt: stage === 'dean' ? now : item.deanReviewedAt }
-      : item)));
-    publishLiveTopics(['approvals']);
-  };
+  const needsRoomTba = useCallback((entry: ScheduleApproval, schedules: RawSchedule[]) => stage === 'dean' && schedules.some((schedule) => (
+    inPackage(entry, schedule) && schedule.status === 'submitted' && schedule.mode === 'on-site' && !schedule.room
+  )), [inPackage, stage]);
 
-  const submitApproval = async (entry: ScheduleApproval, overrideReason: string | null) => {
-    try {
-      await api.post(`/departments/${entry.id}/${STAGE_ENDPOINT[stage].approve}`, {
-        schedule_submission_id: entry.submissionId,
-        ...(overrideReason !== null ? { override_room_tba: true, override_reason: overrideReason } : {}),
-      });
-      if (stage === 'dean') {
-        markEntry(entry, overrideReason !== null ? 'conditionally_approved' : 'approved_by_dean', 'pending_vpaa');
-      } else {
-        markEntry(entry, 'approved', 'approved');
-      }
-      toast.success('Approved', `${entryLabel(entry)} schedule has been approved.`);
-      return true;
-    } catch (error) {
-      const code = (error as { response?: { data?: { error_code?: string } } })?.response?.data?.error_code;
-      if (stage === 'dean' && overrideReason === null && code === 'room_tba_override_required') {
-        setTbaReason('');
-        setTbaError('');
-        setTbaApproval(entry);
-        toast.info('Room TBA', 'This schedule now has Room TBA classes. Give a reason to approve it conditionally.');
-        refresh();
-        return false;
-      }
-      toast.error('Approval Failed', apiErrorMessage(error, 'Failed to approve schedule.'));
+  /** The entry an intent still describes, or null when its slice, stage, or section set has changed. */
+  const intentTarget = useCallback((intent: ReviewIntent, queue: ScheduleApproval[]): ScheduleApproval | null => {
+    const entry = queue.find((candidate) => selectionKeyOf(candidate) === intent.key);
+    return entry
+      && entry.requestType === 'approval'
+      && isPendingFor(stage, entry.status)
+      && entry.status === intent.status
+      && entry.submissionId === intent.submissionId
+      && sectionScopeOf(entry) === intent.sectionScope
+      ? entry
+      : null;
+  }, [stage]);
+
+  // Handlers read the latest queue through this ref, so a callback that outlives its render (a dialog
+  // or preview control still mounted from an earlier queue) is checked against current data.
+  const latest = useRef({ queueEntries, queueFresh, rawSchedules });
+  useLayoutEffect(() => {
+    latest.current = { queueEntries, queueFresh, rawSchedules };
+  });
+
+  // An open confirmation authorizes one slice, stage, and section set. When a current reload shows
+  // something else, cancel it rather than let the reviewer confirm a package they did not review.
+  useEffect(() => {
+    if (!queueFresh) return;
+    let changed = false;
+    if (approval && !isApproving && intentTarget(approval.intent, queueEntries) === null) {
+      setApproval(null);
+      setTbaReason('');
+      setApprovalError('');
+      changed = true;
+    }
+    if (rejectIntent && !isRejecting && intentTarget(rejectIntent, queueEntries) === null) {
+      setRejectIntent(null);
+      setRejectReason('');
+      setRejectError('');
+      changed = true;
+    }
+    if (changed) toast.warning('Schedule Changed', SCHEDULE_CHANGED_MESSAGE);
+  }, [approval, intentTarget, isApproving, isRejecting, queueEntries, queueFresh, rejectIntent, toast]);
+
+  /** Open a confirmation for the slice currently identified by key, if it can be acted on now. */
+  const openReview = (key: string, kind: 'approve' | 'reject'): boolean => {
+    const { queueEntries: queue, queueFresh: fresh, rawSchedules: schedules } = latest.current;
+    const entry = queue.find((candidate) => selectionKeyOf(candidate) === key);
+    if (!fresh || mutationRunning.current || !entry || entry.requestType !== 'approval' || !isPendingFor(stage, entry.status)) {
+      toast.warning('Schedule Changed', fresh ? SCHEDULE_CHANGED_MESSAGE : QUEUE_REFRESHING_MESSAGE);
       return false;
     }
-  };
-
-  const handleApprove = async (entry: ScheduleApproval) => {
-    const hasRoomTba = stage === 'dean' && rawSchedules.some((schedule) => (
-      inPackage(entry, schedule) && schedule.status === 'submitted' && schedule.mode === 'on-site' && !schedule.room
-    ));
-    if (hasRoomTba) {
+    if (kind === 'approve') {
       setTbaReason('');
-      setTbaError('');
-      setTbaApproval(entry);
-      return;
+      setApprovalError('');
+      setApproval({ intent: intentFor(entry), roomTba: needsRoomTba(entry, schedules) });
+    } else {
+      setRejectReason('');
+      setRejectError('');
+      setRejectIntent(intentFor(entry));
     }
-    await confirm({
-      title: 'Approve Schedule',
-      message: `Are you sure you want to approve the complete schedule for ${entryLabel(entry)}?`,
-      eyebrow: 'Approval Required',
-      confirmLabel: 'Confirm Approve',
-      variant: 'maroon',
-      onConfirm: () => submitApproval(entry, null),
-    });
+    return true;
   };
 
-  const confirmConditionalApprove = async () => {
-    if (!tbaApproval || isApproving) return;
+  /**
+   * Immediately before posting: the queue must be current and still show the intent's slice, stage,
+   * and sections. Returns the entry to act on, or null after explaining why the action stopped.
+   */
+  const validatedTarget = (intent: ReviewIntent, showError: (message: string) => void): ScheduleApproval | null => {
+    const { queueEntries: queue, queueFresh: fresh } = latest.current;
+    if (!fresh) {
+      showError(QUEUE_REFRESHING_MESSAGE);
+      return null;
+    }
+    const entry = intentTarget(intent, queue);
+    if (entry === null) {
+      showError(SCHEDULE_CHANGED_MESSAGE);
+      refresh();
+    }
+    return entry;
+  };
+
+  const confirmApproval = async () => {
+    if (!approval || mutationRunning.current) return;
+    const { intent } = approval;
+    const entry = validatedTarget(intent, setApprovalError);
+    if (!entry) return;
+    const roomTba = approval.roomTba || needsRoomTba(entry, latest.current.rawSchedules);
     const reason = tbaReason.trim();
-    if (reason.length < 3) {
-      setTbaError('Give a reason for approving with Room TBA.');
+    if (roomTba && reason.length < 3) {
+      setApprovalError('Give a reason for approving with Room TBA.');
       return;
     }
-    setIsApproving(true);
-    const approved = await submitApproval(tbaApproval, reason);
-    setIsApproving(false);
-    if (approved) setTbaApproval(null);
-  };
 
-  const openReject = (entry: ScheduleApproval) => {
-    setRejectEntry(entry);
-    setRejectReason('');
-    setRejectError('');
+    mutationRunning.current = true;
+    setIsApproving(true);
+    try {
+      await api.post(`/departments/${entry.id}/${STAGE_ENDPOINT[stage].approve}`, {
+        schedule_submission_id: intent.submissionId,
+        ...(roomTba ? { override_room_tba: true, override_reason: reason } : {}),
+      });
+      setApproval((current) => (current?.intent === intent ? null : current));
+      setTbaReason('');
+      toast.success('Approved', `${entryLabel(entry)} schedule has been approved.`);
+      publishLiveTopics(['approvals']);
+    } catch (error) {
+      if (stage === 'dean' && !roomTba && errorCodeOf(error) === 'room_tba_override_required') {
+        setApproval((current) => (current?.intent === intent ? { intent, roomTba: true } : current));
+        setApprovalError('This schedule now has Room TBA classes. Give a reason to approve it conditionally.');
+      } else {
+        setApprovalError(apiErrorMessage(error, 'Failed to approve schedule.'));
+        toast.error('Approval Failed', apiErrorMessage(error, 'Failed to approve schedule.'));
+      }
+    } finally {
+      mutationRunning.current = false;
+      setIsApproving(false);
+      // The server decided; reload its queue instead of guessing the result locally.
+      refresh();
+    }
   };
 
   const confirmReject = async () => {
-    if (!rejectEntry || isRejecting) return;
+    if (!rejectIntent || mutationRunning.current) return;
+    const intent = rejectIntent;
     const reason = rejectReason.trim();
     if (!reason) {
       setRejectError('A reason for rejection is required.');
       return;
     }
+    const entry = validatedTarget(intent, setRejectError);
+    if (!entry) return;
+
+    mutationRunning.current = true;
     setIsRejecting(true);
     try {
-      await api.post(`/departments/${rejectEntry.id}/${STAGE_ENDPOINT[stage].reject}`, {
-        schedule_submission_id: rejectEntry.submissionId,
+      await api.post(`/departments/${entry.id}/${STAGE_ENDPOINT[stage].reject}`, {
+        schedule_submission_id: intent.submissionId,
         rejection_reason: reason,
       });
-      if (stage === 'dean') markEntry(rejectEntry, 'rejected_by_dean', 'rejected_by_dean');
-      else markEntry(rejectEntry, 'rejected', 'rejected_by_vpaa');
-      toast.success('Returned for Revision', `${entryLabel(rejectEntry)} schedule has been returned for revision.`);
-      setRejectEntry(null);
+      setRejectIntent((current) => (current === intent ? null : current));
       setRejectReason('');
+      toast.success('Returned for Revision', `${entryLabel(entry)} schedule has been returned for revision.`);
+      publishLiveTopics(['approvals']);
     } catch (error) {
+      // The dialog and the typed reason stay; the reload below cancels them only if the package changed.
       setRejectError(apiErrorMessage(error, 'Failed to return the schedule. Try again.'));
     } finally {
+      mutationRunning.current = false;
       setIsRejecting(false);
+      refresh();
     }
   };
+
+  const approvalEntry = approval ? queueEntries.find((entry) => selectionKeyOf(entry) === approval.intent.key) ?? null : null;
+  const approvalNeedsTba = approval !== null && (approval.roomTba || (approvalEntry !== null && needsRoomTba(approvalEntry, rawSchedules)));
+  const rejectEntry = rejectIntent ? queueEntries.find((entry) => selectionKeyOf(entry) === rejectIntent.key) ?? null : null;
+  const reviewWaiting = !queueFresh;
 
   const columns = useMemo<ColumnDef<ScheduleApproval>[]>(() => [
     {
@@ -662,6 +851,18 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
       header: () => <div className="text-center">Sections</div>,
       cell: ({ row }) => {
         const count = row.original.sectionCount;
+        const recalled = row.original.recalledSections.length;
+        // A partly recalled package shows what is still in review against what was sent.
+        if (recalled > 0 && row.original.requestType !== 'withdrawal') {
+          return (
+            <div className="flex flex-col items-center gap-1 text-center" title={row.original.section}>
+              <span className="whitespace-nowrap font-semibold text-gray-700">{`${count}/${row.original.originalSectionCount} Active`}</span>
+              <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800 ring-1 ring-inset ring-amber-200">
+                <Undo2 size={11} aria-hidden="true" />{`${recalled} Recalled`}
+              </span>
+            </div>
+          );
+        }
         return (
           <div className="text-center font-semibold text-gray-700" title={row.original.section}>
             {count} section{count === 1 ? '' : 's'}
@@ -775,7 +976,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
         })}
       </div>
 
-      <div id="schedule-approval-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 mb-6">
+      <FilterBar id="schedule-approval-filters" breakpoint="sm" className="mb-6">
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap flex-1">
           <select aria-label="Request Type" value={selectedRequestType} onChange={event => { setSelectedRequestType(event.target.value as typeof selectedRequestType); resetPage(); }} className={selectClass}>
             <option value="all">All Request Types</option><option value="schedule">Schedule Approval</option><option value="room_transfer">Room Schedule Reassignment</option>
@@ -814,7 +1015,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
         >
           Reset Filters
         </button>
-      </div>
+      </FilterBar>
 
       {loadError && (
         <LoadErrorBanner message={`${loadError} The queue below may be empty or out of date.`} onRetry={refresh} className="mb-4" />
@@ -849,7 +1050,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
             title={`${entryLabel(viewEntry)} Schedule${viewSnapshotSchedules ? ' (as submitted)' : ''}`}
             printInput={printInput}
             isLoading={viewSnapshotLoading}
-            canAct={viewPending}
+            canAct={viewPending && queueFresh && !isApproving && !isRejecting}
             inert={detailsOpen}
             closeOnEscape
             headerActions={(
@@ -858,15 +1059,15 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
                 type="button"
                 aria-haspopup="dialog"
                 aria-expanded={detailsOpen}
-                onClick={() => setDetailsOpen(true)}
+                onClick={() => { setChangesFirst(false); setDetailsOpen(true); }}
                 className="whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A]"
               >
                 View details
               </button>
             )}
             approveBlockedReason={approveBlockedReason}
-            onApprove={() => { void handleApprove(viewEntry); closeView(); }}
-            onReject={() => { openReject(viewEntry); closeView(); }}
+            onApprove={() => { if (openReview(selectionKeyOf(viewEntry), 'approve')) closeView(); }}
+            onReject={() => { if (openReview(selectionKeyOf(viewEntry), 'reject')) closeView(); }}
             onClose={closeView}
           />
           <ScheduleApprovalDetailsModal
@@ -874,69 +1075,84 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
             onClose={closeDetails}
             scheduleTitle={`${entryLabel(viewEntry)} Schedule${viewSnapshotSchedules ? ' (as submitted)' : ''}`}
             status={{ label: STATUS_LABELS[viewEntry.status], badgeClassName: STATUS_BADGES[viewEntry.status] }}
-            revision={{ label: `Revision: ${REVISION_STATUS_LABELS[viewEntry.revisionStatus]}`, badgeClassName: REVISION_STATUS_BADGE[viewEntry.revisionStatus] }}
             facts={[
-              { label: 'Sections', value: `${viewEntry.sectionCount} — ${viewEntry.section}` },
-              { label: 'Subjects scheduled', value: viewEntry.subjectsScheduled },
-              { label: 'Submitted by', value: viewEntry.submittedBy },
-              { label: 'Submitted', value: formatDate(viewEntry.submittedAt || null) },
-              { label: 'Dean reviewed', value: formatDate(viewEntry.deanReviewedAt) },
-              ...(viewSnapshotSchedules ? [{ label: 'Document shows', value: 'The version as submitted' }] : []),
+              { label: 'Term', value: termLabel },
+              { label: 'Submitted by', value: `${viewEntry.submittedBy} · ${formatDate(viewEntry.submittedAt || null)}` },
             ]}
-            changes={viewIsClosed ? (
-              <RevisionChangesPanel submissionId={viewEntry.submissionId} />
-            ) : viewEntry.revisionStatus === 'modified' ? (
-              <RevisionDiffPanel submissionId={viewEntry.submissionId} />
-            ) : (
-              <p className="text-xs font-semibold text-slate-500">
-                {viewEntry.revisionStatus === 'reset'
-                  ? 'This version was started over, so there is no earlier version to compare it with.'
-                  : 'This is the first submitted version, so there are no changes from an earlier version.'}
-              </p>
+            versionLabel={!viewIsClosed && viewEntry.revisionStatus !== 'modified'
+              ? (viewEntry.revisionStatus === 'reset' ? 'Reset version' : 'First submission')
+              : null}
+            scope={{ ...detailsScope(viewEntry), recalled: viewRecalled }}
+            checks={viewPending ? <PreApprovalCheckResults state={viewCheck} variant="summary" className="" /> : null}
+            notices={(viewSnapshotFellBack || isTruncated) && (
+              <>
+                {viewSnapshotFellBack && (
+                  <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+                    Submitted version unavailable — showing current working copy.
+                  </p>
+                )}
+                {isTruncated && (
+                  <TruncatedDataNotice>Not every class meeting could be loaded, so this list may be incomplete.</TruncatedDataNotice>
+                )}
+              </>
             )}
-            checks={viewPending ? (
-              <PreApprovalCheckResults state={viewCheck} className="" />
-            ) : (
-              <p className="text-xs font-semibold text-slate-500">
-                Conflict and rule checks run while a schedule is awaiting your approval. This schedule is not pending your review.
-              </p>
-            )}
-            approveBlockedReason={viewPending ? approveBlockedReason : null}
+            meetings={{
+              schedules: printInput ? printInput.allSchedules : null,
+              sections: (printInput?.sections ?? []).map((section) => ({ id: section.id, name: section.name })),
+              conflicts: detailsConflicts,
+              sourceLabel: viewSnapshotSchedules ? 'As submitted' : viewSnapshotFellBack ? 'Current working copy' : 'Current schedule',
+            }}
+            changes={viewIsClosed
+              ? { label: 'Changes since this submission', content: <RevisionChangesPanel submissionId={viewEntry.submissionId} />, defaultOpen: changesFirst }
+              : viewEntry.revisionStatus === 'modified'
+                ? { label: 'Changes from the previous version', content: <RevisionDiffPanel submissionId={viewEntry.submissionId} />, defaultOpen: changesFirst }
+                : null}
           />
         </>
       )}
 
       <ConfirmModal
-        isOpen={tbaApproval !== null}
+        isOpen={approval !== null && approvalEntry !== null}
         title="Approve Schedule"
-        eyebrow="Conditional Approval"
-        message={`Are you sure you want to approve the complete department schedule for ${tbaApproval?.department ?? ''}?`}
+        eyebrow={approvalNeedsTba ? 'Conditional Approval' : 'Approval Required'}
+        message={approvalNeedsTba
+          ? `Are you sure you want to approve the complete department schedule for ${approvalEntry?.department ?? ''}?`
+          : `Are you sure you want to approve the complete schedule for ${approvalEntry ? entryLabel(approvalEntry) : ''}?`}
         confirmLabel="Confirm Approve"
         variant="maroon"
         isConfirming={isApproving}
-        onCancel={() => { if (!isApproving) setTbaApproval(null); }}
-        onConfirm={() => { void confirmConditionalApprove(); }}
+        confirmDisabled={reviewWaiting}
+        onCancel={() => { if (!isApproving) setApproval(null); }}
+        onConfirm={() => { void confirmApproval(); }}
       >
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-left">
-          <p className="text-xs font-bold text-amber-800">Room TBA entries detected</p>
-          <p className="mt-1 text-xs text-amber-700">This will be a conditional approval. Assign all laboratory rooms before finalization.</p>
-          <textarea
-            value={tbaReason}
-            onChange={(e) => { setTbaReason(e.target.value); setTbaError(''); }}
-            rows={3}
-            placeholder="Reason for approving with Room TBA"
-            className={`mt-2 w-full rounded-lg border bg-white p-2 text-xs ${tbaError ? 'border-red-500' : 'border-amber-200'}`}
-          />
-          {tbaError && <p className="mt-1 text-xs font-semibold text-red-600">{tbaError}</p>}
-        </div>
+        {(approvalNeedsTba || approvalError || reviewWaiting) && (
+          <div className="space-y-2 text-left">
+            {approvalNeedsTba && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <p className="text-xs font-bold text-amber-800">Room TBA entries detected</p>
+                <p className="mt-1 text-xs text-amber-700">This will be a conditional approval. Assign all laboratory rooms before finalization.</p>
+                <textarea
+                  aria-label="Reason for approving with Room TBA"
+                  value={tbaReason}
+                  onChange={(e) => { setTbaReason(e.target.value); setApprovalError(''); }}
+                  rows={3}
+                  placeholder="Reason for approving with Room TBA"
+                  className={`mt-2 w-full rounded-lg border bg-white p-2 text-xs ${approvalError ? 'border-red-500' : 'border-amber-200'}`}
+                />
+              </div>
+            )}
+            {approvalError && <p role="alert" className="text-xs font-semibold text-red-600">{approvalError}</p>}
+            {reviewWaiting && <p role="status" className="text-xs font-semibold text-slate-500">Refreshing the approval queue…</p>}
+          </div>
+        )}
       </ConfirmModal>
 
-      {rejectEntry && (
+      {rejectIntent && rejectEntry && (
         <ScheduleRejectionModal open title="Return Schedule for Revision"
-          description={<>Please provide a reason for returning the schedule for <strong>{entryLabel(rejectEntry)}</strong>.</>}
-          reason={rejectReason} error={rejectError} isSubmitting={isRejecting}
+          description={<>Please provide a reason for returning the schedule for <strong>{entryLabel(rejectEntry)}</strong>.{reviewWaiting ? ' Refreshing the approval queue…' : ''}</>}
+          reason={rejectReason} error={rejectError} isSubmitting={isRejecting} confirmDisabled={reviewWaiting}
           onReasonChange={value => { setRejectReason(value); setRejectError(''); }}
-          onClose={() => setRejectEntry(null)} onConfirm={() => { void confirmReject(); }} />
+          onClose={() => { if (!isRejecting) setRejectIntent(null); }} onConfirm={() => { void confirmReject(); }} />
       )}
     </div>
   );

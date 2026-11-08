@@ -49,6 +49,7 @@ import {
 } from './RoomRequestModals';
 import { useDataTable } from '../../components/ui/useDataTable';
 import { parseLinkedSlots, type LinkedSlot } from '../../lib/notificationLink';
+import FilterBar from '../../components/ui/FilterBar';
 
 type ViewMode = 'list' | 'grid';
 type RoomType = 'lecture' | 'laboratory' | 'online' | 'field';
@@ -556,7 +557,7 @@ export default function RoomRequests() {
   );
 
   const filterBar = (
-    <div className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans">
+    <FilterBar>
       <SearchInput
         value={globalFilter}
         onChange={(e) => setGlobalFilter(e.target.value)}
@@ -603,7 +604,7 @@ export default function RoomRequests() {
           Refresh
         </button>
       </div>
-    </div>
+    </FilterBar>
   );
 
   if (selectedRoom) {

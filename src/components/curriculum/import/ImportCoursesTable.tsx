@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
+import CourseCategoryBadge from '../CourseCategoryBadge';
 import { TERM_LABELS, YEAR_LABELS } from '../../../lib/curriculumImport/normalize';
 import type { ResolvedRow } from '../../../lib/curriculumImport/types';
 
@@ -97,7 +98,7 @@ export default function ImportCoursesTable({ rows }: { rows: ResolvedRow[] }) {
                       <td className="whitespace-nowrap py-2 pr-3 text-center tabular-nums text-text" aria-label={`${row.lecture_units} lecture, ${row.lab_units} laboratory, ${row.total_credits} total units`}>
                         {row.lecture_units}<span className="px-0.5 text-muted">/</span>{row.lab_units}<span className="px-0.5 text-muted">/</span><span className="font-bold">{row.total_credits}</span>
                       </td>
-                      <td className="py-2 pr-3 text-text">{row.category === 'major' ? 'Major' : row.category === 'minor' ? 'Minor' : '—'}</td>
+                      <td className="py-2 pr-3 text-text">{row.category ? <CourseCategoryBadge category={row.category} /> : '—'}</td>
                       <td className="py-2 pr-3">
                         <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ${reused ? 'bg-white text-primary ring-primary/30' : row.catalog.action === 'create' ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-red-50 text-red-800 ring-red-200'}`}>
                           {reused ? 'Reused' : row.catalog.action === 'create' ? 'New' : 'Conflict'}

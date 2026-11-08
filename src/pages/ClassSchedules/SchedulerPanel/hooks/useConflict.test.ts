@@ -412,7 +412,7 @@ describe("checkMoveConflict", () => {
 
       const conflict = moveCheck([monday, wednesday, blocksWednesday])("1", 0, 6);
       expect(conflict?.conflictType).toBe("room");
-      expect(conflict?.message).toMatch(/^Paired Wednesday meeting: Room conflict/);
+      expect(conflict?.message).toMatch(/^Paired Wednesday meeting: Room .+ is unavailable on Wed /);
       expect(moveCheck([monday, wednesday])("1", 0, 6)).toBeNull();
     });
 
@@ -483,5 +483,72 @@ describe("checkMoveConflict", () => {
     const blocksWednesday = meeting({ id: "3", courseId: "7", subjectId: "7", mode: "online", roomId: "online", dayIndex: 2, startSlot: 6 });
 
     expect(moveCheck([lab, onlineLecture, blocksWednesday])("1", 0, 6)).toBeNull();
+  });
+});
+
+/**
+ * Mirrors ScheduleConflictMessageTest on the server: one wording that names the
+ * room, the department holding it, the class and both time windows.
+ * Slot 0 is 07:00 on the default 30-minute grid.
+ */
+describe("conflict wording", () => {
+  afterEach(() => resetTimeGrid());
+
+  const rooms: Room[] = [
+    { id: "5", name: "BA 201", departmentId: 2, roomType: "lecture", status: "available" },
+    { id: "6", name: "BA 202", departmentId: 2, roomType: "lecture", status: "available" },
+  ];
+  const booking: ScheduleItem = {
+    ...onlineSchedule("50", "40", "20"),
+    departmentId: 3,
+    courseCode: "PATH FIT 2",
+    sectionName: "BSIT 1I",
+    mode: "on-site",
+    roomId: "5",
+    roomName: "BA 201",
+    startSlot: 0,
+    durationSlots: 4,
+  };
+  const check = (schedules: ScheduleItem[]) => renderHook(() => useConflict({
+    schedules,
+    selectedSectionId: "10",
+    dragSubjectId: null,
+    draggedScheduleId: null,
+    rooms,
+    sections: [{ id: "10", name: "BSIT 1A", yearLevel: 1, semester: "1st", departmentId: 2, semesterId: 7, status: "active" }],
+    departments,
+    subjects: [subject({ lectureHours: 5 })],
+    faculties: [],
+  })).result.current.checkConflict;
+
+  it("names the holder and both windows on a partial overlap", () => {
+    expect(check([booking])("1", "10", null, "5", 0, 0, 6)?.message).toBe(
+      "Room BA 201 is unavailable on Mon 07:00–10:00. It is booked by HM for PATH FIT 2 (BSIT 1I) from 07:00–09:00. Please choose another time or room."
+    );
+  });
+
+  it("uses the same wording on an exact-time overlap", () => {
+    expect(check([booking])("1", "10", null, "5", 0, 0, 4)?.message).toBe(
+      "Room BA 201 is unavailable on Mon 07:00–09:00. It is booked by HM for PATH FIT 2 (BSIT 1I) from 07:00–09:00. Please choose another time or room."
+    );
+  });
+
+  it("follows the chosen room and time", () => {
+    const conflict = check([booking]);
+    expect(conflict("1", "10", null, "6", 0, 0, 6)).toBeNull();
+    expect(conflict("1", "10", null, "5", 0, 4, 2)).toBeNull();
+    expect(conflict("1", "10", null, "5", 0, 3, 2)?.message).toMatch(/^Room BA 201 is unavailable on Mon 08:30–09:30\. /);
+  });
+
+  it("words timetable conflicts from each class's side", () => {
+    const other: ScheduleItem = { ...booking, id: "51", departmentId: 2, courseCode: "GE 101", sectionName: "BSIT 1A", sectionId: "10", startSlot: 2, durationSlots: 4 };
+    const map = getConflictedScheduleMap([booking, other], [], rooms, [], departments);
+
+    expect(map["50"]?.message).toBe(
+      "Room BA 201 is unavailable on Mon 07:00–09:00. It is booked by IT for GE 101 (BSIT 1A) from 08:00–10:00. Please choose another time or room."
+    );
+    expect(map["51"]?.message).toBe(
+      "Room BA 201 is unavailable on Mon 08:00–10:00. It is booked by HM for PATH FIT 2 (BSIT 1I) from 07:00–09:00. Please choose another time or room."
+    );
   });
 });

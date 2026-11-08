@@ -212,7 +212,7 @@ function CurriculumManagePage() {
           const val = (getValue() as string) || 'deactivated';
           const lifecycle = curriculumLifecycleBadge(row.original);
           return (
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex flex-nowrap items-center gap-1.5">
               <span
                 className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
                   statusColors[val] || statusColors.deactivated
@@ -494,6 +494,8 @@ function CurriculumManagePage() {
           variant="card"
           totalLabel="curricula"
           ariaLabel="Curriculum"
+          scrollClassName="overflow-x-auto"
+          cellClassName={() => 'whitespace-nowrap'}
           emptyState={
             <>
               <BookOpen size={36} className="mx-auto text-gray-300 mb-2" />

@@ -4,6 +4,7 @@ import InstructorAssignment from './InstructorAssignment';
 import type { InstructorAssignmentWorkspaceState } from './InstructorAssignment';
 import AutoAssignModal from './SchedulerPanel/Modals/AutoAssignModal';
 import { useScheduler } from './SchedulerPanel/hooks/useScheduler';
+import { INSTRUCTOR_ASSIGNABLE_STATUSES } from './SchedulerPanel/types';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 
@@ -44,7 +45,7 @@ export default function CrossDepartmentAssignments() {
         && Number(subject.programId ?? 0) !== Number(handedToProgram)
         && (scheduler.userProgramId === null || Number(handedToProgram) === Number(scheduler.userProgramId));
     }),
-    [scheduler.schedules, scheduler.subjects, scheduler.userDepartmentId],
+    [scheduler.schedules, scheduler.subjects, scheduler.userDepartmentId, scheduler.userProgramId],
   );
   const assignmentDone = completionOverride ?? workspaceState.assignmentDone;
   const crossDepartmentGuideSteps = useMemo(() => [
@@ -58,6 +59,15 @@ export default function CrossDepartmentAssignments() {
     () => delegatedSchedules.filter((schedule) => workspaceState.scheduleIds.includes(Number(schedule.id))),
     [delegatedSchedules, workspaceState.scheduleIds],
   );
+  const editableDelegatedSchedules = useMemo(
+    () => visibleDelegatedSchedules.filter((schedule) => (
+      INSTRUCTOR_ASSIGNABLE_STATUSES.includes(schedule.status) && !schedule.facultyAssignmentDone
+    )),
+    [visibleDelegatedSchedules],
+  );
+  const canUpdateCompletion = visibleDelegatedSchedules.length > 0
+    && visibleDelegatedSchedules.length === workspaceState.scheduleIds.length
+    && visibleDelegatedSchedules.every((schedule) => INSTRUCTOR_ASSIGNABLE_STATUSES.includes(schedule.status));
 
   const handleWorkspaceStateChange = useCallback((state: InstructorAssignmentWorkspaceState) => {
     if (selectedDepartmentRef.current !== state.selectedDepartmentId) {
@@ -68,18 +78,24 @@ export default function CrossDepartmentAssignments() {
   }, []);
   const handleWorkflowReady = useCallback(() => setIsAssignmentWorkspaceReady(true), []);
   const handleAutoAssign = useCallback(async (assignments: { scheduleIds: string[]; facultyId: string }[]) => {
+    if (assignmentDone || assignments.some((assignment) => assignment.scheduleIds.some(
+      (id) => !editableDelegatedSchedules.some((schedule) => schedule.id === id),
+    ))) return false;
     const success = await scheduler.handleBulkFacultyAssign(assignments);
     if (success) setAssignmentRefreshToken((current) => current + 1);
     return success;
-  }, [scheduler]);
+  }, [assignmentDone, editableDelegatedSchedules, scheduler]);
   const handleRemoveAssignment = useCallback(async (scheduleIds: string[]) => {
+    if (assignmentDone || scheduleIds.some(
+      (id) => !editableDelegatedSchedules.some((schedule) => schedule.id === id),
+    )) return false;
     const success = await scheduler.handleRemoveFacultyFromClass(scheduleIds);
     if (success) setAssignmentRefreshToken((current) => current + 1);
     return success;
-  }, [scheduler]);
+  }, [assignmentDone, editableDelegatedSchedules, scheduler]);
 
   const handleDoneToggle = async () => {
-    if (isUpdatingDone || (!assignmentDone && !allAssigned)) return;
+    if (isUpdatingDone || !canUpdateCompletion || (!assignmentDone && !allAssigned)) return;
     setIsUpdatingDone(true);
     try {
       const nextDone = !assignmentDone;
@@ -105,7 +121,7 @@ export default function CrossDepartmentAssignments() {
             <button
               type="button"
               onClick={() => setIsOpen(true)}
-              disabled={assignmentDone || visibleDelegatedSchedules.length === 0 || !visibleDelegatedSchedules.some((schedule) => ['approved', 'faculty_assignment', 'reassignment'].includes(schedule.status))}
+              disabled={assignmentDone || editableDelegatedSchedules.length === 0}
               className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#4e0a10] px-3 text-xs font-black text-white shadow-sm transition hover:bg-[#6b1118] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <UserCheck className="h-4 w-4" />
@@ -115,7 +131,7 @@ export default function CrossDepartmentAssignments() {
               <button
                 type="button"
                 onClick={() => { void handleDoneToggle(); }}
-                disabled={isUpdatingDone}
+                disabled={isUpdatingDone || !canUpdateCompletion}
                 title="Reassign instructors for this timetable"
                 className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#C9952A] px-3 text-xs font-black text-white shadow-sm transition hover:bg-[#b8841f] disabled:cursor-wait disabled:opacity-70"
               >
@@ -127,7 +143,7 @@ export default function CrossDepartmentAssignments() {
               <button
                 type="button"
                 onClick={() => { void handleDoneToggle(); }}
-                disabled={isUpdatingDone || !allAssigned}
+                disabled={isUpdatingDone || !allAssigned || !canUpdateCompletion}
                 title={!allAssigned ? 'Assign all instructors before marking done' : undefined}
                 className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#4e0a10] bg-white px-3 text-xs font-black text-[#4e0a10] shadow-sm transition hover:bg-[#4e0a10]/5 disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -141,7 +157,7 @@ export default function CrossDepartmentAssignments() {
       <AutoAssignModal
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
-        schedules={visibleDelegatedSchedules}
+        schedules={editableDelegatedSchedules}
         subjects={scheduler.subjects}
         faculties={receivingFaculties}
         departmentId={scheduler.userDepartmentId}

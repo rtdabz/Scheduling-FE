@@ -393,6 +393,13 @@ fresh validation through the existing save/batch boundary.
 
 ## Instructor selection after recommendation retirement
 
+Cross-Department keeps existing assigned instructors visible when the source
+schedule returns to draft, revision, submission, or review. Visibility does not
+permit editing: instructor changes and completion actions still require the
+existing assignment stage. Unassigned classes before VPAA approval remain hidden.
+Delegations between different programs in the same college also belong in this
+workspace; ordinary classes taught by their own program do not.
+
 Ranked instructor suggestions and generated conflict reassignment options are
 retired. Users choose instructors through the existing manual selection and
 assignment workflows, including permitted manual conflict reassignment. Teaching

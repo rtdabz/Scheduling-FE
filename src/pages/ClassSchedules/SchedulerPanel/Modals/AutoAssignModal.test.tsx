@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from 'react';
 import AutoAssignModal from "./AutoAssignModal";
@@ -174,6 +174,139 @@ describe("AutoAssignModal instructor conflict", () => {
     expect(checkbox.checked).toBe(false);
   });
 
+  it('removes the only queued section in Build list and restores availability and the saved teaching load', () => {
+    const onAssign = vi.fn();
+    const onRemoveAssignment = vi.fn();
+    const instructor = { ...faculty, assignedUnits: 6 } as Faculty;
+    const partner = { ...schedule, id: 's2', day: 'thursday', dayIndex: 3 } as ScheduleItem;
+    renderModal(null, instructor, { schedules: [schedule, partner], onAssign, onRemoveAssignment });
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select IT 101 BSIT 1A' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add 1 section to list' }));
+    expect(screen.getByText(/Projected load/).textContent).toContain('9 / 27 units');
+    expect(screen.getByText(/1 section pending/)).toBeTruthy();
+    expect((screen.getByRole('checkbox', { name: 'Select IT 101 BSIT 1A' }) as HTMLInputElement).disabled).toBe(true);
+
+    const remove = screen.getByRole('button', { name: 'Remove IT 101 BSIT 1A' });
+    expect(remove.getAttribute('title')).toBe('Remove from list');
+    fireEvent.click(remove);
+
+    const checkbox = screen.getByRole('checkbox', { name: 'Select IT 101 BSIT 1A' }) as HTMLInputElement;
+    expect(checkbox.disabled).toBe(false);
+    expect(checkbox.checked).toBe(false);
+    expect(screen.getByText('Available')).toBeTruthy();
+    expect(screen.queryByText('On list')).toBeNull();
+    expect(screen.queryByText(/section pending/)).toBeNull();
+    expect((screen.getByRole('button', { name: 'Review' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Add to list' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/Projected load/).textContent).toContain('6 / 27 units');
+    expect(within(screen.getByRole('button', { name: /Juan Dela Cruz/ })).getByText('6 / 27 units')).toBeTruthy();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(onRemoveAssignment).not.toHaveBeenCalled();
+    expect(onAssign).not.toHaveBeenCalled();
+  });
+
+  it('removes one queued section while preserving other instructors and sections through Review and saving', async () => {
+    const second = { ...schedule, id: 's2', sectionId: 'sec2', sectionName: 'BSIT 1B', day: 'tuesday', dayIndex: 1 } as ScheduleItem;
+    const third = { ...schedule, id: 's3', sectionId: 'sec3', sectionName: 'BSIT 1C', day: 'wednesday', dayIndex: 2 } as ScheduleItem;
+    const instructor = { ...faculty, assignedUnits: 6 } as Faculty;
+    const other = { ...faculty, id: 'f2', name: 'Maria Santos', assignedUnits: 9 } as Faculty;
+    const onAssign = vi.fn().mockResolvedValue(true);
+    renderModal(null, instructor, { schedules: [schedule, second, third], faculties: [instructor, other], onAssign });
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select IT 101 BSIT 1A' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select IT 101 BSIT 1B' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add 2 sections to list' }));
+    fireEvent.click(screen.getByRole('button', { name: /Maria Santos/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select IT 101 BSIT 1C' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add 1 section to list' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove IT 101 BSIT 1A' }));
+
+    expect(screen.getByText(/2 sections pending.*2 instructors/)).toBeTruthy();
+    expect((screen.getByRole('checkbox', { name: 'Select IT 101 BSIT 1A' }) as HTMLInputElement).disabled).toBe(false);
+    expect(screen.getByRole('button', { name: 'Remove IT 101 BSIT 1B' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove IT 101 BSIT 1C' })).toBeTruthy();
+    expect(within(screen.getByRole('button', { name: /Juan Dela Cruz/ })).getByText('9 / 27 units')).toBeTruthy();
+    expect(within(screen.getByRole('button', { name: /Maria Santos/ })).getByText('12 / 27 units')).toBeTruthy();
+    expect(screen.getByText(/Projected load/).textContent).toContain('12 / 27 units');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review (2)' }));
+    expect(screen.queryByText('BSIT 1A')).toBeNull();
+    expect(screen.getByText('BSIT 1B')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Maria Santos/ }));
+    expect(screen.getByText('BSIT 1C')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+    expect(screen.queryByText('BSIT 1A')).toBeNull();
+    expect(screen.getByText('BSIT 1B')).toBeTruthy();
+    expect(screen.getByText('BSIT 1C')).toBeTruthy();
+    expect(onAssign).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save Assignments' }));
+    await waitFor(() => expect(onAssign).toHaveBeenCalledExactlyOnceWith([
+      { facultyId: 'f1', scheduleIds: ['s2'] },
+      { facultyId: 'f2', scheduleIds: ['s3'] },
+    ]));
+  });
+
+  it('preserves saved assignments when removing a queue entry for a partly assigned meeting group', async () => {
+    const savedMeeting = { ...schedule, facultyId: faculty.id } as ScheduleItem;
+    const pendingMeeting = { ...schedule, id: 's2', day: 'thursday', dayIndex: 3 } as ScheduleItem;
+    const savedSection = { ...schedule, id: 'saved', sectionId: 'sec2', sectionName: 'BSIT 1B', facultyId: faculty.id } as ScheduleItem;
+    const onRemoveAssignment = vi.fn();
+    const onAssign = vi.fn().mockResolvedValue(true);
+    renderModal(null, { ...faculty, assignedUnits: 6 } as Faculty, {
+      schedules: [savedMeeting, pendingMeeting, savedSection], onRemoveAssignment, onAssign,
+    });
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select IT 101 BSIT 1A' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add 1 section to list' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove IT 101 BSIT 1A' }));
+
+    expect(screen.getByText('Assigned')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove instructor from IT 101 BSIT 1B' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Remove IT 101 BSIT 1B' })).toBeNull();
+    expect((screen.getByRole('checkbox', { name: 'Select IT 101 BSIT 1B' }) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole('checkbox', { name: 'Select IT 101 BSIT 1A' }) as HTMLInputElement).disabled).toBe(false);
+    expect(screen.getByText(/Projected load/).textContent).toContain('6 / 27 units');
+    expect(savedMeeting.facultyId).toBe(faculty.id);
+    expect(savedSection.facultyId).toBe(faculty.id);
+    expect(pendingMeeting.facultyId).toBeNull();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(onRemoveAssignment).not.toHaveBeenCalled();
+    expect(onAssign).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select IT 101 BSIT 1A' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add 1 section to list' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Assignments' }));
+    await waitFor(() => expect(onAssign).toHaveBeenCalledExactlyOnceWith([{ facultyId: 'f1', scheduleIds: ['s2'] }]));
+  });
+
+  it('synchronizes Review removals back to Build list and subsequent queue changes back to Review', () => {
+    const second = { ...schedule, id: 's2', sectionId: 'sec2', sectionName: 'BSIT 1B', day: 'tuesday', dayIndex: 1 } as ScheduleItem;
+    renderModal(null, faculty, { schedules: [schedule, second] });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select IT 101 BSIT 1A' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select IT 101 BSIT 1B' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add 2 sections to list' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review (2)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove IT 101 BSIT 1A' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+
+    expect(screen.getByText(/1 section pending/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Remove IT 101 BSIT 1A' })).toBeNull();
+    expect((screen.getByRole('checkbox', { name: 'Select IT 101 BSIT 1A' }) as HTMLInputElement).disabled).toBe(false);
+    expect(screen.getByText(/Projected load/).textContent).toContain('3 / 27 units');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove IT 101 BSIT 1B' }));
+    expect((screen.getByRole('button', { name: 'Review' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select IT 101 BSIT 1A' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add 1 section to list' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review (1)' }));
+    expect(screen.getByText('BSIT 1A')).toBeTruthy();
+    expect(screen.queryByText('BSIT 1B')).toBeNull();
+  });
+
   it('preserves department and employment filters', () => {
     const partTime = { ...faculty, id: 'f2', name: 'Ana Reyes', employmentType: 'part-time' } as Faculty;
     const external = { ...faculty, id: 'f3', name: 'Elena Santos', departmentId: 7, departmentCode: 'CTE' } as Faculty;
@@ -215,6 +348,46 @@ describe("AutoAssignModal instructor conflict", () => {
     expect(save.disabled).toBe(true);
     fireEvent.click(save);
     expect(onAssign).not.toHaveBeenCalled();
+  });
+
+  it('confirms removal of the saved instructor from every meeting of the class', async () => {
+    confirm.mockResolvedValue(true);
+    const onRemoveAssignment = vi.fn().mockResolvedValue(true);
+    renderModal(null, faculty, {
+      schedules: [
+        { ...schedule, facultyId: faculty.id },
+        { ...schedule, id: 's2', day: 'thursday', dayIndex: 3, facultyId: faculty.id },
+      ],
+      onRemoveAssignment,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove instructor from IT 101 BSIT 1A' }));
+    await waitFor(() => expect(onRemoveAssignment).toHaveBeenCalledExactlyOnceWith(['s1', 's2']));
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Remove instructor', message: expect.stringContaining('Juan Dela Cruz'),
+    }));
+  });
+
+  it('keeps the saved assignment when removal confirmation is cancelled', async () => {
+    confirm.mockResolvedValue(false);
+    const onRemoveAssignment = vi.fn();
+    renderModal(null, faculty, { schedules: [{ ...schedule, facultyId: faculty.id }], onRemoveAssignment });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove instructor from IT 101 BSIT 1A' }));
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    expect(onRemoveAssignment).not.toHaveBeenCalled();
+    expect(screen.getByText('Assigned')).toBeTruthy();
+  });
+
+  it.each(['done', 'unauthorized'] as const)('disables saved removal for %s assignments', (restriction) => {
+    const onRemoveAssignment = vi.fn();
+    renderModal(null, faculty, {
+      schedules: [{ ...schedule, facultyId: faculty.id, facultyAssignmentDone: restriction === 'done' }],
+      canManageScheduleFaculty: () => restriction !== 'unauthorized', onRemoveAssignment,
+    });
+    const remove = screen.getByRole('button', { name: 'Remove instructor from IT 101 BSIT 1A' }) as HTMLButtonElement;
+    expect(remove.disabled).toBe(true);
+    fireEvent.click(remove);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(onRemoveAssignment).not.toHaveBeenCalled();
   });
 
   it('locks background scrolling and supports Escape dismissal', () => {

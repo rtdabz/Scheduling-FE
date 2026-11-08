@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import axios from 'axios';
-import { BookOpen, Building2, Check, Info, Save, Search, TriangleAlert, X } from 'lucide-react';
+import { BookOpen, Building2, Check, ChevronRight, Info, Save, Search, TriangleAlert, X } from 'lucide-react';
 import api from '../../lib/api';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
+import Modal from '../../components/ui/Modal';
 import type { ColumnDef } from '@tanstack/react-table';
 import TableActionButton from '../../components/ui/TableActionButton';
 import DataTable from '../../components/ui/DataTable';
@@ -105,7 +106,7 @@ const instructorLockMessage = (course: CourseRow) => {
 const currentTeacherOf = (course: CourseRow) =>
   course.teaching_program_code
   ?? course.teaching_department_code
-  ?? (course.department_code ? `${course.department_code} (owner)` : 'Not yet assigned');
+  ?? (course.department_code ? `${course.department_code} (origin department)` : 'Not yet assigned');
 
 export default function CourseTeachingAssignments() {
   const { toast, confirm } = useToast();
@@ -126,6 +127,7 @@ export default function CourseTeachingAssignments() {
   const [saving, setSaving] = useState(false);
   const [removingId, setRemovingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const courseTeachingGuideSteps = useMemo(() => [
     { element: '#course-teaching-target button', action: 'click' as const, taskHint: 'Click a department card to continue.', title: 'Choose the teaching department', description: 'Select who will teach the minor courses.', side: 'right' as const },
     { element: '#course-teaching-filters select', action: 'select' as const, taskHint: 'Change a filter to continue.', title: 'Choose a year and program', description: 'Work on one year level. You can also select a receiving program.', side: 'bottom' as const },
@@ -211,6 +213,31 @@ export default function CourseTeachingAssignments() {
   ));
   const selectedCourses = courses.filter((course) => selectedIds.includes(course.id));
   const assignedInDepartment = courses.filter((course) => course.teaching_department_id !== null).length;
+
+  // Assigned courses grouped by the college that teaches them, for the summary dialog.
+  const assignedSummary = useMemo(() => {
+    const groups = new Map<number, { department: DepartmentOption | null; code: string; name: string; courses: CourseRow[] }>();
+    courses.forEach((course) => {
+      if (course.teaching_department_id === null) return;
+      const department = departments.find((item) => item.id === course.teaching_department_id) ?? null;
+      const group = groups.get(course.teaching_department_id) ?? {
+        department,
+        code: course.teaching_department_code ?? department?.department_code ?? '—',
+        name: course.teaching_department_name ?? department?.department_name ?? 'Unknown college',
+        courses: [],
+      };
+      group.courses.push(course);
+      groups.set(course.teaching_department_id, group);
+    });
+    return [...groups.values()]
+      .map((group) => ({
+        ...group,
+        courses: [...group.courses].sort((a, b) => yearOf(a) - yearOf(b) || a.course_code.localeCompare(b.course_code)),
+        units: group.courses.reduce((sum, course) => sum + unitsOf(course), 0),
+      }))
+      .sort((a, b) => b.courses.length - a.courses.length || a.code.localeCompare(b.code));
+  }, [courses, departments]);
+  const assignedUnits = assignedSummary.reduce((sum, group) => sum + group.units, 0);
 
   const statusOf = (course: CourseRow): string => {
     if (selectedIds.includes(course.id)) return 'Selected';
@@ -360,7 +387,7 @@ export default function CourseTeachingAssignments() {
     {
       id: 'select',
       enableSorting: false,
-      size: 40,
+      size: 48,
       meta: { stopRowClick: true },
       header: () => (
         <input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} disabled={selectableVisible.length === 0 || !effectiveTargetDepartment} aria-label="Select all unassigned courses" className="h-4 w-4 accent-[#4e0a10]" />
@@ -377,10 +404,10 @@ export default function CourseTeachingAssignments() {
       accessorKey: 'course_code',
       header: 'Course',
       cell: ({ row }) => (
-        <>
+        <div className="space-y-1 leading-5">
           <p className="font-black text-slate-900">{row.original.course_code}</p>
-          <p className="whitespace-nowrap font-medium text-slate-500">{row.original.course_name}</p>
-        </>
+          <p className="whitespace-normal break-words font-medium text-slate-500">{row.original.course_name}</p>
+        </div>
       ),
     },
     {
@@ -390,32 +417,35 @@ export default function CourseTeachingAssignments() {
       cell: ({ row }) => {
         const program = programOf(row.original);
         return (
-          <>
+          <div className="space-y-1 leading-5">
             <p className="font-bold text-slate-700">{program.code}</p>
-            <p className="whitespace-nowrap text-[11px] font-medium text-slate-500">{program.name}</p>
-          </>
+            <p className="whitespace-normal break-words font-medium text-slate-500">{program.name}</p>
+          </div>
         );
       },
     },
-    { id: 'owner', accessorFn: (course) => ownerOf(course), header: 'Owner', meta: { cellClassName: 'text-slate-600' } },
+    { id: 'owner', accessorFn: (course) => ownerOf(course), header: 'Origin Department', size: 112, meta: { cellClassName: 'text-slate-600' } },
     {
       id: 'taught_by',
       accessorFn: (course) => currentTeacherOf(course),
       header: 'Taught by',
+      size: 136,
       cell: ({ row }) => (row.original.teaching_department_id !== null
-        ? <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-bold text-slate-800">{currentTeacherOf(row.original)}</span>
-        : <span className="font-medium text-slate-400">{currentTeacherOf(row.original)}</span>),
+        ? <span className="inline-flex max-w-full whitespace-normal break-words rounded-md bg-slate-100 px-2 py-0.5 font-bold leading-5 text-slate-800">{currentTeacherOf(row.original)}</span>
+        : <span className="font-medium leading-5 text-slate-400">{currentTeacherOf(row.original)}</span>),
     },
     {
       id: 'units',
       accessorFn: (course) => unitsOf(course),
       header: 'Units',
+      size: 64,
       meta: { align: 'right', cellClassName: 'font-black tabular-nums text-slate-800' },
     },
     {
       id: 'status',
       accessorFn: (course) => statusOf(course),
       header: 'Status',
+      size: 152,
       cell: ({ row }) => {
         const status = statusOf(row.original);
         const selected = status === 'Selected';
@@ -425,10 +455,10 @@ export default function CourseTeachingAssignments() {
         return (
           <span
             title={taught ? instructorLockMessage(row.original) : undefined}
-            className={`inline-flex flex-col gap-0.5 font-semibold ${selected ? 'text-[#4e0a10]' : assigned ? 'text-slate-600' : enabled ? 'text-emerald-700' : 'text-slate-500'}`}
+            className={`inline-flex flex-col gap-0.5 font-semibold leading-5 ${selected ? 'text-[#4e0a10]' : assigned ? 'text-slate-600' : enabled ? 'text-emerald-700' : 'text-slate-500'}`}
           >
-            <span className="inline-flex items-center gap-1.5">
-              <span className={`h-1.5 w-1.5 rounded-full ${selected ? 'bg-[#4e0a10]' : assigned ? 'bg-amber-400' : enabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+            <span className="inline-flex items-start gap-1.5">
+              <span className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${selected ? 'bg-[#4e0a10]' : assigned ? 'bg-amber-400' : enabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
               {selected ? 'Selected' : assigned ? 'Assigned' : status}
             </span>
             {taught && (
@@ -482,7 +512,23 @@ export default function CourseTeachingAssignments() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="rounded-full bg-[#4e0a10]/10 px-3 py-1 text-xs font-bold text-[#4e0a10]">{assignedInDepartment} assigned</span>
+            <button
+              type="button"
+              onClick={() => setSummaryOpen(true)}
+              aria-haspopup="dialog"
+              title="View a summary of assigned courses"
+              className="relative inline-flex items-center gap-1.5 rounded-full border border-[#4e0a10]/15 bg-[#4e0a10]/10 py-1 pl-3 pr-2 text-xs font-bold text-[#4e0a10] transition-colors hover:bg-[#4e0a10]/15 focus:outline-none focus:ring-2 focus:ring-[#C9952A]/40"
+            >
+              {assignedInDepartment > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5" aria-hidden="true">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-60" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
+                </span>
+              )}
+              <span className="rounded-full bg-[#4e0a10] px-1.5 text-[10px] tabular-nums text-white">{assignedInDepartment}</span>
+              Assigned
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
             <WorkflowGuideButton guideId="course-teaching" />
           </div>
         </header>
@@ -513,14 +559,14 @@ export default function CourseTeachingAssignments() {
                       type="button"
                       onClick={() => selectDepartment(department)}
                       aria-pressed={selected}
-                      className={`flex w-full items-center gap-3 rounded-lg border px-2.5 py-2 text-left transition-colors ${inTarget ? 'border-[#4e0a10]/40 bg-[#4e0a10]/[0.04] ring-1 ring-[#4e0a10]/20' : 'border-transparent hover:bg-slate-50'}`}
+                      className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2.5 text-left transition-colors ${inTarget ? 'border-[#4e0a10]/40 bg-[#4e0a10]/[0.04] ring-1 ring-[#4e0a10]/20' : 'border-transparent hover:bg-slate-50'}`}
                     >
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-slate-500">
                         {department.logo ? <img src={department.logo} alt="" className="h-full w-full object-cover" /> : <Building2 className="h-4 w-4" />}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-bold text-slate-900" title={department.department_name}>{department.department_name}</span>
-                        <span className="block truncate text-[11px] text-slate-500">
+                        <span className="block whitespace-normal break-words text-sm font-bold leading-5 text-slate-900">{department.department_name}</span>
+                        <span className="mt-1 block break-words text-[11px] leading-4 text-slate-500">
                           {department.department_code}
                           {department.id === currentDepartmentId ? ' · yours' : ''}
                         </span>
@@ -559,10 +605,6 @@ export default function CourseTeachingAssignments() {
                     );
                   })}
                 </div>
-                <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-slate-600">
-                  Teaching college:
-                  <strong className="rounded-md bg-[#4e0a10]/10 px-2 py-0.5 text-[#4e0a10]">{responsibleLabel ?? 'None selected'}</strong>
-                </span>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Select
@@ -572,10 +614,11 @@ export default function CourseTeachingAssignments() {
                   options={[['all', 'All courses'], ...yearCourses.map((course) => [String(course.id), `${course.course_code} - ${course.course_name} (${programOf(course).code})`])]}
                 />
                 <Select
-                  label="Program (optional)"
+                  label="Teaching Program (Optional)"
+                  description="Select a program, or allow the college to choose an instructor."
                   value={targetProgramId}
                   onChange={(value) => { setTargetProgramId(value); setSelectedIds([]); }}
-                  options={[['', `Whole ${targetDepartment?.department_code ?? 'department'}`], ...targetPrograms.map((program) => [String(program.id), programLabel(program)])]}
+                  options={[['', 'Any Program'], ...targetPrograms.map((program) => [String(program.id), programLabel(program)])]}
                 />
               </div>
             </div>
@@ -596,6 +639,9 @@ export default function CourseTeachingAssignments() {
                 <DataTable
                   table={courseTable}
                   variant="embedded"
+                  tableClassName="!min-w-[1040px] table-fixed"
+                  scrollClassName="overflow-x-auto"
+                  scrollAriaLabel="Course teaching assignments"
                   isLoading={loading}
                   ariaLabel={`${YEAR_LABELS[activeYear]} courses`}
                   onRowClick={toggleCourse}
@@ -643,17 +689,68 @@ export default function CourseTeachingAssignments() {
           </main>
         </div>
       </div>
+
+      <Modal
+        isOpen={summaryOpen}
+        onClose={() => setSummaryOpen(false)}
+        title="Assigned courses"
+        description={`${assignedInDepartment} course${assignedInDepartment === 1 ? '' : 's'} · ${assignedUnits} unit${assignedUnits === 1 ? '' : 's'} across ${assignedSummary.length} college${assignedSummary.length === 1 ? '' : 's'}${activeSemester ? ` · ${fullSemesterLabel(activeSemester)}` : ''}`}
+        size="lg"
+      >
+        <div className="flex flex-col gap-3 p-4 sm:p-5">
+          {assignedSummary.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm font-semibold text-slate-500">
+              No courses are assigned to another college or program yet.
+            </p>
+          ) : assignedSummary.map((group) => (
+            <section key={group.code + group.name} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <header className="flex items-center gap-3 border-b border-slate-100 px-4 py-2.5">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-slate-500">
+                  {group.department?.logo ? <img src={group.department.logo} alt="" className="h-full w-full object-cover" /> : <Building2 className="h-4 w-4" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-black text-slate-900">{group.name}</p>
+                  <p className="text-[11px] text-slate-500">{group.code}</p>
+                </div>
+                <span className="shrink-0 text-right text-[11px] font-semibold text-slate-500">
+                  <span className="block text-sm font-black tabular-nums text-[#4e0a10]">{group.courses.length}</span>
+                  {group.units} unit{group.units === 1 ? '' : 's'}
+                </span>
+              </header>
+              <ul className="divide-y divide-slate-100">
+                {group.courses.map((course) => (
+                  <li key={course.id} className="flex items-center gap-3 px-4 py-2 text-xs">
+                    <span className="w-14 shrink-0 font-semibold text-slate-500">{YEAR_LABELS[yearOf(course)] ?? '—'}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-black text-slate-900">{course.course_code}</span>
+                      <span className="block truncate text-slate-500">{course.course_name}</span>
+                    </span>
+                    {course.teaching_program_code && (
+                      <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 font-bold text-slate-700" title="Teaching program">{course.teaching_program_code}</span>
+                    )}
+                    <span className="w-16 shrink-0 text-right font-black tabular-nums text-slate-800">{unitsOf(course)} {unitsOf(course) === 1 ? 'unit' : 'units'}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      </Modal>
     </div>
   );
 }
 
-function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[][] }) {
+function Select({ label, description, value, onChange, options }: { label: string; description?: string; value: string; onChange: (value: string) => void; options: string[][] }) {
+  const descriptionId = useId();
   return (
-    <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-      {label}
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-800 outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/25">
-        {options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}
-      </select>
-    </label>
+    <div>
+      <label className="block text-[11px] font-bold uppercase tracking-wide text-slate-500">
+        {label}
+        <select value={value} aria-describedby={description ? descriptionId : undefined} onChange={(event) => onChange(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-800 outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/25">
+          {options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}
+        </select>
+      </label>
+      {description && <p id={descriptionId} className="mt-1.5 text-xs leading-5 text-slate-500">{description}</p>}
+    </div>
   );
 }

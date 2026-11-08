@@ -51,14 +51,6 @@ export const GRID_HEADER_HEIGHT_PX = SHARED_GRID_HEADER_HEIGHT_PX;
 /** @deprecated Prefer importing slotToTimeLabel from lib/timeGrid directly. */
 export const slotToTimeStr = slotToTimeLabel;
 
-export const getCategoryStyles = (category: Subject["category"]) => {
-  switch (category) {
-    case "major": return { bg: "bg-rose-50/80", text: "text-[#4e0a10]", border: "border-rose-200", badge: "bg-[#4e0a10]/10 text-[#4e0a10] border-[#4e0a10]/20", typeBadge: "bg-[#4e0a10]/10 text-[#4e0a10] border-[#4e0a10]/20", label: "MAJOR" };
-    case "minor": return { bg: "bg-amber-50/80", text: "text-amber-800", border: "border-amber-200", badge: "bg-[#c9952a]/10 text-[#c9952a] border-[#c9952a]/20", typeBadge: "bg-[#c9952a]/10 text-[#c9952a] border-[#c9952a]/20", label: "MINOR" };
-    default: return { bg: "bg-slate-50", text: "text-slate-800", border: "border-slate-300", badge: "bg-slate-100 text-slate-800 border-slate-200", typeBadge: "bg-slate-100 text-slate-800 border-slate-200", label: "MINOR" };
-  }
-};
-
 export const getLeftAccentBorder = (category: Subject["category"]) => {
   switch (category) {
     case "major": return "border-l-4 border-[#4e0a10]";

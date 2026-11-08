@@ -16,7 +16,9 @@ it('shows totals, the compared version, the return reason, and the before/after 
   }] } } });
   render(<RevisionDiffPanel submissionId={7} />);
 
-  expect(await screen.findByText('Changes from the previous version (1 class)')).toBeTruthy();
+  expect(await screen.findByText('1 changed class')).toBeTruthy();
+  // A comparison never claims to cover instructors.
+  expect(screen.getByText('Instructor changes are not included.')).toBeTruthy();
   // The table is part of the panel; there is no nested dialog to open.
   expect(screen.queryByRole('button', { name: 'View details' })).toBeNull();
   expect(screen.getByText('vs. returned version #1')).toBeTruthy();
@@ -39,7 +41,7 @@ it('pages through a large list of changes', async () => {
   render(<RevisionDiffPanel submissionId={7} />);
 
   const table = await screen.findByRole('table', { name: 'Changes from the previous version' });
-  expect(screen.getByText('Changes from the previous version (60 classes)')).toBeTruthy();
+  expect(screen.getByText('60 changed classes')).toBeTruthy();
   expect(within(table).getAllByRole('row')).toHaveLength(26);
   fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
   expect(within(table).getByText('C25')).toBeTruthy();

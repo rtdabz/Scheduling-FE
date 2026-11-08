@@ -93,8 +93,8 @@ describe('Rooms component', () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByPlaceholderText(/Search buildings/i)).toBeDefined();
-    expect(screen.getByText('All Types')).toBeDefined();
+    expect(await screen.findByRole('button', { name: 'Lecture' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Laboratory' })).toBeDefined();
     expect(await screen.findByText('Main Bldg')).toBeDefined();
   });
 

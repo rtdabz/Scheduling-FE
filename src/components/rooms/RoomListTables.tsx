@@ -37,12 +37,14 @@ export function BuildingsTable<T extends BuildingListRow>({
   onEdit,
   onArchive,
   rowTourId,
+  showBuildingIcon = true,
 }: {
   buildings: T[];
   onSelect: (building: T) => void;
   onEdit?: (building: T) => void;
   onArchive?: (building: T) => void;
   rowTourId?: string;
+  showBuildingIcon?: boolean;
 }) {
   const columns = useMemo<ColumnDef<T>[]>(() => [
     {
@@ -52,9 +54,11 @@ export function BuildingsTable<T extends BuildingListRow>({
       meta: { cellClassName: 'whitespace-nowrap' },
       cell: ({ row }) => (
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#4e0a10]/5 text-[#4e0a10] flex items-center justify-center transition-colors">
-            <Building2 size={16} />
-          </div>
+          {showBuildingIcon && (
+            <div className="w-8 h-8 rounded-lg bg-[#4e0a10]/5 text-[#4e0a10] flex items-center justify-center transition-colors">
+              <Building2 size={16} />
+            </div>
+          )}
           <span className="text-sm font-bold text-gray-800">
             {row.original.name}
           </span>
@@ -92,7 +96,7 @@ export function BuildingsTable<T extends BuildingListRow>({
         </div>
       ),
     },
-  ], [onSelect, onEdit, onArchive]);
+  ], [onSelect, onEdit, onArchive, showBuildingIcon]);
 
   const table = useDataTable<T>({ data: buildings, columns, pageSize: 10, getRowId: (building) => building.name });
 

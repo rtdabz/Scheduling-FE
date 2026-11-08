@@ -8,7 +8,6 @@ import { useLocation, useSearchParams } from 'react-router-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import ConfirmModal from '../../components/ui/ConfirmModal';
-import SearchInput from '../../components/ui/SearchInput';
 import {
   Pencil,
   X,
@@ -41,6 +40,7 @@ import { getStoredUser } from '../../lib/storedUser';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 import { parseLinkedSlots, type LinkedSlot } from '../../lib/notificationLink';
+import FilterBar from '../../components/ui/FilterBar';
 
 
 interface Department {
@@ -170,7 +170,6 @@ export default function Rooms() {
   const [hiddenRoomIds, setHiddenRoomIds] = useState<Set<number> | null>(null);
 
   const location = useLocation();
-  const [globalFilter, setGlobalFilter] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('');
   const [roomTypeFilter, setRoomTypeFilter] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
@@ -210,7 +209,6 @@ export default function Rooms() {
 
   const openBuilding = (name: string | null) => {
     setSelectedBuilding(name);
-    setGlobalFilter('');
   };
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -223,7 +221,6 @@ export default function Rooms() {
     const room = filteredRooms.find(r => r.id === linkedRoomId);
     if (room) {
       setSelectedBuilding(buildingOf(room));
-      setGlobalFilter('');
       setSelectedRoomIdForDetail(room.id);
       setIsDetailModalOpen(true);
       setLinkedHighlight((current) => ({ roomId: room.id, slots: parseLinkedSlots(searchParams.get('slots')), seq: (current?.seq ?? 0) + 1 }));
@@ -574,13 +571,6 @@ export default function Rooms() {
   const searchedRooms = useMemo(() => {
     let result = filteredRooms;
 
-    const query = globalFilter.trim().toLowerCase();
-    if (query) {
-      result = selectedBuilding
-        ? result.filter(r => r.room_code.toLowerCase().includes(query))
-        : result.filter(r => buildingOf(r).toLowerCase().includes(query));
-    }
-
     if (departmentFilter) {
       result = result.filter(r => r.department_id !== null && Number(r.department_id) === Number(departmentFilter));
     }
@@ -590,7 +580,7 @@ export default function Rooms() {
     }
 
     return result;
-  }, [filteredRooms, globalFilter, departmentFilter, roomTypeFilter, selectedBuilding]);
+  }, [filteredRooms, departmentFilter, roomTypeFilter]);
 
   const buildings = useMemo(() => {
     const map = new Map<string, { name: string; rooms: Room[] }>();
@@ -673,7 +663,7 @@ export default function Rooms() {
   }, [isDetailModalOpen, printAfterOpen, rooms, selectedRoomIdForDetail, toast]);
 
   const roomGuideSteps = useMemo(() => [
-    { element: '#rooms-filters select', action: 'select' as const, taskHint: 'Change a room filter to continue.', title: 'Find a room', description: 'Search buildings by name, or room codes inside a building. Use the type filter to narrow the list.', side: 'bottom' as const },
+    { element: '#rooms-type-filter button', action: 'click' as const, taskHint: 'Pick a room type to continue.', title: 'Find a room', description: 'Use the Lecture and Laboratory buttons to narrow the list by room type. Click an active button again to show all types.', side: 'bottom' as const },
     { element: '[data-tour="building-card"]', waitFor: '#rooms-workspace', action: 'click' as const, skipIfMissing: true, taskHint: 'Click a building to see its rooms.', title: 'Check room details', description: 'Select a building to see its rooms, status and today’s classes. Great work — that is the whole flow.', side: 'top' as const },
   ], []);
   useWorkflowGuide({ id: 'rooms', isReady: showGuide, steps: roomGuideSteps, mission: 'Browse Rooms' });
@@ -693,12 +683,27 @@ export default function Rooms() {
           onTransferred={() => invalidateCacheGroups('rooms', 'schedules', 'dashboards')}
         />
       )}
-      <div id="rooms-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between font-sans">
-        <SearchInput
-          value={globalFilter}
-          onChange={(e) => setGlobalFilter(e.target.value)}
-          placeholder={selectedBuilding ? "Search room code..." : "Search buildings..."}
-        />
+      <FilterBar id="rooms-filters">
+        <div id="rooms-type-filter" role="group" aria-label="Filter by Room Type" className="flex items-center gap-2">
+          {([['lecture', 'Lecture'], ['laboratory', 'Laboratory']] as const).map(([value, label]) => {
+            const active = roomTypeFilter === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setRoomTypeFilter(active ? '' : value)}
+                className={`px-4 py-2.5 rounded-xl border text-xs font-bold font-sans transition-colors cursor-pointer whitespace-nowrap ${
+                  active
+                    ? 'bg-[#5A1220] border-[#5A1220] text-white shadow-sm'
+                    : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
 
         <div className="flex flex-wrap items-center gap-3">
           {isVpaa && (
@@ -716,21 +721,6 @@ export default function Rooms() {
               </select>
             </div>
           )}
-
-          <div className="flex items-center gap-1.5">
-            <Filter size={13} className="text-gray-400" />
-            <select
-              id="rooms-type-filter"
-              aria-label="Filter by Room Type"
-              value={roomTypeFilter}
-              onChange={(e) => setRoomTypeFilter(e.target.value)}
-              className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
-            >
-              <option value="">All Types</option>
-              <option value="lecture">Lecture</option>
-              <option value="laboratory">Laboratory</option>
-            </select>
-          </div>
 
           <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1">
             <button
@@ -801,7 +791,7 @@ export default function Rooms() {
             </button>
           )}
         </div>
-      </div>
+      </FilterBar>
 
       {schedulesTruncated && (
         <TruncatedDataNotice>
@@ -866,9 +856,6 @@ export default function Rooms() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {buildings.map((building) => {
                 const percent = Math.round((building.availableCount / building.totalCount) * 100);
-                const bldgLogo = (userDepartmentId ? departments.find((d) => d.id === userDepartmentId)?.logo : null)
-                  || building.rooms.map(r => r.department?.logo || (r.department_id ? departments.find(d => d.id === r.department_id)?.logo : null)).find(Boolean)
-                  || null;
                 return (
                   <div
                     key={building.name}
@@ -876,15 +863,6 @@ export default function Rooms() {
                     onClick={() => openBuilding(building.name)}
                     className={`bg-white border border-gray-100 rounded-2xl p-6 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between space-y-4 group relative overflow-hidden font-sans ${GRID_CARD_HOVER}`}
                   >
-                    {bldgLogo && (
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 p-4 overflow-hidden">
-                        <img
-                          src={bldgLogo}
-                          alt="Department Watermark"
-                          className="w-36 h-36 max-w-[75%] max-h-[75%] object-contain opacity-[0.32] select-none transition-transform duration-300 group-hover:scale-105"
-                        />
-                      </div>
-                    )}
                     <div className="flex items-center justify-between relative z-10">
                       <div className="w-12 h-12 rounded-xl bg-[#4e0a10]/5 text-[#4e0a10] flex items-center justify-center">
                         <Building2 size={24} />
@@ -941,6 +919,7 @@ export default function Rooms() {
           ) : (
             <BuildingsTable
               buildings={buildings}
+              showBuildingIcon={!isSecretary}
               onSelect={(building) => openBuilding(building.name)}
               onEdit={canManageRooms ? (building) => openBuildingEdit(building.name) : undefined}
               onArchive={canManageRooms ? (building) => openBuildingArchive(building.name) : undefined}

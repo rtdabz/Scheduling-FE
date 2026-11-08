@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DeliveryMode, Department, Faculty, Room, RoomType, ScheduleItem, Section, Subject } from "../types";
 import { getSubjectTotalSlots } from "../types";
 import { getCourseSlotPlan, SLOT_MINUTES } from "../courseSlotPlan";
-import { buildPreferredPattern, closingTimeLabel, consecutiveDayCount, fieldEndMinutes, formatTime12h, FULL_DAY_NAMES, gridOpeningMinutes, isFixedSplitPattern, parsePreferredPattern, slotCount, slotMinutes, timeToSlotUnclamped } from "../../../../lib/timeGrid";
+import { buildPreferredPattern, closingTimeLabel, consecutiveDayCount, fieldEndMinutes, formatTime12h, FULL_DAY_NAMES, gridOpeningMinutes, isFixedSplitPattern, parsePreferredPattern, slotCount, slotMinutes, slotToTime24h, timeToSlotUnclamped } from "../../../../lib/timeGrid";
+import { instructorConflictMessage, onlineCourseConflictMessage, roomConflictMessage, sectionConflictMessage, type ConflictBooking, type RequestedSlot } from "../../../../lib/conflictMessages";
 import { describeWindow, roomGrantFits } from "../../../../lib/roomRequests";
 import { isLabMeetingRoomType, labRoomTypes } from "../../../../lib/labRoomPolicy";
 import { AVAILABILITY_WARNING_TITLE, availabilityWarningMessage, coveredContinuously } from "../../../../lib/availabilityWindows";
@@ -222,11 +223,28 @@ export const isPartTimeOutsideAvailability = (
   );
 };
 
+/** The time a schedule occupies, as the conflict wording quotes it. */
+const slotOf = (dayIndex: number, startSlot: number, durationSlots: number): RequestedSlot => ({
+  day: FULL_DAY_NAMES[dayIndex] ?? "",
+  start: slotToTime24h(startSlot),
+  end: slotToTime24h(startSlot + durationSlots),
+});
+
+/** The class already holding a resource, read from its schedule record. */
+const bookingOf = (schedule: ScheduleItem, departments: Department[], fallbackCode?: string): ConflictBooking => ({
+  department: departments.find((department) => Number(department.id) === Number(schedule.departmentId))?.department_code ?? null,
+  course: schedule.courseCode || schedule.subjectCode || fallbackCode || null,
+  section: schedule.sectionName || null,
+  start: slotToTime24h(schedule.startSlot),
+  end: slotToTime24h(schedule.startSlot + schedule.durationSlots),
+});
+
 export const getConflictedScheduleMap = (
   schedules: ScheduleItem[],
   subjects: Subject[],
   rooms: Room[],
-  faculties: Faculty[]
+  faculties: Faculty[],
+  departments: Department[] = []
 ): Record<string, NonNullable<ConflictResult>> => {
   const conflictMap: Record<string, NonNullable<ConflictResult>> = {};
 
@@ -283,8 +301,8 @@ export const getConflictedScheduleMap = (
         }
 
         if (s1.sectionId && s1.sectionId === s2.sectionId) {
-          const msg1 = `Section conflict: Overlaps with ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
-          const msg2 = `Section conflict: Overlaps with ${s1.courseCode || s1.subjectCode || sub1?.code || "another class"} of section ${s1.sectionName} (${s1.startTime} – ${s1.endTime}).`;
+          const msg1 = sectionConflictMessage(s1.sectionName, slotOf(s1.dayIndex, s1.startSlot, s1.durationSlots), bookingOf(s2, departments, sub2?.code));
+          const msg2 = sectionConflictMessage(s2.sectionName, slotOf(s2.dayIndex, s2.startSlot, s2.durationSlots), bookingOf(s1, departments, sub1?.code));
           if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "section", message: msg1 };
           if (!conflictMap[s2.id]) conflictMap[s2.id] = { conflictType: "section", message: msg2 };
         }
@@ -299,9 +317,9 @@ export const getConflictedScheduleMap = (
           const room = resolveRoomCached(s1.roomId);
           const isSharedField = room?.roomType === "field" || s1.roomId === "field" || s1.mode === "field" || s2.mode === "field";
           if (!isSharedField) {
-            const roomName = room?.name ?? "Selected room";
-            const msg1 = `Room conflict: ${roomName} is already occupied by ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
-            const msg2 = `Room conflict: ${roomName} is already occupied by ${s1.courseCode || s1.subjectCode || sub1?.code || "another class"} of section ${s1.sectionName} (${s1.startTime} – ${s1.endTime}).`;
+            const roomName = room?.name ?? null;
+            const msg1 = roomConflictMessage(roomName, slotOf(s1.dayIndex, s1.startSlot, s1.durationSlots), bookingOf(s2, departments, sub2?.code));
+            const msg2 = roomConflictMessage(roomName, slotOf(s2.dayIndex, s2.startSlot, s2.durationSlots), bookingOf(s1, departments, sub1?.code));
             if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "room", message: msg1 };
             if (!conflictMap[s2.id]) conflictMap[s2.id] = { conflictType: "room", message: msg2 };
           }
@@ -309,9 +327,9 @@ export const getConflictedScheduleMap = (
 
         if (s1.facultyId && s1.facultyId === s2.facultyId) {
           const faculty = faculties.find((f) => String(f.id) === String(s1.facultyId));
-          const facName = faculty?.name ?? "Assigned faculty";
-          const msg1 = `Faculty conflict: ${facName} is already teaching ${s2.courseCode || s2.subjectCode || sub2?.code || "another class"} of section ${s2.sectionName} (${s2.startTime} – ${s2.endTime}).`;
-          const msg2 = `Faculty conflict: ${facName} is already teaching ${s1.courseCode || s1.subjectCode || sub1?.code || "another class"} of section ${s1.sectionName} (${s1.startTime} – ${s1.endTime}).`;
+          const facName = faculty?.name ?? null;
+          const msg1 = instructorConflictMessage(facName, slotOf(s1.dayIndex, s1.startSlot, s1.durationSlots), bookingOf(s2, departments, sub2?.code));
+          const msg2 = instructorConflictMessage(facName, slotOf(s2.dayIndex, s2.startSlot, s2.durationSlots), bookingOf(s1, departments, sub1?.code));
           if (!conflictMap[s1.id]) conflictMap[s1.id] = { conflictType: "faculty", message: msg1 };
           if (!conflictMap[s2.id]) conflictMap[s2.id] = { conflictType: "faculty", message: msg2 };
         }
@@ -337,8 +355,8 @@ export const useConflict = ({
   sundayClassesEnabled = true,
 }: UseConflictParams) => {
   const conflictedMap = useMemo(
-    () => getConflictedScheduleMap(schedules, subjects, rooms, faculties),
-    [schedules, subjects, rooms, faculties]
+    () => getConflictedScheduleMap(schedules, subjects, rooms, faculties, departments),
+    [schedules, subjects, rooms, faculties, departments]
   );
 
   const [resolvedIds, setResolvedIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -507,7 +525,11 @@ export const useConflict = ({
         if (s.sectionId === sectionId) {
           return {
             conflictType: "section",
-            message: `Section conflict: This section already has a class (${s.courseCode || s.subjectCode || "another class"}) scheduled at this time.`
+            message: sectionConflictMessage(
+              sections.find((section) => String(section.id) === String(sectionId))?.name ?? s.sectionName,
+              slotOf(dayIndex, startSlot, durationSlots),
+              bookingOf(s, departments)
+            )
           };
         }
         if (
@@ -517,7 +539,11 @@ export const useConflict = ({
         ) {
           return {
             conflictType: "section",
-            message: `Online course conflict: ${s.courseCode || s.subjectCode || "This course"} is already running online for section ${s.sectionName} at this time.`
+            message: onlineCourseConflictMessage(
+              subject?.code ?? s.courseCode ?? s.subjectCode,
+              slotOf(dayIndex, startSlot, durationSlots),
+              bookingOf(s, departments)
+            )
           };
         }
         if (!isTbaPlacement && !isOnlinePlacement && !isRoomTba(s.roomId) && samePhysicalRoom(s.roomId, roomId, rooms)) {
@@ -528,7 +554,7 @@ export const useConflict = ({
           if (!isSharedRoom) {
             return {
               conflictType: "room",
-              message: `Room conflict: ${room?.name ?? "Selected room"} is already occupied at this time by ${s.courseCode || s.subjectCode || "another class"} of section ${s.sectionName}.`
+              message: roomConflictMessage(room?.name, slotOf(dayIndex, startSlot, durationSlots), bookingOf(s, departments))
             };
           }
         }
@@ -536,7 +562,7 @@ export const useConflict = ({
           const faculty = faculties.find((f) => String(f.id) === String(facultyId));
           return {
             conflictType: "faculty",
-            message: `Faculty conflict: ${faculty?.name ?? "Selected faculty"} is already teaching ${s.courseCode || s.subjectCode || "another class"} of section ${s.sectionName} at this time.`
+            message: instructorConflictMessage(faculty?.name, slotOf(dayIndex, startSlot, durationSlots), bookingOf(s, departments))
           };
         }
       }
@@ -561,11 +587,15 @@ export const useConflict = ({
       const overlaps = target.dayIndex === s.dayIndex && target.startSlot < sEnd && s.startSlot < endSlot;
       if (overlaps) {
         const fac = faculties.find((f) => String(f.id) === String(facultyId));
-        return `Faculty Conflict: ${fac?.name ?? facultyId} is already scheduled in section ${s.sectionName} for ${s.courseCode || s.subjectCode || "another course"} at ${s.startTime} – ${s.endTime}.`;
+        return instructorConflictMessage(
+          fac?.name,
+          slotOf(target.dayIndex, target.startSlot, target.durationSlots),
+          bookingOf(s, departments)
+        );
       }
     }
     return null;
-  }, [schedules, faculties]);
+  }, [schedules, faculties, departments]);
 
   const checkMoveConflict = useCallback((scheduleId: string, dayIndex: number, startSlot: number): ConflictResult => {
     const schedule = schedules.find((item) => item.id === scheduleId);

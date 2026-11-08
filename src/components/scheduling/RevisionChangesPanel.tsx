@@ -146,15 +146,10 @@ export default function RevisionChangesPanel({ submissionId }: { submissionId: n
     );
   }
 
-  return (
-    <div className="space-y-3">
-      <p className="flex items-center gap-2 text-xs font-bold text-slate-700">
-        <History className="h-4 w-4" />
-        {entries.length === 0
-          ? 'No changes to the working copy since this version.'
-          : `Changes to the working copy since this version (${entries.length})`}
-      </p>
-      {entries.length > 0 && <ChangeDetailsTable entries={entries} />}
-    </div>
-  );
+  // The table counts its own change rows; a separate count of audit entries would disagree with it.
+  return entries.length === 0 ? (
+    <p className="flex items-center gap-2 text-xs font-bold text-slate-700">
+      <History className="h-4 w-4" /> No changes to the working copy since this version.
+    </p>
+  ) : <ChangeDetailsTable entries={entries} />;
 }

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { ApiDepartmentRecord, ScheduleItem, Section, Semester, UserSummary } from "./types";
+import type { ApiDepartmentRecord, ScheduleItem, ScheduleSignatories, Section, Semester, UserSummary } from "./types";
 import { buildSchedulePdf, getSchedulePdfFilename } from "./schedulePdf";
 import { openPdfPreview } from "../../../lib/pdfPreview";
 import { useToast } from "../../../context/ToastContext";
@@ -14,6 +14,7 @@ interface PrintScheduleProps {
   users: UserSummary[];
   activeSemester: Semester | null;
   printAllSections?: boolean;
+  signatories?: ScheduleSignatories | null;
 }
 
 export default function PrintSchedule({
@@ -26,6 +27,7 @@ export default function PrintSchedule({
   users,
   activeSemester,
   printAllSections = false,
+  signatories = null,
 }: PrintScheduleProps) {
   const { toast } = useToast();
   useEffect(() => {
@@ -39,6 +41,7 @@ export default function PrintSchedule({
         users,
         activeSemester,
         printAllSections,
+        signatories,
       };
       void buildSchedulePdf(input).then(async (blob) => {
         await preview.show(blob, getSchedulePdfFilename(input));

@@ -16,6 +16,8 @@ interface ConfirmModalProps {
   onCancel: () => void;
   variant?: ConfirmModalVariant;
   isConfirming?: boolean;
+  /** Blocks confirming without showing the in-progress spinner, e.g. while the data being confirmed reloads. */
+  confirmDisabled?: boolean;
   showCancel?: boolean;
   children?: ReactNode;
 }
@@ -31,6 +33,7 @@ export default function ConfirmModal({
   onCancel,
   variant = 'warning',
   isConfirming = false,
+  confirmDisabled = false,
   showCancel = true,
   children,
 }: ConfirmModalProps) {
@@ -115,7 +118,7 @@ export default function ConfirmModal({
           <button
             type="button"
             onClick={() => { void onConfirm(); }}
-            disabled={isConfirming}
+            disabled={isConfirming || confirmDisabled}
             className={`inline-flex min-h-10 items-center gap-2 rounded-lg px-5 py-2 text-xs font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${style.action}`}
           >
             {isConfirming ? <LoadingSpinner size={14} className="animate-spin" /> : <ActionIcon size={14} />}

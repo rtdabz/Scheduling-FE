@@ -1,9 +1,8 @@
 import { useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import ConfirmModal from '../ui/ConfirmModal';
 import api from '../../lib/api';
-import { recoveryError, recoveryLink, type RecoveryRoom } from '../../lib/roomRecovery';
-import { getStoredUser, hasStoredCapability } from '../../lib/storedUser';
+import { recoveryError, type RecoveryRoom } from '../../lib/roomRecovery';
+import { getStoredUser } from '../../lib/storedUser';
 import { publishLiveTopics } from '../../lib/liveUpdates';
 
 export default function RoomRecoveryActions({ rooms, room, onRoomChange, onAvailabilityChanged }: {
@@ -66,8 +65,5 @@ export default function RoomRecoveryActions({ rooms, room, onRoomChange, onAvail
     </ConfirmModal>;
   }
 
-  return <section className="rounded-xl border border-slate-200 bg-white p-4">
-    <h2 className="font-semibold text-slate-800">Room and laboratory recovery</h2>
-    {(role === 'secretary' || role === 'program_head') && hasStoredCapability('schedule.view') && <Link to={recoveryLink()} className="mt-2 inline-block text-sm font-semibold text-primary underline">Review affected schedules or explore relocation</Link>}
-  </section>;
+  return null;
 }

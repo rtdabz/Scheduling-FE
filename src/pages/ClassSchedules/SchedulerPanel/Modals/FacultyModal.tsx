@@ -1,7 +1,7 @@
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, CalendarDays, ChevronDown, Clock, MapPin, User, UserCheck, X } from "lucide-react";
-import { getCategoryStyles } from "../constants";
+import CourseCategoryBadge from "../../../../components/curriculum/CourseCategoryBadge";
 import EmploymentBadge from "../EmploymentBadge";
 import InstructorPickerModal from "./InstructorPickerModal";
 import { eligibleFacultiesForSubject, majorTeachingDepartmentId, requiredTeachingProgramId } from "../facultyEligibility";
@@ -66,7 +66,6 @@ export default function FacultyModal({
   if (!schedule) return null;
 
   const subject = subjects.find((item) => item.id === schedule.subjectId);
-  const subStyles = subject ? getCategoryStyles(subject.category) : null;
   const isSavingFaculty = facultyActionSlotId === schedule.id;
   const selectedFaculty = faculties.find((faculty) => faculty.id === facultyAssignmentPopup.facultyId);
   const canManageFaculty = canManageScheduleFaculty(schedule);
@@ -158,7 +157,7 @@ export default function FacultyModal({
         </div>
 
         <form onSubmit={handleAssignFaculty} className="px-5 py-4 space-y-4">
-          {subject && subStyles && (
+          {subject && (
             <section className="rounded-xl border border-[#4e0a10]/10 bg-[#4e0a10]/5 px-4 py-3">
               <div className="flex flex-col gap-3">
                 <div className="min-w-0">
@@ -167,9 +166,7 @@ export default function FacultyModal({
                     <span className="text-xs bg-white text-gray-600 rounded-full border border-gray-200 px-2 py-0.5 font-bold">
                       {subject.units} units
                     </span>
-                    <span className={`text-xs rounded-full px-2 py-0.5 border font-bold ${subStyles.typeBadge}`}>
-                      {subStyles.label}
-                    </span>
+                    <CourseCategoryBadge category={subject.category} />
                   </div>
                   <p className="mt-0.5 truncate text-sm text-gray-500" title={subject.name}>{subject.name}</p>
                 </div>

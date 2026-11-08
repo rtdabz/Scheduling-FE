@@ -5,7 +5,7 @@ import { useModalScrollLock } from '../../hooks/useModalScrollLock';
 export default function ScheduleRejectionModal({
   open, title, description, reason, error, isSubmitting, onReasonChange, onClose, onConfirm,
   reasonLabel = 'Reason', confirmLabel = 'Confirm Return', submittingLabel = 'Returning...',
-  maxLength, closeOnEscape = false,
+  maxLength, closeOnEscape = false, confirmDisabled = false,
 }: {
   open: boolean;
   title: string;
@@ -21,6 +21,8 @@ export default function ScheduleRejectionModal({
   submittingLabel?: string;
   maxLength?: number;
   closeOnEscape?: boolean;
+  /** Blocks confirming while keeping the reason editable, e.g. while the data being returned reloads. */
+  confirmDisabled?: boolean;
 }) {
   const id = useId();
   useModalScrollLock(open);
@@ -51,7 +53,7 @@ export default function ScheduleRejectionModal({
           </div>
           <div className="flex gap-3 pt-2">
             <button type="button" disabled={isSubmitting} onClick={onClose} className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-xs font-semibold cursor-pointer bg-white disabled:opacity-50">Cancel</button>
-            <button type="button" disabled={isSubmitting} onClick={onConfirm} className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors text-xs font-semibold cursor-pointer disabled:opacity-50">{isSubmitting ? submittingLabel : confirmLabel}</button>
+            <button type="button" disabled={isSubmitting || confirmDisabled} onClick={onConfirm} className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors text-xs font-semibold cursor-pointer disabled:opacity-50">{isSubmitting ? submittingLabel : confirmLabel}</button>
           </div>
         </div>
       </div>

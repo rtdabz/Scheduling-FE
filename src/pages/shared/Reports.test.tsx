@@ -40,7 +40,6 @@ describe('Reports directory', () => {
   it.each([
     ['Room Utilization', 'CIT Room Utilization', 'SCI-101', 'Science Building', false],
     ['Curriculums & Courses', 'CIT Curriculum Courses', 'IT 101', 'Programming', false],
-    ['Approval & Readiness', 'CIT Approval Status', 'BSIT 1A', 'Year 1', false],
     ['Room Utilization', 'CIT Room Utilization', 'SCI-101', 'Main Campus', true],
     ['Curriculums & Courses', 'CIT Curriculum Courses', 'IT 101', 'Programming', true],
   ])('renders, searches and exports mapped %s data: %s / %s / %s / fallback=%s', async (tab, label, code, detail, fallback) => {
@@ -149,11 +148,11 @@ describe('Reports directory', () => {
     expect(fetchReportData).toHaveBeenCalledWith(1, null);
 
     // Close modal
-    fireEvent.click(screen.getByRole('button', { name: 'Close detail modal' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('switches to room utilization, curriculum, and approval tabs', async () => {
+  it('switches to room utilization and curriculum tabs', async () => {
     render(<Reports />);
     await screen.findByText('CIT Class Schedule');
 
@@ -165,8 +164,6 @@ describe('Reports directory', () => {
     fireEvent.click(screen.getByRole('tab', { name: /Curriculums & Courses/ }));
     expect(await screen.findByText('CIT Curriculum Courses')).toBeTruthy();
 
-    // Approval tab
-    fireEvent.click(screen.getByRole('tab', { name: /Approval & Readiness/ }));
-    expect(await screen.findByText('CIT Approval Status')).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: /Approval & Readiness/ })).toBeNull();
   });
 });

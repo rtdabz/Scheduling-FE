@@ -56,7 +56,9 @@ export default function NotificationBell() {
   }, [markAsRead, navigate]);
 
   return (
-    <div ref={wrapper} className="relative">
+    // Not `relative`: the panel anchors to the header's actions group so it lines up
+    // with the account menu (same right edge and top offset) instead of the bell.
+    <div ref={wrapper}>
       <button
         type="button"
         onClick={() => setOpen(previous => !previous)}

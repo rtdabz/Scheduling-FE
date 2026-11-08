@@ -636,7 +636,7 @@ export default function Faculty() {
 
   return (
     <div id="faculty-page" className="space-y-6 font-sans">
-      <div id="instructors-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
+      <FilterBar id="instructors-filters">
         <SearchInput
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -747,7 +747,7 @@ export default function Faculty() {
             </button>
           )}
         </div>
-      </div>
+      </FilterBar>
 
       {showGuide && <WorkflowGuideButton guideId="instructors" />}
       <div id="instructors-workspace">
@@ -1404,3 +1404,4 @@ export default function Faculty() {
   );
 }
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
+import FilterBar from '../../components/ui/FilterBar';

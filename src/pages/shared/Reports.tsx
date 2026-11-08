@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertCircle,
   ArrowUpRight,
@@ -8,7 +9,6 @@ import {
   CalendarDays,
   Check,
   CheckCircle2,
-  ClipboardCheck,
   Download,
   Eye,
   FileSpreadsheet,
@@ -44,7 +44,7 @@ import {
   type ReportsOverview,
 } from '../../lib/reports';
 
-export type ReportKind = 'schedule' | 'load' | 'room' | 'curriculum' | 'approval';
+export type ReportKind = 'schedule' | 'load' | 'room' | 'curriculum';
 
 interface PrintJob {
   kind: 'schedule' | 'load';
@@ -85,17 +85,11 @@ const TABS: { kind: ReportKind; label: string; description: string; icon: typeof
     description: 'Active curriculum course offerings, lecture/lab units, and scheduled sections.',
     icon: BookOpen,
   },
-  {
-    kind: 'approval',
-    label: 'Approval & Readiness',
-    description: 'Workflow stages from department drafting to Dean review and VPAA approval.',
-    icon: ClipboardCheck,
-  },
 ];
 
 const rowsFor = (department: ReportDepartment, kind: ReportKind): ReportRow[] => {
   const countOf = (item: { complete_section_count: number; instructor_count: number }) => {
-    if (kind === 'schedule' || kind === 'approval') return item.complete_section_count;
+    if (kind === 'schedule') return item.complete_section_count;
     if (kind === 'load') return item.instructor_count;
     if (kind === 'room' || kind === 'curriculum') return item.complete_section_count > 0 ? 1 : 0;
     return item.complete_section_count;
@@ -105,8 +99,7 @@ const rowsFor = (department: ReportDepartment, kind: ReportKind): ReportRow[] =>
     kind === 'schedule' ? 'Class Schedule' :
     kind === 'load' ? 'Instructors Load' :
     kind === 'room' ? 'Room Utilization' :
-    kind === 'curriculum' ? 'Curriculum Courses' :
-    'Approval Status';
+    'Curriculum Courses';
 
   if (!department.can_print_department) {
     return department.programs.map((program) => ({
@@ -198,12 +191,7 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
     return courseList.filter((c) => `${c.code} ${c.name}`.toLowerCase().includes(q));
   }, [courseList, q]);
 
-  const filteredSections = useMemo(() => {
-    if (!q) return data.sections;
-    return data.sections.filter((s) => `${s.name} Year ${s.yearLevel || 1}`.toLowerCase().includes(q));
-  }, [data.sections, q]);
-
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
@@ -212,13 +200,12 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
     >
       <div className="relative flex min-h-[100dvh] w-full max-w-5xl flex-col overflow-hidden bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-150 sm:my-auto sm:min-h-0 sm:max-h-[calc(100dvh-2rem)] sm:rounded-2xl sm:border sm:border-slate-200">
         <div className="flex flex-col gap-4 border-b border-slate-100 bg-slate-50/70 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <div className="flex min-w-0 items-center gap-3 pr-10 sm:pr-0">
+          <div className="flex min-w-0 items-center gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#4e0a10] text-white shadow-sm">
               {kind === 'schedule' && <CalendarDays size={20} />}
               {kind === 'load' && <GraduationCap size={20} />}
               {kind === 'room' && <Building2 size={20} />}
               {kind === 'curriculum' && <BookOpen size={20} />}
-              {kind === 'approval' && <ClipboardCheck size={20} />}
             </span>
             <div className="min-w-0">
               <h2 className="truncate text-base font-extrabold text-slate-800">{row.label}</h2>
@@ -242,14 +229,6 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
                 <Printer size={13} /> Print PDF
               </button>
             )}
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close detail modal"
-              className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
-            >
-              <X size={16} />
-            </button>
           </div>
         </div>
 
@@ -412,38 +391,6 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
             </>
           )}
 
-          {kind === 'approval' && (
-            <>
-              <div className="flex items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/50 p-2.5">
-                <LayoutGrid size={16} className="text-[#4e0a10]" />
-                <div>
-                  <div className="text-xs font-black text-slate-800">{data.sections.length}</div>
-                  <div className="text-[10px] font-semibold text-slate-500">Total Sections</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/50 p-2.5">
-                <CheckCircle2 size={16} className="text-emerald-600" />
-                <div>
-                  <div className="text-xs font-black text-slate-800">{data.sections.length}</div>
-                  <div className="text-[10px] font-semibold text-slate-500">VPAA Approved</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/50 p-2.5">
-                <CalendarDays size={16} className="text-sky-600" />
-                <div>
-                  <div className="text-xs font-black text-slate-800">{data.schedules.length}</div>
-                  <div className="text-[10px] font-semibold text-slate-500">Classes Placed</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/50 p-2.5">
-                <ShieldCheck size={16} className="text-emerald-600" />
-                <div>
-                  <div className="text-xs font-black text-emerald-700">100%</div>
-                  <div className="text-[10px] font-semibold text-slate-500">Readiness Rate</div>
-                </div>
-              </div>
-            </>
-          )}
         </div>
 
         <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50/50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-5 sm:py-2.5">
@@ -463,7 +410,6 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
             {kind === 'load' && `${filteredFaculty.length} instructors`}
             {kind === 'room' && `${filteredRooms.length} rooms`}
             {kind === 'curriculum' && `${filteredCourses.length} courses`}
-            {kind === 'approval' && `${filteredSections.length} sections`}
           </span>
         </div>
 
@@ -719,57 +665,6 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
               </tbody>
             </table>
           )}
-
-          {kind === 'approval' && (
-            <table className="min-w-[560px] w-full text-left border-collapse text-xs">
-              <thead className="sticky top-0 z-10 bg-slate-100/90 backdrop-blur-sm border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
-                <tr>
-                  <th className="px-4 py-2.5">Section Name</th>
-                  <th className="px-4 py-2.5">Year Level</th>
-                  <th className="px-4 py-2.5 text-right">Classes Scheduled</th>
-                  <th className="px-4 py-2.5 text-right">Instructors Placed</th>
-                  <th className="px-4 py-2.5 text-right">Rooms Booked</th>
-                  <th className="px-4 py-2.5 text-right">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredSections.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-xs italic text-slate-400">
-                      No section records matched your query.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredSections.map((sec) => {
-                    const classCount = data.schedules.filter(
-                      (s) => s.sectionId === sec.id || s.sectionName === sec.name
-                    ).length;
-                    const instructorsCount = data.schedules.filter(
-                      (s) => (s.sectionId === sec.id || s.sectionName === sec.name) && Boolean(s.facultyName)
-                    ).length;
-                    const roomsCount = data.schedules.filter(
-                      (s) => (s.sectionId === sec.id || s.sectionName === sec.name) && Boolean(s.roomName)
-                    ).length;
-
-                    return (
-                      <tr key={sec.id || sec.name} className="hover:bg-slate-50/80 transition">
-                        <td className="px-4 py-2.5 font-bold text-slate-800">{sec.name}</td>
-                        <td className="px-4 py-2.5 text-slate-600">Year {sec.yearLevel || 1}</td>
-                        <td className="px-4 py-2.5 text-right tabular-nums font-black text-slate-800">{classCount}</td>
-                        <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-slate-600">{instructorsCount}</td>
-                        <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-slate-600">{roomsCount}</td>
-                        <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700">
-                            <CheckCircle2 size={11} /> VPAA Approved
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          )}
         </div>
 
         <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/80 px-5 py-3">
@@ -785,7 +680,8 @@ function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: R
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -919,12 +815,6 @@ export default function Reports() {
           const scheduledCount = data.schedules.filter((s) => (s.courseCode || s.subjectCode) === c.code).length;
           csvLines.push([`"${c.code}"`, `"${c.name}"`, `"${c.lectureHours ?? 3}"`, `"${c.labHours ?? 0}"`, `"${c.units ?? 3}"`, `"${scheduledCount}"`].join(','));
         });
-      } else if (kind === 'approval') {
-        csvLines.push(['Section Name', 'Year Level', 'Classes Scheduled', 'Status'].join(','));
-        data.sections.forEach((sec) => {
-          const count = data.schedules.filter((s) => s.sectionId === sec.id || s.sectionName === sec.name).length;
-          csvLines.push([`"${sec.name}"`, `"Year ${sec.yearLevel || 1}"`, `"${count}"`, '"VPAA Approved"'].join(','));
-        });
       }
 
       const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -979,7 +869,7 @@ export default function Reports() {
             <div>
               <h2 className="text-lg font-extrabold tracking-tight sm:text-xl">Institutional reports</h2>
               <p className="mt-1 max-w-2xl text-xs leading-relaxed text-white/75 sm:text-sm">
-                Review approved schedules, teaching loads, facilities, curricula, and readiness across departments.
+                Review approved schedules, teaching loads, facilities, and curricula across departments.
               </p>
             </div>
           </div>
@@ -1023,7 +913,7 @@ export default function Reports() {
       <div
         role="tablist"
         aria-label="Report type"
-        className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-2 lg:mx-0 lg:grid lg:grid-cols-5 lg:overflow-visible lg:px-0 lg:pb-0"
+        className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-2 lg:mx-0 lg:grid lg:grid-cols-4 lg:overflow-visible lg:px-0 lg:pb-0"
       >
         {TABS.map(({ kind: tabKind, label, description, icon: Icon }) => (
           <button
@@ -1261,8 +1151,7 @@ export default function Reports() {
                       kind === 'schedule' ? 'approved section' :
                       kind === 'load' ? 'instructor' :
                       kind === 'room' ? 'room' :
-                      kind === 'curriculum' ? 'curriculum offering' :
-                      'section package';
+                      'curriculum offering';
 
                     return (
                       <li key={row.key} className="flex flex-col items-stretch gap-3 px-4 py-4 transition hover:bg-slate-50/70 sm:flex-row sm:items-center sm:px-5">

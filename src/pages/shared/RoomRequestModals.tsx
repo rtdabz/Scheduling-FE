@@ -932,7 +932,7 @@ export function RequestsModal({
                 onClick={() => setTab(value)}
                 className={tabButtonClass(tab === value)}
               >
-                {value === 'sent' ? 'Sent' : 'Received'}
+                {value === 'sent' ? 'Requester' : 'Requestee'}
                 <span className={tabCountClass(tab === value)}>{value === 'sent' ? sentRequests.length : receivedRequests.length}</span>
               </button>
             ))}

@@ -21,6 +21,7 @@ import type {
   Faculty,
   Room,
   ScheduleItem,
+  ScheduleSignatories,
   Section,
   Subject,
   Semester,
@@ -54,6 +55,8 @@ export interface InitialDataResponse {
   sections: ApiSectionRecord[];
   schedules: ApiScheduleRecord[];
   schedules_truncated?: boolean;
+  /** Recorded signatories keyed by submission id (an empty list when there are none). */
+  schedule_signatories?: Record<string, ScheduleSignatories> | ScheduleSignatories[];
   departments: ApiDepartmentRecord[];
   scheduling_ready?: boolean;
   can_edit_program_ids?: number[];
@@ -191,6 +194,22 @@ export const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
     meetingIndex: item.meeting_index ?? 1,
     createdById: item.created_by != null ? Number(item.created_by) : null,
   };
+};
+
+/**
+ * Map schedule rows and give each submitted row the officials recorded on its submission, so prints
+ * of past schedules keep their original signatories. Rows share one object per submission.
+ */
+export const mapApiSchedulesWithSignatories = (
+  records: ApiScheduleRecord[],
+  signatories: InitialDataResponse["schedule_signatories"],
+): ScheduleItem[] => {
+  const bySubmission = signatories && !Array.isArray(signatories) ? signatories : {};
+  return records.map((record) => {
+    const item = mapApiScheduleToItem(record);
+    const recorded = record.signatories_submission_id != null ? bySubmission[String(record.signatories_submission_id)] : undefined;
+    return recorded ? { ...item, signatories: recorded } : item;
+  });
 };
 
 export const generatedScheduleSectionId = (
@@ -335,9 +354,10 @@ export const mapInitialData = (
   const semester = initialData.active_semester;
   const filteredSections = mapApiSections(initialData.sections, semester);
 
-  const filteredSchedules = initialData.schedules
-    .filter((item) => !semester || Number(item.semester_id) === Number(semester.id))
-    .map(mapApiScheduleToItem);
+  const filteredSchedules = mapApiSchedulesWithSignatories(
+    initialData.schedules.filter((item) => !semester || Number(item.semester_id) === Number(semester.id)),
+    initialData.schedule_signatories,
+  );
 
   return {
     rooms: mappedRooms,
