@@ -1,5 +1,51 @@
 # Business Rules
 
+## Gantt Chart publication
+
+Published Gantt Charts show only schedules with final VPAA approval. The allowed
+schedule statuses are `approved`, `faculty_assignment`, `reassignment`, and
+`finalized`; the last three are operational stages after VPAA approval. Draft,
+completed, submitted, Dean-approved, conditionally approved, returned/rejected,
+unknown, and missing statuses are excluded. This applies to all role dashboards,
+the master calendar, Dean schedule Gantt view, section timetables, instructor
+assignment Gantt view, and instructor timetable dialogs.
+
+The scheduler's **Room Schedule** dialog is the planning exception: it shows
+all schedules already available in the scheduling workspace for the selected
+room, including drafts, unsaved meetings, and schedules awaiting approval.
+Its counts, time window, overlap warnings, and class details use those same
+meetings so users can review the room timetable before approval. Existing room
+and department filters still apply. Other Gantt views remain approved-only.
+
+Facilities room schedules and the Dean Schedules table also show only these
+VPAA-approved statuses, including room occupancy indicators, list/grid details,
+counts, and prints. Draft or pending classes remain in the scheduling workspace
+and approval queue. Cached page data uses a separate published-only key.
+
+Published table and Facilities API reads use `view=published`; existing
+Gantt-only reads use `view=gantt`. Both use the shared backend schedule visibility
+policy applies the existing VPAA status allowlist before limits and pagination,
+including initial-data selected-section and occupancy rows. Approval-queue
+access cannot widen this view. Department, program, semester, room, and faculty
+access rules continue to apply. General scheduling and approval reads retain
+their existing visibility.
+
+Frontend Gantt adapters retain status and reuse the shared approval predicate
+from `lib/scheduleStatus.ts` through `filterVpaaApprovedSchedules`. Chart blocks,
+counts, overlap indicators, time windows, weekly-meeting details, and exports
+use approved meetings only, except in the Room Schedule planning dialog above.
+Approval filtering does not remove draft meetings
+from scheduling state or from scheduling conflict validation.
+
+## Program Rooms access
+
+Program Rooms requires more than one non-archived program in the department
+office's own department. With one program, the Secretary or Director can still
+use Rooms; Program Rooms is locked because allocation between programs is
+unnecessary. Both the UI and API enforce this condition and re-evaluate access
+when programs change. Program Head and Dean read-only room data remains available.
+See [department module locking](department_module_locking_plan.md#program-rooms-access-2026-11-13).
+
 ## Parent archiving, room changes, and timetable restoration
 
 Authoring must select non-archived parent records where the parent supports soft
@@ -17,14 +63,21 @@ changing room ownership; closed requests and requests in disabled semesters are
 history and do not block. Archiving a room or a building is refused while its
 rooms hold classes or such pending/approved room requests.
 
-Room requests (Secretary to Secretary, lecture rooms only) are bound to one
+Room requests (department office to department office, where the office is the
+department's Secretary or Director; lecture rooms only) are bound to one
 explicit semester for listing, occupancy, and submission. Only the room's
 current owner can approve: a request whose room was reassigned after submission
 cannot be approved and must be cancelled and resubmitted. Returning or revoking
-a grant, allowed at any time, moves the borrower's overlapping classes to Room
-TBA without changing their schedule status, and records the change in schedule
-history (`room_grant_ended`), revision tracking when applicable, the scheduling
-audit log, and a room-recovery case, all in the grant transaction.
+a grant is allowed at any time. Owner revocation automatically moves only the
+borrower's classes in that room and semester that overlap the granted slot to
+temporary Online delivery: `mode = online`, `room_id = null`, with the original
+room and displacement time retained in `displaced_room_id` and `displaced_at`.
+Those classes still need room reassignment; their day, time, instructor, and
+schedule status remain unchanged. A borrower's Give Back/cancellation instead
+moves the affected classes to Room TBA without changing their delivery mode.
+Both actions record the change in schedule history (`room_grant_ended`), revision
+tracking when applicable, the scheduling audit log, and a room-recovery case,
+all in the grant transaction.
 Notifications for request actions are delivered by a queued, retried job after
 the action commits; a delivery failure never changes the action's response.
 Classes from past semesters do not prevent marking a room unavailable.
@@ -78,6 +131,53 @@ section's own curriculum (`curriculum_placements` and
 to a curriculum, the rule engine rejects a class whose course that curriculum
 does not place (`curriculum_course_membership`); catalogue year and semester
 apply only to a section with no resolvable curriculum.
+
+## Department modules wait for a program
+
+A department without a registered program has Sections, Academic Scheduling,
+Facilities, Curriculum, Courses, and Schedule History locked (sidebar, page, and program-bound
+API writes); they unlock as soon as the department has a program and relock if
+its last program is removed. Cross-Department stays open: a department with no
+program can still assign instructors to courses delegated to it. Course
+Assignment (handing courses to another college) needs a program **and** final
+VPAA approval of every active section; Dean approval alone does not open it, and
+a recall, return, or reset closes it again. Details and open decisions:
+[department_module_locking_plan](department_module_locking_plan.md).
+
+## Correcting returned schedules
+
+Dean returns (`rejected_by_dean`) and VPAA returns (`rejected`) immediately allow
+Generate Schedule, Manual Plotting, conflict correction, and Reset for the existing
+schedule owner. The rejected submission, comments, and submitted snapshot remain
+in history. Pending review, approved, and finalized schedules remain protected;
+any protected meeting in the selected generation scope blocks regeneration.
+
+Resubmit Schedule requires normal department plotting readiness and at least one
+saved timetable correction across the returned sections being submitted. It does
+not require every returned section to change: sections without corrections retain
+their existing timetables and are included in the new submission. Rejections
+record submission-wide feedback, without a structured list of correction targets.
+The server compares persisted course, day, time, room, mode, and hybrid settings
+with the submitted snapshot. Status-only edits, instructor changes, identical
+regeneration, changes later reverted, and changes to unrelated draft or recalled
+sections do not count as corrections to a return; clearing a section alone does
+not make it ready. Revision metadata refreshes after writes and on reload.
+Resubmission creates a new revision for Dean review followed by VPAA review for
+both revised and retained sections. Generation may mix editable draft, completed,
+returned, and recalled sections.
+
+Submit Schedule and Resubmit Schedule remain disabled until every editable section
+in the writable scope is fully plotted and the aggregate correction check passes.
+View sections remains available to identify incomplete sections. Readiness counts
+the required course identities, so unrelated plotted courses cannot fill a missing
+requirement, and includes compact occupancy data when the timetable is truncated.
+The server also rejects empty sections and missing active courses in each assigned
+curriculum's year and semester; another section's protected approval does not
+exempt an incomplete section. Protected sections keep their existing statuses.
+The submission review distinguishes unchanged timetables being resubmitted from
+protected sections outside the current revision. Fully plotted editable drafts do
+not require a separate Mark Done step. A server rejection keeps the review open
+and refreshes section readiness without changing workflow statuses.
 
 ## Course teaching assignment
 
@@ -146,7 +246,10 @@ policy; a missing lab never changes a lab requirement into an ordinary lecture.
 
 ## Course-driven Split Session and Hybrid delivery
 
-Split Session is always available from **Step 2 - Setup Courses**. The user
+Split Session is available from **Step 2 - Setup Courses** for any course
+without laboratory units; a course with laboratory units (LAB > 0, including
+laboratory-only courses) is never a Split Session
+(`SchedulingPolicy::balancedSplitEligible()`). The user
 selects the course and the affected sections there; the retired Minor, Major,
 and Hybrid department switches do not gate the selection. Eligibility is
 calculated from the selected course's units, lecture/laboratory hours, delivery
@@ -166,7 +269,7 @@ The two Hybrid shapes are distinct:
   both orders equally good, the order alternates by section and course, so
   sections do not all meet face-to-face on their first day.
 - **Integrated Hybrid** (Hybrid Laboratory) is a major with lecture and
-  laboratory components, scheduled as two separate sessions on different
+  laboratory components, chosen explicitly, scheduled as two separate sessions on different
   days: an Online lecture and a Face-to-Face laboratory. Each length is the
   user's to set in the course's Configure panel. It starts at the course's
   own: one hour per lecture unit, and three hours per laboratory unit or the
@@ -186,23 +289,40 @@ delivery decides the lecture:
   (`SchedulingPolicy::isIntegratedOnSite`).
 - **Integrated Hybrid** — the lecture online, the laboratory face-to-face, as
   above.
-- **Regular** is one meeting of the course's units. A lecture + laboratory
-  course nobody configured is Regular, because that is what the Generator
-  places for it.
+- **Regular** is one meeting of the course's units.
 
-### Setup Courses: Default Settings and course selection
+### Laboratory courses: Regular, laboratory rooms and Room TBA
 
-Step 2 has **Default Settings** that apply to every course without Configure
-settings of its own; a course saved from its Configure panel keeps its own
-choices ("Use defaults for all" hands it back to the defaults).
+There is no manual Class Component choice; the room requirement follows the
+course's units.
 
-- **Lecture Duration** sets the weekly length of lecture courses and of each
-  Integrated lecture; **Laboratory Duration** that of laboratory courses and of
-  each Integrated laboratory. Blank keeps each course's own length. A default
-  longer than a course may meet a week (`class_duration`), or not whole
-  slots per meeting, is skipped for that course, which keeps its own length.
-  Field courses and Hybrid Split's fixed meetings are never changed.
-- **Allow Friday and Saturday as Paired Days** (`allow_friday_saturday_split`)
+- A **Regular** course keeps its full duration as one meeting (a 2 LEC + 3 LAB
+  course is one 5-hour meeting). It is never converted into a Split Session or
+  an Integrated class. A course with laboratory units, even with lecture units
+  too, meets in a **laboratory room**.
+- **Integrated** (separate lecture and laboratory sessions) is only an
+  explicit choice, available to any non-field course with lecture and
+  laboratory units (`SchedulingPolicy::hasLectureAndLaboratoryComponents()`).
+  Its online-lecture Hybrid delivery remains Major-only.
+- **Split Session** is not offered to a course with laboratory units
+  (`SchedulingPolicy::balancedSplitEligible()`).
+- Laboratory meetings use **laboratory rooms only**
+  (`SchedulingPolicy::labRoomTypes()` is always `['laboratory']`). When no
+  laboratory is free the meeting stays on-site as **Room TBA**; it never falls
+  back to a lecture classroom or online. The department's legacy
+  Classroom/Either `lab_room_type` value is still stored but no longer widens
+  this. Regular delivery for a course with lecture and laboratory units is
+  On-Site only. Manual placement lists Room TBA for a laboratory meeting only at
+  times no laboratory room is free.
+
+### Setup Courses: course selection
+
+Step 2 has no Default Settings panel. Each course's shape comes from its units
+and its own Configure panel; there are no browser-saved course defaults and no
+"customized" marker.
+
+- **Allow Friday and Saturday as Paired Days** (`allow_friday_saturday_split`,
+  set with the Preferred Days in Configuration)
   lets a Split Session or Hybrid Split also meet Friday + Saturday as a
   third regular pair. It ranks with MW and TTh, not in the Saturday fallback
   tier. Two-day classes, with or without this setting, take the pair whose
@@ -216,6 +336,19 @@ courses", so the wizard will not continue or generate with every course
 unchecked.
 
 ### Field courses
+
+Field placement is available only when a course has no laboratory units and no
+laboratory room requirement. Laboratory requirements take precedence over an old
+Field room type or saved Field-course code. Generate Schedule excludes Field
+rooms from the course's Preferred Room choices, and Manual Plotting removes its
+Field mode. Reopening an old Field laboratory meeting stages an on-site
+laboratory placement for correction; it does not save automatically.
+
+Course creation/editing, generation preflight, manual/batch saves, browser
+conflict checks, the constraint kernel, and placement recommendations enforce
+the same restriction. A direct Field request cannot override laboratory
+requirements. Regular/Integrated shapes, component durations, lecture delivery,
+laboratory-only room matching and Room TBA retain their existing rules.
 
 A course is a field course only when the department makes it one: its
 record requires the field (`room_type_required = field`), or its code is on
@@ -307,10 +440,26 @@ Meetings board and the year level's Preferred Days.
   as `component_minutes_by_course_id`; each must fit the teaching day and
   together they may not exceed the weekly ceiling. Hybrid Split keeps its
   fixed 1.5 h + 1.5 h.
-- **Required Day** (optional) is the department's forced-day rule for the
-  course, saved to the scheduling settings and enforced for every section and
-  for manual edits. A course with a Required Day meets once, on that day; its
-  Split or Hybrid markers are not sent.
+- **Required Day** (optional) applies to one generation run (sent as
+  `rule_overrides.forced_day_rules`; it is not saved as a department setting).
+  A course with a Required Day meets once, on that day; its Split or
+  Integrated markers are not sent.
+- **Lecture Required Day** and **Laboratory Required Day** (optional) replace
+  the single Required Day for an Integrated course, On-site or Hybrid. Each
+  pins one component; blank means automatic. The course stays Integrated with
+  its two meetings, component hours, delivery modes and room needs. The two
+  days must differ, must be Preferred Days, and Sunday needs Sunday classes.
+  They follow Apply To, are sent per section as
+  `component_required_days_by_course_id`, and reach the solver on each typed
+  requirement as `required_day`, matched by component type, never meeting
+  order. They are run-scoped: the result echoes them as
+  `component_required_days`, draft review and the generated
+  `/schedules/batch` save send them back as `section_configs`, and both
+  re-validate them server-side and reject rows that miss, duplicate, swap or
+  move a pinned component. No department rule is saved, and later manual
+  plotting is unaffected. Leaving Integrated clears them with a notice; an
+  adjustment that would turn Integrated off is refused instead. A course-wide
+  Required Day and component days on the same course are rejected.
 - **Preferred Room** (optional) is a ranking preference inside an allocation
   tier: the generator tries that room first and falls back to any other
   compatible room. It never moves a course to Saturday, Room TBA or Online to
@@ -321,8 +470,8 @@ Meetings board and the year level's Preferred Days.
   is not available, not reachable this semester, or of the wrong type, using
   the same test as `room_type_match`. Online and field classes take none.
 
-Duration and room follow the panel's section scope; Required Day always
-applies to every section.
+Duration, room and Lecture/Laboratory Required Days follow the panel's
+section scope; the course-wide Required Day always applies to every section.
 
 ## Generate Schedule fallback priority
 
@@ -403,9 +552,25 @@ workspace; ordinary classes taught by their own program do not.
 Ranked instructor suggestions and generated conflict reassignment options are
 retired. Users choose instructors through the existing manual selection and
 assignment workflows, including permitted manual conflict reassignment. Teaching
-department/program eligibility, approval-stage restrictions, part-time
+department/program eligibility, approval-stage restrictions, instructor
 availability, overlap refusal and projected unit ceilings still apply to single,
-bulk and linked-group saves. The old override flag never permits a conflicting
+bulk and linked-group saves.
+
+The VPAA creates instructor profiles through **Add Instructor** and views
+availability read-only in instructor details. Availability-window editing in
+this view is available to non-VPAA users with `schedule.assign_instructor`.
+
+Instructor availability is the employment type's default week plus any windows
+added for that instructor. Full-time defaults to Monday-Friday 7:00 AM-8:30 PM;
+part-time defaults to Monday-Friday 5:00-8:30 PM and Saturday 7:00 AM-8:30 PM.
+Added windows extend the default (for example a part-timer's 7:00-11:00 AM
+weekday block), may not overlap the default or each other, and several may exist
+on one day. Every meeting must fit inside the combined hours, on assignment,
+manual plotting with an instructor, room transfers and conflict resolution.
+Generated classes are unassigned, so availability applies once an instructor is
+chosen. Removing a window or changing employment type is refused while it would
+leave classes already assigned in the active semester outside the instructor's
+availability. The old override flag never permits a conflicting
 assignment. Instructor-only changes retain their current validation scope and do
 not acquire placement checks unrelated to the assignment.
 
@@ -424,6 +589,33 @@ its duration is positive; single meetings and consecutive runs ignore retained
 second-meeting fields. Room TBA remains restricted to laboratory meetings.
 The modal must not report readiness while a save-validation error is present.
 Save errors remain retryable, and placement-quality preferences do not block saving.
+
+## Consecutive Days contact hours
+
+A Consecutive Days run repeats the course's full Total Hours on every selected
+day; the days do not share them. PRAC 101 at 6 hours on 3 days meets
+**6 hours/day × 3 days = 18 hours**, in Generate Schedule and Manual Plotting
+alike. Any day count from two up is allowed: there is no divisibility rule, so
+8 hours on 3 days is 24 hours. The course's own Total Hours and academic units
+are never multiplied.
+
+The weekly duration ceiling for a section and course is the course's Total
+Hours times the number of linked run meetings (rows in one split group carrying
+the `consecutive:N` marker), never more than N. A lone or unlinked row carrying
+a marker keeps the single allowance; creating or editing a whole group requires
+exactly N linked meetings at one time and mode. A batch save judges a run's rows
+together, so every day is checked against the run total. Other shapes keep
+their existing per-row duration checks. Existing saved runs are not resized;
+replot or regenerate them to apply the full daily length.
+
+Dragging a saved Consecutive Days meeting, selecting it and clicking a new slot,
+or resolving its conflict with a move updates only that meeting. Other meetings
+keep their days, times, rooms, and approval state. Matching start/end times are
+required when forming the run, but do not force its later individual moves to
+move siblings. Meeting count, delivery mode, different-day and configured meeting
+day rules remain enforced. Stationary siblings remain occupied for room,
+instructor and section conflict checks. Explicit whole-group editing and
+generation keep their existing workflow.
 
 ## Explicit session enhancements (recommendation integration Phase 6)
 
@@ -445,8 +637,9 @@ no retry or recommendation lookup clears that choice automatically.
 
 Field courses, Consecutive Days runs and already-split classes do not acquire
 these reshapes. Required Days, permitted days, fixed patterns, operating hours,
-room eligibility, section/instructor occupancy and concurrent same-course online
-limits still apply. A search with no result is bounded evidence, not proof that
+room eligibility and section/instructor occupancy still apply. Online is shared,
+so other sections taking the same course online at the same time do not block a
+reshape. A search with no result is bounded evidence, not proof that
 every possible timetable is impossible.
 
 Generate's balanced-Split enhancement probe and the CSP solver use the same
@@ -490,7 +683,7 @@ Restore validation also covers retained room home-program allocations and course
 
 ## Curriculum document import
 
-Implemented from [curriculum_document_import_plan](curriculum_document_import_plan.md). Routes: `GET/PUT /api/curriculum-import-settings`, `POST /api/curriculum-imports/validate`, `POST /api/curriculum-imports`, all behind `capability:curriculum.manage`; the UI is `/{secretary|program_head}/curriculum/import`.
+Implemented from [curriculum_document_import_plan](curriculum_document_import_plan.md). Routes: `GET/PUT /api/curriculum-import-settings`, `POST /api/curriculum-imports/validate`, `POST /api/curriculum-imports`, all behind `capability:curriculum.manage`; the UI is `/{secretary|director|program_head}/curriculum/import`.
 
 - Files (PDF with selectable text, CSV, XLSX, DOCX; 10 MiB, 50 PDF pages, 5,000 table rows) are read in the browser. The server receives the reviewed JSON draft and a client-declared SHA-256, not the file, so it validates domain integrity but cannot re-prove the draft against the source.
 - An import always creates a **new, deactivated** curriculum in the importer's department. Program heads import only into their own program. Activation and section assignment remain separate existing actions.
@@ -503,5 +696,13 @@ Implemented from [curriculum_document_import_plan](curriculum_document_import_pl
 - Credits stay in whole units (the course schema is integer); fractional credits are rejected. New courses store credits in the legacy `lecture_hours`/`lab_hours`/`units` fields exactly as manual encoding does, so scheduling behaves identically. Per-placement minutes are frozen from the department's rates (`lecture_minutes = lec × rate`, `laboratory_minutes = lab × rate`; total credits are independent of minutes).
 - The scheduler still uses the legacy 60/180 minutes-per-unit derivation. Saving other rates is allowed, but every import under them must acknowledge that the recorded minutes are not yet used for scheduling.
 - A row describing total hours (for example `Practicum (486 hours)`) must have an explicit basis: `weekly` from credits, or `total_hours` (no weekly minutes). Both require review. Weekly hours are never inferred from total hours. The scheduler does not yet honour `total_hours`; such a course would still be scheduled from its credits, so it should not be scheduled until a supported basis exists.
-- Only the department secretary may change import settings; other `curriculum.manage` holders can read them. Saving replaces rates and rules atomically with an expected revision, rejects duplicate rules, requires acknowledgment of more specific rules that override broader prefixes, and never recalculates existing placements, courses, or schedules.
+- Only the department Secretary or Director may change import settings; other `curriculum.manage` holders can read them. Saving replaces rates and rules atomically with an expected revision, rejects duplicate rules, requires acknowledgment of more specific rules that override broader prefixes, and never recalculates existing placements, courses, or schedules.
 - Commit reruns authorization and validation inside one transaction with the department row locked, rejects a changed settings revision or a changed draft/catalog fingerprint (409), and rolls back everything on any failure. A repeated `request_key` with the same body returns the recorded outcome; with a different body it conflicts.
+
+## Person names: title and credentials
+
+- Accounts (`users`) and instructor profiles (`faculties`) keep the structured name fields (first, middle name/initial, last, generational suffix `Jr.`, `Sr.`, `II`–`V`) plus two optional display fields: `honorific_prefix` (a title chosen from `PersonName::HONORIFIC_PREFIXES`, served by `GET /api/name-options` and the profile payload) and `credentials` (free text such as `DM` or `PhD, EdD`, at most 100 characters, trimmed with inner whitespace collapsed, capitalization and punctuation kept). Credentials are never merged into the suffix, interpreted, or used to assign a title.
+- Display format is `Dr. Juan P. Dela Cruz Jr., DM`; rosters use `Dela Cruz, Dr. Juan P. Jr., DM`. Backend `PersonName::format` and frontend `formatPersonName`/`formatPersonListName` are the shared formatters, built from the structured fields, never by parsing a display name. `users.name` is recomposed from the fields on every account/profile save.
+- Surname sorting and duplicate-instructor detection use first/middle/last/suffix only; titles and credentials never affect them. Frozen historical names (archived teaching history, schedule descriptors, signatory snapshots) are not rewritten.
+- On the user, faculty, and profile update endpoints an omitted title/credentials field is left unchanged and an explicit `null` clears it.
+- Account → instructor sync carries both fields. A value on the account wins; a value cleared on the account in that save clears the profile; otherwise a value already on the profile (for example, a roster instructor being linked) is kept and copied onto the account. Editing a linked instructor's title/credentials (VPAA only, as with other name fields) updates the account too.

@@ -2,10 +2,8 @@ import SchedulerPanel from "../ClassSchedules/SchedulerPanel";
 
 export default function ProgramHeadScheduleBuilder() {
   return (
-    <div>
-      <div className="mt-6 overflow-x-auto">
-        <SchedulerPanel />
-      </div>
+    <div className="min-w-0">
+      <SchedulerPanel />
     </div>
   );
 }

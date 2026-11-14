@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { AlertTriangle, CalendarClock, FlaskConical, MapPin, Presentation, User, Users } from 'lucide-react';
 import Modal from '../../../components/ui/Modal';
 import DepartmentLogo from '../../../components/ui/DepartmentLogo';
@@ -7,6 +7,7 @@ import { scheduleLocationLabel } from '../../../lib/scheduleLocation';
 import {
   courseCodeOf,
   courseNameOf,
+  filterVpaaApprovedSchedules,
   instructorNameOf,
   sessionTypeOf,
   siblingMeetingsOf,
@@ -22,6 +23,8 @@ interface ScheduleDetailModalProps {
   overlaps: ReadonlyMap<number, OverlapEntry[]>;
   onClose: () => void;
   onSelect: (schedule: CalendarSchedule) => void;
+  appearance?: 'default' | 'workflow';
+  includeUnapproved?: boolean;
 }
 
 const OVERLAP_REASON: Record<OverlapEntry['kinds'][number], string> = {
@@ -49,21 +52,27 @@ function Fact({ icon, label, children }: { icon: ReactNode; label: string; child
   );
 }
 
-export default function ScheduleDetailModal({ schedule, allSchedules, overlaps, onClose, onSelect }: ScheduleDetailModalProps) {
-  const siblings = useMemo(() => (schedule ? siblingMeetingsOf(schedule, allSchedules) : []), [schedule, allSchedules]);
-  const byId = useMemo(() => new Map(allSchedules.map((item) => [item.id, item])), [allSchedules]);
+export default function ScheduleDetailModal({ schedule: selectedSchedule, allSchedules, overlaps, onClose, onSelect, appearance = 'default', includeUnapproved = false }: ScheduleDetailModalProps) {
+  const visibleSchedules = useMemo(() => includeUnapproved ? allSchedules : filterVpaaApprovedSchedules(allSchedules), [allSchedules, includeUnapproved]);
+  const schedule = selectedSchedule ? visibleSchedules.find((item) => item.id === selectedSchedule.id) : null;
+  const siblings = useMemo(() => (schedule ? siblingMeetingsOf(schedule, visibleSchedules, includeUnapproved) : []), [schedule, visibleSchedules, includeUnapproved]);
+  const byId = useMemo(() => new Map(visibleSchedules.map((item) => [item.id, item])), [visibleSchedules]);
+  useEffect(() => {
+    if (selectedSchedule && !schedule) onClose();
+  }, [selectedSchedule, schedule, onClose]);
 
   if (!schedule) return null;
 
   const isLab = sessionTypeOf(schedule) === 'laboratory';
   const tone = departmentTone(schedule.department?.department_code, schedule.department?.department_name);
   const units = schedule.course?.units ?? schedule.subject?.units;
-  const overlapEntries = overlaps.get(schedule.id) ?? [];
+  const overlapEntries = (overlaps.get(schedule.id) ?? []).filter((entry) => byId.has(entry.otherId));
   const name = courseNameOf(schedule);
 
   return (
-    <Modal isOpen onClose={onClose} title="Class Schedule Details" size="md" footer={
-      <button type="button" onClick={onClose} className="rounded-xl bg-[#5A1220] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-[#410b15]">
+    <Modal isOpen onClose={onClose} title="Class Schedule Details" size="md"
+      appearance={appearance} icon={<CalendarClock size={21} />} eyebrow="Schedule details" footer={
+      <button type="button" onClick={onClose} data-variant="primary" className={appearance === 'workflow' ? 'scheduler-dialog-button' : 'rounded-xl bg-[#5A1220] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-[#410b15]'}>
         Close
       </button>
     }>
@@ -134,8 +143,9 @@ export default function ScheduleDetailModal({ schedule, allSchedules, overlaps, 
                     <button
                       type="button"
                       disabled={isCurrent}
+                      aria-pressed={isCurrent}
                       onClick={() => onSelect(meeting)}
-                      className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors ${isCurrent ? 'bg-[#5A1220] text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                      className={`selection-indicator rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors ${isCurrent ? '' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
                     >
                       {meeting.day.slice(0, 3)} {formatTime12h(meeting.start_time)} · {scheduleLocationLabel(meeting.mode, meeting.room?.room_code)}
                     </button>

@@ -25,17 +25,19 @@
 .transfer-review > .transfer-section-heading, .transfer-review > .transfer-description { flex-shrink: 0; }
 .transfer-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; }
 .transfer-section-heading h3 { display: flex; align-items: baseline; gap: 9px; margin: 0; font-size: 18px; line-height: 1.35; font-weight: 600; }
-.transfer-step { color: #4e0a10; font-family: 'DM Sans', system-ui, sans-serif; font-size: 12px; font-weight: 700; }
+.transfer-step { color: #4e0a10; font-family: 'Plus Jakarta Sans', 'DM Sans', system-ui, sans-serif; font-size: 12px; font-weight: 700; }
 .transfer-selection-count { flex-shrink: 0; border: 1px solid #e2d9d0; border-radius: 5px; padding: 3px 8px; color: #4e0a10; background: #fff; font-size: 12px; font-weight: 600; }
 .room-transfer .transfer-description { margin: 5px 0 14px; color: #5f5752; font-size: 13px; }
 .room-transfer .transfer-meta { margin-top: 4px; color: #625a54; font-size: 12px; line-height: 1.5; font-weight: 400; }
 .transfer-course, .transfer-room-name { font-weight: 600; }
 .transfer-table-scroll { max-height: min(60dvh, 640px); overflow: auto; border: 1px solid #e2d9d0; border-radius: 8px; background: #fff; }
 .transfer-table { width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; font-size: 13px; }
-.transfer-table thead { position: sticky; top: 0; z-index: 1; background: #f1ece6; }
-.transfer-table th { padding: 11px 12px; border-bottom: 1px solid #e2d9d0; color: #5f5752; font-size: 12px; font-weight: 600; }
+.transfer-table thead { position: sticky; top: 0; z-index: 1; background: #f9fafb; }
+.transfer-table th { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; color: #6b7280; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.025em; }
 .transfer-table th:first-child { width: 44px; padding: 0; }
-.transfer-table td { padding: 15px 12px; vertical-align: top; border-bottom: 1px solid #eee7e0; overflow-wrap: anywhere; }
+.transfer-table td { padding: 12px; vertical-align: top; border-bottom: 1px solid #f3f4f6; overflow-wrap: anywhere; }
+.transfer-table tbody tr { transition: background-color 150ms; }
+.transfer-table tbody tr:hover { background: #f9fafb; }
 .transfer-table tr:last-child td { border-bottom: 0; }
 .transfer-table tr[data-selected='true'] { background: #fcf8f5; }
 .transfer-table .transfer-select-cell { padding: 9px 0 9px 4px; }

@@ -1,3 +1,5 @@
+import { queryVisible } from "./taskGuide";
+
 const DEBUG_KEY = "wicars_tour_debug";
 const LONG_FRAME_MS = 50;
 
@@ -6,6 +8,9 @@ interface StepTiming {
   target: string;
   waitMs: number;
   coversTargetPct: number | null;
+  resolvedTarget: string | null;
+  targetRect: { x: number; y: number; width: number; height: number } | null;
+  tooltipRect: { x: number; y: number; width: number; height: number } | null;
 }
 
 let enabled: boolean | null = null;
@@ -27,6 +32,7 @@ interface Session {
   steps: StepTiming[];
   longFrames: number[];
   stopFrames: () => void;
+  measurements: Set<number>;
 }
 
 let session: Session | null = null;
@@ -46,7 +52,7 @@ const watchFrames = (sink: number[]): (() => void) => {
 
 export const beginTourDiagnostics = (tourId: string): void => {
   if (!tourDebugEnabled()) return;
-  session?.stopFrames();
+  if (session) endTourDiagnostics("replaced");
   const longFrames: number[] = [];
   session = {
     tourId,
@@ -54,34 +60,51 @@ export const beginTourDiagnostics = (tourId: string): void => {
     steps: [],
     longFrames,
     stopFrames: watchFrames(longFrames),
+    measurements: new Set(),
   };
   console.info("[tour] %s started — diagnostics on", tourId);
 };
 
-const measureCoverage = (target: Element): number | null => {
-  const tooltip = document.querySelector(".react-joyride__tooltip");
-  if (!(tooltip instanceof HTMLElement)) return null;
+const measureCoverage = (target: Element, timing: StepTiming): void => {
+  const tooltip = document.querySelector("[data-wicars-task-tooltip]");
+  if (!(tooltip instanceof HTMLElement)) return;
   const a = target.getBoundingClientRect();
   const b = tooltip.getBoundingClientRect();
   const area = a.width * a.height;
-  if (area <= 0) return null;
+  if (area <= 0 || b.width <= 0 || b.height <= 0) return;
+  timing.targetRect = { x: a.x, y: a.y, width: a.width, height: a.height };
+  timing.tooltipRect = { x: b.x, y: b.y, width: b.width, height: b.height };
   const overlapX = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
   const overlapY = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
-  return Math.round(((overlapX * overlapY) / area) * 100);
+  timing.coversTargetPct = Math.round(((overlapX * overlapY) / area) * 100);
 };
 
-export const recordTourStep = (step: string, targetSelector: string, waitMs: number): void => {
+export const recordTourStep = (step: string, targetSelector: string, waitMs: number, resolvedTarget?: HTMLElement): void => {
   if (!session) return;
+  const active = session;
   const timing: StepTiming = {
     step,
     target: targetSelector,
     waitMs: Math.round(waitMs),
     coversTargetPct: null,
+    resolvedTarget: null,
+    targetRect: null,
+    tooltipRect: null,
   };
-  session.steps.push(timing);
-  requestAnimationFrame(() => {
-    const element = document.querySelector(targetSelector);
-    if (element) timing.coversTargetPct = measureCoverage(element);
+  active.steps.push(timing);
+  const afterFrame = (callback: () => void) => {
+    const id = requestAnimationFrame(() => {
+      active.measurements.delete(id);
+      if (session === active) callback();
+    });
+    active.measurements.add(id);
+  };
+  afterFrame(() => afterFrame(() => {
+    const element = resolvedTarget ? (resolvedTarget.isConnected ? resolvedTarget : null) : queryVisible(targetSelector);
+    if (element) {
+      timing.resolvedTarget = element.tagName.toLowerCase();
+      measureCoverage(element, timing);
+    }
     if (timing.waitMs > 1000) {
       console.warn("[tour] step %s waited %dms for %s", step, timing.waitMs, targetSelector);
     }
@@ -91,20 +114,22 @@ export const recordTourStep = (step: string, targetSelector: string, waitMs: num
         step, timing.coversTargetPct, targetSelector,
       );
     }
-  });
+    if (timing.coversTargetPct === null) console.warn("[tour] step %s placement measurement unavailable", step);
+  }));
 };
 
-export const endTourDiagnostics = (outcome: string): void => {
-  if (!session) return;
-  const { tourId, startedAt, steps, longFrames, stopFrames } = session;
+export const endTourDiagnostics = (outcome: string, tourId?: string): void => {
+  if (!session || (tourId !== undefined && session.tourId !== tourId)) return;
+  const { tourId: owner, startedAt, steps, longFrames, stopFrames, measurements } = session;
   session = null;
   stopFrames();
+  measurements.forEach((id) => cancelAnimationFrame(id));
   const elapsed = Math.round(performance.now() - startedAt);
   const worst = longFrames.length ? Math.max(...longFrames) : 0;
   const total = longFrames.reduce((sum, frame) => sum + frame, 0);
   console.info(
     "[tour] %s ended (%s) after %dms — %d long frames, worst %dms, %dms stalled in total",
-    tourId, outcome, elapsed, longFrames.length, worst, total,
+    owner, outcome, elapsed, longFrames.length, worst, total,
   );
   console.table(steps);
 };

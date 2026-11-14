@@ -1,4 +1,18 @@
-# Room Transfer schedule preview design QA
+# Scheduler dialog redesign — 2026-11-09
+
+final result: passed
+
+The latest frontend design task covers all scheduler dialogs and confirmation flows. The normalized source and redesign screenshots were compared at 558 x 697; real components were also checked at desktop, mobile, and short landscape sizes. Shared maroon/cream styling, responsive action areas, protected-section labels, keyboard handling, and busy guards are implemented.
+
+The complete evidence, required visual-surface review, fixes, and verification limits are recorded in [Scheduler dialog design QA](docs/scheduler-dialog-redesign/design-qa.md). Initial validation: production build, 166 focused component checks, 64 browser layout checks, and 17 interaction checks. Existing unrelated lint findings remain.
+
+Follow-up: section checklists now start unchecked, and switching generation/configuration to Selected does not choose sections automatically. Saved explicit subsets and manual Select all remain available. Verified with 17 focused component checks, scoped lint, a production build, and 19 browser interaction checks; see [current selection evidence](docs/scheduler-dialog-redesign/verification-manual-selection.json).
+
+Local fixture preview: http://localhost:5173/scheduler-dialog-preview.local/
+
+---
+
+# Room Transfer schedule preview design QA (previous record preserved)
 
 final result: passed
 

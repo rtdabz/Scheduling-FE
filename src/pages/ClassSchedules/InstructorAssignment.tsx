@@ -40,12 +40,15 @@ const instructorConflictFrom = (err: unknown): string | null => {
   return messages.length > 0 ? [...new Set(messages)].join(" ") : null;
 };
 import Skeleton from "../../components/ui/Skeleton";
+import DataTable from "../../components/ui/DataTable";
+import { useDataTable } from "../../components/ui/useDataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from "../../lib/dataCache";
 import { useLiveRevision } from "../../hooks/useLiveRefresh";
 import { invalidateCacheGroups } from "../../lib/cacheGroups";
 import { publishLiveTopics } from "../../lib/liveUpdates";
 import { apiErrorMessage } from "../../lib/apiError";
-import { availabilityWarningMessage, coveredContinuously } from "../../lib/availabilityWindows";
+import { availabilityWarningMessage, isOutsideAvailability } from "../../lib/availabilityWindows";
 import { proBonoOptionNote, type LoadTier } from "../../lib/facultyLoad";
 import ConfirmModal from "../../components/ui/ConfirmModal";
 import WeeklyTimetableGrid from "../../components/scheduling/WeeklyTimetableGrid";
@@ -55,6 +58,7 @@ import { useWorkflowGuide } from "../../hooks/useWorkflowGuide";
 import MasterGantt from "../vpaa/calendar/MasterGantt";
 import {
   buildGanttDays,
+  filterVpaaApprovedSchedules,
   buildTimeWindow,
   dayIndexOf,
   findOverlaps,
@@ -74,6 +78,7 @@ import type {
   Subject,
 } from "./SchedulerPanel/types";
 import { INSTRUCTOR_ASSIGNABLE_STATUSES } from "./SchedulerPanel/types";
+import { formatPersonName, personSortName, type PersonNameParts } from "../../lib/personName";
 
 interface StoredUser {
   department_id?: number | null;
@@ -123,7 +128,7 @@ interface ApiSubject {
   teaching_department?: ApiDepartment | null;
 }
 
-interface ApiFaculty {
+interface ApiFaculty extends PersonNameParts {
   id: number;
   first_name: string;
   last_name: string;
@@ -141,6 +146,11 @@ interface ApiFaculty {
   required_units?: number | null;
   unit_ceiling?: number | null;
   availabilities?: Array<{
+    day_index: number;
+    start_time: string;
+    end_time: string;
+  }>;
+  standard_availabilities?: Array<{
     day_index: number;
     start_time: string;
     end_time: string;
@@ -169,7 +179,7 @@ interface ApiSchedule {
   status: string;
   section?: { section_name?: string } | null;
   room?: { room_code?: string; building?: string | null } | null;
-  faculty?: { first_name?: string; last_name?: string } | null;
+  faculty?: PersonNameParts | null;
 }
 interface AssignmentResponse {
   active_semester: ApiSemester | null;
@@ -253,43 +263,33 @@ const timeToMinutes = (value: string): number => {
   return hour * 60 + minute;
 };
 
-const isPartTimeOutsideAvailability = (faculty: ApiFaculty, schedule: ApiSchedule): boolean => {
-  if (faculty.employment_type !== "part-time") return false;
-
-  const dayIndexMap: Record<string, number> = {
-    Monday: 0,
-    Tuesday: 1,
-    Wednesday: 2,
-    Thursday: 3,
-    Friday: 4,
-    Saturday: 5,
-    Sunday: 6,
-  };
-  const dayIndex = dayIndexMap[schedule.day] ?? -1;
-
-  const recorded = faculty.availabilities ?? [];
-  if (recorded.length === 0) return false;
-  const dayAvailabilities = recorded.filter(
-    (a) => Number(a.day_index) === dayIndex
-  );
-  if (dayAvailabilities.length === 0) return true;
-
-  return !coveredContinuously(
-    dayAvailabilities.map((window): [number, number] => [
-      timeToMinutes(window.start_time),
-      timeToMinutes(window.end_time),
-    ]),
-    timeToMinutes(schedule.start_time),
-    timeToMinutes(schedule.end_time)
-  );
+const DAY_INDEX: Record<string, number> = {
+  Monday: 0,
+  Tuesday: 1,
+  Wednesday: 2,
+  Thursday: 3,
+  Friday: 4,
+  Saturday: 5,
+  Sunday: 6,
 };
+
+/** Default week of the employment type plus added windows; mirrors the backend rule. */
+const isOutsideFacultyAvailability = (faculty: ApiFaculty, schedule: ApiSchedule): boolean =>
+  isOutsideAvailability(
+    { availabilities: faculty.availabilities, standardAvailabilities: faculty.standard_availabilities },
+    {
+      dayIndex: DAY_INDEX[schedule.day] ?? -1,
+      startMinutes: timeToMinutes(schedule.start_time),
+      endMinutes: timeToMinutes(schedule.end_time),
+    }
+  );
 
 const getRoomName = (schedule: ApiSchedule): string =>
   schedule.room?.room_code || "Room not set";
 
 const getFacultyName = (schedule: ApiSchedule): string | null => {
   if (!schedule.faculty) return null;
-  return [schedule.faculty.first_name, schedule.faculty.last_name].filter(Boolean).join(" ") || null;
+  return formatPersonName(schedule.faculty) || null;
 };
 
 const timetableFrameClass = (scrollableTimetable: boolean): string => (scrollableTimetable
@@ -384,6 +384,7 @@ interface InstructorAssignmentProps {
   footerActions?: ReactNode;
   onWorkspaceStateChange?: (state: InstructorAssignmentWorkspaceState) => void;
   workflowGuideId?: string | null;
+  workflowGuideReady?: boolean;
   onWorkflowReady?: () => void;
   refreshToken?: number;
   scrollableTimetable?: boolean;
@@ -396,7 +397,7 @@ export interface InstructorAssignmentWorkspaceState {
   assignmentDone: boolean;
 }
 
-export default function InstructorAssignment({ assignmentLocked, headerActions, footerActions, onWorkspaceStateChange, workflowGuideId = "instructor-assignment", onWorkflowReady, refreshToken = 0, scrollableTimetable = true }: InstructorAssignmentProps = {}) {
+export default function InstructorAssignment({ assignmentLocked, headerActions, footerActions, onWorkspaceStateChange, workflowGuideId = "instructor-assignment", workflowGuideReady = true, onWorkflowReady, refreshToken = 0, scrollableTimetable = true }: InstructorAssignmentProps = {}) {
   const { toast } = useToast();
   const user = getStoredUser();
   const assignmentsCacheKey = `page:instructor-assignments:v6:${user.department_id ?? "all"}:${user.program_id ?? "all"}`;
@@ -438,14 +439,6 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   } | null>(null);
   const [error, setError] = useState("");
   const [warnings, setWarnings] = useState<AssignmentWarning[]>([]);
-  const instructorGuideSteps = useMemo(() => [
-    { element: "#instructor-assignment-overview", title: "Review approved schedules", description: "This page shows approved classes that still need your instructors.", side: "bottom" as const },
-    { element: '[data-tour="department-card"]', waitFor: "#instructor-assignment-departments", action: "click" as const, taskHint: "Click a department card to continue.", title: "Choose a department", description: "Open a department with classes that need your instructors.", side: "top" as const },
-    { element: "#assignment-section-filter", action: "select" as const, taskHint: "Change the section filter to continue.", title: "Filter by section", description: "Show one section at a time when needed.", side: "bottom" as const },
-    { element: "#assignment-status-filter", action: "select" as const, skipIfMissing: true, taskHint: "Choose \"Needs instructor\" to continue.", title: "Show only what is left", description: "Narrow the list to classes that still have nobody assigned.", side: "bottom" as const },
-    { element: "#instructor-assignment-worklist select[id^='worklist-faculty-']:not([disabled])", waitFor: "#instructor-assignment-worklist", skipIfMissing: true, title: "Assign an instructor", description: "Pick an eligible instructor straight from the row — it saves as you choose.", side: "top" as const },
-  ], []);
-  useWorkflowGuide({ id: "instructor-assignment", isReady: !isLoading && workflowGuideId === "instructor-assignment", steps: instructorGuideSteps, mission: "Staff the Classes" });
 
   useEffect(() => {
     if (!isLoading) onWorkflowReady?.();
@@ -566,6 +559,71 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
       ),
     }))
     .filter((item) => item.schedules.length > 0), [assignmentSchedules, departments]);
+  const departmentColumns = useMemo<ColumnDef<(typeof offeringDepartments)[number]>[]>(() => {
+    const pendingOf = (items: AssignmentSchedule[]) => items.filter((schedule) => !schedule.faculty_id).length;
+    return [
+      {
+        id: "department",
+        header: "Department",
+        accessorFn: (row) => row.department.department_code,
+        cell: ({ row: { original: { department } } }) => (
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#4e0a10] text-[#E8D5C4]">
+              {department.logo ? <img src={department.logo} alt="" className="h-full w-full object-cover" /> : <Building2 className="h-4 w-4" />}
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-[#4e0a10]">{department.department_code}</div>
+              <div className="text-xs font-medium text-gray-500">{department.department_name}</div>
+            </div>
+          </div>
+        ),
+      },
+      {
+        id: "schedules",
+        header: "Schedules",
+        accessorFn: (row) => row.schedules.length,
+        meta: { align: "right", cellClassName: "tabular-nums" },
+      },
+      {
+        id: "pending",
+        header: "Pending",
+        accessorFn: (row) => pendingOf(row.schedules),
+        meta: { align: "right", cellClassName: "tabular-nums" },
+        cell: ({ getValue }) => <span className={getValue<number>() ? "font-semibold text-amber-700" : "text-gray-400"}>{getValue<number>()}</span>,
+      },
+      {
+        id: "assigned",
+        header: "Assigned",
+        accessorFn: (row) => row.schedules.length - pendingOf(row.schedules),
+        meta: { align: "right", cellClassName: "tabular-nums" },
+        cell: ({ getValue }) => <span className={getValue<number>() ? "font-semibold text-emerald-700" : "text-gray-400"}>{getValue<number>()}</span>,
+      },
+      {
+        id: "actions",
+        header: "Action",
+        enableSorting: false,
+        meta: { align: "right", stopRowClick: true },
+        cell: ({ row: { original: { department } } }) => (
+          <div className="flex justify-end">
+            <TableActionButton
+              label={`View ${department.department_code} timetable`}
+              variant="view"
+              onClick={() => openDepartment(department.id)}
+            >
+              <Eye size={17} />
+            </TableActionButton>
+          </div>
+        ),
+      },
+    ];
+  }, []);
+  const departmentTable = useDataTable({
+    data: offeringDepartments,
+    columns: departmentColumns,
+    pageSize: false,
+    getRowId: (row) => String(row.department.id),
+  });
+
   const offeredSchedules = useMemo(
     () => offeringDepartments.flatMap((item) => item.schedules),
     [offeringDepartments],
@@ -628,8 +686,9 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
   ));
   // Section-wide clearing also reaches local courses outside this program-delegation view.
   const isCrossProgramWorkspace = Number(selectedDepartmentId) === Number(currentDepartmentId);
-  const ganttSchedules = useMemo<CalendarSchedule[]>(() => visibleSchedules.map((schedule) => ({
+  const ganttSchedules = useMemo<CalendarSchedule[]>(() => filterVpaaApprovedSchedules(visibleSchedules).map((schedule) => ({
     id: schedule.id,
+    status: schedule.status,
     day: schedule.day,
     start_time: schedule.start_time,
     end_time: schedule.end_time,
@@ -701,7 +760,8 @@ const selectedSchedule = assignmentSchedules.find(
 
   const modalFaculties = useMemo<Faculty[]>(() => faculties.map((faculty) => ({
     id: String(faculty.id),
-    name: `${faculty.first_name} ${faculty.last_name}`,
+    name: formatPersonName(faculty),
+    sortName: personSortName(faculty),
     profilePicture: faculty.profile_picture ?? null,
     employmentType: faculty.employment_type,
     departmentId: faculty.department_id,
@@ -721,6 +781,7 @@ const selectedSchedule = assignmentSchedules.find(
       faculty_id: faculty.id,
       ...availability,
     })),
+    standardAvailabilities: faculty.standard_availabilities,
   })), [faculties]);
 
   const modalSchedules = useMemo<ScheduleItem[]>(() => assignmentSchedules.map((schedule) => {
@@ -888,7 +949,8 @@ const selectedSchedule = assignmentSchedules.find(
 
   const departmentClassTotals = useMemo(() => {
     const assignedByClass = new Map<string, boolean>();
-    for (const schedule of departmentSchedules) {
+    const displayedSchedules = viewMode === "grid" ? filterVpaaApprovedSchedules(departmentSchedules) : departmentSchedules;
+    for (const schedule of displayedSchedules) {
       const key = [
         schedule.semester_id,
         schedule.section_id ?? schedule.section?.section_name ?? "none",
@@ -899,7 +961,7 @@ const selectedSchedule = assignmentSchedules.find(
     const total = assignedByClass.size;
     const assigned = [...assignedByClass.values()].filter(Boolean).length;
     return { total, assigned };
-  }, [departmentSchedules]);
+  }, [departmentSchedules, viewMode]);
   const assignFromWorklist = (scheduleId: number, facultyId: number | null) => {
     const schedule = assignmentSchedules.find((item) => Number(item.id) === scheduleId);
     if (!schedule || assignmentLocked) return;
@@ -973,8 +1035,8 @@ const selectedSchedule = assignmentSchedules.find(
     const schedule = assignmentSchedules.find((item) => String(item.id) === scheduleId);
     if (!faculty || !schedule) return null;
 
-    if (isPartTimeOutsideAvailability(faculty, schedule)) {
-      return availabilityWarningMessage(`${faculty.first_name} ${faculty.last_name}`.trim());
+    if (isOutsideFacultyAvailability(faculty, schedule)) {
+      return availabilityWarningMessage(formatPersonName(faculty));
     }
 
     const start = timeToMinutes(schedule.start_time);
@@ -1065,6 +1127,25 @@ const selectedSchedule = assignmentSchedules.find(
         ? refusedConflict.message
         : "")
     : "";
+  useWorkflowGuide({
+    id: workflowGuideId ?? 'instructor-assignment', isReady: !isLoading && workflowGuideReady && workflowGuideId !== null,
+    mission: workflowGuideId === 'cross-department-assignment' ? 'Cover Delegated Courses' : 'Staff the Classes',
+    variant: facultyAssignmentPopup ? 'assignment-dialog' : error ? 'unavailable' : `${selectedDepartment ? 'department' : 'overview'}-${viewMode}-${assignmentLocked ? 'locked' : 'open'}`,
+    steps: () => {
+      if (facultyAssignmentPopup) return [{ id: 'assignment-dialog', element: '[aria-labelledby="faculty-modal-title"]', title: 'Review the instructor assignment', description: 'Review eligible instructors, meetings and conflict messages. The form’s normal save action persists the assignment; finishing help does not choose or save an instructor.' }];
+      if (error) return [{ id: 'unavailable', element: '#instructor-assignment-page', title: 'Review the assignment message', description: 'The page reports a loading or assignment error. Check that message and reload to retry unavailable data. Help does not retry or save an instructor assignment.' }];
+      if (!selectedDepartment && offeringDepartments.length === 0) return [{ id: 'empty', element: '#instructor-assignment-overview', title: 'No approved classes are available', description: awaitingIncomingCourses.length ? 'Incoming courses are waiting for schedules and approval. Open Incoming to review them; instructors can be assigned after approved classes become available.' : 'Courses assigned to your department appear here after their schedules are created and approved. There is no instructor assignment to perform yet.' }];
+      return [
+        ...(!selectedDepartment ? [
+          { id: 'overview', element: '#instructor-assignment-overview', title: 'Review incoming teaching work', description: 'The overview counts approved classes offered to your department and their instructor assignment status.' },
+          { id: 'open-department', element: '[data-tour="department-card"]', action: 'click' as const, isSatisfied: () => document.querySelector('#instructor-assignment-workspace') !== null, taskHint: 'Open a department to review its classes.', title: 'Choose a source department', description: 'Choose the department whose approved timetable contains the courses your instructors will teach. Opening it does not change assignments.' },
+        ] : []),
+        { id: 'section', element: '#assignment-section-filter', title: 'Review one section or all sections', description: 'The Section filter limits the workspace to the selected section. Your current filter can stay unchanged while you review help.' },
+        { id: 'status', element: '#assignment-status-filter', title: 'Find classes needing an instructor', description: 'Needs instructor shows unassigned classes; Assigned reviews existing assignments. If nothing matches, clear the search, section or status filters.' },
+        { id: 'assign', element: viewMode === 'list' ? '#instructor-assignment-worklist' : '#instructor-assignment-timetable', title: assignmentLocked ? 'Assignments are locked' : viewMode === 'list' ? 'Review instructor choices' : 'Review the timetable', description: assignmentLocked ? 'This timetable is marked done and its assignments are locked. Use the normal Reassignment action when available to reopen it. Help does not unlock or change assignments.' : viewMode === 'list' ? 'Each row shows eligible instructors. Choosing one saves immediately, so review the choice carefully outside this guide. Locked rows cannot be edited; No eligible instructor means the course has no available matching faculty. All assigned classes remain reviewable with the Assigned or All classes filter.' : 'Grid preserves your saved view. Select a class outside this guide to review its eligible instructors and conflicts in the assignment dialog. Locked classes cannot be changed. Switch to List when you prefer row-based review; choosing an instructor there saves immediately.' },
+      ];
+    },
+  });
   if (isLoading && selectedDepartmentId !== null) {
     return (
       <InstructorAssignmentTimetableSkeleton
@@ -1118,7 +1199,7 @@ const selectedSchedule = assignmentSchedules.find(
   }
 
   return (
-    <div className={selectedDepartment ? "space-y-3" : "space-y-6"}>
+    <div id="instructor-assignment-page" className={selectedDepartment ? "space-y-3" : "space-y-6"}>
       {!selectedDepartment && (
         <header id="instructor-assignment-overview" className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:grid-cols-[1.3fr_1fr]">
           <div className="flex items-start gap-3">
@@ -1224,70 +1305,16 @@ const selectedSchedule = assignmentSchedules.find(
               <div className="py-10 text-center"><h3 className="text-sm font-black text-[#4e0a10]">No approved schedules yet.</h3><p className="mt-1 text-xs font-medium text-slate-500">{awaitingIncomingCourses.length} incoming {awaitingIncomingCourses.length === 1 ? 'course is' : 'courses are'} waiting for a schedule. Open Incoming to see them.</p></div>
             )
           ) : (
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-slate-200 bg-slate-50/70 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                  <tr>
-                    <th className="px-4 py-3">Department</th>
-                    <th className="px-4 py-3 text-right">Schedules</th>
-                    <th className="px-4 py-3 text-right">Pending</th>
-                    <th className="px-4 py-3 text-right">Assigned</th>
-                    <th className="px-4 py-3 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {offeringDepartments.map(({ department, schedules: items }) => {
-                    const pending = items.filter((schedule) => !schedule.faculty_id).length;
-                    const assigned = items.length - pending;
-                    return (
-                      <tr
-                        key={department.id}
-                        data-tour="department-card"
-                        tabIndex={0}
-                        onClick={() => openDepartment(department.id)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            openDepartment(department.id);
-                          }
-                        }}
-                        className="group cursor-pointer transition-colors hover:bg-[#C9952A]/5 focus:bg-[#C9952A]/5 focus:outline-none"
-                      >
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#4e0a10] text-[#E8D5C4]">
-                              {department.logo ? <img src={department.logo} alt="" className="h-full w-full object-cover" /> : <Building2 className="h-4 w-4" />}
-                            </div>
-                            <div>
-                              <div className="font-black text-[#4e0a10]">{department.department_code}</div>
-                              <div className="text-xs font-semibold text-slate-500">{department.department_name}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right font-bold text-slate-600">{items.length}</td>
-                        <td className={`px-4 py-3 text-right font-bold ${pending ? "text-amber-700" : "text-slate-400"}`}>{pending}</td>
-                        <td className={`px-4 py-3 text-right font-bold ${assigned ? "text-emerald-700" : "text-slate-400"}`}>{assigned}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex justify-end">
-                          <TableActionButton
-                            label={`View ${department.department_code} timetable`}
-                            variant="view"
-                            onClick={(event) => { event.stopPropagation(); openDepartment(department.id); }}
-                          >
-                            <Eye size={17} />
-                          </TableActionButton>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              table={departmentTable}
+              ariaLabel="Departments with approved schedules"
+              onRowClick={(row) => openDepartment(row.department.id)}
+              getRowAttributes={() => ({ 'data-tour': 'department-card' })}
+            />
           )}
         </section>
       ) : (
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <section id="instructor-assignment-workspace" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/70 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
               <button
@@ -1337,6 +1364,7 @@ const selectedSchedule = assignmentSchedules.find(
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {headerActions}
+              {workflowGuideId === 'instructor-assignment' && <WorkflowGuideButton guideId="instructor-assignment" />}
               <span className="flex h-9 items-center rounded-xl bg-[#4e0a10] px-3 text-xs font-bold text-[#E8D5C4]">
                 {departmentClassTotals.assigned} of {departmentClassTotals.total} classes assigned
               </span>
@@ -1434,9 +1462,9 @@ const selectedSchedule = assignmentSchedules.find(
                   type="button"
                   onClick={() => changeViewMode(id)}
                   aria-pressed={viewMode === id}
-                  className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-black transition-colors ${
+                  className={`selection-indicator inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-black transition-colors ${
                     viewMode === id
-                      ? "bg-white text-[#4e0a10] shadow-sm"
+                      ? "shadow-sm"
                       : "text-slate-500 hover:text-slate-700"
                   }`}
                 >
@@ -1535,6 +1563,7 @@ const selectedSchedule = assignmentSchedules.find(
       />
 
       <ConfirmModal
+        appearance="workflow"
         isOpen={clearSectionTarget !== null}
         eyebrow="Section Instructor Assignment"
         title="Clear all instructors?"

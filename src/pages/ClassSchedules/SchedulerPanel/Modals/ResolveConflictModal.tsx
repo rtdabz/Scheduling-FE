@@ -234,11 +234,15 @@ export default function ResolveConflictModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
+      appearance="workflow"
+      icon={<ShieldAlert className="h-5 w-5" />}
+      eyebrow="Schedule management"
+      busy={isSubmitting}
       size="lg"
       title="Resolve schedule conflicts"
       description="Every fix is checked against the saved timetable before it is kept. If the conflict is still there afterwards, nothing is saved."
       footer={
-        <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
+        <button type="button" onClick={onClose} disabled={isSubmitting} data-variant="secondary" className="scheduler-dialog-button">
           Close
         </button>
       }
@@ -251,9 +255,9 @@ export default function ResolveConflictModal({
             role="tab"
             aria-selected={tab === name}
             onClick={() => setTab(name)}
-            className={`-mb-px border-b-2 px-3 py-2 text-xs font-bold transition-colors ${
+            className={`selection-indicator -mb-px border-b-2 px-3 py-2 text-xs font-bold transition-colors ${
               tab === name
-                ? "border-[#4e0a10] text-[#4e0a10]"
+                ? ""
                 : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >

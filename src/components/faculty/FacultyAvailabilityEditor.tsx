@@ -1,7 +1,8 @@
-import LoadingSpinner from "../ui/LoadingSpinner";
-import { useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { AlertTriangle, Plus, X } from 'lucide-react';
+import { useState } from 'react';
+import { Plus, X } from 'lucide-react';
+import Modal from '../ui/Modal';
+import { ModalButton, ModalNotice } from '../ui/ModalForm';
+import { modalBody, modalControl, modalError } from '../ui/modalStyles';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
 import { FULL_DAY_NAMES, formatTime12h } from '../../lib/timeGrid';
@@ -12,6 +13,8 @@ interface FacultyAvailabilityEditorProps {
   facultyName: string;
   employmentType: 'full-time' | 'part-time';
   windows: AvailabilityWindow[];
+  /** The employment type's default week; added windows extend it. */
+  standardWindows?: AvailabilityWindow[];
   openingTime: string;
   closingTime: string;
   onClose: () => void;
@@ -42,6 +45,7 @@ export default function FacultyAvailabilityEditor({
   facultyName,
   employmentType,
   windows,
+  standardWindows = [],
   openingTime,
   closingTime,
   onClose,
@@ -55,7 +59,23 @@ export default function FacultyAvailabilityEditor({
   const openingShort = openingTime.slice(0, 5);
   const closingShort = closingTime.slice(0, 5);
 
-  const rowErrors = useMemo(() => {
+  const defaultsFor = (dayIndex: number) =>
+    standardWindows
+      .filter(window => window.day_index === dayIndex)
+      .map(window => ({ start: window.start_time.slice(0, 5), end: window.end_time.slice(0, 5) }))
+      .sort((a, b) => a.start.localeCompare(b.start));
+
+  /** The first stretch of the operating day not covered by the default, or null when it covers all of it. */
+  const freeGap = (dayIndex: number): { start: string; end: string } | null => {
+    let cursor = openingShort;
+    for (const window of defaultsFor(dayIndex)) {
+      if (window.start > cursor) return { start: cursor, end: window.start };
+      if (window.end > cursor) cursor = window.end;
+    }
+    return cursor < closingShort ? { start: cursor, end: closingShort } : null;
+  };
+
+  const rowErrors = (() => {
     const errors: Record<string, string> = {};
 
     drafts.forEach((draft, index) => {
@@ -72,6 +92,14 @@ export default function FacultyAvailabilityEditor({
           `Must fall inside operating hours (${formatTime12h(openingShort)} - ${formatTime12h(closingShort)}).`;
         return;
       }
+      const coveredByDefault = defaultsFor(draft.dayIndex).find(
+        window => draft.startTime < window.end && draft.endTime > window.start
+      );
+      if (coveredByDefault) {
+        errors[draft.key] =
+          `Overlaps the default hours (${formatTime12h(coveredByDefault.start)} - ${formatTime12h(coveredByDefault.end)}). Add only hours outside the default.`;
+        return;
+      }
       const clash = drafts.find((other, otherIndex) => otherIndex !== index && overlaps(draft, other));
       if (clash) {
         errors[draft.key] = `Overlaps another ${FULL_DAY_NAMES[draft.dayIndex] ?? 'same-day'} window.`;
@@ -79,17 +107,21 @@ export default function FacultyAvailabilityEditor({
     });
 
     return errors;
-  }, [drafts, openingShort, closingShort]);
+  })();
 
   const hasErrors = Object.keys(rowErrors).length > 0;
 
   const addWindow = (dayIndex: number) => {
+    const gap = freeGap(dayIndex);
+    if (!gap) return;
     setDrafts(prev => [
       ...prev,
-      { key: `draft-${nextKey}`, dayIndex, startTime: openingShort, endTime: closingShort },
+      { key: `draft-${nextKey}`, dayIndex, startTime: gap.start, endTime: gap.end },
     ]);
     setNextKey(prev => prev + 1);
   };
+
+  const employmentLabel = employmentType === 'part-time' ? 'part-time' : 'full-time';
 
   const updateDraft = (key: string, patch: Partial<DraftWindow>) => {
     setDrafts(prev => prev.map(draft => (draft.key === key ? { ...draft, ...patch } : draft)));
@@ -131,131 +163,93 @@ export default function FacultyAvailabilityEditor({
       .sort((a, b) => a.startTime.localeCompare(b.startTime)),
   }));
 
-  return createPortal(
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200 font-sans">
-      <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
-        <div className="p-5 flex shrink-0 justify-between items-center bg-[#4e0a10]">
-          <div>
-            <h2 className="text-base font-bold text-white">Teaching Availability</h2>
-            <p className="text-[11px] text-amber-100/75 font-semibold mt-0.5">
-              {facultyName} &middot; {employmentType === 'part-time' ? 'Part-time' : 'Full-time'}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 cursor-pointer"
-          >
-            <X size={20} />
-          </button>
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      title="Teaching Availability"
+      description={`${facultyName} · ${employmentType === 'part-time' ? 'Part-time' : 'Full-time'}`}
+      size="form"
+      closeOnOverlayClick={false}
+      closeOnEscape={!isSaving}
+      footerClassName="!justify-between"
+      footer={<>
+        <ModalButton variant="ghost" onClick={() => setDrafts([])} disabled={drafts.length === 0 || isSaving}>Remove added windows</ModalButton>
+        <div className="flex gap-2.5">
+          <ModalButton onClick={onClose} disabled={isSaving}>Cancel</ModalButton>
+          <ModalButton variant="primary" onClick={handleSave} loading={isSaving} disabled={hasErrors}>Save Availability</ModalButton>
         </div>
-
-        <div className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
-          <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] font-semibold text-amber-800">
-            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-            <span>
-              {employmentType === 'part-time'
-                ? 'A part-time instructor can only be scheduled inside these windows, and a day with no window is treated as unavailable. Leaving the week empty makes them unassignable.'
-                : 'Windows are advisory for a full-time instructor: the scheduler records them, but assignment is not blocked by them.'}
-            </span>
-          </div>
+      </>}
+    >
+      <div className={modalBody}>
+          <ModalNotice tone="warning">
+            The default {employmentLabel} hours apply automatically. Add a window to extend them,
+            for example a morning block for a part-time instructor. Classes must fit inside the
+            default hours or an added window.
+          </ModalNotice>
 
           {byDay.map(day => (
-            <div key={day.dayIndex} className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50/70 border-b border-gray-100">
-                <span className="text-xs font-bold uppercase tracking-wider text-gray-600">{day.label}</span>
+            <section key={day.dayIndex} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-4 py-2">
+                <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-600">{day.label}</h3>
                 <button
                   type="button"
                   onClick={() => addWindow(day.dayIndex)}
-                  className="flex items-center gap-1 text-[11px] font-bold text-[#5A1220] hover:text-[#C9952A] transition-colors cursor-pointer"
+                  disabled={!freeGap(day.dayIndex)}
+                  title={freeGap(day.dayIndex) ? undefined : 'The default hours already cover the whole operating day.'}
+                  className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-bold text-[#4e0a10] transition-colors hover:bg-[#4e0a10]/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Plus size={13} />
                   Add window
                 </button>
               </div>
 
-              {day.rows.length === 0 ? (
-                <p className="px-4 py-3 text-[11px] italic text-gray-400">
-                  Unrestricted &mdash; any operating hour.
-                </p>
-              ) : (
-                <div className="divide-y divide-gray-100">
+              <p className="px-4 py-2 text-xs text-slate-500">
+                {defaultsFor(day.dayIndex).length === 0
+                  ? 'Default: not available'
+                  : `Default: ${defaultsFor(day.dayIndex).map(window => `${formatTime12h(window.start)} – ${formatTime12h(window.end)}`).join(', ')}`}
+              </p>
+              {day.rows.length > 0 && (
+                <div className="divide-y divide-slate-100 border-t border-slate-100">
                   {day.rows.map(row => (
-                    <div key={row.key} className="px-4 py-3 space-y-1.5">
+                    <div key={row.key} className="px-4 py-2.5">
                       <div className="flex items-center gap-2">
                         <input
                           type="time"
+                          aria-label={`${day.label} window start`}
                           value={row.startTime}
                           step={300}
                           onChange={e => updateDraft(row.key, { startTime: e.target.value })}
-                          className={`px-3 py-1.5 border rounded-lg outline-none text-xs bg-white font-semibold focus:ring-2 ${
-                            rowErrors[row.key]
-                              ? 'border-red-400 focus:ring-red-400'
-                              : 'border-gray-200 focus:ring-[#C9952A]'
-                          }`}
+                          className={`${modalControl(Boolean(rowErrors[row.key]))} !w-auto tabular-nums`}
                         />
-                        <span className="text-xs font-bold text-gray-400">to</span>
+                        <span className="text-xs font-semibold text-slate-500">to</span>
                         <input
                           type="time"
+                          aria-label={`${day.label} window end`}
                           value={row.endTime}
                           step={300}
                           onChange={e => updateDraft(row.key, { endTime: e.target.value })}
-                          className={`px-3 py-1.5 border rounded-lg outline-none text-xs bg-white font-semibold focus:ring-2 ${
-                            rowErrors[row.key]
-                              ? 'border-red-400 focus:ring-red-400'
-                              : 'border-gray-200 focus:ring-[#C9952A]'
-                          }`}
+                          className={`${modalControl(Boolean(rowErrors[row.key]))} !w-auto tabular-nums`}
                         />
                         <button
                           type="button"
                           onClick={() => removeDraft(row.key)}
                           aria-label={`Remove ${day.label} window`}
-                          className="ml-auto text-gray-400 hover:text-red-500 p-1 transition-colors cursor-pointer"
+                          className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 cursor-pointer"
                         >
                           <X size={15} />
                         </button>
                       </div>
                       {rowErrors[row.key] && (
-                        <p className="text-[11px] font-semibold text-red-500">{rowErrors[row.key]}</p>
+                        <p className={modalError}>{rowErrors[row.key]}</p>
                       )}
                     </div>
                   ))}
                 </div>
               )}
-            </div>
+            </section>
           ))}
-        </div>
-
-        <div className="p-5 border-t border-black/5 bg-[#F7F4F0] flex justify-between items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setDrafts([])}
-            disabled={drafts.length === 0 || isSaving}
-            className="text-xs font-bold text-gray-500 hover:text-red-500 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Clear the week
-          </button>
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-700 font-semibold text-sm transition-all cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={isSaving || hasErrors}
-              className="bg-[#4e0a10] hover:bg-[#C9952A] text-white px-5 py-2 rounded-xl font-semibold text-sm transition-all flex items-center gap-2 shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isSaving && <LoadingSpinner size={15} className="animate-spin" />}
-              <span>Save Availability</span>
-            </button>
-          </div>
-        </div>
       </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }

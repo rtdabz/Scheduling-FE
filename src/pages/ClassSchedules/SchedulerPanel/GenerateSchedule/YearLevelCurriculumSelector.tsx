@@ -126,10 +126,16 @@ export default function YearLevelCurriculumSelector({
   useEffect(() => {
     if (!open) return;
     const closeOnOutside = (event: MouseEvent) => {
-      if (!popoverRef.current?.contains(event.target as Node)) setOpen(false);
+      if (!applying && !popoverRef.current?.contains(event.target as Node)) setOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      const dialog = popoverRef.current?.querySelector('[role="dialog"]');
+      const topDialog = Array.from(document.querySelectorAll('[role="dialog"], [role="alertdialog"]')).at(-1);
+      if (event.key === "Escape" && topDialog === dialog) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!applying) setOpen(false);
+      }
     };
     document.addEventListener("mousedown", closeOnOutside);
     document.addEventListener("keydown", closeOnEscape);
@@ -137,7 +143,7 @@ export default function YearLevelCurriculumSelector({
       document.removeEventListener("mousedown", closeOnOutside);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [open]);
+  }, [applying, open]);
 
   const selected = choice ?? currentId;
   const dirty = selected !== null && (selected !== currentId || isMixed || unassignedCount > 0);
@@ -304,7 +310,7 @@ export default function YearLevelCurriculumSelector({
         title={savedName ? `Curriculum: ${savedName}` : "Choose a curriculum"}
         className={`relative inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-bold transition ${
           open
-            ? "border-[#4e0a10] bg-[#4e0a10] text-white"
+            ? "border-white bg-[#4e0a10] text-white ring-2 ring-white/30"
             : "border-slate-200 bg-white text-slate-600 hover:border-[#4e0a10]/40 hover:text-[#4e0a10]"
         }`}
       >
@@ -318,17 +324,22 @@ export default function YearLevelCurriculumSelector({
         <div
           role="dialog"
           aria-label="Curriculum"
-          className="absolute inset-x-3 top-full z-30 mt-1 rounded-xl border border-slate-200 bg-white p-3 shadow-xl"
+          aria-busy={applying}
+          className="scheduler-dialog absolute inset-x-3 top-full z-30 mt-2 overflow-hidden border border-[#e2d9d0] bg-white shadow-xl"
         >
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            aria-label="Close"
-            className="absolute right-2 top-2 rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-          {picker}
+          <div className="scheduler-dialog-header items-center justify-between">
+            <h3 className="scheduler-dialog-title">Curriculum</h3>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              disabled={applying}
+              aria-label="Close"
+              className="scheduler-dialog-close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="p-4">{picker}</div>
         </div>
       )}
     </div>

@@ -22,7 +22,7 @@ const review = (stage: 'dean' | 'vpaa' = 'vpaa') => render(<MemoryRouter><RoomTr
 
 describe('Room schedule reassignment VPAA review', () => {
   it('opens the existing paginated changes modal above the shared schedule preview', async () => {
-    const many = { ...transfer, changes: Array.from({ length: 28 }, (_, i) => ({ ...transfer.changes[0], schedule_id: i + 1, mode: i === 27 ? 'online' : 'on-site', course: `SCI${i + 1}` })) };
+    const many = { ...transfer, changes: Array.from({ length: 23 }, (_, i) => ({ ...transfer.changes[0], schedule_id: i + 1, mode: i === 22 ? 'online' : 'on-site', course: `SCI${i + 1}` })) };
     const close = vi.fn();
     render(<MemoryRouter><RoomTransferRequests stage="vpaa" transfers={[many]} onClose={close} /></MemoryRouter>);
     const dialog = screen.getByRole('dialog', { name: 'Room Schedule Reassignment Details' });
@@ -34,14 +34,14 @@ describe('Room schedule reassignment VPAA review', () => {
     // Status lives in View Details, not above the document.
     expect(within(dialog).queryByText('Pending VPAA Approval')).toBeNull();
     const viewDetails = within(dialog).getByRole('button', { name: 'View Details' });
-    expect(viewDetails.closest('.border-b')?.querySelector('h2')?.textContent).toBe('Room Schedule Reassignment Details');
+    expect(viewDetails.closest('header')?.querySelector('h2')?.textContent).toBe('Room Schedule Reassignment Details');
     expect(viewDetails.getAttribute('aria-haspopup')).toBe('dialog');
     expect(viewDetails.hasAttribute('aria-expanded')).toBe(false);
     fireEvent.click(viewDetails);
     const changes = screen.getByRole('dialog', { name: 'Room schedule reassignment changes' });
     expect(dialog.hasAttribute('inert')).toBe(true);
     const summary = within(changes).getByRole('region', { name: 'Changes Summary' });
-    expect(summary.textContent).toContain('27affected meetings');
+    expect(summary.textContent).toContain('22affected meetings');
     expect(summary.textContent).toContain('1linked online session');
     expect(within(summary).getByText('Science')).toBeTruthy();
     expect(within(summary).getByText('2026-2027 1st')).toBeTruthy();
@@ -53,11 +53,12 @@ describe('Room schedule reassignment VPAA review', () => {
     expect(within(changes).getByRole('columnheader', { name: 'Original' })).toBeTruthy();
     expect(within(changes).getByRole('columnheader', { name: 'Proposed' })).toBeTruthy();
     expect(within(changes).getByText('SCI3')).toBeTruthy();
-    expect(within(changes).getByText('SCI25')).toBeTruthy();
-    expect(within(changes).queryByText('SCI26')).toBeNull();
+    expect(within(changes).getByText('SCI10')).toBeTruthy();
+    expect(within(changes).queryByText('SCI11')).toBeNull();
     fireEvent.click(within(changes).getByRole('button', { name: /next/i }));
-    expect(within(changes).getByText('SCI27')).toBeTruthy();
-    expect(within(changes).getByText('SCI28')).toBeTruthy();
+    fireEvent.click(within(changes).getByRole('button', { name: /next/i }));
+    expect(within(changes).getByText('SCI21')).toBeTruthy();
+    expect(within(changes).getByText('SCI23')).toBeTruthy();
     expect(within(changes).getAllByText('Room changed')).toHaveLength(2);
     expect(within(changes).getByText('Linked online session — unchanged')).toBeTruthy();
     expect(within(changes).getAllByText('On-site')).toHaveLength(2);

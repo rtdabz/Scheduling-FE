@@ -9,7 +9,7 @@ export const isConfiguredFieldCourse = (
   course: Course | null | undefined,
   fieldCourseCodes: ReadonlySet<string> = new Set(),
 ): boolean => {
-  if (!course) return false;
+  if (!course || !isFieldSchedulingEligible(course)) return false;
 
   const normalizedCode = normalizeCourseCode(course.code);
   return (
@@ -20,15 +20,28 @@ export const isConfiguredFieldCourse = (
   );
 };
 
+/**
+ * A course that meets as a lecture (lecture room) plus a laboratory (laboratory room), inferred
+ * from its units for every category. Mirrors the backend's
+ * SchedulingPolicy::hasLectureAndLaboratoryComponents(); field courses keep their own shape.
+ */
+export const hasLectureAndLaboratoryComponents = (
+  course: Course | null | undefined,
+  fieldCourseCodes: ReadonlySet<string> = new Set(),
+): boolean => Boolean(
+  course
+  && !isConfiguredFieldCourse(course, fieldCourseCodes)
+  && Number(course.lectureHours ?? 0) > 0
+  && Number(course.labHours ?? 0) > 0
+);
+
+/** Hybrid delivery (online lecture + on-site laboratory) remains a Major-only option. */
 export const isHybridSchedulingEligible = (
   course: Course | null | undefined,
   _overrideEnabled = true,
   fieldCourseCodes: ReadonlySet<string> = new Set(),
 ): boolean => Boolean(
-  course?.category === "major"
-  && !isConfiguredFieldCourse(course, fieldCourseCodes)
-  && Number(course.lectureHours ?? 0) > 0
-  && Number(course.labHours ?? 0) > 0
+  course?.category === "major" && hasLectureAndLaboratoryComponents(course, fieldCourseCodes)
 );
 
 export type BalancedSplitSettings = {
@@ -49,9 +62,12 @@ export const isBalancedSplitSchedulingEligible = (
   settings: BalancedSplitSettings,
 ): boolean => {
   if (!course) return false;
+  // A course with laboratory units is never a Split Session; mirrors
+  // SchedulingPolicy::balancedSplitEligible().
+  if (Number(course.labHours ?? 0) > 0) return false;
 
   if (course.category === "major") {
-    return Number(course.lectureHours ?? 0) > 0 || Number(course.labHours ?? 0) > 0;
+    return Number(course.lectureHours ?? 0) > 0;
   }
 
   return settings.minorEnabled || settings.majorLectureEnabled;
@@ -101,6 +117,6 @@ export const savedMeetingPairShape = (
   return { isIntegrated, isSplit: meetingCount >= 2 && !isIntegrated };
 };
 
-export const isFieldSchedulingEligible =(course: Course | null | undefined): boolean => (
-  Boolean(course) && Number(course?.labHours ?? 0) <= 0
+export const isFieldSchedulingEligible = (course: Course | null | undefined): boolean => (
+  Boolean(course) && Number(course?.labHours ?? 0) <= 0 && course?.roomTypeRequired !== "laboratory"
 );

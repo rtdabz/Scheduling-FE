@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 import PageHeader from './PageHeader';
 import { deanNav } from '../../navigation/deanNav';
+import { directorNav } from '../../navigation/directorNav';
 
 const renderAt = (path: string, nav = deanNav) => render(
   <MemoryRouter initialEntries={[path]}>
@@ -19,8 +20,13 @@ describe('PageHeader', () => {
     expect(screen.queryByText('Details')).toBeNull();
   });
 
+  it('titles the Director dashboard with the Director role', () => {
+    renderAt('/director/dashboard', directorNav);
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Director Dashboard');
+  });
+
   it('still titles the sibling page itself', () => {
     renderAt('/dean/schedules');
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('All Schedules');
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Schedules');
   });
 });

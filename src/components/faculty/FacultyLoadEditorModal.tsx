@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
 import NumberInput from '../ui/NumberInput';
-import { createPortal } from 'react-dom';
-import { Info, X } from 'lucide-react';
+import Modal from '../ui/Modal';
+import { ModalButton, ModalField, ModalNotice } from '../ui/ModalForm';
+import { modalBody, modalControl } from '../ui/modalStyles';
 import api from '../../lib/api';
 import { apiErrorMessage, apiFieldErrors } from '../../lib/apiError';
+import { formatPersonName, type PersonNameParts } from '../../lib/personName';
 
-export interface FacultyLoadValues {
+export interface FacultyLoadValues extends PersonNameParts {
   id: number;
   first_name: string;
   last_name: string;
@@ -57,7 +59,7 @@ export default function FacultyLoadEditorModal({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
 
-  const facultyName = `${faculty.first_name} ${faculty.last_name}`.trim();
+  const facultyName = formatPersonName(faculty);
 
   const derived = useMemo(() => {
     const required = Math.max(0, values.max_units - values.deload_units);
@@ -99,125 +101,85 @@ export default function FacultyLoadEditorModal({
 
   const overCeiling = faculty.assigned_units > derived.ceiling && derived.ceiling > 0;
 
-  return createPortal(
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200 font-sans">
-      <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
-        <div className="p-5 flex shrink-0 justify-between items-center bg-[#4e0a10]">
-          <div>
-            <h2 className="text-base font-bold text-white">Teaching Load</h2>
-            <p className="text-[11px] text-amber-100/75 font-semibold mt-0.5">{facultyName}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 cursor-pointer"
-          >
-            <X size={20} />
-          </button>
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      title="Teaching Load"
+      description={facultyName}
+      closeOnOverlayClick={false}
+      closeOnEscape={!isSaving}
+      footer={<>
+        <ModalButton onClick={onClose} disabled={isSaving}>Cancel</ModalButton>
+        <ModalButton variant="primary" onClick={handleSave} loading={isSaving} disabled={Boolean(localError)}>Save Load</ModalButton>
+      </>}
+    >
+      <div className={modalBody}>
+        <ModalNotice>
+          Names, department, program and status belong to the VPAA. Your role maintains the
+          unit allowances the scheduler plans against.
+        </ModalNotice>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {FIELDS.map(field => (
+            <ModalField
+              key={field.key}
+              label={field.label}
+              htmlFor={`load-${field.key}`}
+              hint={field.hint}
+              error={fieldErrors[field.key]}
+            >
+              {field.readOnly ? (
+                <input
+                  id={`load-${field.key}`}
+                  type="text"
+                  readOnly
+                  value={values[field.key]}
+                  className={`${modalControl()} cursor-not-allowed !bg-slate-100 !text-slate-500`}
+                />
+              ) : (
+                <NumberInput
+                  id={`load-${field.key}`}
+                  min={0}
+                  value={values[field.key]}
+                  onChange={e =>
+                    setValues(prev => ({ ...prev, [field.key]: Number(e.target.value) }))
+                  }
+                  aria-invalid={fieldErrors[field.key] ? true : undefined}
+                  className={`${modalControl(Boolean(fieldErrors[field.key]))} tabular-nums`}
+                />
+              )}
+            </ModalField>
+          ))}
         </div>
 
-        <div className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
-          <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-white p-3 text-[11px] font-semibold text-slate-600">
-            <Info size={14} className="mt-0.5 shrink-0 text-slate-400" />
-            <span>
-              Names, department, program and status belong to the VPAA. Your role maintains the
-              unit allowances the scheduler plans against.
-            </span>
+        <dl className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-4 text-sm">
+          <div className="flex items-center justify-between">
+            <dt className="text-slate-500">Net required load</dt>
+            <dd className="font-bold tabular-nums text-slate-800">{derived.required} units</dd>
           </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            {FIELDS.map(field => (
-              <div key={field.key}>
-                <label
-                  htmlFor={`load-${field.key}`}
-                  className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5"
-                >
-                  {field.label}
-                </label>
-                {field.readOnly ? (
-                  <input
-                    id={`load-${field.key}`}
-                    type="text"
-                    readOnly
-                    value={values[field.key]}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none text-sm bg-gray-100 text-gray-600 cursor-not-allowed"
-                  />
-                ) : (
-                  <NumberInput
-                    id={`load-${field.key}`}
-                    min={0}
-                    value={values[field.key]}
-                    onChange={e =>
-                      setValues(prev => ({ ...prev, [field.key]: Number(e.target.value) }))
-                    }
-                    className={`w-full px-4 py-2.5 border rounded-xl outline-none text-sm bg-white focus:ring-2 ${
-                      fieldErrors[field.key]
-                        ? 'border-red-400 focus:ring-red-400'
-                        : 'border-gray-200 focus:ring-[#C9952A]'
-                    }`}
-                  />
-                )}
-                <p className="mt-1 text-[10px] text-gray-400 font-semibold leading-snug">{field.hint}</p>
-                {fieldErrors[field.key] && (
-                  <p className="mt-1 text-[11px] font-semibold text-red-500">{fieldErrors[field.key]}</p>
-                )}
-              </div>
-            ))}
+          <div className="flex items-center justify-between">
+            <dt className="text-slate-500">Ceiling with allowances</dt>
+            <dd className="font-bold tabular-nums text-slate-800">{derived.ceiling} units</dd>
           </div>
-
-          <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-2.5 text-xs">
-            <div className="flex items-center justify-between">
-              <span className="font-semibold text-gray-500">Net required load</span>
-              <span className="font-bold text-gray-800">{derived.required} units</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="font-semibold text-gray-500">Ceiling with allowances</span>
-              <span className="font-bold text-gray-800">{derived.ceiling} units</span>
-            </div>
-            <div className="flex items-center justify-between border-t border-gray-100 pt-2.5">
-              <span className="font-semibold text-gray-500">Currently assigned</span>
-              <span className={`font-bold ${overCeiling ? 'text-red-600' : 'text-gray-800'}`}>
-                {faculty.assigned_units} units
-              </span>
-            </div>
+          <div className="flex items-center justify-between border-t border-slate-100 pt-2.5">
+            <dt className="text-slate-500">Currently assigned</dt>
+            <dd className={`font-bold tabular-nums ${overCeiling ? 'text-red-600' : 'text-slate-800'}`}>
+              {faculty.assigned_units} units
+            </dd>
           </div>
+        </dl>
 
-          {overCeiling && (
-            <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] font-semibold text-amber-800">
-              This instructor already carries {faculty.assigned_units} units, above the{' '}
-              {derived.ceiling}-unit ceiling these values set. The scheduler reports that as a
-              warning rather than blocking it, so existing assignments stay put.
-            </p>
-          )}
+        {overCeiling && (
+          <ModalNotice tone="warning">
+            This instructor already carries {faculty.assigned_units} units, above the{' '}
+            {derived.ceiling}-unit ceiling these values set. The scheduler reports that as a
+            warning rather than blocking it, so existing assignments stay put.
+          </ModalNotice>
+        )}
 
-          {localError && (
-            <p className="rounded-xl border border-red-100 bg-red-50 p-3 text-[11px] font-semibold text-red-600">
-              {localError}
-            </p>
-          )}
-        </div>
-
-        <div className="p-5 border-t border-black/5 bg-[#F7F4F0] flex shrink-0 justify-end gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-700 font-semibold text-sm transition-all cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={isSaving || Boolean(localError)}
-            className="bg-[#4e0a10] hover:bg-[#C9952A] text-white px-5 py-2 rounded-xl font-semibold text-sm transition-all flex items-center gap-2 shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isSaving && <LoadingSpinner size={15} />}
-            <span>Save Load</span>
-          </button>
-        </div>
+        {localError && <ModalNotice tone="error" role="alert">{localError}</ModalNotice>}
       </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }
-import LoadingSpinner from "../ui/LoadingSpinner";

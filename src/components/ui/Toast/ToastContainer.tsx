@@ -3,42 +3,24 @@ import ConfirmModal from '../ConfirmModal'
 import Toast from './Toast'
 
 export default function ToastContainer() {
-  const { toasts, modalNotices, dismiss, dismissModalNotice, confirmRequest, isConfirming, resolveConfirm } = useToast()
-  const activeNotice = modalNotices[0] ?? null
-  const closeActiveNotice = () => {
-    if (activeNotice) dismissModalNotice(activeNotice.id)
-  }
-
-  const noticePresentation = activeNotice?.type === 'error'
-    ? { eyebrow: 'System Error', variant: 'error' as const }
-    : activeNotice?.type === 'warning'
-      ? { eyebrow: 'System Warning', variant: 'warning' as const }
-      : { eyebrow: 'System Notice', variant: 'info' as const }
+  const { toasts, dismiss, confirmRequest, isConfirming, resolveConfirm } = useToast()
 
   return (
     <>
-      <div className="pointer-events-none fixed right-3 top-3 z-[9999] flex w-[calc(100vw-1.5rem)] flex-col gap-3 sm:right-6 sm:top-6 sm:w-auto">
-        <div className="pointer-events-auto flex flex-col gap-3">
-          {toasts.map((toast) => (
-            <Toast key={toast.id} toast={toast} onDismiss={dismiss} />
-          ))}
-        </div>
+      {/* Sits above open dialogs so a failure raised from inside one is still readable, and never
+          captures clicks outside the toasts themselves. */}
+      <div
+        aria-label="Notifications"
+        className="pointer-events-none fixed inset-x-3 top-3 z-[10050] flex flex-col items-end gap-2.5 sm:inset-x-auto sm:right-5 sm:top-5 sm:w-[360px]"
+      >
+        {toasts.map((toast) => (
+          <Toast key={toast.id} toast={toast} onDismiss={dismiss} />
+        ))}
       </div>
 
       <ConfirmModal
-        isOpen={activeNotice !== null}
-        eyebrow={noticePresentation.eyebrow}
-        title={activeNotice?.title ?? 'System notice'}
-        message={activeNotice?.message ?? ''}
-        confirmLabel="Close"
-        variant={noticePresentation.variant}
-        showCancel={false}
-        onCancel={closeActiveNotice}
-        onConfirm={closeActiveNotice}
-      />
-
-      <ConfirmModal
         isOpen={confirmRequest !== null}
+        appearance={confirmRequest?.appearance}
         eyebrow={confirmRequest?.eyebrow ?? 'Confirmation Required'}
         title={confirmRequest?.title ?? ''}
         message={confirmRequest?.message ?? ''}

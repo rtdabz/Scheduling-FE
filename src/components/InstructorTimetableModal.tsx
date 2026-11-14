@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { Calendar, Printer, X, CheckCircle2 } from "lucide-react";
+import { Calendar, Printer } from "lucide-react";
+import Modal from "./ui/Modal";
+import { ModalButton } from "./ui/ModalForm";
 import api from "../lib/api";
 import { buildExportFilename } from "../lib/exportFile";
 import { openPdfPreview } from "../lib/pdfPreview";
 import { useToast } from "../context/ToastContext";
+import { useActiveSemester } from "../hooks/useActiveSemester";
 import { gridOpeningMinutes, slotCount, slotMinutes } from "../lib/timeGrid";
 import Skeleton from "./ui/Skeleton";
 import { scheduleLocationLabel } from "../lib/scheduleLocation";
@@ -15,6 +17,7 @@ import {
   buildGanttDays,
   buildTimeWindow,
   findOverlaps,
+  filterVpaaApprovedSchedules,
   withCalendarDepartments,
   type CalendarDepartment,
   type CalendarSchedule,
@@ -77,6 +80,7 @@ const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
 const toCalendarSchedule = (s: ApiScheduleRecord): CalendarSchedule => ({
   id: s.id,
+  status: s.status,
   day: s.day,
   start_time: s.start_time,
   end_time: s.end_time,
@@ -107,6 +111,7 @@ export default function InstructorTimetableModal({
   onClose,
 }: InstructorTimetableModalProps) {
   const { toast } = useToast();
+  const { semester: activeSemester } = useActiveSemester();
   const [loading, setLoading] = useState(true);
   const [loadedFacultyId, setLoadedFacultyId] = useState<number | null>(null);
   const [isPrinting, setIsPrinting] = useState(false);
@@ -128,7 +133,7 @@ export default function InstructorTimetableModal({
       try {
         const [res, departmentRes] = await Promise.all([
           api.get<ApiScheduleRecord[]>("/schedules", {
-            params: { faculty_id: facultyId, semester_id: "active", per_page: 1000 },
+            params: { faculty_id: facultyId, semester_id: "active", per_page: 1000, view: "gantt" },
           }),
           api.get<CalendarDepartment[]>("/departments").catch(() => ({ data: [] })),
         ]);
@@ -136,7 +141,7 @@ export default function InstructorTimetableModal({
 
         setLoadedFacultyId(facultyId);
         setDepartments(Array.isArray(departmentRes.data) ? departmentRes.data : []);
-        setRecords((res.data ?? []).filter(
+        setRecords(filterVpaaApprovedSchedules(res.data ?? []).filter(
           (s) => s.faculty_id !== null && Number(s.faculty_id) === Number(facultyId)
         ));
       } catch {
@@ -190,6 +195,7 @@ export default function InstructorTimetableModal({
         departmentName: departmentName || "",
         departmentLogo: departmentLogo ?? null,
         schedules: pdfSchedules,
+        activeSemester,
       });
 
       await preview.show(blob, buildExportFilename('pdf', 'instructor-timetable', facultyName));
@@ -204,46 +210,37 @@ export default function InstructorTimetableModal({
 
   if (!isOpen) return null;
 
-  return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 animate-in fade-in duration-200 font-sans">
-      <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-6xl shadow-2xl overflow-hidden flex flex-col h-[92vh] animate-in zoom-in-95 duration-200">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4 border-b border-slate-200 bg-slate-50/50 shrink-0">
-          <div>
-            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-[#4e0a10]" />
-              {facultyName} - View Schedule
-            </h2>
-            <div className="flex flex-wrap items-center gap-2 mt-1">
-              <span className="bg-[#4e0a10]/15 text-[#4e0a10] border border-[#4e0a10]/10 px-2.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase">
-                {departmentName || "Instructor Schedule"}
-              </span>
-              <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-md text-[10px] font-bold">
-                {records.length} Assigned Class{records.length !== 1 ? "es" : ""}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={handlePrintTimetable}
-              disabled={loading || loadedFacultyId !== facultyId || isPrinting || records.length === 0}
-              className="bg-[#4e0a10] hover:bg-[#C9952A] text-white px-4 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span>{isPrinting ? "Preparing..." : "Print Timetable"}</span>
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        <div className="flex flex-1 min-h-0 flex-col overflow-hidden p-3 bg-slate-50/30 [contain:layout_paint]">
+  return (
+    <>
+      <Modal
+        isOpen
+        onClose={onClose}
+        title={`${facultyName} - View Schedule`}
+        description={departmentName || "Instructor Schedule"}
+        icon={<Calendar size={18} />}
+        size="xl"
+        className="h-[92dvh] !max-w-6xl"
+        bodyClassName="flex flex-col !overflow-hidden p-3 [contain:layout_paint]"
+        footerClassName="!justify-between"
+        headerActions={<>
+          <span className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[11px] font-bold text-white">
+            {records.length} Assigned Class{records.length !== 1 ? "es" : ""}
+          </span>
+          <button
+            type="button"
+            onClick={handlePrintTimetable}
+            disabled={loading || loadedFacultyId !== facultyId || isPrinting || records.length === 0}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-white px-3 text-xs font-bold text-[#4e0a10] transition-colors hover:bg-amber-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Printer className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>{isPrinting ? "Preparing..." : "Print Timetable"}</span>
+          </button>
+        </>}
+        footer={<>
+          <p className="text-xs text-slate-500">Weekly schedule, Monday to Sunday</p>
+          <ModalButton onClick={onClose}>Close</ModalButton>
+        </>}
+      >
           {loading ? (
             <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-6" aria-busy="true" aria-label="Loading instructor timetable">
               <Skeleton className="h-5 w-48" />
@@ -267,22 +264,7 @@ export default function InstructorTimetableModal({
               className="h-full min-h-[420px]"
             />
           )}
-        </div>
-
-        <div className="p-4 bg-white border-t border-slate-200 flex justify-between items-center font-sans">
-          <div className="text-xs text-slate-500 font-semibold flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-            <span>Weekly schedule for 7 days (Monday – Sunday)</span>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-5 py-2 border border-slate-300 bg-white hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-700 transition-colors cursor-pointer"
-          >
-            Close
-          </button>
-        </div>
-      </div>
+      </Modal>
       <ScheduleDetailModal
         schedule={selectedSchedule}
         allSchedules={ganttSchedules}
@@ -290,7 +272,6 @@ export default function InstructorTimetableModal({
         onClose={() => setSelectedSchedule(null)}
         onSelect={setSelectedSchedule}
       />
-    </div>,
-    document.body
+    </>
   );
 }

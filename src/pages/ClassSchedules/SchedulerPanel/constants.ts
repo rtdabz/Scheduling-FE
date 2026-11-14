@@ -14,13 +14,14 @@ export const INSTRUCTOR_ASSIGNED_STATUSES: ScheduleItem["status"][] = [
   "finalized"
 ];
 
+/**
+ * Only submissions still awaiting the Dean or the VPAA can be recalled. VPAA approval is final:
+ * approved, faculty-assignment, reassignment and finalized classes are never recallable.
+ */
 export const DEPARTMENT_WITHDRAWABLE_STATUSES: ScheduleItem["status"][] = [
   "submitted",
   "approved_by_dean",
   "conditionally_approved",
-  "approved",
-  "faculty_assignment",
-  "reassignment"
 ];
 
 export const isDepartmentSectionWithdrawable = (
@@ -63,19 +64,19 @@ export const getGridCardStyles = (category: Subject["category"]) => {
   switch (category) {
     case "major":
       return {
-        container: "border-rose-100/80 border-l-[#4e0a10] bg-rose-50/40 shadow-sm hover:shadow-md hover:bg-rose-50/70 hover:border-rose-200/80",
+        container: "border-rose-200/70 border-l-[#4e0a10] bg-rose-50/50 hover:bg-rose-50/80 hover:border-rose-300/70",
         text: "text-[#4e0a10] font-extrabold",
         badgeText: "text-[#4e0a10] bg-[#4e0a10]/10 border border-[#4e0a10]/20"
       };
     case "minor":
       return {
-        container: "border-amber-100/80 border-l-[#c9952a] bg-amber-50/40 shadow-sm hover:shadow-md hover:bg-amber-50/70 hover:border-amber-200/80",
+        container: "border-amber-200/70 border-l-[#c9952a] bg-amber-50/50 hover:bg-amber-50/80 hover:border-amber-300/70",
         text: "text-amber-900 font-extrabold",
         badgeText: "text-[#c9952a] bg-[#c9952a]/10 border border-[#c9952a]/20"
       };
     default:
       return {
-        container: "border-slate-100 border-l-slate-600 bg-slate-50/30 shadow-sm hover:shadow-md",
+        container: "border-slate-200 border-l-slate-600 bg-slate-50/50 hover:bg-slate-50",
         text: "text-slate-900 font-extrabold",
         badgeText: "text-slate-700 bg-slate-100 border border-slate-200"
       };

@@ -1,18 +1,23 @@
 import api from './api';
 import { getStoredUser } from './storedUser';
 import { roomReassignmentPage } from './notificationLink';
-import type { ApiDepartmentRecord, ApiScheduleRecord, ApiSectionRecord, Semester, UserSummary } from '../pages/ClassSchedules/SchedulerPanel/types';
+import type { ApiDepartmentRecord, ApiScheduleRecord, ApiSectionRecord, Semester, UserSummary, ScheduleSignatories } from '../pages/ClassSchedules/SchedulerPanel/types';
+import { normalizeRole } from './roles';
 
 export interface RecoveryCase { id: number; room_code: string; reason: string; trigger: string; semester_id: number; semester_label: string; meeting_count: number; schedule_ids: number[] }
 export interface RecoveryRoom { id: number; room_code: string; room_type: string; status: string }
-// temporarily_online: a face-to-face class meeting online only because its room was closed (unlike classes planned online).
+// temporarily_online: a face-to-face class awaiting room reassignment after closure or revoked borrowing access.
 export interface RecoveryMeeting { id: number; course: string; section: string; room: string; day: string; start_time: string; end_time: string; mode?: string; temporarily_online?: boolean }
 export interface RecoverySchedule extends RecoveryMeeting { meeting_type: string | null; status: string; needs_attention: boolean; room_status?: string | null; attention_reason?: string | null; required_room_type?: string | null; revision_required?: boolean; original_room?: string | null; displaced_at?: string | null; pending_transfer_id?: string | null; pending_transfer_status?: 'pending_dean' | 'pending_vpaa' | null }
-export interface RecoveryData { cases: RecoveryCase[]; semester_id: number; pending_count?: number; semesters: { id: number; academic_year: string; semester: string; is_active?: boolean | number }[]; rooms: RecoveryRoom[]; new_rooms: RecoveryRoom[]; schedules: RecoverySchedule[]; transfers?: RoomTransferRequest[] }
+export interface RecoveryData { cases: RecoveryCase[]; semester_id: number; pending_count?: number; room_tba_count?: number; semesters: { id: number; academic_year: string; semester: string; is_active?: boolean | number }[]; rooms: RecoveryRoom[]; new_rooms: RecoveryRoom[]; schedules: RecoverySchedule[]; transfers?: RoomTransferRequest[] }
 export interface RecoveryRow { id: number; room_id: number | null; day: string; start_time: string; end_time: string; mode?: string }
-export interface RecoveryPlan { plan_id: string; groups: { key: string; before: RecoveryRow[]; after: RecoveryRow[] }[]; meetings?: RecoveryMeeting[]; unresolved: { schedule_ids: number[]; reason: string; reason_code?: string }[]; search_limit_reached: boolean; expires_at: string }
+// apply: every meeting is still a draft, so the reassignment applies immediately. approval: already submitted, so Dean and VPAA review it.
+export type RecoveryWorkflow = 'apply' | 'approval';
+export const recoveryGroupWorkflow = (group: { workflow?: RecoveryWorkflow }): RecoveryWorkflow => group.workflow === 'apply' ? 'apply' : 'approval';
+export interface RecoveryPlan { plan_id: string; groups: { key: string; before: RecoveryRow[]; after: RecoveryRow[]; workflow?: RecoveryWorkflow }[]; meetings?: RecoveryMeeting[]; unresolved: { schedule_ids: number[]; reason: string; reason_code?: string }[]; search_limit_reached: boolean; expires_at: string }
 export interface RoomTransferPlacement { room: string; day: string; start_time: string; end_time: string }
 export interface RoomTransferRequest {
+  signatories?: ScheduleSignatories | null;
   id: string; status: 'pending_dean' | 'pending_vpaa' | 'approved' | 'applied' | 'rejected_by_dean' | 'rejected_by_vpaa'; department_id?: number; department: string; semester_id: number;
   // Final approval also turns on Sunday classes for the department.
   enables_sunday?: boolean;
@@ -50,8 +55,40 @@ export const ROOM_TRANSFER_STATUS_LABELS = {
 };
 export const roomTransferStatusClass = (status: RoomTransferRequest['status']) => status.startsWith('pending_') ? 'bg-amber-50 text-amber-900' : status.startsWith('rejected_') ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800';
 
+// Rooms with a reassignment in progress, keyed by room code: classes that still need a replacement room
+// (counted on the room they left) and classes in a transfer awaiting Dean or VPAA approval (source and destination).
+export interface RoomReassignmentActivity { needs: number; pending: number }
+export function roomReassignmentActivity(data: Pick<RecoveryData, 'schedules' | 'transfers'>): Record<string, RoomReassignmentActivity> {
+  const needs = new Map<string, Set<number>>();
+  const pending = new Map<string, Set<number>>();
+  const add = (map: Map<string, Set<number>>, room: string | null | undefined, id: number) => {
+    if (!room) return;
+    if (!map.has(room)) map.set(room, new Set());
+    map.get(room)!.add(id);
+  };
+  for (const row of data.schedules) {
+    if (!row.needs_attention) continue;
+    const room = row.original_room ?? (row.temporarily_online || row.room === 'Room TBA' ? null : row.room);
+    add(row.pending_transfer_id ? pending : needs, room, row.id);
+  }
+  for (const transfer of data.transfers ?? []) {
+    if (!transfer.status.startsWith('pending_')) continue;
+    for (const change of transfer.changes) {
+      if (isLinkedOnlineSession(change)) continue;
+      add(pending, change.before.room, change.schedule_id);
+      add(pending, change.after.room, change.schedule_id);
+    }
+  }
+  const result: Record<string, RoomReassignmentActivity> = {};
+  for (const room of new Set([...needs.keys(), ...pending.keys()])) {
+    result[room] = { needs: needs.get(room)?.size ?? 0, pending: pending.get(room)?.size ?? 0 };
+  }
+  return result;
+}
+
 export function recoveryLink(caseId?: number, semesterId?: number, roomId?: number): string {
-  const role = getStoredUser()?.role === 'program_head' ? 'program_head' : 'secretary';
+  const stored = normalizeRole(getStoredUser()?.role);
+  const role = stored === 'program_head' || stored === 'director' ? stored : 'secretary';
   const query = new URLSearchParams({ recovery: caseId ? String(caseId) : 'open' });
   if (semesterId) query.set('recovery_semester', String(semesterId));
   if (roomId) query.set('recovery_room', String(roomId));

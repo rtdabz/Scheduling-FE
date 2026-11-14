@@ -12,21 +12,47 @@ vi.mock('./RoomDetailContent', () => ({ default: ({ room, schedules, isLoading }
 
 const room = (id: number) => ({ id, room_code: `R${id}`, building: 'Main', room_type: 'lecture' as const,
   status: 'available' as const, department_id: null, department: null });
+const meeting = (id: number, status = 'approved') => ({
+  id, status, semester_id: 1, section_id: 1, course_id: 1, faculty_id: null, room_id: 1,
+  department_id: 1, day: 'Monday' as const, start_time: '08:00', end_time: '09:00', mode: 'on-site',
+});
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 beforeEach(() => { vi.mocked(getCachedData).mockReturnValue(undefined); });
 
 describe('room timetable data readiness', () => {
   it('waits for complete room data instead of printing truncated cached schedules', async () => {
-    vi.mocked(getCachedData).mockReturnValue({ rooms: [room(1)], schedules: [{ id: 10 }] });
+    vi.mocked(getCachedData).mockReturnValue({ rooms: [room(1)], schedules: [meeting(10)] });
     let complete!: (value: unknown) => void;
     vi.mocked(api.get).mockImplementation((url) => url === '/rooms/1'
       ? Promise.resolve({ data: room(1) })
       : new Promise((resolve) => { complete = resolve; }));
     render(<RoomDetailModal isOpen roomId={1} onClose={vi.fn()} initialRoom={room(1)} initialSchedulesComplete={false} />);
     expect(screen.getByText('Loading room')).toBeTruthy();
-    await act(async () => { complete({ data: [{ id: 10 }, { id: 11 }] }); });
+    await act(async () => { complete({ data: [meeting(10), meeting(11), meeting(12, 'draft')] }); });
     expect(await screen.findByText('R1: 10,11')).toBeTruthy();
+    expect(api.get).toHaveBeenCalledWith('/schedules', {
+      params: { view: 'published', room_id: 1, semester_id: 'active', per_page: 1000 },
+    });
+  });
+
+  it.each(['list', 'grid'] as const)('filters supplied schedules before the %s view can display or print them', async (view) => {
+    const statuses = ['approved', 'faculty_assignment', 'reassignment', 'finalized', 'draft', 'completed',
+      'submitted', 'approved_by_dean', 'conditionally_approved', 'revision', 'rejected', 'rejected_by_dean', 'unknown'];
+    render(<RoomDetailModal isOpen roomId={1} onClose={vi.fn()} initialRoom={room(1)}
+      initialViewMode={view} initialSchedules={statuses.map((status, index) => meeting(index + 1, status))} />);
+    expect(await screen.findByText('R1: 1,2,3,4')).toBeTruthy();
+    expect(api.get).not.toHaveBeenCalled();
+  });
+
+  it('filters cached schedules while refreshing with a published-only request', async () => {
+    vi.mocked(getCachedData).mockReturnValue({ rooms: [room(1)], schedules: [meeting(1), meeting(2, 'draft')] });
+    vi.mocked(api.get).mockImplementation(() => new Promise(() => undefined));
+    render(<RoomDetailModal isOpen roomId={1} onClose={vi.fn()} />);
+    expect(await screen.findByText('R1: 1')).toBeTruthy();
+    expect(api.get).toHaveBeenCalledWith('/schedules', {
+      params: { view: 'published', room_id: 1, semester_id: 'active', per_page: 1000 },
+    });
   });
 
   it('does not refetch forever when optional initial schedules are omitted', async () => {
@@ -41,7 +67,7 @@ describe('room timetable data readiness', () => {
     vi.mocked(api.get).mockImplementation((url, config) => {
       if (url === '/rooms/1') return new Promise((resolve) => { oldRoom = resolve; });
       return Promise.resolve({ data: url === '/rooms/2' ? room(2)
-        : [{ id: config?.params.room_id * 10 }] });
+        : [meeting(config?.params.room_id * 10)] });
     });
     const close = vi.fn();
     const { rerender } = render(<RoomDetailModal isOpen roomId={1} onClose={close} />);

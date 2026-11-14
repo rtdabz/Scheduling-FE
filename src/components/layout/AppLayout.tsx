@@ -9,13 +9,17 @@ import DepartmentSetupBanner from './DepartmentSetupBanner'
 import RouteLoadingBar from '../ui/RouteLoadingBar'
 import { useActiveSemester } from '../../hooks/useActiveSemester'
 import { getStoredUser, hasStoredCapability, type StoredUser } from '../../lib/storedUser'
+import { annotateNav } from '../../navigation/navLocks'
+import { useLiveRevision } from '../../hooks/useLiveRefresh'
 import { fetchCurrentUser } from '../../lib/currentUser'
 import { startLiveUpdates } from '../../lib/liveUpdates'
 import { vpaaNav } from '../../navigation/vpaaNav'
 import { deanNav } from '../../navigation/deanNav'
 import { secretaryNav } from '../../navigation/secretaryNav'
+import { directorNav } from '../../navigation/directorNav'
+import { dashboardPathForRole } from '../../lib/roles'
 import { programHeadNav } from '../../navigation/programHeadNav'
-import type { NavItem, NavSection } from '../../navigation/types'
+import type { NavSection } from '../../navigation/types'
 
 export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia('(min-width: 768px)').matches)
@@ -29,33 +33,19 @@ export default function AppLayout() {
     if (userId) void startLiveUpdates(Number(userId))
   }, [userId])
 
+  // Adding or removing a program publishes the `departments` topic; refetch so program-bound
+  // modules unlock or relock without a reload.
+  const departmentsRevision = useLiveRevision(['departments'])
   useEffect(() => {
-    fetchCurrentUser()
+    fetchCurrentUser({ force: departmentsRevision > 0 })
       .then((data) => {
         if (data) setUser(data)
       })
       .catch(() => {})
-  }, [])
+  }, [departmentsRevision])
 
-  const annotateItems = (items: NavItem[]): NavItem[] => {
-    return items.map((item) => {
-      const isItemLocked = Boolean(item.requiredCapability && !hasStoredCapability(item.requiredCapability));
-      const children = item.children ? annotateItems(item.children) : undefined;
-      const allChildrenLocked = Boolean(children && children.length > 0 && children.every((c) => c.isLocked));
-      return {
-        ...item,
-        isLocked: isItemLocked || allChildrenLocked,
-        children,
-      };
-    });
-  };
-
-  const processNav = (nav: NavSection[]): NavSection[] => {
-    return nav.map((section) => ({
-      ...section,
-      items: annotateItems(section.items),
-    }));
-  };
+  const processNav = (nav: NavSection[]): NavSection[] =>
+    annotateNav(nav, { noProgram: user?.scheduling_ready === false, departmentProgramCount: user?.department_program_count, hasCapability: hasStoredCapability })
 
   const getNavItems = (): NavSection[] => {
     const role = user?.role?.toLowerCase();
@@ -63,22 +53,18 @@ export default function AppLayout() {
     if (role === 'vpaa') return processNav(vpaaNav);
     if (role === 'dean') return processNav(deanNav);
     if (role === 'secretary') return processNav(secretaryNav);
+    if (role === 'director') return processNav(directorNav);
     if (role === 'program_head') return processNav(programHeadNav);
     if (location.pathname.startsWith('/dean')) return processNav(deanNav);
     if (location.pathname.startsWith('/secretary')) return processNav(secretaryNav);
+    if (location.pathname.startsWith('/director')) return processNav(directorNav);
     if (location.pathname.startsWith('/program_head')) return processNav(programHeadNav);
     return processNav(vpaaNav);
   }
 
   const navItems = getNavItems()
   const role = user?.role?.toLowerCase()
-  const homePath = role === 'dean'
-    ? '/dean/dashboard'
-    : role === 'secretary'
-      ? '/secretary/dashboard'
-        : role === 'program_head'
-        ? '/program_head/dashboard'
-        : '/dashboard'
+  const homePath = dashboardPathForRole(role)
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && sidebarOpen) {

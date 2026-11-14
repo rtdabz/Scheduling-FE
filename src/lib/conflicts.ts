@@ -1,5 +1,6 @@
 import api from './api';
 import { formatTime12h } from './timeGrid';
+import { EDITABLE_STATUSES as PLOTTING_EDITABLE_STATUSES } from './scheduleStatuses';
 
 export type ConflictRule =
   | 'section_conflict'
@@ -199,7 +200,7 @@ export const conflictFlagsBySchedule = (conflicts: ScheduleConflict[]): Map<stri
   return flags;
 };
 
-const EDITABLE_STATUSES = ['draft', 'completed', 'revision'];
+const EDITABLE_STATUSES = PLOTTING_EDITABLE_STATUSES;
 
 export const isReplottable = (schedule: ConflictSchedule): boolean =>
   EDITABLE_STATUSES.includes(schedule.status);

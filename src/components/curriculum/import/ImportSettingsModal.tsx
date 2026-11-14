@@ -6,6 +6,8 @@ import { useToast } from '../../../context/ToastContext';
 import { curriculumImportService } from '../../../services/curriculum/curriculumImportService';
 import { normalizeCode } from '../../../lib/curriculumImport/normalize';
 import type { ClassificationRule, ImportSettings } from '../../../lib/curriculumImport/types';
+import { TABLE_HEAD } from '../../ui/tableStyles';
+import { ModalButton } from '../../ui/ModalForm';
 
 interface ImportSettingsModalProps {
   settings: ImportSettings;
@@ -168,19 +170,19 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
       footer={(
         <>
           {!readOnly && blocked && <p className="mr-auto text-xs font-semibold text-red-700" role="status">Fix the highlighted fields to save.</p>}
-          <button type="button" onClick={onClose} className="inline-flex h-9 items-center rounded-lg border border-border bg-white px-4 text-[13px] font-bold text-text hover:bg-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+          <ModalButton onClick={onClose}>
             {readOnly ? 'Close' : 'Cancel'}
-          </button>
+          </ModalButton>
           {!readOnly && (
-            <button type="button" onClick={() => void save()} disabled={saving || blocked} className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-[13px] font-bold text-white hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
+            <ModalButton variant="primary" onClick={() => void save()} disabled={saving || blocked}>
               {saving ? 'Saving…' : 'Save settings'}
-            </button>
+            </ModalButton>
           )}
         </>
       )}
     >
       <div className="space-y-6 px-4 py-5 sm:px-5">
-        {readOnly && <p className="rounded-lg border border-border bg-white px-3 py-2 text-[13px] text-text">Only the department secretary can change these settings.</p>}
+        {readOnly && <p className="rounded-lg border border-border bg-white px-3 py-2 text-[13px] text-text">Only the department Secretary or Director can change these settings.</p>}
         {message && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800">{message}</p>}
 
         <section aria-labelledby="conversion-heading">
@@ -212,10 +214,10 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
 
           <div className="mt-3 max-h-[19rem] overflow-auto rounded-xl border border-border bg-white">
             <table className="w-full min-w-[22rem] text-[13px]">
-              <thead className="sticky top-0 z-10 bg-parchment text-left text-xs text-muted">
+              <thead className={`sticky top-0 z-10 ${TABLE_HEAD}`}>
                 <tr>
-                  <th scope="col" className="px-3 py-2 font-semibold">Prefix</th>
-                  <th scope="col" className="w-32 px-3 py-2 font-semibold">Classification</th>
+                  <th scope="col" className="px-3 py-2">Prefix</th>
+                  <th scope="col" className="w-32 px-3 py-2">Classification</th>
                   <th scope="col" className="w-12 px-3 py-2"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
@@ -230,7 +232,7 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
                 {rules.map((rule, index) => {
                   const error = ruleErrors.get(rule.key) ?? serverErrors[`rules.${index}.match_value`] ?? null;
                   return (
-                    <tr key={rule.key} className="border-t border-border align-top">
+                    <tr key={rule.key} className="border-t border-gray-100 align-top">
                       <td className="px-3 py-2">
                         <input
                           ref={(element) => { if (element) valueInputs.current.set(rule.key, element); else valueInputs.current.delete(rule.key); }}

@@ -2,21 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
-  Calendar as CalendarIcon,
-  ChevronsDownUp,
-  ChevronsUpDown,
   Clock,
-  Crosshair,
   Maximize2,
   Minimize2,
   Printer,
-  RefreshCw,
   RotateCcw,
   Rows3,
-  SlidersHorizontal,
 } from 'lucide-react';
 import api from '../../lib/api';
-import { buildExportFilename, printWithTitle } from '../../lib/exportFile';
+import { openPdfPreview } from '../../lib/pdfPreview';
+import { buildSchedulesPdf, getSchedulePdfFilename, type SchedulePdfInput } from '../ClassSchedules/SchedulerPanel/schedulePdf';
+import { mapInitialData, type InitialDataResponse } from '../ClassSchedules/SchedulerPanel/hooks/initialDataMapper';
 import Skeleton from '../../components/ui/Skeleton';
 import SearchInput from '../../components/ui/SearchInput';
 import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
@@ -24,7 +20,7 @@ import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { useToast } from '../../context/ToastContext';
 import { academicYearLabel, semesterLabel } from '../../lib/semesterLabel';
 import MasterGantt, { type MasterGanttHandle } from './calendar/MasterGantt';
-import { LAB_PATTERN, OFF_HOURS_PATTERN, type Density, type ZoomLevel } from './calendar/ganttPresentation';
+import { LAB_PATTERN, OFF_HOURS_PATTERN } from './calendar/ganttPresentation';
 import ScheduleDetailModal from './calendar/ScheduleDetailModal';
 import { departmentTone } from './calendar/departmentPalette';
 import {
@@ -35,9 +31,9 @@ import {
   buildTimeWindow,
   courseCodeOf,
   courseNameOf,
-  dayIndexOf,
   departmentIdOf,
   findOverlaps,
+  filterVpaaApprovedSchedules,
   instructorNameOf,
   minutesToLabel,
   sessionTypeOf,
@@ -66,10 +62,11 @@ interface CalendarData {
   standardHours: StandardHours;
 }
 
-const CACHE_KEY = 'page:vpaa-calendar:gantt';
+const CACHE_KEY = 'page:vpaa-calendar:gantt:vpaa-approved';
 
 const SCHEDULE_ROW_LIMIT = 1000;
-const WEEKDAYS = [0, 1, 2, 3, 4, 5];
+const PRINT_SCHEDULE_LIMIT = 2000;
+const ALL_DAYS = CALENDAR_DAYS.map((_, index) => index);
 
 const GROUP_OPTIONS: { value: GroupBy; label: string }[] = [
   { value: 'none', label: 'Day only' },
@@ -79,11 +76,6 @@ const GROUP_OPTIONS: { value: GroupBy; label: string }[] = [
   { value: 'department', label: 'Department' },
 ];
 
-const ZOOM_OPTIONS: { value: ZoomLevel; label: string }[] = [
-  { value: 'fit', label: 'Fit' },
-  { value: 'normal', label: '1×' },
-  { value: 'wide', label: '2×' },
-];
 
 const toStandardHours = (response: TimeslotSettingsResponse | null | undefined): StandardHours => {
   return buildStandardHours(response?.settings?.opening_time, response?.settings?.closing_time, response?.settings?.slot_interval);
@@ -103,7 +95,7 @@ function Segmented<T extends string>({ label, value, options, onChange }: {
           type="button"
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
-          className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition-colors ${value === option.value ? 'bg-[#5A1220] text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'}`}
+          className={`selection-indicator rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition-colors ${value === option.value ? 'shadow-xs' : 'text-gray-600 hover:text-gray-900'}`}
         >
           {option.label}
         </button>
@@ -112,15 +104,14 @@ function Segmented<T extends string>({ label, value, options, onChange }: {
   );
 }
 
-function ToolButton({ onClick, label, children, active = false }: { onClick: () => void; label: string; children: ReactNode; active?: boolean }) {
+function ToolButton({ onClick, label, children }: { onClick: () => void; label: string; children: ReactNode }) {
   return (
     <button
       type="button"
       onClick={onClick}
       title={label}
       aria-label={label}
-      aria-pressed={active || undefined}
-      className={`flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-[11px] font-bold shadow-xs transition-colors ${active ? 'border-[#5A1220] bg-[#5A1220] text-white' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-[#5A1220]'}`}
+      className="flex h-9 items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-2.5 text-[11px] font-bold text-gray-600 shadow-xs transition-colors hover:border-gray-300 hover:text-[#5A1220]"
     >
       {children}
     </button>
@@ -142,21 +133,18 @@ export default function VpaaCalendarPage() {
   const [isLoading, setIsLoading] = useState(!hasCachedData(CACHE_KEY));
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const [showOptions, setShowOptions] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [departmentId, setDepartmentId] = useState('all');
   const [sessionType, setSessionType] = useState<'all' | SessionType>('all');
-  const [hiddenDays, setHiddenDays] = useState<ReadonlySet<number>>(new Set());
-  const [overlapsOnly, setOverlapsOnly] = useState(false);
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
 
   const [groupBy, setGroupBy] = useState<GroupBy>('none');
-  const [zoom, setZoom] = useState<ZoomLevel>('fit');
-  const [density, setDensity] = useState<Density>('comfortable');
   const [collapsedDays, setCollapsedDays] = useState<ReadonlySet<number>>(new Set());
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [selected, setSelected] = useState<CalendarSchedule | null>(null);
   const [now, setNow] = useState(() => new Date());
+  const [isPrinting, setIsPrinting] = useState(false);
   const ganttRef = useRef<MasterGanttHandle>(null);
 
   const fetchData = useCallback(async (options: { force?: boolean; silent?: boolean } = {}) => {
@@ -170,7 +158,7 @@ export default function VpaaCalendarPage() {
       ]);
       const semester = semesterRes.data?.id ? semesterRes.data : null;
       const scheduleRes = await api.get<CalendarSchedule[]>('/schedules', {
-        params: { per_page: SCHEDULE_ROW_LIMIT, ...(semester ? { semester_id: semester.id } : {}) },
+        params: { view: 'gantt', per_page: SCHEDULE_ROW_LIMIT, ...(semester ? { semester_id: semester.id } : {}) },
       });
 
       const next: CalendarData = {
@@ -211,7 +199,7 @@ export default function VpaaCalendarPage() {
   }, [isFullscreen, selected]);
 
   const { departments, semester, standardHours } = data;
-  const schedules = useMemo(() => withCalendarDepartments(data.schedules, departments), [data.schedules, departments]);
+  const schedules = useMemo(() => withCalendarDepartments(filterVpaaApprovedSchedules(data.schedules), departments), [data.schedules, departments]);
 
   const overlaps = useMemo(() => findOverlaps(schedules), [schedules]);
 
@@ -220,18 +208,13 @@ export default function VpaaCalendarPage() {
     return schedules.filter((item) => {
       if (departmentId !== 'all' && String(departmentIdOf(item)) !== departmentId) return false;
       if (sessionType !== 'all' && sessionTypeOf(item) !== sessionType) return false;
-      if (overlapsOnly && !overlaps.has(item.id)) return false;
       if (!query) return true;
       return [courseCodeOf(item), courseNameOf(item), instructorNameOf(item), item.room?.room_code, item.section?.section_name]
         .some((value) => (value ?? '').toLowerCase().includes(query));
     });
-  }, [schedules, departmentId, sessionType, overlapsOnly, overlaps, searchQuery]);
+  }, [schedules, departmentId, sessionType, searchQuery]);
 
-  const availableDays = useMemo(
-    () => (schedules.some((item) => dayIndexOf(item.day) === 6) ? [...WEEKDAYS, 6] : WEEKDAYS),
-    [schedules],
-  );
-  const visibleDays = useMemo(() => availableDays.filter((day) => !hiddenDays.has(day)), [availableDays, hiddenDays]);
+  const visibleDays = useMemo(() => selectedDay === null ? ALL_DAYS : [selectedDay], [selectedDay]);
 
   const timeWindow = useMemo(() => buildTimeWindow(standardHours, schedules), [standardHours, schedules]);
   const ganttDays = useMemo(() => buildGanttDays(filteredSchedules, groupBy, visibleDays), [filteredSchedules, groupBy, visibleDays]);
@@ -240,7 +223,6 @@ export default function VpaaCalendarPage() {
     () => ganttDays.flatMap((day) => day.rows.flatMap((row) => row.blocks.map((block) => block.schedule))),
     [ganttDays],
   );
-  const overlappingCount = visibleSchedules.filter((item) => overlaps.has(item.id)).length;
 
   const legendDepartments = useMemo(() => {
     const seen = new Map<string, string>();
@@ -251,13 +233,12 @@ export default function VpaaCalendarPage() {
     return [...seen.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [visibleSchedules]);
 
-  const hasFilters = searchQuery !== '' || departmentId !== 'all' || sessionType !== 'all' || overlapsOnly || hiddenDays.size > 0;
+  const hasFilters = searchQuery !== '' || departmentId !== 'all' || sessionType !== 'all' || selectedDay !== null;
   const resetFilters = () => {
     setSearchQuery('');
     setDepartmentId('all');
     setSessionType('all');
-    setOverlapsOnly(false);
-    setHiddenDays(new Set());
+    setSelectedDay(null);
   };
 
   const toggleSet = (set: ReadonlySet<number>, value: number) => {
@@ -266,7 +247,54 @@ export default function VpaaCalendarPage() {
     return next;
   };
 
-  const allCollapsed = visibleDays.length > 0 && visibleDays.every((day) => collapsedDays.has(day));
+  // Prints the official class-schedule document (the same one approvals, history and reports print),
+  // scoped to the department filter. "All departments" prints each department as its own document
+  // (letterhead, tables and signatories), every one starting on a new page.
+  const printSchedule = async () => {
+    if (isPrinting) return;
+    setIsPrinting(true);
+    const preview = openPdfPreview();
+    try {
+      const { data: initial } = await api.get<InitialDataResponse>('/initial-data', { params: { view: 'gantt', schedule_limit: PRINT_SCHEDULE_LIMIT } });
+      const source = mapInitialData(initial, { isVpaa: true });
+      const allDepartments = departmentId === 'all';
+      const sections = allDepartments
+        ? source.sections
+        : source.sections.filter((section) => String(section.departmentId) === departmentId);
+      const sectionIds = new Set(sections.map((section) => section.id));
+      const allSchedules = filterVpaaApprovedSchedules(source.schedules).filter((schedule) => sectionIds.has(schedule.sectionId));
+      if (allSchedules.length === 0) {
+        preview.close();
+        toastRef.current.warning('Nothing to Print', 'No class schedules in this scope yet.');
+        return;
+      }
+      const printedSections = sections.filter((section) => allSchedules.some((schedule) => schedule.sectionId === section.id));
+      const departmentIds = [...new Set(printedSections.map((section) => Number(section.departmentId)))];
+      const departmentLabel = (id: number) => {
+        const department = source.departments.find((entry) => Number(entry.id) === id);
+        return department?.department_name ?? department?.department_code ?? '';
+      };
+      departmentIds.sort((left, right) => departmentLabel(left).localeCompare(departmentLabel(right)));
+      const inputFor = (departmentSections: typeof printedSections): SchedulePdfInput => ({
+        sections: departmentSections,
+        allSchedules: allSchedules.filter((schedule) => departmentSections.some((section) => section.id === schedule.sectionId)),
+        selectedSectionId: departmentSections[0]?.id ?? '',
+        departments: source.departments,
+        users: source.users,
+        activeSemester: source.activeSemester,
+      });
+      const inputs = departmentIds.map((id) => inputFor(printedSections.filter((section) => Number(section.departmentId) === id)));
+      const filename = getSchedulePdfFilename({ ...inputFor(printedSections), printAllSections: allDepartments });
+      await preview.show(await buildSchedulesPdf(inputs), filename);
+    } catch (err) {
+      preview.close();
+      console.error('Error printing class schedule:', err);
+      toastRef.current.error('Print Failed', 'Could not generate the class schedule PDF.');
+    } finally {
+      setIsPrinting(false);
+    }
+  };
+
   const standardHoursLabel = `${minutesToLabel(standardHours.opening)} – ${minutesToLabel(standardHours.closing)}`;
 
   const skeleton = (
@@ -305,18 +333,8 @@ export default function VpaaCalendarPage() {
         </div>
         <div className="flex items-center gap-2">
           <span role="status" className="mr-1 text-xs font-semibold text-slate-500">
-            {isLoading ? 'Loading…' : `${visibleSchedules.length} ${visibleSchedules.length === 1 ? 'meeting' : 'meetings'} in view`}
+            {isLoading ? 'Loading…' : `${visibleSchedules.length} ${visibleSchedules.length === 1 ? 'class' : 'classes'} in view`}
           </span>
-          <button
-            type="button"
-            onClick={() => void fetchData({ force: true })}
-            disabled={isRefreshing || isLoading}
-            title="Refresh calendar"
-            aria-label="Refresh calendar"
-            className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-[#5A1220] disabled:opacity-50 print:hidden"
-          >
-            <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
-          </button>
           <span className="print:hidden">
             <ToolButton onClick={() => setIsFullscreen((value) => !value)} label={isFullscreen ? 'Exit full screen' : 'Full screen'}>
               {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
@@ -356,62 +374,46 @@ export default function VpaaCalendarPage() {
             {GROUP_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
-        <ToolButton onClick={() => setOverlapsOnly((value) => !value)} label="Show only overlapping classes" active={overlapsOnly}>
-          <AlertTriangle className="h-3.5 w-3.5" />Overlaps{overlappingCount || overlapsOnly ? ` (${overlappingCount})` : ''}
-        </ToolButton>
         <button
           type="button"
-          onClick={() => setShowOptions((value) => !value)}
-          aria-label="View options"
-          aria-expanded={showOptions}
-          aria-controls="calendar-view-options"
-          className={`flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-[11px] font-bold transition-colors ${showOptions ? 'border-[#5A1220]/30 bg-[#5A1220]/5 text-[#5A1220]' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+          onClick={() => { void printSchedule(); }}
+          disabled={isPrinting}
+          title="Print class schedule"
+          aria-label="Print calendar"
+          className="flex disabled:cursor-wait disabled:opacity-60 h-9 w-28 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-2.5 text-[11px] font-bold text-black-600 shadow-xs transition-colors hover:border-gray-300 hover:text-[#5A1220]"
         >
-          <SlidersHorizontal className="h-3.5 w-3.5" />View options
-          {sessionType !== 'all' && <span className="h-1.5 w-1.5 rounded-full bg-[#5A1220]" aria-label={`${sessionType} filter active`} />}
+          <Printer className="h-3.5 w-3.5" />{isPrinting ? 'Preparing…' : 'Print'}
         </button>
         {hasFilters && <ToolButton onClick={resetFilters} label="Clear filters"><RotateCcw className="h-3.5 w-3.5" />Clear</ToolButton>}
       </div>
 
-      {showOptions && (
-        <div id="calendar-view-options" className="flex flex-wrap items-center gap-x-5 gap-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3 print:hidden">
-          <div className="space-y-1">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Sessions</p>
-            <Segmented label="Session type" value={sessionType} onChange={setSessionType} options={[{ value: 'all', label: 'All sessions' }, { value: 'lecture', label: 'Lecture' }, { value: 'laboratory', label: 'Laboratory' }]} />
-          </div>
-          <div className="space-y-1">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Details</p>
-            <Segmented label="Density" value={density} onChange={setDensity} options={[{ value: 'comfortable', label: 'Detailed' }, { value: 'compact', label: 'Compact' }]} />
-          </div>
-          <ToolButton onClick={() => setCollapsedDays(allCollapsed ? new Set() : new Set(visibleDays))} label={allCollapsed ? 'Expand all days' : 'Collapse all days'}>
-            {allCollapsed ? <ChevronsUpDown className="h-3.5 w-3.5" /> : <ChevronsDownUp className="h-3.5 w-3.5" />}
-            {allCollapsed ? 'Expand days' : 'Collapse days'}
-          </ToolButton>
-          <ToolButton onClick={() => printWithTitle(buildExportFilename('pdf', 'master-calendar', data.semester?.academic_year, data.semester?.semester))} label="Print calendar"><Printer className="h-3.5 w-3.5" />Print</ToolButton>
-          <span className="flex items-center gap-1 text-[11px] text-slate-500"><Clock className="h-3 w-3" />Standard hours {standardHoursLabel}</span>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3 print:hidden">
+        <div className="space-y-1">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Sessions</p>
+          <Segmented label="Session type" value={sessionType} onChange={setSessionType} options={[{ value: 'all', label: 'All sessions' }, { value: 'lecture', label: 'Lecture' }, { value: 'laboratory', label: 'Laboratory' }]} />
         </div>
-      )}
+        <span className="flex items-center gap-1 text-[11px] text-slate-500"><Clock className="h-3 w-3" />Standard hours {standardHoursLabel}</span>
+      </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 print:hidden">
         <div role="group" aria-label="Days shown" className="flex flex-wrap items-center gap-1">
-          {availableDays.map((day) => {
-            const shown = !hiddenDays.has(day);
+          {[null, ...ALL_DAYS].map((day) => {
+            const shown = selectedDay === day;
             return (
               <button
-                key={day}
+                key={day ?? 'all'}
                 type="button"
                 aria-pressed={shown}
-                onClick={() => setHiddenDays((current) => toggleSet(current, day))}
-                className={`h-8 min-w-[2.25rem] rounded-lg px-2 text-[11px] font-bold transition-colors ${shown ? 'bg-[#5A1220] text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
+                onClick={() => {
+                  setSelectedDay(day);
+                  if (day !== null) setCollapsedDays((current) => new Set([...current].filter((value) => value !== day)));
+                }}
+                className={`selection-indicator h-8 min-w-[2.25rem] rounded-lg px-2 text-[11px] font-bold transition-colors ${shown ? '' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
               >
-                {CALENDAR_DAYS[day].slice(0, 3)}
+                {day === null ? 'All days' : CALENDAR_DAYS[day].slice(0, 3)}
               </button>
             );
           })}
-        </div>
-        <div className="flex items-center gap-2">
-          <ToolButton onClick={() => ganttRef.current?.scrollToNow()} label="Jump to the current time"><Crosshair className="h-3.5 w-3.5" />Now</ToolButton>
-          <Segmented label="Zoom" value={zoom} onChange={setZoom} options={ZOOM_OPTIONS} />
         </div>
       </div>
 
@@ -429,21 +431,15 @@ export default function VpaaCalendarPage() {
         </p>
       )}
 
-      {isLoading ? skeleton : visibleDays.length === 0 ? (
-        <div className="flex min-h-[240px] flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 text-center">
-          <CalendarIcon className="h-8 w-8 text-gray-300" />
-          <p className="mt-2 text-sm font-bold text-gray-600">No days selected</p>
-          <button type="button" onClick={() => setHiddenDays(new Set())} className="mt-1 text-xs font-bold text-[#5A1220] hover:underline">Show all days</button>
-        </div>
-      ) : (
+      {isLoading ? skeleton : (
         <MasterGantt
           ref={ganttRef}
           days={ganttDays}
           timeWindow={timeWindow}
           standardHours={standardHours}
           groupBy={groupBy}
-          zoom={zoom}
-          density={density}
+          zoom="fit"
+          density="comfortable"
           overlaps={overlaps}
           collapsedDays={collapsedDays}
           onToggleDay={(day) => setCollapsedDays((current) => toggleSet(current, day))}

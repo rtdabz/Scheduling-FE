@@ -37,6 +37,8 @@ export type GenerationResult = {
   status?: "complete" | "partial";
   message?: string;
   unplaced_courses?: UnplacedCourse[];
+  /** Normalized Lecture/Laboratory Required Days this run was generated with. */
+  component_required_days?: Record<string, Record<string, { lecture?: string; laboratory?: string }>>;
 };
 
 type GenerationRunRecord = {
@@ -205,7 +207,10 @@ export function GenerationRunProvider({
           "/schedule-recommendations/year-level-preview/queue",
           payload,
         );
-        if (requestIdRef.current !== requestId) return;
+        if (requestIdRef.current !== requestId) {
+          await api.post(`/schedule-recommendations/generation-runs/${queued.data.run_id}/cancel`).catch(() => undefined);
+          return;
+        }
         persistRunId(queued.data.run_id);
         setSnapshot((current) => ({ ...current, runId: queued.data.run_id }));
       } catch (error: unknown) {
@@ -248,14 +253,30 @@ export function GenerationRunProvider({
     }
   }, [clear, snapshot.runId, snapshot.status]);
 
+  useEffect(() => {
+    const reset = (event: Event) => {
+      const detail = (event as CustomEvent<{ departmentId: number; semesterId: number; isEmpty: boolean }>).detail;
+      if (detail?.isEmpty && Number(detail.departmentId) === departmentId && detail.semesterId === semesterId) void cancel();
+    };
+    window.addEventListener("schedule-workspace-reset", reset);
+    return () => window.removeEventListener("schedule-workspace-reset", reset);
+  }, [cancel, departmentId, semesterId]);
+
   const markReviewed = useCallback(() => setReviewed(true), []);
 
   useEffect(() => {
     if (departmentId === null || semesterId === null) return;
     let cancelled = false;
+    const requestId = requestIdRef.current;
 
     const adopt = (run: GenerationRunRecord) => {
       if (cancelled) return;
+      if (requestIdRef.current !== requestId) {
+        if (run.status === "queued" || run.status === "running") {
+          void api.post(`/schedule-recommendations/generation-runs/${run.run_id}/cancel`).catch(() => undefined);
+        }
+        return;
+      }
       requestIdRef.current += 1;
       persistRunId(run.run_id);
       setReviewed(false);
@@ -292,6 +313,7 @@ export function GenerationRunProvider({
           adopt(data);
           return;
         } catch {
+          if (cancelled || requestIdRef.current !== requestId) return;
           persistRunId(null);
         }
       }

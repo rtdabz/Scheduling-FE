@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, History, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, History } from 'lucide-react';
+import Modal from '../ui/Modal';
+import { ModalNotice, ModalState } from '../ui/ModalForm';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
 import { fullSemesterLabel } from '../../lib/semesterLabel';
@@ -52,16 +53,9 @@ export default function TeachingHistoryModal({ facultyId, facultyName, onClose }
 
   const goToPage = (index: number) => {
     setPageIndex(index);
-    bodyRef.current?.scrollTo({ top: 0 });
+    // The dialog body is the scroll container.
+    bodyRef.current?.parentElement?.scrollTo?.({ top: 0 });
   };
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
 
   useEffect(() => {
     let active = true;
@@ -87,37 +81,32 @@ export default function TeachingHistoryModal({ facultyId, facultyName, onClose }
     };
   }, [facultyId]);
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[10000] flex items-start justify-center overflow-y-auto bg-slate-950/50 p-3 sm:items-center sm:p-4"
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
-      role="presentation"
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="teaching-history-title"
-        className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl motion-safe:animate-modalIn"
-      >
-        <header className="flex shrink-0 items-center gap-3 bg-[#4e0a10] px-5 py-4 text-white">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/80">
-            <History className="h-5 w-5" aria-hidden="true" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <h2 id="teaching-history-title" className="truncate font-display text-lg font-black leading-6">Teaching History</h2>
-            <p className="truncate text-xs font-medium text-amber-100/75">{facultyName}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 transition hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-[#C9952A]"
-          >
-            <X size={18} />
-          </button>
-        </header>
+  const hasHistory = !isLoading && !loadError && semesters.length > 0;
 
-        <div ref={bodyRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-parchment px-5 py-5">
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      title="Teaching History"
+      description={facultyName}
+      icon={<History size={18} />}
+      size="lg"
+      footerClassName="!justify-between"
+      footer={hasHistory ? <>
+        <span className="text-xs font-semibold text-slate-500">
+          Showing <span className="font-bold text-slate-700">{start + 1}-{start + visibleSemesters.length}</span> of{' '}
+          <span className="font-bold text-slate-700">{semesters.length}</span> semester{semesters.length === 1 ? '' : 's'}
+        </span>
+        <div className="flex items-center gap-1">
+          <PagerButton label="First page" onClick={() => goToPage(0)} disabled={!canPrevious}><ChevronsLeft size={15} /></PagerButton>
+          <PagerButton label="Previous page" onClick={() => goToPage(pageIndex - 1)} disabled={!canPrevious}><ChevronLeft size={15} /></PagerButton>
+          <span className="px-2 text-xs font-bold tabular-nums text-slate-500">{pageIndex + 1} / {pageCount}</span>
+          <PagerButton label="Next page" onClick={() => goToPage(pageIndex + 1)} disabled={!canNext}><ChevronRight size={15} /></PagerButton>
+          <PagerButton label="Last page" onClick={() => goToPage(pageCount - 1)} disabled={!canNext}><ChevronsRight size={15} /></PagerButton>
+        </div>
+      </> : undefined}
+    >
+        <div ref={bodyRef} className="space-y-3 px-4 py-4 sm:px-5 sm:py-5">
           {isLoading ? (
             [0, 1].map((key) => (
               <div key={key} className="space-y-2 rounded-xl border border-slate-200 bg-white p-4">
@@ -127,11 +116,11 @@ export default function TeachingHistoryModal({ facultyId, facultyName, onClose }
               </div>
             ))
           ) : loadError ? (
-            <p className="rounded-xl border border-red-200 bg-red-50 p-4 text-center text-xs font-semibold text-red-700">{loadError}</p>
+            <ModalNotice tone="error" role="alert">{loadError}</ModalNotice>
           ) : semesters.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-slate-300 bg-white/60 p-4 text-center text-xs text-slate-500">
-              No teaching assignments recorded for this instructor yet.
-            </p>
+            <ModalState title="No teaching history yet" icon={<History size={32} />}>
+              No teaching assignments are recorded for this instructor.
+            </ModalState>
           ) : (
             visibleSemesters.map((semester) => (
               <section key={semester.semester_id} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -174,25 +163,7 @@ export default function TeachingHistoryModal({ facultyId, facultyName, onClose }
             ))
           )}
         </div>
-
-        {!isLoading && !loadError && semesters.length > 0 && (
-          <footer className="flex shrink-0 flex-col items-center justify-between gap-3 border-t border-slate-200 bg-white px-5 py-3 sm:flex-row">
-            <span className="text-xs font-semibold text-slate-500">
-              Showing <span className="font-bold text-slate-700">{start + 1}-{start + visibleSemesters.length}</span> of{' '}
-              <span className="font-bold text-slate-700">{semesters.length}</span> semester{semesters.length === 1 ? '' : 's'}
-            </span>
-            <div className="flex items-center gap-1">
-              <PagerButton label="First page" onClick={() => goToPage(0)} disabled={!canPrevious}><ChevronsLeft size={15} /></PagerButton>
-              <PagerButton label="Previous page" onClick={() => goToPage(pageIndex - 1)} disabled={!canPrevious}><ChevronLeft size={15} /></PagerButton>
-              <span className="px-2 text-xs font-bold tabular-nums text-slate-500">{pageIndex + 1} / {pageCount}</span>
-              <PagerButton label="Next page" onClick={() => goToPage(pageIndex + 1)} disabled={!canNext}><ChevronRight size={15} /></PagerButton>
-              <PagerButton label="Last page" onClick={() => goToPage(pageCount - 1)} disabled={!canNext}><ChevronsRight size={15} /></PagerButton>
-            </div>
-          </footer>
-        )}
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }
 
@@ -203,7 +174,7 @@ function PagerButton({ label, onClick, disabled, children }: { label: string; on
       aria-label={label}
       onClick={onClick}
       disabled={disabled}
-      className="rounded-lg border border-slate-200 p-1.5 text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+      className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] disabled:cursor-not-allowed disabled:opacity-40"
     >
       {children}
     </button>

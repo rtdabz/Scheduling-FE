@@ -32,6 +32,11 @@ export default function RoomRecoveryAlerts() {
         <Link className="inline-flex items-center gap-1 text-sm font-semibold text-primary underline" to={recoveryLink(item.id, item.semester_id)}>Review affected schedules <ArrowRight size={15} /></Link>
       </div>)}
       {data.cases.length === 0 && <p className="text-sm text-slate-600">{data.pending_count} meeting(s) need attention. <Link to={recoveryLink(undefined, data.semester_id)} className="font-semibold text-primary underline">Review room schedule reassignments</Link></p>}
+      {/* Room TBA classes have no closure incident, so they are listed even when incidents are shown above. */}
+      {data.cases.length > 0 && (data.room_tba_count ?? 0) > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-amber-50 p-3">
+        <div><p className="text-sm font-semibold">Room TBA: {data.room_tba_count} meeting(s) need a room</p><p className="text-xs text-slate-600">On-site classes scheduled without a room</p></div>
+        <Link className="inline-flex items-center gap-1 text-sm font-semibold text-primary underline" to={recoveryLink(undefined, data.semester_id)}>Assign rooms <ArrowRight size={15} /></Link>
+      </div>}
       {data.new_rooms.length > 0 && <p className="text-sm text-slate-600">Recently added rooms: {data.new_rooms.map(room => room.room_code).join(', ')}. <Link to={recoveryLink(undefined, data.semester_id)} className="font-semibold text-primary underline">Explore relocation</Link></p>}
       </div>
     </section>}

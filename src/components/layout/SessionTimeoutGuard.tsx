@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Clock, MonitorSmartphone, ShieldAlert } from 'lucide-react';
+import Modal from '../ui/Modal';
+import { ModalButton } from '../ui/ModalForm';
 import { useIdleSession } from '../../hooks/useIdleSession';
 import { logoutCurrentSession } from '../../lib/authSession';
 import {
@@ -62,37 +64,33 @@ export default function SessionTimeoutGuard() {
   const { eyebrow, title, body, Icon } = NOTICE[reason];
 
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 p-4"
+    <Modal
+      isOpen
+      onClose={() => undefined}
       role="alertdialog"
-      aria-modal="true"
-      aria-labelledby="session-timeout-title"
-      aria-describedby="session-timeout-description"
+      title={title}
+      size="sm"
+      className="border-t-4 border-t-amber-500"
+      showCloseButton={false}
+      closeOnEscape={false}
+      closeOnOverlayClick={false}
+      footer={
+        <ModalButton ref={backToLogin} variant="primary" className="w-full" onClick={() => window.location.assign('/')}>
+          Back to Login
+        </ModalButton>
+      }
     >
-      <div className="w-full max-w-sm overflow-hidden rounded-2xl border-t-4 border-t-amber-500 bg-[#F7F4F0] shadow-2xl">
-        <div className="flex flex-col items-center gap-3 p-6 text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 text-amber-600 ring-8 ring-amber-100/60">
-            <Icon size={22} />
-          </span>
-          <p className="text-[11px] font-bold uppercase tracking-wider text-amber-700">{eyebrow}</p>
-          <h2 id="session-timeout-title" className="text-lg font-bold text-slate-800">
-            {title}
-          </h2>
-          <p id="session-timeout-description" className="text-xs leading-relaxed text-slate-600">
+      <div className="flex items-start gap-4 px-5 py-6">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600 ring-4 ring-amber-100" aria-hidden="true">
+          <Icon size={20} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-bold uppercase text-amber-700">{eyebrow}</p>
+          <p id="session-timeout-description" className="mt-2 text-sm leading-6 text-slate-600">
             {body} Please sign in again.
           </p>
         </div>
-        <div className="border-t border-slate-200 p-4">
-          <button
-            ref={backToLogin}
-            type="button"
-            onClick={() => window.location.assign('/')}
-            className="w-full rounded-lg bg-[#4e0a10] px-4 py-2.5 text-xs font-bold text-white transition hover:bg-[#3b070c] focus:outline-none focus:ring-2 focus:ring-[#4e0a10] focus:ring-offset-2"
-          >
-            Back to Login
-          </button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

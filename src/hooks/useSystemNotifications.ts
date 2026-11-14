@@ -1,9 +1,10 @@
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../lib/api';
 import { isLiveConnected } from '../lib/liveSocket';
 import { notificationLink } from '../lib/notificationLink';
-import { getStoredUserRole } from '../lib/storedUser';
+import { getStoredUser, getStoredUserRole } from '../lib/storedUser';
+import { fetchCurrentUser } from '../lib/currentUser';
 import { useLiveRefresh } from './useLiveRefresh';
 import type { ActivityFeedItem } from '../components/overview';
 
@@ -61,8 +62,9 @@ const formatTimestamp = (value: string): string => {
   return date.toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',
-    hour: '2-digit',
+    hour: 'numeric',
     minute: '2-digit',
+    hour12: true,
   });
 };
 
@@ -73,7 +75,7 @@ const buildActionText = (notification: SystemNotification): string => {
   const semester = notification.academic_semester
     ? `${notification.academic_semester.semester.toUpperCase()} semester, AY ${notification.academic_semester.academic_year}`
     : 'Active semester';
-  const actor = notification.actor?.name ?? 'System';
+  const actor = notification.actor?.name || (notification.metadata?._actor_type === 'system' ? 'System' : 'Actor unavailable');
   const schedulesUpdated = Number(notification.metadata?.schedules_updated ?? 0);
   const scheduleText = schedulesUpdated > 0
     ? `${schedulesUpdated} schedule${schedulesUpdated === 1 ? '' : 's'}`
@@ -102,29 +104,50 @@ const buildActionText = (notification: SystemNotification): string => {
 };
 
 export function useSystemNotifications(limit = 8, pollMs = 15000): UseSystemNotificationsResult {
-  const [notifications, setNotifications] = useState<SystemNotification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
+  const [, updateIdentity] = useState(0);
+  const scope = notificationScope();
+  const role = getStoredUserRole();
+  const [feed, setFeed] = useState({
+    scope: null as string | null,
+    notifications: [] as SystemNotification[],
+    unreadCount: 0,
+    isLoading: true,
+  });
+  const { notifications, unreadCount, isLoading, scope: loadedScope } = feed;
+  const requestVersion = useRef(0);
 
   const refresh = useCallback(async () => {
-    const response = await api.get<NotificationResponse>('/notifications', {
-      params: { limit },
-    });
-
-    setNotifications(response.data.data);
-    setUnreadCount(response.data.unread_count);
-    setIsLoading(false);
-  }, [limit]);
+    if (notificationScope() !== scope) {
+      updateIdentity(value => value + 1);
+      return;
+    }
+    const version = ++requestVersion.current;
+    try {
+      const response = await api.get<NotificationResponse>('/notifications', {
+        params: { limit },
+      });
+      if (version !== requestVersion.current || notificationScope() !== scope) return;
+      setFeed({ scope, notifications: response.data.data, unreadCount: response.data.unread_count, isLoading: false });
+    } catch (error) {
+      if (version === requestVersion.current && notificationScope() === scope) {
+        setFeed(previous => previous.scope === scope ? { ...previous, isLoading: false }
+          : { scope, notifications: [], unreadCount: 0, isLoading: false });
+      }
+      throw error;
+    }
+  }, [limit, scope]);
 
   const markAsRead = useCallback(async (id: number) => {
+    if (notificationScope() !== scope) return;
     await api.patch(`/notifications/${id}/read`);
     await refresh();
-  }, [refresh]);
+  }, [refresh, scope]);
 
   const markAllAsRead = useCallback(async () => {
+    if (notificationScope() !== scope) return;
     await api.patch('/notifications/read-all');
     await refresh();
-  }, [refresh]);
+  }, [refresh, scope]);
 
   useEffect(() => {
     let active = true;
@@ -135,19 +158,12 @@ export function useSystemNotifications(limit = 8, pollMs = 15000): UseSystemNoti
       if (!active || inFlight || document.visibilityState === 'hidden') return;
       inFlight = true;
       try {
-        const response = await api.get<NotificationResponse>('/notifications', {
-          params: { limit },
-        });
-
-        if (!active) return;
-        setNotifications(response.data.data);
-        setUnreadCount(response.data.unread_count);
+        await refresh();
       } catch {
         if (!active) return;
       } finally {
         inFlight = false;
         if (active) {
-          setIsLoading(false);
           const baseDelay = isLiveConnected() ? pollMs * 4 : pollMs;
           const delay = document.visibilityState === 'visible' ? baseDelay : baseDelay * 4;
           timerId = window.setTimeout(load, delay);
@@ -166,17 +182,28 @@ export function useSystemNotifications(limit = 8, pollMs = 15000): UseSystemNoti
 
     return () => {
       active = false;
+      requestVersion.current += 1;
       document.removeEventListener('visibilitychange', onVisibilityChange);
       if (timerId !== undefined) window.clearTimeout(timerId);
     };
-  }, [limit, pollMs]);
+  }, [refresh, pollMs]);
 
-  useLiveRefresh(['notifications', 'approvals'], () => {
+  useEffect(() => {
+    const changed = () => updateIdentity(value => value + 1);
+    window.addEventListener('storage', changed);
+    return () => window.removeEventListener('storage', changed);
+  }, []);
+
+  useLiveRefresh(['users'], () => {
+    void fetchCurrentUser({ force: true }).then(() => updateIdentity(value => value + 1)).catch(() => undefined);
+  });
+
+  useLiveRefresh(['notifications'], () => {
     void refresh().catch(() => undefined);
   });
 
   const feedItems = useMemo<ActivityFeedItem[]>(() => {
-    const role = getStoredUserRole();
+    if (loadedScope !== scope) return [];
     return notifications.map((notification) => ({
       id: notification.id,
       type: notification.type,
@@ -187,14 +214,19 @@ export function useSystemNotifications(limit = 8, pollMs = 15000): UseSystemNoti
       isUnread: notification.read_at === null || notification.read_at === undefined,
       href: notificationLink(notification.type, role, notification.metadata),
     }));
-  }, [notifications]);
+  }, [notifications, role, loadedScope, scope]);
 
   return {
     feedItems,
-    unreadCount,
-    isLoading,
+    unreadCount: loadedScope === scope ? unreadCount : 0,
+    isLoading: loadedScope !== scope || isLoading,
     refresh,
     markAsRead,
     markAllAsRead,
   };
 }
+
+const notificationScope = (): string => {
+  const user = getStoredUser();
+  return JSON.stringify([user?.id, user?.role, user?.department_id, user?.program_id]);
+};

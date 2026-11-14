@@ -1,14 +1,15 @@
-import { AlertTriangle, CheckCircle2, HelpCircle, Pencil, Trash2, X, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, HelpCircle, Pencil, Trash2, XCircle } from 'lucide-react';
 import type { ReactNode } from 'react';
 import Modal from './Modal';
 import LoadingSpinner from './LoadingSpinner';
+import { modalButton } from './modalStyles';
 
 export type ConfirmModalVariant = 'danger' | 'error' | 'warning' | 'success' | 'update' | 'info' | 'maroon';
 
 interface ConfirmModalProps {
   isOpen: boolean;
   title: string;
-  message: string;
+  message: ReactNode;
   eyebrow?: string;
   confirmLabel?: string;
   cancelLabel?: string;
@@ -20,6 +21,7 @@ interface ConfirmModalProps {
   confirmDisabled?: boolean;
   showCancel?: boolean;
   children?: ReactNode;
+  appearance?: 'default' | 'workflow';
 }
 
 export default function ConfirmModal({
@@ -36,6 +38,7 @@ export default function ConfirmModal({
   confirmDisabled = false,
   showCancel = true,
   children,
+  appearance = 'default',
 }: ConfirmModalProps) {
   if (!isOpen) return null;
 
@@ -43,7 +46,7 @@ export default function ConfirmModal({
     danger: {
       icon: 'bg-red-50 text-red-600 ring-red-100',
       eyebrow: 'text-red-700',
-      action: 'bg-red-600 hover:bg-red-700 focus:ring-red-500',
+      action: 'bg-red-600 hover:bg-red-700 focus-visible:ring-red-500',
       border: 'border-t-red-500',
       BodyIcon: AlertTriangle,
       ActionIcon: Trash2,
@@ -51,7 +54,7 @@ export default function ConfirmModal({
     error: {
       icon: 'bg-red-50 text-red-600 ring-red-100',
       eyebrow: 'text-red-700',
-      action: 'bg-red-600 hover:bg-red-700 focus:ring-red-500',
+      action: 'bg-red-600 hover:bg-red-700 focus-visible:ring-red-500',
       border: 'border-t-red-500',
       BodyIcon: XCircle,
       ActionIcon: CheckCircle2,
@@ -59,7 +62,7 @@ export default function ConfirmModal({
     warning: {
       icon: 'bg-amber-50 text-amber-600 ring-amber-100',
       eyebrow: 'text-amber-700',
-      action: 'bg-amber-600 hover:bg-amber-700 focus:ring-amber-500',
+      action: 'bg-amber-600 hover:bg-amber-700 focus-visible:ring-amber-500',
       border: 'border-t-amber-500',
       BodyIcon: AlertTriangle,
       ActionIcon: CheckCircle2,
@@ -67,7 +70,7 @@ export default function ConfirmModal({
     success: {
       icon: 'bg-emerald-50 text-emerald-600 ring-emerald-100',
       eyebrow: 'text-emerald-700',
-      action: 'bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-500',
+      action: 'bg-emerald-600 hover:bg-emerald-700 focus-visible:ring-emerald-500',
       border: 'border-t-emerald-500',
       BodyIcon: CheckCircle2,
       ActionIcon: CheckCircle2,
@@ -75,7 +78,7 @@ export default function ConfirmModal({
     update: {
       icon: 'bg-blue-50 text-blue-600 ring-blue-100',
       eyebrow: 'text-blue-700',
-      action: 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500',
+      action: 'bg-blue-600 hover:bg-blue-700 focus-visible:ring-blue-500',
       border: 'border-t-blue-500',
       BodyIcon: Pencil,
       ActionIcon: Pencil,
@@ -83,7 +86,7 @@ export default function ConfirmModal({
     info: {
       icon: 'bg-blue-50 text-blue-600 ring-blue-100',
       eyebrow: 'text-blue-700',
-      action: 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500',
+      action: 'bg-blue-600 hover:bg-blue-700 focus-visible:ring-blue-500',
       border: 'border-t-blue-500',
       BodyIcon: HelpCircle,
       ActionIcon: CheckCircle2,
@@ -91,7 +94,7 @@ export default function ConfirmModal({
     maroon: {
       icon: 'bg-[#4e0a10]/10 text-[#4e0a10] ring-[#4e0a10]/15',
       eyebrow: 'text-[#6b0f1a]',
-      action: 'bg-[#4e0a10] hover:bg-[#640d14] focus:ring-[#4e0a10]',
+      action: 'bg-[#4e0a10] hover:bg-[#6b0e17] focus-visible:ring-[#4e0a10]',
       border: 'border-t-[#C9952A]',
       BodyIcon: HelpCircle,
       ActionIcon: CheckCircle2,
@@ -102,16 +105,19 @@ export default function ConfirmModal({
   const ActionIcon = style.ActionIcon;
 
   return (
-    <Modal isOpen={isOpen} onClose={onCancel} title={title} size="md" className={`border-t-4 ${style.border}`} footer={
+    <Modal isOpen={isOpen} onClose={onCancel} title={title} size="md"
+      appearance={appearance} busy={isConfirming}
+      icon={appearance === 'workflow' ? <BodyIcon size={20} /> : undefined} eyebrow={eyebrow}
+      className={appearance === 'workflow' ? '' : `border-t-4 ${style.border}`} footer={
       <>
         {showCancel && (
           <button
             type="button"
             onClick={onCancel}
             disabled={isConfirming}
-            className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
+            data-autofocus={appearance === 'workflow' ? true : undefined}
+            className={appearance === 'workflow' ? 'scheduler-dialog-button' : modalButton.secondary}
           >
-            <X size={14} />
             {cancelLabel}
           </button>
         )}
@@ -119,20 +125,23 @@ export default function ConfirmModal({
             type="button"
             onClick={() => { void onConfirm(); }}
             disabled={isConfirming || confirmDisabled}
-            className={`inline-flex min-h-10 items-center gap-2 rounded-lg px-5 py-2 text-xs font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${style.action}`}
+            data-variant={appearance === 'workflow' ? (variant === 'danger' ? 'danger' : 'primary') : undefined}
+            className={appearance === 'workflow' ? 'scheduler-dialog-button' : `inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-4 text-sm font-bold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${style.action}`}
           >
-            {isConfirming ? <LoadingSpinner size={14} className="animate-spin" /> : <ActionIcon size={14} />}
+            {isConfirming ? <LoadingSpinner size={16} className="animate-spin" /> : <ActionIcon size={16} />}
             {confirmLabel}
           </button>
       </>
     }>
-      <div className="flex items-start gap-4 px-5 py-6">
-          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-4 ${style.icon}`}>
+      <div className={appearance === 'workflow' ? 'scheduler-dialog-body' : 'flex items-start gap-4 px-5 py-6'}>
+          {appearance !== 'workflow' && <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-4 ${style.icon}`}>
             <BodyIcon size={20} />
-          </div>
+          </div>}
           <div className="min-w-0 flex-1">
-            <p className={`text-[11px] font-bold uppercase ${style.eyebrow}`}>{eyebrow}</p>
-            <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-600">{message}</p>
+            {appearance !== 'workflow' && <p className={`text-[11px] font-bold uppercase ${style.eyebrow}`}>{eyebrow}</p>}
+            {typeof message === 'string'
+              ? <p className={`${appearance === 'workflow' ? '' : 'mt-2 '}whitespace-pre-line text-sm leading-6 text-slate-600`}>{message}</p>
+              : <div className={`${appearance === 'workflow' ? '' : 'mt-2 '}text-sm leading-6 text-slate-600`}>{message}</div>}
             {children && <div className="mt-4">{children}</div>}
           </div>
         </div>

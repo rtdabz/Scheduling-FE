@@ -36,6 +36,7 @@ export default function CurriculumDetailPage() {
     handleAddCourseToSemester,
     handleEditCourse,
     handleRemoveCourse,
+    handleCourseHoursSaved,
   } = useCurriculumDetail(id);
 
   const canEditCourses = canAuthorCurriculum(curriculum) && searchParams.get('mode') === 'edit';
@@ -108,6 +109,9 @@ export default function CurriculumDetailPage() {
               onConfirmRemove={handleRemoveCourse}
               onAddCourseToSemester={handleAddCourseToSemester}
               onEditCourse={handleEditCourse}
+              curriculumId={curriculum.id}
+              hoursDefaults={curriculum.hours_defaults}
+              onCourseHoursSaved={handleCourseHoursSaved}
             />
           )}
         </>

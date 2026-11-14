@@ -59,4 +59,9 @@ describe('requiresDepartmentProgram', () => {
     expect(requiresDepartmentProgram('schedule.view')).toBe(false);
     expect(requiresDepartmentProgram('schedule.submit')).toBe(true);
   });
+
+  it('keeps instructor assignment (the Cross-Department page) available without a catalog', () => {
+    expect(requiresDepartmentProgram('schedule.assign_instructor')).toBe(false);
+    expect(requiresDepartmentProgram('schedule.assign_instructor_cross_department')).toBe(true);
+  });
 });

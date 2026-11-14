@@ -1,3 +1,4 @@
+import { formatPersonName } from "../../../lib/personName";
 import type { Faculty } from "./types";
 
 const capitalizeWords = (text: string) =>
@@ -47,6 +48,13 @@ export const facultyNameParts = (faculty: Faculty) => {
     surname: lastName,
     givenName: [firstName, suffix].filter(Boolean).join(" "),
     middleInitial,
-    fullName: [firstName, middleInitial, lastName, suffix].filter(Boolean).join(" "),
+    fullName: formatPersonName({
+      honorific_prefix: faculty.honorificPrefix,
+      first_name: firstName,
+      middle_initial: initial,
+      last_name: lastName,
+      suffix,
+      credentials: faculty.credentials,
+    }),
   };
 };

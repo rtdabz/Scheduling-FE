@@ -101,7 +101,7 @@ function ChangeDetailsTable({ entries }: { entries: RevisionChangeEntry[] }) {
   const table = useDataTable<ChangeDetailRow>({
     data,
     columns: detailColumns,
-    pageSize: 25,
+    pageSize: 10,
     getRowId: (row) => row.key,
   });
 

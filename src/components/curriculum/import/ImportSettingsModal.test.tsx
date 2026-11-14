@@ -125,7 +125,7 @@ describe('curriculum import settings modal', () => {
   it('is read-only for users who cannot manage settings', () => {
     const onClose = vi.fn();
     render(<ImportSettingsModal settings={settings({ can_manage: false })} onClose={onClose} onSaved={vi.fn()} />);
-    expect(screen.getByText('Only the department secretary can change these settings.')).toBeDefined();
+    expect(screen.getByText('Only the department Secretary or Director can change these settings.')).toBeDefined();
     expect(screen.queryByRole('button', { name: 'Save settings' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Add rule/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Delete rule/ })).toBeNull();

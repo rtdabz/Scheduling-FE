@@ -1,65 +1,77 @@
-import { CheckCircle2, XCircle, AlertTriangle, Info, X } from 'lucide-react'
-import type { ToastItem } from '../../../context/ToastContext'
+import { useEffect, useRef, useState } from 'react'
+import { AlertTriangle, CheckCircle2, Info, Loader2, X, XCircle } from 'lucide-react'
+import type { ToastItem, ToastType } from '../../../context/ToastContext'
 
 interface ToastProps {
   toast: ToastItem
   onDismiss: (id: string) => void
 }
 
-const BORDER_COLORS = {
-  success: '#22c55e',
-  error: '#ef4444',
-  warning: '#C9952A',
-  info: '#3b82f6',
-}
-
-const ICON_COLORS = BORDER_COLORS
-
-const ICONS = {
+const ICONS: Record<ToastType, typeof Info> = {
   success: CheckCircle2,
   error: XCircle,
   warning: AlertTriangle,
   info: Info,
+  loading: Loader2,
 }
 
 export default function Toast({ toast, onDismiss }: ToastProps) {
-  const Icon = ICONS[toast.type]
-  const color = BORDER_COLORS[toast.type]
+  const { id, type, title, message, duration, revision, exiting } = toast
+  const Icon = ICONS[type]
+  const [paused, setPaused] = useState(false)
+  const remaining = useRef(duration ?? 0)
+
+  // A new revision (re-raised or updated toast) starts the countdown over.
+  useEffect(() => {
+    remaining.current = duration ?? 0
+  }, [duration, revision])
+
+  // Hovering or focusing a toast holds it open, so a long message can be read in full.
+  useEffect(() => {
+    if (duration === undefined || paused || exiting) return
+    const startedAt = Date.now()
+    const timer = setTimeout(() => onDismiss(id), remaining.current)
+    return () => {
+      clearTimeout(timer)
+      remaining.current = Math.max(remaining.current - (Date.now() - startedAt), 0)
+    }
+  }, [duration, exiting, id, onDismiss, paused, revision])
+
+  const urgent = type === 'error' || type === 'warning'
 
   return (
     <div
-      role={toast.type === 'error' ? 'alert' : 'status'}
-      className={`
-        relative w-full min-w-0 max-w-[400px] bg-parchment sm:min-w-[320px]
-        rounded-2xl shadow-xl border border-border border-l-4
-        overflow-hidden px-4 py-3.5 flex items-start gap-3
-        ${toast.exiting ? 'animate-toastOut' : 'animate-toastIn'}
-      `}
-      style={{ borderLeftColor: color }}
+      role={type === 'error' ? 'alert' : 'status'}
+      aria-busy={type === 'loading' || undefined}
+      data-type={type}
+      data-paused={paused}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
+      className={`wicars-toast ${exiting ? 'animate-toastOut' : 'animate-toastIn'}`}
     >
-      <Icon size={22} style={{ color: ICON_COLORS[toast.type] }} className="flex-shrink-0" />
-      
-      <div className="flex-1 min-w-0">
-        <h4 className="text-sm font-semibold text-text">{toast.title}</h4>
-        <p className="mt-0.5 line-clamp-2 text-xs text-muted">{toast.message}</p>
+      <Icon size={18} aria-hidden="true" className={`wicars-toast-icon ${type === 'loading' ? 'animate-spin' : ''}`} />
+
+      <div className="min-w-0 flex-1">
+        <p className="break-words text-[13px] font-semibold leading-5 text-text">{title}</p>
+        {message && (
+          <p className={`mt-0.5 break-words text-xs leading-[1.125rem] text-muted ${urgent ? 'line-clamp-6' : 'line-clamp-3'}`}>{message}</p>
+        )}
       </div>
 
       <button
         type="button"
-        onClick={() => onDismiss(toast.id)}
-        aria-label={`Dismiss ${toast.title}`}
-        className="text-muted hover:text-text transition-colors p-1"
+        onClick={() => onDismiss(id)}
+        aria-label={`Dismiss ${title}`}
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-parchment hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
-        <X size={16} />
+        <X size={14} />
       </button>
 
-      <div
-        className="absolute bottom-0 left-0 h-0.5"
-        style={{
-          backgroundColor: color,
-          animation: `toastProgress ${toast.duration || 4000}ms linear forwards`
-        }}
-      />
+      {duration !== undefined && !exiting && (
+        <span key={revision} aria-hidden="true" className="wicars-toast-progress" style={{ animationDuration: `${duration}ms` }} />
+      )}
     </div>
   )
 }

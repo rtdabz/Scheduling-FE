@@ -2,16 +2,16 @@ import { getPhilippineNowParts } from '../../lib/philippineTime';
 import { buildExportFilename, printWithTitle } from '../../lib/exportFile';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { createPortal } from 'react-dom';
-import { BuildingsTable, RoomsTable } from '../../components/rooms/RoomListTables';
+import { ModalButton, ModalField, ModalNotice } from '../../components/ui/ModalForm';
+import { modalControl, modalFormBody, modalFormFooter } from '../../components/ui/modalStyles';
+import { BuildingsTable, RoomReassignBadge, RoomsTable } from '../../components/rooms/RoomListTables';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import ConfirmModal from '../../components/ui/ConfirmModal';
+import Modal from '../../components/ui/Modal';
 import {
   Pencil,
-  X,
-  Building2,
   ArrowLeft,
   Clock,
   LayoutGrid,
@@ -19,7 +19,6 @@ import {
   Filter,
   Plus,
   Archive,
-  AlertTriangle,
   Ban,
   CheckCircle2,
   Eye,
@@ -32,22 +31,22 @@ import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import RoomDetailModal from '../../components/ui/RoomDetailModal';
 import RoomRecoveryActions from '../../components/rooms/RoomRecoveryActions';
 import RoomReassignmentPanel from '../../components/rooms/RoomReassignmentPanel';
-import { recoveryError } from '../../lib/roomRecovery';
+import { recoveryError, type RoomReassignmentActivity } from '../../lib/roomRecovery';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
-import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import TruncatedDataNotice from '../../components/ui/TruncatedDataNotice';
 import { getStoredUser } from '../../lib/storedUser';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 import { parseLinkedSlots, type LinkedSlot } from '../../lib/notificationLink';
 import FilterBar from '../../components/ui/FilterBar';
+import { isDepartmentOfficeRole, reassignsRoomSchedulesFromFacilities } from '../../lib/roles';
+import { isVpaaApproved } from '../../lib/scheduleStatus';
 
 
 interface Department {
   id: number;
   department_name: string;
   department_code: string;
-  logo?: string | null;
 }
 
 interface Room {
@@ -144,15 +143,16 @@ export default function Rooms() {
   const roomRevision = useLiveRevision(['rooms', 'schedules']);
   const { toast } = useToast();
   const user = getStoredUser();
-  const roomsCacheKey = `page:rooms:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}:${user?.program_id ?? 'all'}`;
+  const roomsCacheKey = `page:rooms:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}:${user?.program_id ?? 'all'}:published`;
   const cachedRoomsData = getCachedData<RoomsPageData>(roomsCacheKey);
   const [rooms, setRooms] = useState<Room[]>(cachedRoomsData?.rooms ?? []);
   const [departments, setDepartments] = useState<Department[]>(cachedRoomsData?.departments ?? []);
-  const [schedules, setSchedules] = useState<Schedule[]>(cachedRoomsData?.schedules ?? []);
+  const [schedules, setSchedules] = useState<Schedule[]>(() => (cachedRoomsData?.schedules ?? []).filter(schedule => isVpaaApproved(schedule.status)));
   const [activeSemester, setActiveSemester] = useState<unknown>(cachedRoomsData?.activeSemester ?? null);
   const [schedulesTruncated, setSchedulesTruncated] = useState(cachedRoomsData?.schedulesTruncated ?? false);
   const activeSemesterId = Number((activeSemester as { id?: number | string } | null)?.id) || undefined;
   const [isLoading, setIsLoading] = useState(!hasCachedData(roomsCacheKey));
+  const [loadError, setLoadError] = useState(false);
   const [selectedRoomIdForDetail, setSelectedRoomIdForDetail] = useState<number | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [printAfterOpen, setPrintAfterOpen] = useState(false);
@@ -161,9 +161,10 @@ export default function Rooms() {
   const isVpaa = role === 'vpaa';
   const userDepartmentId = user?.department_id;
   const canManageRooms = isVpaa;
-  const showGuide = role === 'secretary';
-  const isSecretary = role === 'secretary';
+  const showGuide = isDepartmentOfficeRole(role);
+  const canReassignRoomSchedules = reassignsRoomSchedulesFromFacilities(role);
   const [pendingReassignmentCount, setPendingReassignmentCount] = useState(0);
+  const [reassignActivity, setReassignActivity] = useState<Record<string, RoomReassignmentActivity>>({});
 
   const isProgramHead = role === 'program_head';
   const userProgramId = user?.program_id ?? null;
@@ -277,11 +278,12 @@ export default function Rooms() {
       try {
         const data = await loadCachedData<RoomsPageData>(roomsCacheKey, async () => {
           const initialDataRes = await api.get<{ rooms?: ApiRoom[]; departments?: Department[]; schedules?: Schedule[]; active_semester?: unknown; schedules_truncated?: boolean }>('/initial-data', {
-            params: { include: 'rooms,departments,schedules', schedule_limit: SCHEDULE_LIMIT },
+            params: { include: 'rooms,departments,schedules', view: 'published', schedule_limit: SCHEDULE_LIMIT },
           });
           const rawRooms = Array.isArray(initialDataRes.data?.rooms) ? initialDataRes.data.rooms : [];
           const rawDepts = Array.isArray(initialDataRes.data?.departments) ? initialDataRes.data.departments : [];
-          const rawSchedules = Array.isArray(initialDataRes.data?.schedules) ? initialDataRes.data.schedules : [];
+          const rawSchedules = (Array.isArray(initialDataRes.data?.schedules) ? initialDataRes.data.schedules : [])
+            .filter(schedule => isVpaaApproved(schedule.status));
           const activeSemester = initialDataRes.data?.active_semester || null;
 
           return {
@@ -294,10 +296,12 @@ export default function Rooms() {
         });
         setRooms(data.rooms);
         setDepartments(data.departments);
-        setSchedules(data.schedules || []);
+        setSchedules((data.schedules ?? []).filter(schedule => isVpaaApproved(schedule.status)));
         setActiveSemester(data.activeSemester || null);
         setSchedulesTruncated(data.schedulesTruncated === true);
+        setLoadError(false);
       } catch {
+        setLoadError(true);
         toast.error('Error', 'Failed to load rooms and schedules data.');
       } finally {
         setIsLoading(false);
@@ -662,24 +666,35 @@ export default function Rooms() {
     };
   }, [isDetailModalOpen, printAfterOpen, rooms, selectedRoomIdForDetail, toast]);
 
-  const roomGuideSteps = useMemo(() => [
-    { element: '#rooms-type-filter button', action: 'click' as const, taskHint: 'Pick a room type to continue.', title: 'Find a room', description: 'Use the Lecture and Laboratory buttons to narrow the list by room type. Click an active button again to show all types.', side: 'bottom' as const },
-    { element: '[data-tour="building-card"]', waitFor: '#rooms-workspace', action: 'click' as const, skipIfMissing: true, taskHint: 'Click a building to see its rooms.', title: 'Check room details', description: 'Select a building to see its rooms, status and today’s classes. Great work — that is the whole flow.', side: 'top' as const },
-  ], []);
-  useWorkflowGuide({ id: 'rooms', isReady: showGuide, steps: roomGuideSteps, mission: 'Browse Rooms' });
+  useWorkflowGuide({
+    id: 'rooms', isReady: showGuide && !isLoading, mission: 'Browse Rooms',
+    variant: isDetailModalOpen ? 'room-details' : selectedBuilding !== null ? 'building' : loadError ? 'unavailable' : 'buildings',
+    steps: () => {
+      if (isDetailModalOpen) return [{ id: 'room-details', element: '.room-timetable-modal', title: 'Review this room', description: 'Check the room information and weekly schedule. Close the details when you are ready to browse other rooms.' }];
+      if (loadError) return [{ id: 'unavailable', element: '#rooms-workspace', title: 'Rooms could not be refreshed', description: 'Room information may be unavailable or outdated. Reload the page to retry before relying on room availability.' }];
+      return [
+        { id: 'room-type', element: '#rooms-type-filter', title: 'Find a room', description: 'Lecture and Laboratory narrow the list by room type. Press an active type again to show both types.' },
+        ...(selectedBuilding === null && buildings.length > 0 ? [{ id: 'open-building', element: '[data-tour="building-card"]', action: 'click' as const, isSatisfied: () => document.querySelector('#rooms-workspace')?.getAttribute('data-building-open') === 'true', title: 'Open a building', taskHint: 'Select a building to view its rooms.', description: 'Choose a building from the current list or grid to see its rooms.' }] : []),
+        { id: 'room-list', element: '#rooms-workspace', title: selectedBuilding !== null || buildings.length > 0 ? 'Browse the rooms' : 'No buildings match', description: selectedBuilding !== null || buildings.length > 0 ? 'Open a room to review its details and timetable. Use the back arrow to return to buildings; type filters remain in effect. Reviewing this guide does not check or reserve availability.' : 'There are no buildings in the current results. Press an active type filter again to show both types. If the list stays empty, room data must be added before you can browse it.' },
+      ];
+    },
+  });
 
   return (
     <div id="rooms-page" className="space-y-6">
       <RoomRecoveryActions key={recoveryRoomId} rooms={rooms} room={recoveryRoomId} onRoomChange={setRecoveryRoomId} onAvailabilityChanged={(id, nextStatus, message) => {
         const nextRooms = rooms.map(room => room.id === id ? { ...room, status: nextStatus } : room);
         setRooms(nextRooms);
+        // Closing a room moves its classes online and reopening it changes room options, so the scheduler and dashboards must reload.
+        invalidateCacheGroups('rooms', 'schedules', 'dashboards');
         setCachedData<RoomsPageData>(roomsCacheKey, { rooms: nextRooms, departments, schedules, activeSemester, schedulesTruncated });
         toast.success(nextStatus === 'available' ? 'Room available' : 'Room unavailable', message);
       }} />
-      {isSecretary && (
+      {canReassignRoomSchedules && (
         <RoomReassignmentPanel
           semesterId={activeSemesterId}
           onPendingCountChange={setPendingReassignmentCount}
+          onActivityChange={setReassignActivity}
           onTransferred={() => invalidateCacheGroups('rooms', 'schedules', 'dashboards')}
         />
       )}
@@ -693,9 +708,9 @@ export default function Rooms() {
                 type="button"
                 aria-pressed={active}
                 onClick={() => setRoomTypeFilter(active ? '' : value)}
-                className={`px-4 py-2.5 rounded-xl border text-xs font-bold font-sans transition-colors cursor-pointer whitespace-nowrap ${
+                className={`selection-indicator px-4 py-2.5 rounded-xl border text-xs font-bold font-sans transition-colors cursor-pointer whitespace-nowrap ${
                   active
-                    ? 'bg-[#5A1220] border-[#5A1220] text-white shadow-sm'
+                    ? 'shadow-sm'
                     : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400 hover:bg-gray-50'
                 }`}
               >
@@ -725,8 +740,9 @@ export default function Rooms() {
           <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1">
             <button
               onClick={() => setViewMode('grid')}
-              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
-                viewMode === 'grid' ? 'bg-[#5A1220] text-white shadow-sm font-bold' : 'text-gray-500 hover:text-gray-800'
+              aria-pressed={viewMode === 'grid'}
+              className={`selection-indicator p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+                viewMode === 'grid' ? 'shadow-sm font-bold' : 'text-gray-500 hover:text-gray-800'
               }`}
               title="Grid View"
             >
@@ -734,8 +750,9 @@ export default function Rooms() {
             </button>
             <button
               onClick={() => setViewMode('list')}
-              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
-                viewMode === 'list' ? 'bg-[#5A1220] text-white shadow-sm font-bold' : 'text-gray-500 hover:text-gray-800'
+              aria-pressed={viewMode === 'list'}
+              className={`selection-indicator p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+                viewMode === 'list' ? 'shadow-sm font-bold' : 'text-gray-500 hover:text-gray-800'
               }`}
               title="List View"
             >
@@ -743,7 +760,7 @@ export default function Rooms() {
             </button>
           </div>
 
-          {isSecretary && (
+          {canReassignRoomSchedules && (
             <button
               id="rooms-reassign-schedule"
               type="button"
@@ -800,18 +817,15 @@ export default function Rooms() {
       )}
 
       {showGuide && <WorkflowGuideButton guideId="rooms" />}
-      <div id="rooms-workspace">
+      <div id="rooms-workspace" data-building-open={selectedBuilding !== null}>
       {isLoading ? (
         viewMode === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {Array.from({ length: 6 }).map((_, index) => (
               <div key={index} className="bg-white border border-gray-100 rounded-2xl p-6 space-y-4 shadow-sm animate-pulse">
-                <div className="flex items-center gap-3">
-                  <Skeleton className="h-10 w-10 rounded-xl" />
-                  <div className="space-y-2">
-                    <Skeleton className="h-4 w-32" />
-                    <Skeleton className="h-3 w-20" />
-                  </div>
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-3 w-20" />
                 </div>
                 <Skeleton className="h-1.5 w-full rounded" />
                 <div className="flex justify-between items-center">
@@ -830,12 +844,9 @@ export default function Rooms() {
             <div className="divide-y divide-gray-100">
               {Array.from({ length: 6 }).map((_, index) => (
                 <div key={index} className="p-4 flex items-center justify-between gap-4 animate-pulse">
-                  <div className="flex items-center gap-3">
-                    <Skeleton className="h-9 w-9 rounded-xl flex-shrink-0" />
-                    <div className="space-y-1.5">
-                      <Skeleton className="h-4 w-36" />
-                      <Skeleton className="h-3 w-24" />
-                    </div>
+                  <div className="space-y-1.5">
+                    <Skeleton className="h-4 w-36" />
+                    <Skeleton className="h-3 w-24" />
                   </div>
                   <Skeleton className="h-6 w-20 rounded-full" />
                   <Skeleton className="h-4 w-28" />
@@ -860,13 +871,18 @@ export default function Rooms() {
                   <div
                     key={building.name}
                     data-tour="building-card"
+                    role={!canManageRooms ? 'button' : undefined}
+                    tabIndex={!canManageRooms ? 0 : undefined}
                     onClick={() => openBuilding(building.name)}
+                    onKeyDown={(event) => {
+                      if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+                        event.preventDefault();
+                        openBuilding(building.name);
+                      }
+                    }}
                     className={`bg-white border border-gray-100 rounded-2xl p-6 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between space-y-4 group relative overflow-hidden font-sans ${GRID_CARD_HOVER}`}
                   >
-                    <div className="flex items-center justify-between relative z-10">
-                      <div className="w-12 h-12 rounded-xl bg-[#4e0a10]/5 text-[#4e0a10] flex items-center justify-center">
-                        <Building2 size={24} />
-                      </div>
+                    <div className="flex items-center justify-end relative z-10">
                       <span className="text-[11px] font-bold uppercase tracking-wider bg-gray-50 text-gray-500 border border-gray-150 px-2 py-0.5 rounded-full">
                         {building.totalCount} {building.totalCount === 1 ? 'room' : 'rooms'}
                       </span>
@@ -919,7 +935,6 @@ export default function Rooms() {
           ) : (
             <BuildingsTable
               buildings={buildings}
-              showBuildingIcon={!isSecretary}
               onSelect={(building) => openBuilding(building.name)}
               onEdit={canManageRooms ? (building) => openBuildingEdit(building.name) : undefined}
               onArchive={canManageRooms ? (building) => openBuildingArchive(building.name) : undefined}
@@ -961,7 +976,6 @@ export default function Rooms() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {roomsInSelectedBuilding.map((room) => {
                 const liveStatus = getRoomStatusToday(room.id);
-                const deptLogo = room.department?.logo || (room.department_id ? departments.find((d) => d.id === room.department_id)?.logo : null) || (userDepartmentId ? departments.find((d) => d.id === userDepartmentId)?.logo : null) || null;
                 
                 let badgeColor = 'bg-blue-50 text-blue-700 border-blue-200';
                 if (room.room_type === 'laboratory') {
@@ -981,20 +995,14 @@ export default function Rooms() {
                     }}
                     className={`bg-white border border-gray-150 rounded-2xl p-5 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between space-y-4 group relative overflow-hidden font-sans ${GRID_CARD_HOVER}`}
                   >
-                    {deptLogo && (
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 p-4 overflow-hidden">
-                        <img
-                          src={deptLogo}
-                          alt="Department Watermark"
-                          className="w-36 h-36 max-w-[75%] max-h-[75%] object-contain opacity-[0.32] select-none transition-transform duration-300 group-hover:scale-105"
-                        />
-                      </div>
-                    )}
                     <div className="flex items-start justify-between relative z-10">
                       <div className="space-y-1">
-                        <span className="text-sm font-mono font-bold text-gray-800 bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-lg uppercase border border-[#C9952A]/20">
-                          {room.room_code}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-mono font-bold text-gray-800 bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-lg uppercase border border-[#C9952A]/20">
+                            {room.room_code}
+                          </span>
+                          <RoomReassignBadge activity={reassignActivity[room.room_code]} />
+                        </div>
                         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider pt-1.5 font-semibold">
                           {room.department ? `${room.department.department_code} Department` : 'General / All'}
                         </p>
@@ -1080,6 +1088,7 @@ export default function Rooms() {
           ) : (
             <RoomsTable
               rooms={roomsInSelectedBuilding}
+              reassignActivity={reassignActivity}
               getRoomStatusToday={getRoomStatusToday}
               canManage={canManageRooms}
               onOpen={(room) => {
@@ -1095,49 +1104,49 @@ export default function Rooms() {
       )}
       </div>
 
-      {isModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
-            <div className="p-5 flex shrink-0 justify-between items-center bg-[#4e0a10]">
-              <h2 className="text-lg font-bold text-white font-display">
-                {isEditMode
-                  ? 'Edit Room Details'
-                  : (selectedBuilding ? 'Add New Room' : 'Add New Building')}
-              </h2>
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <form id="room-form" onSubmit={handleSubmit} noValidate className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
-              {saveError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{saveError}</p>}
+      {isModalOpen && (
+        <Modal
+          isOpen
+          onClose={() => setIsModalOpen(false)}
+          title={isEditMode
+            ? 'Edit Room Details'
+            : (selectedBuilding ? 'Add New Room' : 'Add New Building')}
+          description={isEditMode
+            ? 'Update the room code, type, and department.'
+            : selectedBuilding
+              ? `Add a room to ${selectedBuilding}.`
+              : 'Name the building and add its first room.'}
+          closeOnOverlayClick={false}
+          closeOnEscape={!isSubmitting}
+          bodyClassName="flex flex-col"
+        >
+          <form id="room-form" onSubmit={handleSubmit} noValidate className="flex min-h-0 flex-1 flex-col">
+            <div className={modalFormBody}>
+              {saveError && <ModalNotice tone="error" role="alert">{saveError}</ModalNotice>}
               {liveRoomCodeDuplicate && (
-                <div className="flex items-center gap-2.5 p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-700 animate-in fade-in">
-                  <AlertTriangle size={16} className="shrink-0 text-red-600" />
-                  <span>
-                    Duplicate detected: A room with code &ldquo;{liveRoomCodeDuplicate.room_code}&rdquo; already exists{liveRoomCodeDuplicate.building ? ` in ${liveRoomCodeDuplicate.building}` : ''}.
-                  </span>
-                </div>
+                <ModalNotice tone="error">
+                  Duplicate detected: A room with code &ldquo;{liveRoomCodeDuplicate.room_code}&rdquo; already exists{liveRoomCodeDuplicate.building ? ` in ${liveRoomCodeDuplicate.building}` : ''}.
+                </ModalNotice>
               )}
 
               {liveBuildingDuplicate && !selectedBuilding && !isEditMode && (
-                <div className="flex items-center gap-2.5 p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-700 animate-in fade-in">
-                  <AlertTriangle size={16} className="shrink-0 text-red-600" />
-                  <span>
-                    Duplicate detected: A building named &ldquo;{liveBuildingDuplicate}&rdquo; already exists.
-                  </span>
-                </div>
+                <ModalNotice tone="error">
+                  Duplicate detected: A building named &ldquo;{liveBuildingDuplicate}&rdquo; already exists.
+                </ModalNotice>
               )}
 
               {!selectedBuilding && (
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Building Name <span className="text-red-500">*</span>
-                  </label>
+                <ModalField
+                  label="Building Name"
+                  htmlFor="room-building-name"
+                  required
+                  error={buildingError || (liveBuildingDuplicate && !selectedBuilding && !isEditMode)
+                    ? (buildingError || `Building "${liveBuildingDuplicate}" already exists.`)
+                    : undefined}
+                  hint={!isEditMode ? "Enter the details of the building's first room. More rooms can be added after the building is created." : undefined}
+                >
                   <input
+                    id="room-building-name"
                     type="text"
                     value={building}
                     onChange={(e) => {
@@ -1145,29 +1154,21 @@ export default function Rooms() {
                       setBuildingError('');
                     }}
                     placeholder="e.g. NEE Building, Building 1"
-                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                      buildingError || (liveBuildingDuplicate && !selectedBuilding && !isEditMode)
-                        ? 'border-red-500 focus:ring-red-500'
-                        : 'border-gray-200 focus:ring-[#C9952A]'
-                    }`}
+                    className={modalControl(Boolean(buildingError || (liveBuildingDuplicate && !selectedBuilding && !isEditMode)))}
                   />
-                  {(buildingError || (liveBuildingDuplicate && !selectedBuilding && !isEditMode)) && (
-                    <p className="text-xs text-red-500 mt-1 font-semibold">
-                      {buildingError || `Building "${liveBuildingDuplicate}" already exists.`}
-                    </p>
-                  )}
-                </div>
+                </ModalField>
               )}
 
-              {!selectedBuilding && !isEditMode && (
-                <p className="text-xs text-gray-500">Enter the details of the building's first room. More rooms can be added after the building is created.</p>
-              )}
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                  {!selectedBuilding && !isEditMode ? 'First Room Code' : 'Room Code'} <span className="text-red-500">*</span>
-                </label>
+              <ModalField
+                label={!selectedBuilding && !isEditMode ? 'First Room Code' : 'Room Code'}
+                htmlFor="room-code"
+                required
+                error={codeError || liveRoomCodeDuplicate
+                  ? (codeError || `Room code "${liveRoomCodeDuplicate?.room_code}" is already in use.`)
+                  : undefined}
+              >
                 <input
+                  id="room-code"
                   type="text"
                   value={roomCode}
                   onChange={(e) => {
@@ -1175,25 +1176,14 @@ export default function Rooms() {
                     setCodeError('');
                   }}
                   placeholder="e.g. CCS-LAB1"
-                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                    codeError || liveRoomCodeDuplicate
-                      ? 'border-red-500 focus:ring-red-500'
-                      : 'border-gray-200 focus:ring-[#C9952A]'
-                  }`}
+                  className={modalControl(Boolean(codeError || liveRoomCodeDuplicate))}
                 />
-                {(codeError || liveRoomCodeDuplicate) && (
-                  <p className="text-xs text-red-500 mt-1 font-semibold">
-                    {codeError || `Room code "${liveRoomCodeDuplicate?.room_code}" is already in use.`}
-                  </p>
-                )}
-              </div>
+              </ModalField>
 
-              <div className={`grid ${isEditMode ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Room Type <span className="text-red-500">*</span>
-                  </label>
+              <div className={`grid gap-4 ${isEditMode ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <ModalField label="Room Type" htmlFor="room-type" required>
                   <select
+                    id="room-type"
                     value={roomType}
                     onChange={(e) => {
                       const nextRoomType = e.target.value as 'lecture' | 'laboratory' | 'online' | 'field';
@@ -1202,40 +1192,39 @@ export default function Rooms() {
                         setAllowLectureUsage(false);
                       }
                     }}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
+                    className={modalControl()}
                   >
                     <option value="lecture">Lecture</option>
                     <option value="laboratory">Laboratory</option>
                   </select>
-                </div>
+                </ModalField>
 
-                {!isEditMode && <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Status <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    aria-label="Room status"
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value as 'available' | 'not available')}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
-                  >
-                    <option value="available">Available</option>
-                    <option value="not available">Not Available</option>
-                  </select>
-                </div>}
+                {!isEditMode && (
+                  <ModalField label="Status" required>
+                    <select
+                      aria-label="Room status"
+                      value={status}
+                      onChange={(e) => setStatus(e.target.value as 'available' | 'not available')}
+                      className={modalControl()}
+                    >
+                      <option value="available">Available</option>
+                      <option value="not available">Not Available</option>
+                    </select>
+                  </ModalField>
+                )}
               </div>
 
               {roomType === 'laboratory' && (
-                <label className="flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5">
                   <input
                     type="checkbox"
                     checked={allowLectureUsage}
                     onChange={(e) => setAllowLectureUsage(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#5A1220] focus:ring-[#C9952A]"
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-[#4e0a10]"
                   />
                   <span>
-                    <span className="block text-xs font-bold uppercase tracking-wider text-gray-600">Lecture fallback capable</span>
-                    <span className="mt-0.5 block text-xs leading-5 text-gray-500">
+                    <span className="block text-sm font-semibold text-slate-800">Lecture fallback capable</span>
+                    <span className="mt-0.5 block text-xs leading-5 text-slate-500">
                       Allows major full-lecture courses to use this lab only when it is vacant.
                     </span>
                   </span>
@@ -1243,14 +1232,12 @@ export default function Rooms() {
               )}
 
               {isVpaa ? (
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Assigned Department
-                  </label>
+                <ModalField label="Assigned Department" htmlFor="room-department">
                   <select
+                    id="room-department"
                     value={departmentId}
                     onChange={(e) => setDepartmentId(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
+                    className={modalControl()}
                   >
                     <option value="">General / All Departments</option>
                     {departments.map(dept => (
@@ -1259,13 +1246,11 @@ export default function Rooms() {
                       </option>
                     ))}
                   </select>
-                </div>
+                </ModalField>
               ) : (
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                    Department
-                  </label>
+                <ModalField label="Department" htmlFor="room-department">
                   <input
+                    id="room-department"
                     type="text"
                     disabled
                     value={
@@ -1273,95 +1258,66 @@ export default function Rooms() {
                         ? `${departments.find(d => d.id === user?.department_id)?.department_code} - ${departments.find(d => d.id === user?.department_id)?.department_name}`
                         : 'Your Department'
                     }
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-gray-500 text-sm outline-none cursor-not-allowed"
+                    className={modalControl()}
                   />
-                </div>
+                </ModalField>
               )}
+            </div>
 
-              <div className="flex gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] transition-colors disabled:opacity-50 text-sm font-semibold cursor-pointer"
-                >
-                  {isSubmitting && <LoadingSpinner size={16} className="animate-spin" />}
-                  {isSubmitting
-                    ? (isEditMode ? 'Saving...' : 'Creating...')
-                    : (isEditMode ? 'Save Changes' : (selectedBuilding ? 'Create Room' : 'Create Building'))
-                  }
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>,
-        document.body
+            <footer className={modalFormFooter}>
+              <ModalButton onClick={() => setIsModalOpen(false)} disabled={isSubmitting}>Cancel</ModalButton>
+              <ModalButton type="submit" variant="primary" loading={isSubmitting}>
+                {isSubmitting
+                  ? (isEditMode ? 'Saving...' : 'Creating...')
+                  : (isEditMode ? 'Save Changes' : (selectedBuilding ? 'Create Room' : 'Create Building'))
+                }
+              </ModalButton>
+            </footer>
+          </form>
+        </Modal>
       )}
 
-      {buildingToEdit !== null && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
-            <div className="p-5 flex shrink-0 justify-between items-center bg-[#4e0a10]">
-              <h2 className="text-lg font-bold text-white font-display">Edit Building</h2>
-              <button
-                type="button"
-                onClick={() => setBuildingToEdit(null)}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 cursor-pointer"
+      {buildingToEdit !== null && (
+        <Modal
+          isOpen
+          onClose={() => setBuildingToEdit(null)}
+          title="Edit Building"
+          description={buildingToEdit}
+          closeOnOverlayClick={false}
+          closeOnEscape={!isRenamingBuilding}
+          bodyClassName="flex flex-col"
+        >
+          <form onSubmit={handleRenameBuilding} noValidate className="flex min-h-0 flex-1 flex-col">
+            <div className={modalFormBody}>
+              <ModalField
+                label="Building Name"
+                htmlFor="building-rename"
+                required
+                error={buildingNameError}
+                hint={`Every room in ${buildingToEdit} moves to the new name.`}
               >
-                <X size={18} />
-              </button>
-            </div>
-            <form onSubmit={handleRenameBuilding} noValidate className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                  Building Name <span className="text-red-500">*</span>
-                </label>
                 <input
+                  id="building-rename"
                   type="text"
                   value={buildingName}
-                  autoFocus
+                  data-autofocus
                   onChange={(e) => {
                     setBuildingName(e.target.value);
                     setBuildingNameError('');
                   }}
-                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                    buildingNameError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
-                  }`}
+                  aria-invalid={buildingNameError ? true : undefined}
+                  className={modalControl(!!buildingNameError)}
                 />
-                {buildingNameError ? (
-                  <p className="text-xs text-red-500 mt-1 font-semibold">{buildingNameError}</p>
-                ) : (
-                  <p className="text-xs text-gray-500 mt-1">Every room in {buildingToEdit} moves to the new name.</p>
-                )}
-              </div>
-
-              <div className="flex gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setBuildingToEdit(null)}
-                  className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isRenamingBuilding}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] transition-colors disabled:opacity-50 text-sm font-semibold cursor-pointer"
-                >
-                  {isRenamingBuilding && <LoadingSpinner size={16} className="animate-spin" />}
-                  {isRenamingBuilding ? 'Saving...' : 'Save Changes'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>,
-        document.body
+              </ModalField>
+            </div>
+            <footer className={modalFormFooter}>
+              <ModalButton onClick={() => setBuildingToEdit(null)} disabled={isRenamingBuilding}>Cancel</ModalButton>
+              <ModalButton type="submit" variant="primary" loading={isRenamingBuilding}>
+                {isRenamingBuilding ? 'Saving...' : 'Save Changes'}
+              </ModalButton>
+            </footer>
+          </form>
+        </Modal>
       )}
 
       <ConfirmModal
@@ -1400,7 +1356,14 @@ export default function Rooms() {
         body.room-timetable-printing > div[role="presentation"] > section.room-timetable-modal > header { display: none !important; }
         body.room-timetable-printing .room-detail-print-info,
         body.room-timetable-printing .room-detail-print-toolbar { display: none !important; }
-        body.room-timetable-printing .room-print-title { display: block !important; }
+        body.room-timetable-printing [data-wicars-guide-help] { display: none !important; }
+        body.room-timetable-printing .room-print-title { display: block !important; margin: 0 0 12px !important; }
+        body.room-timetable-printing .room-print-title,
+        body.room-timetable-printing .room-print-title * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        body.room-timetable-printing .room-print-footer { display: flex !important; }
+        body.room-timetable-printing .room-screen-card { display: none !important; }
+        body.room-timetable-printing .room-print-card { display: flex !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        body.room-timetable-printing .room-detail-print-grid .timetable-grid-root { border-radius: 8px 8px 0 0 !important; overflow: hidden !important; }        body.room-timetable-printing .room-print-legend { border: 1px solid #cbd5e1 !important; border-top: 0 !important; border-radius: 0 0 8px 8px !important; background: #faf7f3 !important; padding: 6px 12px !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         body.room-timetable-printing > div[role="presentation"],
         body.room-timetable-printing > div[role="presentation"] > section.room-timetable-modal,
         body.room-timetable-printing section.room-timetable-modal > div,
@@ -1408,6 +1371,7 @@ export default function Rooms() {
         body.room-timetable-printing section.room-timetable-modal > div > div > div { display: block !important; height: auto !important; min-height: 0 !important; padding: 0 !important; margin: 0 !important; border-radius: 0 !important; background: white !important; }
         body.room-timetable-printing .room-detail-print-grid { display: block !important; zoom: 0.88; margin: 0 !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; overflow: visible !important; }
         body.room-timetable-printing .room-detail-print-grid > div:last-child { overflow: visible !important; padding: 0 !important; }
+        body.room-timetable-printing .room-detail-print-scroll { overflow: visible !important; }
         body.room-timetable-printing .timetable-grid-root { width: 100% !important; min-height: 0 !important; border: 1px solid #cbd5e1 !important; box-shadow: none !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         body.room-timetable-printing .timetable-grid-root,
         body.room-timetable-printing .timetable-grid-root * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }

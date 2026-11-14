@@ -16,6 +16,7 @@ import {
   type DraftIssue,
   type DraftOption,
 } from "./draftReview";
+import { useWorkflowDialog } from "./useWorkflowDialog";
 
 export default function DraftIssuesPanel({
   issues,
@@ -39,6 +40,7 @@ export default function DraftIssuesPanel({
   const [isOpen, setIsOpen] = useState(false);
   const reviewButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const [scrollTarget, setScrollTarget] = useState<{ key: string } | null>(null);
 
   if (isOpen && !error && issues?.length === 0) setIsOpen(false);
@@ -74,14 +76,8 @@ export default function DraftIssuesPanel({
   useEffect(() => {
     if (!isOpen) return;
     closeButtonRef.current?.focus();
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setIsOpen(false);
-      reviewButtonRef.current?.focus();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen]);
+  useWorkflowDialog(dialogRef, isOpen, () => setIsOpen(false), reviewing);
 
   useEffect(() => {
     if (!scrollTarget) return;
@@ -100,6 +96,7 @@ export default function DraftIssuesPanel({
   };
 
   const closeReview = () => {
+    if (reviewing) return;
     setIsOpen(false);
     reviewButtonRef.current?.focus();
   };
@@ -199,27 +196,30 @@ export default function DraftIssuesPanel({
       {banner}
       {isOpen && createPortal(
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-2 sm:p-4"
+          className="scheduler-dialog-overlay fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-2 sm:p-4"
           onClick={(event) => { if (event.target === event.currentTarget) closeReview(); }}
         >
           <div
+            ref={dialogRef}
+            tabIndex={-1}
             role="dialog"
             aria-modal="true"
+            aria-busy={reviewing}
             aria-labelledby="draft-review-title"
             aria-describedby="draft-review-desc"
-            className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-[#F7F4F0] shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+            className="scheduler-dialog flex w-full max-w-3xl flex-col overflow-hidden bg-white outline-none shadow-2xl animate-in fade-in zoom-in-95 duration-200"
           >
-            <div className="flex shrink-0 items-start justify-between gap-3 bg-[#5A1220] px-5 py-4 text-white">
+            <div className="scheduler-dialog-header flex shrink-0 items-start justify-between gap-3 px-5 py-5">
               <div className="flex min-w-0 items-center gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-[#F5C842]">
+                <span className="scheduler-dialog-icon">
                   <AlertTriangle className="h-5 w-5" />
                 </span>
                 <div className="min-w-0">
-                  <h3 id="draft-review-title" className="text-base font-black leading-tight">{heading}</h3>
-                  <p id="draft-review-desc" className="mt-0.5 text-xs leading-snug text-white/75">
-                    Choose one recommendation per course, then click Apply to
-                    update the timetable. Changes will only take effect after
-                    applying, and the system will check for issues again.
+                  <p className="scheduler-dialog-eyebrow">Generated timetable</p>
+                  <h3 id="draft-review-title" className="scheduler-dialog-title">{heading}</h3>
+                  <p id="draft-review-desc" className="scheduler-dialog-description">
+                    Choose a recommendation for each course, then apply the approved
+                    changes to update and recheck the draft.
                   </p>
                 </div>
               </div>
@@ -227,8 +227,9 @@ export default function DraftIssuesPanel({
                 ref={closeButtonRef}
                 type="button"
                 onClick={closeReview}
+                disabled={reviewing}
                 aria-label="Close course review"
-                className="rounded-lg p-1.5 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+                className="scheduler-dialog-close"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -441,17 +442,17 @@ export default function DraftIssuesPanel({
               })}
             </div>
 
-            <footer className="flex shrink-0 flex-col gap-2 border-t border-[#E2D9D0] bg-white px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <footer className="scheduler-dialog-footer flex shrink-0 flex-col gap-2 border-t border-[#E2D9D0] bg-white px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs font-bold text-slate-500">
                 {chosen.length} of {withOptions.length} course{withOptions.length === 1 ? "" : "s"} approved
               </p>
-              <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
                 {withOptions.length > 0 && (
                   <button
                     type="button"
                     disabled={reviewing}
                     onClick={() => setSelected(pickBestOptions(withOptions))}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#5A1220]/20 bg-white px-3 text-xs font-bold text-[#5A1220] transition-colors hover:bg-[#5A1220]/[0.05] disabled:opacity-60"
+                    data-variant="primary" className="scheduler-dialog-button inline-flex items-center gap-1.5 rounded-lg border border-[#5A1220]/20 bg-white px-3 text-xs font-bold text-[#5A1220] transition-colors hover:bg-[#5A1220]/[0.05] disabled:opacity-60"
                   >
                     <Wand2 className="h-3.5 w-3.5" /> Approve best for all
                   </button>
@@ -460,7 +461,7 @@ export default function DraftIssuesPanel({
                   type="button"
                   disabled={reviewing || chosen.length === 0}
                   onClick={() => onApply(chosen)}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#5A1220] px-3.5 text-xs font-black text-white shadow-sm transition-colors hover:bg-[#4a0f1a] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
+                  data-variant="primary" className="scheduler-dialog-button inline-flex items-center gap-1.5 rounded-lg bg-[#5A1220] px-3.5 text-xs font-black text-white shadow-sm transition-colors hover:bg-[#4a0f1a] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
                 >
                   {reviewing ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />

@@ -10,15 +10,16 @@ describe("Default LAB Room Requirement", () => {
     expect(roomTypeSatisfies("laboratory", "lecture")).toBe(false);
   });
 
-  it("lets a laboratory meeting use a classroom when set to Classroom", () => {
+  it("keeps a laboratory meeting out of classrooms under a legacy Classroom setting", () => {
     configureLabRoomType("lecture");
-    expect(isLabMeetingRoomType("lecture")).toBe(true);
-    expect(isLabMeetingRoomType("laboratory")).toBe(false);
+    expect(labRoomTypes()).toEqual(["laboratory"]);
+    expect(isLabMeetingRoomType("lecture")).toBe(false);
+    expect(isLabMeetingRoomType("laboratory")).toBe(true);
   });
 
-  it("accepts either room type when set to Either", () => {
+  it("keeps a laboratory meeting out of classrooms under a legacy Either setting", () => {
     configureLabRoomType("either");
-    expect(roomTypeSatisfies("laboratory", "lecture")).toBe(true);
+    expect(roomTypeSatisfies("laboratory", "lecture")).toBe(false);
     expect(roomTypeSatisfies("laboratory", "laboratory")).toBe(true);
     expect(roomTypeSatisfies("lecture", "field")).toBe(false);
   });

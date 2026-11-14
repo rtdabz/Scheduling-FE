@@ -29,10 +29,11 @@ export default function ImportTermRail({ totals, rowCount, unplacedCount, errors
         type="button"
         onClick={() => onSelect('all')}
         aria-current={selection === 'all' ? 'page' : undefined}
-        className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[13px] font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${selection === 'all' ? 'bg-primary text-white' : 'text-text hover:bg-white'}`}
+        data-active={selection === 'all'}
+        className={`selection-indicator flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[13px] font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${selection === 'all' ? '' : 'text-text hover:bg-white'}`}
       >
-        <span>All courses <span className={`font-normal ${selection === 'all' ? 'text-white/75' : 'text-muted'}`}>in source order</span></span>
-        <span className="tabular-nums">{rowCount}</span>
+        <span>All courses <span className={`font-normal ${selection === 'all' ? 'text-inherit' : 'text-muted'}`}>in source order</span></span>
+        <span className="selection-indicator-count rounded-full px-1.5 tabular-nums">{rowCount}</span>
       </button>
       {unplacedCount > 0 && (
         <p className="mx-3 mt-1 text-xs font-semibold text-red-700">{unplacedCount} without a year or term</p>
@@ -62,16 +63,17 @@ export default function ImportTermRail({ totals, rowCount, unplacedCount, errors
                       type="button"
                       onClick={() => onSelect({ year, term })}
                       aria-current={active ? 'page' : undefined}
+                      data-active={active}
                       aria-label={`${YEAR_LABELS[year]}, ${TERM_LABELS[term]}: ${group.row_count} courses, ${group.calculated.tu} units${differs ? `, printed total ${group.reported?.tu ?? 'blank'}` : ''}${errors ? `, ${errors} with errors` : ''}`}
-                      className={`grid w-full grid-cols-[1fr_auto_auto] items-center gap-2 rounded-lg px-3 py-1.5 text-left text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-                        active ? 'bg-white font-bold text-primary ring-1 ring-primary/30' : 'text-text hover:bg-white'
+                      className={`selection-indicator grid w-full grid-cols-[1fr_auto_auto] items-center gap-2 rounded-lg px-3 py-1.5 text-left text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                        active ? 'font-bold' : 'text-text hover:bg-white'
                       }`}
                     >
                       <span className="truncate">
                         {TERM_SHORT[term]}
-                        <span className="ml-1.5 text-xs font-normal text-muted tabular-nums">{group.row_count}</span>
+                        <span className="selection-indicator-count ml-1.5 rounded-full px-1.5 text-xs font-normal tabular-nums">{group.row_count}</span>
                       </span>
-                      <span className={`text-xs tabular-nums ${differs ? 'rounded bg-accent/15 px-1.5 font-bold text-[#7a5410]' : 'text-muted'}`}>
+                      <span className={`text-xs tabular-nums ${differs ? 'rounded bg-accent/15 px-1.5 font-bold text-[#7a5410]' : active ? 'text-inherit' : 'text-muted'}`}>
                         {differs ? `${group.calculated.tu} vs ${group.reported?.tu ?? '?'}` : `${group.calculated.tu} u`}
                       </span>
                       <span className="flex w-4 justify-end" aria-hidden="true">

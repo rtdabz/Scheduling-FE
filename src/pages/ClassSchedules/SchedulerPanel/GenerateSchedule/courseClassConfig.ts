@@ -2,13 +2,14 @@ import type { Course, Section } from "../types";
 import {
   HYBRID_SPLIT_MEETING_MINUTES,
   isConfiguredFieldCourse,
+  isFieldSchedulingEligible,
 } from "../schedulingConfigurationEligibility";
 import {
   getCourseSlotPlan,
   SLOT_MINUTES,
 } from "../courseSlotPlan";
 import { DAYS } from "../constants";
-import { isLabMeetingRoomType } from "../../../../lib/labRoomPolicy";
+import { isLabMeetingRoomType, isMajorWithoutLaboratoryUnits } from "../../../../lib/labRoomPolicy";
 import type { CourseSetupConfig } from "./SetupCoursesStep";
 
 export type ClassConfiguration = "regular" | "split" | "integrated";
@@ -23,12 +24,21 @@ export type DurationShape =
   | "integrated-onsite"
   | "hybrid-laboratory";
 
+/** Run-scoped days of an Integrated course's two meetings. Blank = automatic. */
+export type IntegratedComponent = "lecture" | "laboratory";
+export type ComponentRequiredDays = Partial<Record<IntegratedComponent, string | null>>;
+
 export interface CourseClassConfig {
   configuration: ClassConfiguration;
   component: ClassComponent;
   delivery: DeliveryMode;
   hybridType?: "split" | "laboratory";
   requiredDay: string | null;
+  /**
+   * Integrated only. `undefined` means the targeted sections hold different
+   * values (or none were inferred), so applying keeps each section's own days.
+   */
+  componentRequiredDays?: ComponentRequiredDays;
   consecutiveDays?: number | null;
   preferredStartDay?: string | null;
   meetingDays?: string[] | null;
@@ -69,7 +79,87 @@ export function asRegularClass(config: CourseClassConfig): CourseClassConfig {
     configuration: "regular",
     delivery: config.delivery === "hybrid" ? "onsite" : config.delivery,
     hybridType: undefined,
+    componentRequiredDays: {},
   };
+}
+
+export const INTEGRATED_COMPONENTS: IntegratedComponent[] = ["lecture", "laboratory"];
+
+/** Drops automatic (blank) components; `null` when nothing is pinned. */
+export function normalizeComponentRequiredDays(
+  days: ComponentRequiredDays | null | undefined,
+): Record<string, string> | null {
+  if (!days) return null;
+  const pinned: Record<string, string> = {};
+  for (const component of INTEGRATED_COMPONENTS) {
+    const day = days[component];
+    if (day) pinned[component] = day;
+  }
+  return Object.keys(pinned).length > 0 ? pinned : null;
+}
+
+export const sameComponentRequiredDays = (
+  left: ComponentRequiredDays | null | undefined,
+  right: ComponentRequiredDays | null | undefined,
+): boolean =>
+  JSON.stringify(normalizeComponentRequiredDays(left)) ===
+  JSON.stringify(normalizeComponentRequiredDays(right));
+
+/** "Lecture: Monday · Laboratory: Thursday", automatic components omitted. */
+export function formatComponentRequiredDays(days: ComponentRequiredDays | null | undefined): string {
+  const pinned = normalizeComponentRequiredDays(days);
+  if (!pinned) return "";
+  return INTEGRATED_COMPONENTS.filter((component) => pinned[component])
+    .map((component) => `${component === "lecture" ? "Lecture" : "Laboratory"}: ${pinned[component]}`)
+    .join(" · ");
+}
+
+/**
+ * Component days for summaries. One label when every section shares it;
+ * otherwise each distinct value with the sections it applies to, so no
+ * section's days are shown as a shared default.
+ */
+export function componentDaysSummary(
+  sections: Array<{ name: string; label: string }>,
+  totalSections: number,
+): string[] {
+  const groups = new Map<string, string[]>();
+  for (const section of sections) {
+    if (!section.label) continue;
+    groups.set(section.label, [...(groups.get(section.label) ?? []), section.name]);
+  }
+  if (groups.size === 1 && [...groups.values()][0].length === totalSections) {
+    return [[...groups.keys()][0]];
+  }
+  return [...groups.entries()].map(([label, names]) => `${label} (${names.join(", ")})`);
+}
+
+/** The same corrections the server makes, shown beside the controls. */
+export function componentRequiredDaysError(
+  days: ComponentRequiredDays | null | undefined,
+  preferredDays: string[],
+  sundayClassesEnabled: boolean,
+): string | null {
+  const pinned = normalizeComponentRequiredDays(days);
+  if (!pinned) return null;
+  if (pinned.lecture && pinned.lecture === pinned.laboratory) {
+    return `The lecture and laboratory meet on different days. Choose another day for one of them; both are ${pinned.lecture}.`;
+  }
+  for (const component of INTEGRATED_COMPONENTS) {
+    const day = pinned[component];
+    if (!day) continue;
+    const label = component === "lecture" ? "Lecture" : "Laboratory";
+    if (preferredDays.length > 0 && !preferredDays.includes(day)) {
+      return `The ${label} Required Day (${day}) is not one of the Preferred Days (${preferredDays.join(", ")}). Choose one of them, or restore ${day} in Configuration.`;
+    }
+    if (day === "Sunday" && !sundayClassesEnabled) {
+      return `The ${label} Required Day is Sunday, but Sunday classes are not enabled for this department.`;
+    }
+  }
+  if (preferredDays.length === 1) {
+    return `The lecture and laboratory meet on two different days, but the Preferred Days allow only ${preferredDays[0]}. Restore another day in Configuration.`;
+  }
+  return null;
 }
 
 export interface ConsecutiveDayRule {
@@ -261,7 +351,7 @@ export const EMPTY_COURSE_DEFAULTS: CourseDefaults = {
 export interface MeetingPart {
   label: string;
   minutes: number;
-  mode?: "Online" | "F2F";
+  mode?: "Online" | "Face to Face";
 }
 
 export function meetingParts(config: CourseClassConfig, course: Course): MeetingPart[] {
@@ -277,23 +367,25 @@ export function meetingParts(config: CourseClassConfig, course: Course): Meeting
     case "hybrid-split":
       return [
         { label: "Meeting 1", minutes: HYBRID_SPLIT_MEETING_MINUTES, mode: "Online" },
-        { label: "Meeting 2", minutes: HYBRID_SPLIT_MEETING_MINUTES, mode: "F2F" },
+        { label: "Meeting 2", minutes: HYBRID_SPLIT_MEETING_MINUTES, mode: "Face to Face" },
       ];
     case "integrated-onsite":
     case "hybrid-laboratory": {
       const { lecture, laboratory } = hybridLaboratoryMinutes(course);
       return [
-        { label: "Lecture", minutes: lecture, mode: config.delivery === "hybrid" ? "Online" : "F2F" },
-        { label: "Laboratory", minutes: laboratory, mode: "F2F" },
+        { label: "Lecture", minutes: lecture, mode: config.delivery === "hybrid" ? "Online" : "Face to Face" },
+        { label: "Laboratory", minutes: laboratory, mode: "Face to Face" },
       ];
     }
     default: {
+      // A Regular course is one meeting of its Total Hours; with laboratory units it meets in
+      // a laboratory room.
       if (!isConsecutive(config)) return [{ label: "Class", minutes: required }];
-      // The days share the Total Hours equally; none repeats it.
+      // Every day repeats the course's full Total Hours.
       const dayCount = config.consecutiveDays ?? DEFAULT_CONSECUTIVE_DAYS;
       return Array.from({ length: dayCount }, (_, index) => ({
         label: `Day ${index + 1}`,
-        minutes: required / dayCount,
+        minutes: required,
         mode: config.delivery === "online" ? ("Online" as const) : undefined,
       }));
     }
@@ -306,7 +398,9 @@ const describePart = (part: MeetingPart): string =>
 export function durationLabel(config: CourseClassConfig, course: Course): string {
   const parts = meetingParts(config, course);
   if (isConsecutive(config) && parts.length > 0) {
-    return `${parts.length} days × ${describePart(parts[0])}`;
+    const perDay = parts[0].minutes / 60;
+    const mode = parts[0].mode ? ` ${parts[0].mode}` : "";
+    return `${formatHours(perDay)}/day × ${parts.length} days = ${formatHours(perDay * parts.length)}${mode}`;
   }
   return parts.map(describePart).join(" + ");
 }
@@ -319,14 +413,6 @@ export interface PreferredRoomOption {
   allow_lecture_usage?: boolean;
 }
 
-const laboratoryServesLecture = (course: Course, room: PreferredRoomOption): boolean =>
-  course.category === "major" &&
-  Number(course.lectureHours ?? 0) > 0 &&
-  Number(course.labHours ?? 0) === 0 &&
-  (course.roomTypeRequired ?? "lecture") === "lecture" &&
-  room.room_type === "laboratory" &&
-  Boolean(room.allow_lecture_usage);
-
 export function compatibleRoomOptions(
   course: Course,
   config: Pick<CourseClassConfig, "configuration" | "delivery">,
@@ -334,16 +420,14 @@ export function compatibleRoomOptions(
   options: PreferredRoomOption[],
 ): PreferredRoomOption[] {
   if (config.delivery === "online") return [];
-  const fieldRooms = options.filter((room) => room.room_type === "field");
-  if (course.roomTypeRequired === "field") return fieldRooms;
+  const fieldRooms = isFieldSchedulingEligible(course) ? options.filter((room) => room.room_type === "field") : [];
+  if (course.roomTypeRequired === "field" && isFieldSchedulingEligible(course)) return fieldRooms;
 
-  const needsLaboratory =
-    Number(course.labHours ?? 0) > 0 || course.roomTypeRequired === "laboratory";
+  const needsLaboratory = !isMajorWithoutLaboratoryUnits(course)
+    && (Number(course.labHours ?? 0) > 0 || course.roomTypeRequired === "laboratory");
   const ownRooms = needsLaboratory
     ? options.filter((room) => isLabMeetingRoomType(room.room_type))
-    : options.filter(
-        (room) => room.room_type === "lecture" || laboratoryServesLecture(course, room),
-      );
+    : options.filter((room) => room.room_type === "lecture");
   return [...ownRooms, ...fieldRooms];
 }
 
@@ -396,6 +480,14 @@ export function inferInitialCourseClassConfig(
     sectionScope,
     selectedSectionIds,
   };
+  // Never inferred from a course-wide Required Day. Mixed section values stay
+  // undefined so Apply does not overwrite them with one section's days.
+  const pinsOf = (section: Section) =>
+    normalizeComponentRequiredDays(configs[section.id]?.componentRequiredDaysByCourseId?.[course.id]);
+  const integratedPins = sectionsWithHybrid.map(pinsOf);
+  const sharedPins = integratedPins.every((pins) => sameComponentRequiredDays(pins, integratedPins[0]))
+    ? { ...(integratedPins[0] ?? {}) }
+    : undefined;
 
   if (isAnyConsecutive) {
     const rule = consecutiveBySection.get(sectionsWithConsecutive[0].id)!;
@@ -437,6 +529,7 @@ export function inferInitialCourseClassConfig(
       component: "lecture",
       delivery: onSite ? "onsite" : "hybrid",
       hybridType: onSite ? undefined : "laboratory",
+      componentRequiredDays: sharedPins,
     };
   }
 
@@ -473,6 +566,7 @@ export function syncCourseConfigToSectionConfigs(
     const currentHybridSplit = current?.hybridSplitCourseIds ?? [];
     const currentModes = current?.modesByCourseId ?? {};
     const currentRooms = current?.preferredRoomsByCourseId ?? {};
+    const currentPins = current?.componentRequiredDaysByCourseId ?? {};
 
     const without = (ids: string[]) => ids.filter((id) => id !== courseId);
     const withCourse = (ids: string[]) => Array.from(new Set([...ids, courseId]));
@@ -483,6 +577,8 @@ export function syncCourseConfigToSectionConfigs(
     const nextModes = { ...currentModes };
     const nextRooms = { ...currentRooms };
     delete nextRooms[courseId];
+    const nextPins = { ...currentPins };
+    delete nextPins[courseId];
 
     if (isTarget) {
       if (courseConfig.configuration === "split") {
@@ -490,6 +586,12 @@ export function syncCourseConfigToSectionConfigs(
         if (courseConfig.delivery === "hybrid") nextHybridSplit = withCourse(currentHybridSplit);
       } else if (courseConfig.configuration === "integrated") {
         nextSplit = withCourse(currentSplit);
+        // Only targeted Integrated sections hold component days; undefined
+        // (mixed, untouched) keeps each section's own.
+        const pins = courseConfig.componentRequiredDays === undefined
+          ? normalizeComponentRequiredDays(currentPins[courseId])
+          : normalizeComponentRequiredDays(courseConfig.componentRequiredDays);
+        if (pins) nextPins[courseId] = pins;
       }
       if (courseConfig.preferredRoomId) nextRooms[courseId] = courseConfig.preferredRoomId;
     }
@@ -503,7 +605,8 @@ export function syncCourseConfigToSectionConfigs(
       !sameIds(nextGecSplit, currentGecSplit) ||
       !sameIds(nextHybridSplit, currentHybridSplit) ||
       JSON.stringify(nextModes) !== JSON.stringify(currentModes) ||
-      JSON.stringify(nextRooms) !== JSON.stringify(currentRooms);
+      JSON.stringify(nextRooms) !== JSON.stringify(currentRooms) ||
+      JSON.stringify(nextPins) !== JSON.stringify(currentPins);
 
     if (changed) {
       onConfigChange(section.id, {
@@ -512,6 +615,9 @@ export function syncCourseConfigToSectionConfigs(
         hybridSplitCourseIds: nextHybridSplit,
         modesByCourseId: nextModes,
         preferredRoomsByCourseId: nextRooms,
+        ...(JSON.stringify(nextPins) !== JSON.stringify(currentPins)
+          ? { componentRequiredDaysByCourseId: nextPins }
+          : {}),
       });
     }
   }

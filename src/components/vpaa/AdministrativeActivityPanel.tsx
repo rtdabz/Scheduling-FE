@@ -8,15 +8,16 @@ export interface ActivityRow {
   event: string;
   category: string;
   actor: string | null;
+  actorType?: 'user' | 'system' | 'unknown';
   occurredAt: string;
 }
 
 const CATEGORY_TONE: Record<string, string> = {
-  schedule_workflow: 'bg-violet-50 text-violet-700',
-  scheduling: 'bg-sky-50 text-sky-700',
-  faculty_assignment: 'bg-emerald-50 text-emerald-700',
-  user_management: 'bg-amber-50 text-amber-800',
-  authentication: 'bg-slate-100 text-slate-600',
+  schedule_workflow: 'bg-primary/10 text-primary',
+  scheduling: 'bg-stage-waiting/10 text-stage-waiting',
+  faculty_assignment: 'bg-stage-done/10 text-stage-done',
+  user_management: 'bg-accent/[0.12] text-stage-warnText',
+  authentication: 'bg-stage-idle/60 text-muted',
 };
 
 export default function AdministrativeActivityPanel({
@@ -44,17 +45,17 @@ export default function AdministrativeActivityPanel({
       onAction={onOpen}
       className={`flex flex-col ${className}`}
     >
-      {loading && <p className="py-6 text-center text-xs italic text-slate-400">Loading recent activity…</p>}
-      {!loading && error && <p className="py-6 text-center text-xs italic text-slate-400">Activity could not be loaded.</p>}
+      {loading && <p className="py-6 text-center text-xs text-muted">Loading recent activity…</p>}
+      {!loading && error && <p className="py-6 text-center text-xs text-muted">Activity could not be loaded.</p>}
       {!loading && !error && rows.length === 0 && (
-        <p className="py-6 text-center text-xs italic text-slate-400">No administrative activity recorded yet.</p>
+        <p className="py-6 text-center text-xs text-muted">No administrative activity recorded yet.</p>
       )}
 
       {!loading && !error && rows.length > 0 && (
-        <ul className={`divide-y divide-slate-100 ${compact ? 'min-h-0 flex-1 overflow-y-auto' : ''}`}>
+        <ul className={`space-y-2 ${compact ? 'min-h-0 flex-1 overflow-y-auto' : ''}`}>
           {rows.map(row => {
             const badge = (
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase leading-tight tracking-wide ${CATEGORY_TONE[row.category] ?? CATEGORY_TONE.authentication}`}>
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold leading-tight ${CATEGORY_TONE[row.category] ?? CATEGORY_TONE.authentication}`}>
                 {row.category.replace(/_/g, ' ')}
               </span>
             );
@@ -62,24 +63,24 @@ export default function AdministrativeActivityPanel({
             const when = formatPhilippineDate(row.occurredAt, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
             if (compact) return (
-              <li key={row.id} className="py-2.5">
+              <li key={row.id} className="rounded-xl border border-border/70 px-3.5 py-3">
                 <div className="flex items-center gap-2">
                   {badge}
-                  <span className="ml-auto shrink-0 text-[10px] font-semibold text-slate-400">{relativeAge(row.occurredAt, now)}</span>
+                  <span className="ml-auto shrink-0 text-[11px] font-semibold text-muted">{relativeAge(row.occurredAt, now)}</span>
                 </div>
-                <p className="mt-1 text-[12px] font-bold leading-snug text-slate-700" title={title}>{title}</p>
-                <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500">{row.actor ?? 'System'} · {when}</p>
+                <p className="mt-1 text-[13px] font-bold leading-snug text-text" title={title}>{title}</p>
+                <p className="mt-0.5 truncate text-[11px] font-semibold text-muted">{row.actor || (row.actorType === 'system' ? 'System' : 'Actor unavailable')} · {when}</p>
               </li>
             );
 
             return (
-              <li key={row.id} className="flex items-start gap-2.5 py-2">
+              <li key={row.id} className="flex items-start gap-2.5 rounded-xl border border-border/70 px-3.5 py-3">
                 <span className="mt-0.5">{badge}</span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[12px] font-bold leading-tight text-slate-700">{title}</p>
-                  <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500">{row.actor ?? 'System'} · {when}</p>
+                  <p className="truncate text-[13px] font-bold leading-tight text-text">{title}</p>
+                  <p className="mt-0.5 truncate text-[11px] font-semibold text-muted">{row.actor || (row.actorType === 'system' ? 'System' : 'Actor unavailable')} · {when}</p>
                 </div>
-                <span className="shrink-0 text-[11px] font-semibold text-slate-400">{relativeAge(row.occurredAt, now)}</span>
+                <span className="shrink-0 text-[11px] font-semibold text-muted">{relativeAge(row.occurredAt, now)}</span>
               </li>
             );
           })}

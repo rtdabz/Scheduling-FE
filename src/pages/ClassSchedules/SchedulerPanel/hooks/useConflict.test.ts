@@ -47,6 +47,10 @@ const departments: Department[] = [
 const NO_FIELD_CODES = new Set<string>();
 
 describe("isFieldSubject", () => {
+  it("ignores Field classifications when the course has laboratory requirements", () => {
+    expect(isFieldSubject(subject({ labHours: 1, roomTypeRequired: "field" }), true, new Set(["TEST101"]))).toBe(false);
+    expect(requiredRoomTypeForMeeting(subject({ labHours: 1, roomTypeRequired: "field" }), "field")).toBe("laboratory");
+  });
   it("does not treat a Field category tag as a field course, matching the server", () => {
     expect(isFieldSubject(subject({ categories: [{ id: 1, name: "Field" }] }), false, NO_FIELD_CODES)).toBe(false);
   });
@@ -161,6 +165,37 @@ describe("online courses per section", () => {
   });
 });
 
+/** Online is shared like the field: other sections may take the same online course at once. */
+describe("concurrent online classes", () => {
+  const setup = (schedules: ScheduleItem[]) => renderHook(() => useConflict({
+    schedules,
+    selectedSectionId: "11",
+    dragSubjectId: null,
+    draggedScheduleId: null,
+    rooms: [{ id: "8", name: "Online", departmentId: null, roomType: "online", status: "available" }],
+    sections: [
+      { id: "10", name: "BSIT-1A", yearLevel: 1, semester: "1st", departmentId: 2, semesterId: 7, status: "active" },
+      { id: "11", name: "BSIT-1B", yearLevel: 1, semester: "1st", departmentId: 2, semesterId: 7, status: "active" },
+    ],
+    departments,
+    subjects: [subject()],
+    faculties: [{ id: "9", name: "Ana Cruz", employmentType: "full-time" }],
+  })).result.current;
+
+  it("lets another section take the same online course at the same time", () => {
+    // BSIT-1A holds course 1 online on Monday 8:00-9:30; BSIT-1B overlaps it.
+    expect(setup([onlineSchedule("100", "1")]).checkConflict("1", "11", null, "online", 0, 3, 3)).toBeNull();
+  });
+
+  it("still refuses an instructor or section double-booking online", () => {
+    const taught = { ...onlineSchedule("100", "1"), facultyId: "9", facultyName: "Ana Cruz" };
+    expect(setup([taught]).checkConflict("1", "11", "9", "online", 0, 3, 3)?.conflictType).toBe("faculty");
+
+    const ownClass = onlineSchedule("101", "2", "11");
+    expect(setup([ownClass]).checkConflict("1", "11", null, "online", 0, 3, 3)?.conflictType).toBe("section");
+  });
+});
+
 /** Server rules class_duration and room_availability, mirrored in the browser. */
 describe("class_duration and room_availability parity", () => {
   const sections = [{ id: "10", name: "BSIT-1A", yearLevel: 1 as const, semester: "1st" as const, departmentId: 2, semesterId: 7, status: "active" as const }];
@@ -187,6 +222,20 @@ describe("class_duration and room_availability parity", () => {
   it("allows replacing the existing meetings with the same total", () => {
     const placed = { ...onlineSchedule("100", "1"), durationSlots: 6, mode: "on-site" as const, roomId: "5" };
     expect(setup([placed], [lectureRoom()]).checkConflict("1", "10", null, "5", 1, 2, 6, "100")).toBeNull();
+  });
+
+  it("lets a Consecutive Days run repeat the full course time on each linked day (PRAC 101)", () => {
+    // A 3-hour course standing in for PRAC 101: two days of a 3-day run are placed; the third completes it.
+    const runDay = (id: string, dayIndex: number) => ({
+      ...onlineSchedule(id, "1"), dayIndex, durationSlots: 6, mode: "on-site" as const, roomId: "5",
+      splitGroupId: "run", preferredPattern: "consecutive:3",
+    });
+    const conflicts = setup([runDay("100", 0), runDay("101", 1)], [lectureRoom()]);
+    expect(conflicts.checkConflict("1", "10", null, "5", 2, 2, 6, undefined, null, 3)).toBeNull();
+    // A longer day would take the run past 3 x 3 hours.
+    expect(conflicts.checkConflict("1", "10", null, "5", 2, 2, 7, undefined, null, 3)?.message).toMatch(/would meet 9\.5 hours a week/);
+    // Without the run, the same meeting is refused against the single course allowance.
+    expect(conflicts.checkConflict("1", "10", null, "5", 2, 2, 6)?.message).toMatch(/would meet 9 hours a week/);
   });
 
   it("refuses a room that is not available for scheduling", () => {
@@ -227,11 +276,17 @@ describe("isLaboratorySubject", () => {
   });
 
   it("detects a Laboratory course category", () => {
-    expect(isLaboratorySubject(subject({ labHours: 0, categories: [{ id: 1, name: "Laboratory" }] }))).toBe(true);
+    expect(isLaboratorySubject(subject({ category: "minor", labHours: 0, categories: [{ id: 1, name: "Laboratory" }] }))).toBe(true);
   });
 
   it("detects roomTypeRequired=laboratory", () => {
-    expect(isLaboratorySubject(subject({ labHours: 0, roomTypeRequired: "laboratory" }))).toBe(true);
+    expect(isLaboratorySubject(subject({ category: "minor", labHours: 0, roomTypeRequired: "laboratory" }))).toBe(true);
+  });
+
+  it("follows the units for a major without laboratory units, whatever its stored room type", () => {
+    expect(isLaboratorySubject(subject({ lectureHours: 3, labHours: 0, roomTypeRequired: "laboratory" }))).toBe(false);
+    expect(isLaboratorySubject(subject({ lectureHours: 3, labHours: 0, categories: [{ id: 1, name: "Laboratory" }] }))).toBe(false);
+    expect(requiredRoomTypeForMeeting(subject({ lectureHours: 3, labHours: 0, roomTypeRequired: "laboratory" }), "laboratory")).toBe("lecture");
   });
 
   it("is false for a lecture-only course", () => {
@@ -471,21 +526,37 @@ describe("checkMoveConflict", () => {
       id: String(index + 1), splitGroupId: "run", preferredPattern: "consecutive:3", dayIndex, startSlot: 0,
     }));
 
-    it("moves as a whole, so its own days never block a shift", () => {
-      // Thursday -> Wednesday shifts the run to Wednesday-Friday, onto days the run holds itself.
+    it("checks only the selected meeting's destination", () => {
       expect(moveCheck(run)("1", 2, 4)).toBeNull();
+      expect(moveCheck(run)("1", 3, 4)).toBeNull();
     });
 
-    it("judges every shifted day against other classes", () => {
+    it("does not check hypothetical destinations for stationary siblings", () => {
       const blocksThursday = meeting({ id: "9", courseId: "7", subjectId: "7", sectionId: "11", dayIndex: 3, startSlot: 4 });
 
-      const conflict = moveCheck([...run, blocksThursday])("1", 2, 4);
-      expect(conflict?.conflictType).toBe("room");
-      expect(conflict?.message).toMatch(/^Thursday: /);
+      expect(moveCheck([...run, blocksThursday])("1", 2, 4)).toBeNull();
     });
 
-    it("refuses a shift past the end of the week", () => {
-      expect(moveCheck(run)("1", 5, 0)?.message).toMatch(/past the end of the week/);
+    it("reports the actual conflict at the selected destination", () => {
+      const blocksWednesday = meeting({ id: "9", courseId: "7", subjectId: "7", sectionId: "11", dayIndex: 2, startSlot: 4 });
+      const conflict = moveCheck([...run, blocksWednesday])("1", 2, 4);
+      expect(conflict?.conflictType).toBe("room");
+      expect(conflict?.message).toMatch(/^Room .+ is unavailable on Wed /);
+    });
+
+    it("does not reject a valid move because a sibling would shift past the week", () => {
+      const boundaryRun = run.map((item, index) => ({ ...item, dayIndex: [0, 1, 5][index] }));
+      expect(moveCheck(boundaryRun)("2", 2, 4)).toBeNull();
+    });
+
+    it("keeps stationary siblings in the actual overlap checks", () => {
+      const conflict = moveCheck(run)("1", 4, 0);
+      expect(conflict?.conflictType).toBe("section");
+      expect(conflict?.message).toMatch(/^Section .+ is unavailable on Fri /);
+    });
+
+    it("preserves the different-day rule even when the times do not overlap", () => {
+      expect(moveCheck(run)("1", 4, 4)?.message).toMatch(/must be on different days/);
     });
   });
 

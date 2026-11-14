@@ -29,26 +29,29 @@ const PARAM_NAMES: Record<keyof ArchiveQuery, string> = {
 const SIZES = [10, 25, 50, 100];
 const LIVE_TOPICS: readonly LiveTopic[] = ['schedules', 'rooms', 'faculty', 'courses', 'departments', 'users', 'settings'];
 
-const readQuery = (params: URLSearchParams): ArchiveQuery => {
-  const type = params.get('type') ?? '';
-  const sort = params.get('sort') ?? '';
-  const size = Number(params.get('size'));
+const readQuery = (raw: URLSearchParams, prefix: string, scope: readonly ArchiveType[]): ArchiveQuery => {
+  const get = (name: string) => raw.get(`${prefix}${name}`);
+  const type = get('type') ?? '';
+  const sort = get('sort') ?? '';
+  const size = Number(get('size'));
   return {
-    search: (params.get('q') ?? '').slice(0, 100),
-    type: (ARCHIVE_TYPES as readonly string[]).includes(type) ? type as ArchiveType : '',
-    department: params.get('department') ?? '',
-    program: params.get('program') ?? '',
-    term: params.get('term') ?? '',
-    from: params.get('from') ?? '',
-    to: params.get('to') ?? '',
+    search: (get('q') ?? '').slice(0, 100),
+    // A type outside the module scope (for example from an edited URL) is ignored.
+    type: (scope as readonly string[]).includes(type) ? type as ArchiveType : '',
+    department: get('department') ?? '',
+    program: get('program') ?? '',
+    term: get('term') ?? '',
+    from: get('from') ?? '',
+    to: get('to') ?? '',
     sort: sort === 'oldest' || sort === 'type' ? sort : 'newest',
-    page: Math.max(1, Number(params.get('page')) || 1),
-    size: SIZES.includes(size) ? size : 25,
+    page: Math.max(1, Number(get('page')) || 1),
+    size: SIZES.includes(size) ? size : 10,
   };
 };
 
-const apiParams = (query: ArchiveQuery): Record<string, string | number> => {
-  const params: Record<string, string | number> = { page: query.page, per_page: query.size };
+const apiParams = (query: ArchiveQuery, scope: readonly ArchiveType[]): Record<string, string | number | string[]> => {
+  // The module scope is always sent, so clearing filters can never widen the listing.
+  const params: Record<string, string | number | string[]> = { page: query.page, per_page: query.size, types: [...scope] };
   if (query.search.trim()) params.search = query.search.trim();
   if (query.type) params.type = query.type;
   if (query.department) params.department_id = query.department;
@@ -61,15 +64,24 @@ const apiParams = (query: ArchiveQuery): Record<string, string | number> => {
   return params;
 };
 
+export interface ArchiveScopeOptions {
+  /** Fixed record types of the module this listing belongs to. */
+  types?: readonly ArchiveType[];
+  /** URL parameter prefix, so the listing never collides with the host page's parameters. */
+  prefix?: string;
+}
+
 /**
  * Server-paginated archive listing whose query lives in the URL. Each load gets a sequence
  * number so a slower, older response can never replace a newer one, and a failed refresh keeps
  * the last good page on screen with a warning instead of an error page.
  */
-export function useArchiveRecords() {
+export function useArchiveRecords({ types = ARCHIVE_TYPES, prefix = '' }: ArchiveScopeOptions = {}) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const query = useMemo(() => readQuery(searchParams), [searchParams]);
-  const requestParams = useMemo(() => apiParams(query), [query]);
+  const scopeKey = types.join(',');
+  const scope = useMemo(() => scopeKey.split(',') as ArchiveType[], [scopeKey]);
+  const query = useMemo(() => readQuery(searchParams, prefix, scope), [prefix, scope, searchParams]);
+  const requestParams = useMemo(() => apiParams(query, scope), [query, scope]);
   const cacheKey = `page:archive:${JSON.stringify(requestParams)}`;
 
   // While a new query loads, the previous page stays visible (marked as checking).
@@ -91,7 +103,7 @@ export function useArchiveRecords() {
         // The requested page no longer exists after other changes; follow the server's clamp.
         setSearchParams((current) => {
           const next = new URLSearchParams(current);
-          next.set('page', String(response.data.meta.current_page));
+          next.set(`${prefix}page`, String(response.data.meta.current_page));
           return next;
         }, { replace: true });
       }
@@ -101,7 +113,7 @@ export function useArchiveRecords() {
     } finally {
       if (id === sequence.current) setLoading(false);
     }
-  }, [cacheKey, query.page, requestParams, setSearchParams]);
+  }, [cacheKey, prefix, query.page, requestParams, setSearchParams]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
@@ -114,16 +126,16 @@ export function useArchiveRecords() {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
       for (const [key, value] of Object.entries(changes) as [keyof ArchiveQuery, string | number][]) {
-        const name = PARAM_NAMES[key];
-        const isDefault = value === '' || (key === 'sort' && value === 'newest') || (key === 'page' && value === 1) || (key === 'size' && value === 25);
+        const name = `${prefix}${PARAM_NAMES[key]}`;
+        const isDefault = value === '' || (key === 'sort' && value === 'newest') || (key === 'page' && value === 1) || (key === 'size' && value === 10);
         if (isDefault) next.delete(name);
         else next.set(name, String(value));
       }
       // Any change other than paging returns to the first page of the new result.
-      if (!('page' in changes)) next.delete('page');
+      if (!('page' in changes)) next.delete(`${prefix}page`);
       return next;
     }, { replace: true });
-  }, [setSearchParams]);
+  }, [prefix, setSearchParams]);
 
   const clearFilters = useCallback(() => {
     update(Object.fromEntries(FILTER_KEYS.map((key) => [key, ''])) as Partial<ArchiveQuery>);

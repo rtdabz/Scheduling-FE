@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import axios from 'axios';
-import { BookOpen, Building2, Check, ChevronRight, Info, Save, Search, TriangleAlert, X } from 'lucide-react';
+import { BookOpen, Building2, Check, ChevronRight, Info, Lock, Save, TriangleAlert, X } from 'lucide-react';
 import api from '../../lib/api';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import Modal from '../../components/ui/Modal';
@@ -15,6 +15,8 @@ import { useToast } from '../../context/ToastContext';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 import { programLabel, programName } from '../../lib/programLabel';
+import './CourseTeachingAssignments.css';
+import SearchInput from '../../components/ui/SearchInput';
 
 interface ApiErrorResponse { message?: string }
 interface DepartmentOption { id: number; department_code: string; department_name: string; logo?: string | null }
@@ -46,7 +48,19 @@ interface CourseRow {
   delegable: boolean;
   is_major?: boolean;
   instructor_assigned_classes?: number;
+  section_assignments?: SectionAssignment[];
 }
+interface SectionAssignment {
+  section_id: number;
+  section_name: string;
+  instructor_name: string | null;
+  status: 'Assigned' | 'Partially assigned' | 'Awaiting instructor' | string;
+}
+const SECTION_STATUS_TONES: Record<string, string> = {
+  Assigned: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  'Partially assigned': 'bg-amber-50 text-amber-700 border-amber-200',
+  'Awaiting instructor': 'bg-slate-100 text-slate-600 border-slate-200',
+};
 interface PageData {
   courses: CourseRow[];
   departments: DepartmentOption[];
@@ -71,7 +85,7 @@ interface IndexResponse {
   programs?: PageData['programs'];
 }
 
-const cacheKey = 'page:course-teaching-assignments:v11';
+const cacheKey = 'page:course-teaching-assignments:v12';
 
 const SEMESTER_LABELS: Record<string, string> = { '1st': '1st Semester', '2nd': '2nd Semester', summer: 'Summer' };
 const fullSemesterLabel = (semester: ActiveSemester | null) => (semester
@@ -126,15 +140,9 @@ export default function CourseTeachingAssignments() {
   const [loading, setLoading] = useState(!hasCachedData(cacheKey));
   const [saving, setSaving] = useState(false);
   const [removingId, setRemovingId] = useState<number | null>(null);
+  const [removingAll, setRemovingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
-  const courseTeachingGuideSteps = useMemo(() => [
-    { element: '#course-teaching-target button', action: 'click' as const, taskHint: 'Click a department card to continue.', title: 'Choose the teaching department', description: 'Select who will teach the minor courses.', side: 'right' as const },
-    { element: '#course-teaching-filters select', action: 'select' as const, taskHint: 'Change a filter to continue.', title: 'Choose a year and program', description: 'Work on one year level. You can also select a receiving program.', side: 'bottom' as const },
-    { element: '#course-teaching-courses tbody input[type="checkbox"]:not([disabled])', waitFor: '#course-teaching-courses', action: 'toggle' as const, skipIfMissing: true, taskHint: 'Tick a course checkbox to continue.', title: 'Select minor courses', description: 'Choose the minor courses you want to assign.', side: 'top' as const },
-    { element: '#course-teaching-save', title: 'Save the assignment', description: 'Save before creating schedules or assigning instructors.', side: 'top' as const },
-  ], []);
-  useWorkflowGuide({ id: 'course-teaching', isReady: !loading, steps: courseTeachingGuideSteps, mission: 'Assign Course Teaching' });
 
   const liveRevision = useLiveRevision(['assignments', 'courses', 'curriculum']);
 
@@ -372,6 +380,56 @@ export default function CourseTeachingAssignments() {
     }
   };
 
+  const removableAssigned = courses.filter((course) => course.teaching_department_id !== null && instructorClassesOf(course) === 0);
+  const lockedAssigned = courses.filter((course) => course.teaching_department_id !== null && instructorClassesOf(course) > 0);
+
+  const removeAllAssignments = async () => {
+    if (removableAssigned.length === 0) return;
+    const count = removableAssigned.length;
+    const lockedNote = lockedAssigned.length
+      ? ` ${lockedAssigned.length} course${lockedAssigned.length === 1 ? '' : 's'} with an instructor already assigned will be kept.`
+      : '';
+    const confirmed = await confirm({
+      title: 'Remove all teaching assignments',
+      message: `${count === 1 ? 'This course' : `All ${count} courses`} will go back to the department that offers ${count === 1 ? 'it' : 'them'}, and can be assigned again afterwards.${lockedNote}`,
+      eyebrow: 'Course Teaching',
+      confirmLabel: 'Remove all',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
+    setRemovingAll(true);
+    try {
+      const response = await api.post<{ course_ids?: number[]; locked_course_ids?: number[] }>('/course-teaching-assignments/batch-remove', {
+        course_ids: removableAssigned.map((course) => course.id),
+      });
+      const removedIds = response.data.course_ids ?? [];
+      const next = courses.map((row) => (removedIds.includes(row.id)
+        ? {
+          ...row,
+          teaching_department_id: null,
+          teaching_department_code: null,
+          teaching_department_name: null,
+          teaching_program_id: null,
+          teaching_program_code: null,
+          teaching_program_name: null,
+        }
+        : row));
+      setCourses(next);
+      invalidateCacheGroups('schedules');
+      setCachedData<PageData>(cacheKey, { courses: next, departments, programs, currentDepartmentId, hasActiveCurriculum, activeSemester });
+      const skipped = response.data.locked_course_ids?.length ?? 0;
+      toast.success(
+        'Assignments removed',
+        `${removedIds.length} course${removedIds.length === 1 ? '' : 's'} returned to ${removedIds.length === 1 ? 'its' : 'their'} origin department.${skipped ? ` ${skipped} kept because an instructor is already assigned.` : ''}`,
+      );
+    } catch (removeError) {
+      toast.error('Not removed', errorMessage(removeError, 'Failed to remove the assignments.'));
+    } finally {
+      setRemovingAll(false);
+    }
+  };
+
   const responsibleLabel = selectedProgram?.code ?? effectiveTargetDepartment?.department_code ?? null;
   const selectedUnits = selectedCourses.reduce((sum, course) => sum + unitsOf(course), 0);
   const selectableVisible = visibleCourses.filter((course) => ['Available', 'Selected'].includes(statusOf(course)));
@@ -387,15 +445,15 @@ export default function CourseTeachingAssignments() {
     {
       id: 'select',
       enableSorting: false,
-      size: 48,
-      meta: { stopRowClick: true },
+      size: 40,
+      meta: { stopRowClick: true, align: 'center' },
       header: () => (
-        <input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} disabled={selectableVisible.length === 0 || !effectiveTargetDepartment} aria-label="Select all unassigned courses" className="h-4 w-4 accent-[#4e0a10]" />
+        <input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} disabled={selectableVisible.length === 0 || !effectiveTargetDepartment} aria-label="Select all unassigned courses" className="h-4 w-4 cursor-pointer accent-[#C9952A] disabled:cursor-not-allowed disabled:opacity-40" />
       ),
       cell: ({ row }) => {
         const status = statusOf(row.original);
         return (
-          <input type="checkbox" checked={status === 'Selected'} disabled={status !== 'Available' && status !== 'Selected'} onChange={() => toggleCourse(row.original)} aria-label={`Select ${row.original.course_code}`} className="h-4 w-4 accent-[#4e0a10] disabled:opacity-40" />
+          <input type="checkbox" checked={status === 'Selected'} disabled={status !== 'Available' && status !== 'Selected'} onChange={() => toggleCourse(row.original)} aria-label={`Select ${row.original.course_code}`} className="h-4 w-4 cursor-pointer accent-[#4e0a10] disabled:cursor-not-allowed disabled:opacity-30" />
         );
       },
     },
@@ -403,10 +461,11 @@ export default function CourseTeachingAssignments() {
       id: 'course',
       accessorKey: 'course_code',
       header: 'Course',
+      meta: { headerClassName: 'course-teaching-col-course' },
       cell: ({ row }) => (
-        <div className="space-y-1 leading-5">
-          <p className="font-black text-slate-900">{row.original.course_code}</p>
-          <p className="whitespace-normal break-words font-medium text-slate-500">{row.original.course_name}</p>
+        <div className="min-w-0 leading-5">
+          <p className="truncate text-[13px] font-bold text-slate-900">{row.original.course_code}</p>
+          <p className="line-clamp-2 text-xs font-medium text-slate-500" title={row.original.course_name}>{row.original.course_name}</p>
         </div>
       ),
     },
@@ -414,67 +473,60 @@ export default function CourseTeachingAssignments() {
       id: 'program',
       accessorFn: (course) => programOf(course).code,
       header: 'Program',
+      meta: { headerClassName: 'course-teaching-col-program' },
       cell: ({ row }) => {
         const program = programOf(row.original);
         return (
-          <div className="space-y-1 leading-5">
-            <p className="font-bold text-slate-700">{program.code}</p>
-            <p className="whitespace-normal break-words font-medium text-slate-500">{program.name}</p>
+          <div className="min-w-0 leading-5">
+            <p className="truncate text-xs font-bold text-slate-700">{program.code}</p>
+            <p className="line-clamp-2 text-xs font-medium text-slate-500" title={program.name}>{program.name}</p>
           </div>
         );
       },
     },
-    { id: 'owner', accessorFn: (course) => ownerOf(course), header: 'Origin Department', size: 112, meta: { cellClassName: 'text-slate-600' } },
+    {
+      id: 'owner',
+      accessorFn: (course) => ownerOf(course),
+      header: 'Origin',
+      meta: { headerClassName: 'course-teaching-col-owner', cellClassName: 'text-xs font-semibold text-slate-600' },
+    },
     {
       id: 'taught_by',
       accessorFn: (course) => currentTeacherOf(course),
       header: 'Taught by',
-      size: 136,
+      meta: { headerClassName: 'course-teaching-col-teacher' },
       cell: ({ row }) => (row.original.teaching_department_id !== null
-        ? <span className="inline-flex max-w-full whitespace-normal break-words rounded-md bg-slate-100 px-2 py-0.5 font-bold leading-5 text-slate-800">{currentTeacherOf(row.original)}</span>
-        : <span className="font-medium leading-5 text-slate-400">{currentTeacherOf(row.original)}</span>),
+        ? <span className="inline-flex max-w-full truncate rounded-md border border-[#4e0a10]/15 bg-[#4e0a10]/[0.06] px-2 py-0.5 text-xs font-bold leading-5 text-[#4e0a10]" title={row.original.teaching_program_name ?? row.original.teaching_department_name ?? undefined}>{currentTeacherOf(row.original)}</span>
+        : <span className="text-xs font-medium leading-5 text-slate-400">{currentTeacherOf(row.original)}</span>),
     },
     {
       id: 'units',
       accessorFn: (course) => unitsOf(course),
       header: 'Units',
-      size: 64,
-      meta: { align: 'right', cellClassName: 'font-black tabular-nums text-slate-800' },
+      size: 68,
+      meta: { align: 'center', cellClassName: 'text-[13px] font-bold tabular-nums text-slate-800' },
     },
     {
       id: 'status',
       accessorFn: (course) => statusOf(course),
       header: 'Status',
-      size: 152,
+      meta: { headerClassName: 'course-teaching-col-status' },
       cell: ({ row }) => {
         const status = statusOf(row.original);
-        const selected = status === 'Selected';
-        const enabled = status === 'Available' || selected;
         const assigned = row.original.teaching_department_id !== null;
-        const taught = instructorClassesOf(row.original) > 0;
-        return (
-          <span
-            title={taught ? instructorLockMessage(row.original) : undefined}
-            className={`inline-flex flex-col gap-0.5 font-semibold leading-5 ${selected ? 'text-[#4e0a10]' : assigned ? 'text-slate-600' : enabled ? 'text-emerald-700' : 'text-slate-500'}`}
-          >
-            <span className="inline-flex items-start gap-1.5">
-              <span className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${selected ? 'bg-[#4e0a10]' : assigned ? 'bg-amber-400' : enabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-              {selected ? 'Selected' : assigned ? 'Assigned' : status}
-            </span>
-            {taught && (
-              <span className="text-[11px] font-medium text-slate-500">
-                Instructor in {instructorClassesOf(row.original)} {instructorClassesOf(row.original) === 1 ? 'class' : 'classes'} · locked
-              </span>
-            )}
-          </span>
-        );
+        const classes = instructorClassesOf(row.original);
+        const lockNote = classes > 0 ? `Instructor in ${classes} ${classes === 1 ? 'class' : 'classes'}` : null;
+        if (status === 'Selected') return <StatusPill tone="selected" label="Selected" />;
+        if (assigned) return <StatusPill tone="assigned" label="Assigned" note={lockNote ? `${lockNote} · locked` : null} title={lockNote ? instructorLockMessage(row.original) : undefined} locked={Boolean(lockNote)} />;
+        if (lockNote) return <StatusPill tone="locked" label="Locked" note={lockNote} title={instructorLockMessage(row.original)} locked />;
+        return <StatusPill tone="unassigned" label="Unassigned" note={status === 'Available' ? null : status} muted={status !== 'Available'} />;
       },
     },
     {
       id: 'actions',
-      header: 'Actions',
+      header: () => <span className="sr-only">Actions</span>,
       enableSorting: false,
-      size: 80,
+      size: 52,
       meta: { align: 'right', stopRowClick: true },
       cell: ({ row }) => (
         <div className="flex justify-end">
@@ -484,7 +536,7 @@ export default function CourseTeachingAssignments() {
               aria-label={`Remove ${row.original.course_code} assignment`}
               variant="remove"
               onClick={() => void removeAssignment(row.original)}
-              disabled={removingId !== null || saving || instructorClassesOf(row.original) > 0}
+              disabled={removingId !== null || removingAll || saving || instructorClassesOf(row.original) > 0}
             >
               {removingId === row.original.id ? <LoadingSpinner className="h-4 w-4" /> : <X size={15} />}
             </TableActionButton>
@@ -495,8 +547,26 @@ export default function CourseTeachingAssignments() {
   ];
   const courseTable = useDataTable({ data: visibleCourses, columns: courseColumns, pageSize: false, getRowId: (course) => String(course.id) });
 
+  useWorkflowGuide({
+    id: 'course-teaching', isReady: !loading, mission: 'Assign Course Teaching',
+    variant: summaryOpen ? 'summary' : error ? 'unavailable' : !hasActiveCurriculum ? 'no-curriculum' : visibleCourses.length ? 'courses' : 'empty',
+    steps: () => {
+      if (summaryOpen) return [{ id: 'summary', element: '.course-teaching-summary', title: 'Review saved assignments', description: 'This summary shows saved teaching assignments by college or program. It does not include unsaved checkbox selections.' }];
+      if (error) return [{ id: 'unavailable', element: '#course-teaching-page', title: 'Assignments could not be refreshed', description: 'Course and department information may be missing or outdated. Reload the page to retry before assigning courses.' }];
+      if (!hasActiveCurriculum || availableDepartments.length === 0) return [{ id: 'prerequisites', element: '#course-teaching-courses', title: 'Course assignment setup is required', description: !hasActiveCurriculum ? 'Your department needs an active curriculum before its courses can be assigned. Publish a curriculum, then return to this page.' : 'No teaching colleges are available. Complete department setup, then reload this page.' }];
+      return [
+        { id: 'target', element: '#course-teaching-target', title: 'Check the teaching college', description: 'The selected college will teach the courses you choose. Changing the college clears unsaved course selections; keep the current choice while reviewing help if you have work in progress.' },
+        { id: 'year', element: '#course-teaching-year', title: 'Work on one year level', description: 'These year buttons show how many curriculum courses belong to each year. Changing the year clears unsaved selections.' },
+        { id: 'course-filter', element: '#course-teaching-course-filter', title: 'Filter by course', description: 'Choose one course or All courses. Changing this filter clears unsaved selections; the search field can narrow the visible rows further.' },
+        { id: 'program', element: '#course-teaching-program', title: 'Check the teaching program', description: 'Teaching Program is optional for a college assignment. A major taught within its own college needs a specific receiving program. Changing this choice clears unsaved selections.' },
+        { id: 'courses', element: '#course-teaching-courses', title: visibleCourses.length ? 'Review selectable courses' : 'No courses match', description: visibleCourses.length ? 'Checkboxes select eligible courses without saving. Assigned or instructor-locked courses cannot be selected. Check the selected count before saving; search may hide selected rows.' : 'Try another year, course or search. Assigned and instructor-locked courses cannot be assigned again through the checkboxes.' },
+        { id: 'save', element: '#course-teaching-save', title: 'Save only when ready', description: 'Save assigns the selected courses to the chosen college or program. It stays disabled without an eligible selection. Finishing help does not save, remove or reassign courses; your current selections remain available.' },
+      ];
+    },
+  });
+
   return (
-    <div className="w-full">
+    <div id="course-teaching-page" className="w-full">
       <div className="mx-auto flex w-full max-w-[1900px] flex-col gap-3">
         <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -517,7 +587,7 @@ export default function CourseTeachingAssignments() {
               onClick={() => setSummaryOpen(true)}
               aria-haspopup="dialog"
               title="View a summary of assigned courses"
-              className="relative inline-flex items-center gap-1.5 rounded-full border border-[#4e0a10]/15 bg-[#4e0a10]/10 py-1 pl-3 pr-2 text-xs font-bold text-[#4e0a10] transition-colors hover:bg-[#4e0a10]/15 focus:outline-none focus:ring-2 focus:ring-[#C9952A]/40"
+              className="relative inline-flex items-center gap-1.5 rounded-xl border border-[#4e0a10]/15 bg-[#4e0a10]/10 px-3 py-2 text-xs font-bold text-[#4e0a10] transition-colors hover:bg-[#4e0a10]/15 focus:outline-none focus:ring-2 focus:ring-[#C9952A]/40"
             >
               {assignedInDepartment > 0 && (
                 <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5" aria-hidden="true">
@@ -539,15 +609,20 @@ export default function CourseTeachingAssignments() {
           </div>
         )}
 
-        <div className="grid items-start gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
-          <aside id="course-teaching-target" className="flex max-h-[420px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white lg:sticky lg:top-3 lg:max-h-[calc(100vh-7rem)]">
-            <div className="shrink-0 border-b border-slate-100 px-4 py-3">
-              <h2 className="flex items-center gap-2 text-sm font-black text-slate-900"><Building2 className="h-4 w-4 text-[#4e0a10]" /> Teaching college</h2>
-              <p className="mt-0.5 text-xs text-slate-500">Who will teach the courses you select.</p>
+        <div className="grid gap-3 lg:h-[calc(100dvh-13rem)] lg:min-h-[520px] lg:grid-cols-[288px_minmax(0,1fr)]">
+          <aside id="course-teaching-target" className="flex max-h-72 min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white lg:max-h-none">
+            <div className="flex shrink-0 items-start justify-between gap-2 border-b border-slate-100 px-4 py-3">
+              <div className="min-w-0">
+                <h2 className="flex items-center gap-2 text-sm font-black text-slate-900"><Building2 className="h-4 w-4 text-[#4e0a10]" /> Teaching college</h2>
+                <p className="mt-0.5 text-xs text-slate-500">Who will teach the courses you select.</p>
+              </div>
+              {availableDepartments.length > 0 && (
+                <span className="mt-0.5 shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold tabular-nums text-slate-500">{availableDepartments.length}</span>
+              )}
             </div>
-            <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2">
+            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain p-2 [scrollbar-width:thin]">
               {loading && departments.length === 0
-                ? Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-14 animate-pulse rounded-lg bg-slate-100" />)
+                ? Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-[60px] animate-pulse rounded-lg bg-slate-100" />)
                 : availableDepartments.map((department) => {
                   const selected = selectedProgram === null && activeTarget === String(department.id);
                   const inTarget = activeTarget === String(department.id);
@@ -559,21 +634,28 @@ export default function CourseTeachingAssignments() {
                       type="button"
                       onClick={() => selectDepartment(department)}
                       aria-pressed={selected}
-                      className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2.5 text-left transition-colors ${inTarget ? 'border-[#4e0a10]/40 bg-[#4e0a10]/[0.04] ring-1 ring-[#4e0a10]/20' : 'border-transparent hover:bg-slate-50'}`}
+                      className={`group relative flex w-full items-center gap-3 overflow-hidden rounded-lg border px-3 py-2.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A]/50 ${inTarget ? 'border-[#4e0a10]/25 bg-[#4e0a10]/[0.045]' : 'border-transparent hover:border-slate-200 hover:bg-slate-50'}`}
                     >
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-slate-500">
+                      <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-[3px] transition-colors ${inTarget ? 'bg-[#4e0a10]' : 'bg-transparent'}`} />
+                      <span className={`flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-white text-slate-400 ${inTarget ? 'border-[#4e0a10]/20' : 'border-slate-200'}`}>
                         {department.logo ? <img src={department.logo} alt="" className="h-full w-full object-cover" /> : <Building2 className="h-4 w-4" />}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block whitespace-normal break-words text-sm font-bold leading-5 text-slate-900">{department.department_name}</span>
-                        <span className="mt-1 block break-words text-[11px] leading-4 text-slate-500">
-                          {department.department_code}
-                          {department.id === currentDepartmentId ? ' · yours' : ''}
+                        <span className={`block text-[13px] font-semibold leading-[18px] ${inTarget ? 'text-[#4e0a10]' : 'text-slate-900'}`}>{department.department_name}</span>
+                        <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] leading-4">
+                          <span className="font-bold tracking-wide text-slate-500">{department.department_code}</span>
+                          {department.id === currentDepartmentId && (
+                            <span className="rounded bg-slate-100 px-1 text-[10px] font-semibold text-slate-500">Yours</span>
+                          )}
+                          {assigned > 0 && (
+                            <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-bold tabular-nums text-amber-800" title={`${assigned} course${assigned === 1 ? '' : 's'} assigned`}>
+                              {assigned} assigned
+                            </span>
+                          )}
                         </span>
                       </span>
-                      {assigned > 0 && <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-slate-600" title={`${assigned} course${assigned === 1 ? '' : 's'} assigned`}>{assigned}</span>}
-                      <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${inTarget ? 'bg-[#4e0a10] text-white' : 'border border-slate-300'}`}>
-                        {inTarget && <Check className="h-2.5 w-2.5" />}
+                      <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-colors ${inTarget ? 'bg-[#4e0a10] text-white' : 'border border-slate-300 bg-white group-hover:border-slate-400'}`}>
+                        {inTarget && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
                       </span>
                     </button>
                   );
@@ -584,10 +666,10 @@ export default function CourseTeachingAssignments() {
             </div>
           </aside>
 
-          <main className="flex min-w-0 flex-col gap-3">
-            <div id="course-teaching-filters" className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="inline-flex rounded-lg bg-slate-100 p-1" role="group" aria-label="Year level">
+          <main className="flex min-h-0 min-w-0 flex-col gap-3">
+            <div id="course-teaching-filters" className="flex shrink-0 flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div id="course-teaching-year" className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1" role="group" aria-label="Year level">
                   {YEAR_LEVELS.map((year) => {
                     const count = byYear.get(year)?.length ?? 0;
                     const selected = activeYear === year;
@@ -597,23 +679,38 @@ export default function CourseTeachingAssignments() {
                         type="button"
                         onClick={() => selectYear(year)}
                         aria-pressed={selected}
-                        className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition ${selected ? 'bg-white text-[#4e0a10] shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                        className={`selection-indicator inline-flex h-8 items-center gap-2 rounded-md border px-3 text-xs font-bold transition-colors ${selected ? 'shadow-sm' : `border-transparent bg-transparent hover:bg-white hover:text-slate-900 ${count === 0 ? 'text-slate-400' : 'text-slate-600'}`}`}
                       >
                         {YEAR_LABELS[year]}
-                        <span className={`rounded-full px-1.5 text-[10px] tabular-nums ${selected ? 'bg-[#4e0a10]/10 text-[#4e0a10]' : 'bg-slate-200 text-slate-500'}`}>{count}</span>
+                        <span className="selection-indicator-count min-w-[1.375rem] rounded-full px-1.5 py-0.5 text-center text-[10px] leading-none tabular-nums">{count}</span>
                       </button>
                     );
                   })}
                 </div>
+                <button
+                  id="course-teaching-remove-all"
+                  type="button"
+                  onClick={() => void removeAllAssignments()}
+                  disabled={removableAssigned.length === 0 || removingAll || removingId !== null || saving}
+                  title={lockedAssigned.length > 0
+                    ? `${lockedAssigned.length} course${lockedAssigned.length === 1 ? ' has' : 's have'} an instructor and will be kept.`
+                    : 'Return every assigned course to its origin department.'}
+                  className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border border-transparent px-2.5 text-xs font-semibold text-slate-500 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-transparent disabled:hover:bg-transparent disabled:hover:text-slate-500"
+                >
+                  {removingAll ? <LoadingSpinner className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
+                  {removingAll ? 'Removing...' : `Remove all (${removableAssigned.length})`}
+                </button>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid items-start gap-3 sm:grid-cols-2">
                 <Select
+                  id="course-teaching-course-filter"
                   label="Course"
                   value={courseId}
                   onChange={(value) => { setCourseId(value); setSelectedIds([]); }}
                   options={[['all', 'All courses'], ...yearCourses.map((course) => [String(course.id), `${course.course_code} - ${course.course_name} (${programOf(course).code})`])]}
                 />
                 <Select
+                  id="course-teaching-program"
                   label="Teaching Program (Optional)"
                   description="Select a program, or allow the college to choose an instructor."
                   value={targetProgramId}
@@ -623,53 +720,62 @@ export default function CourseTeachingAssignments() {
               </div>
             </div>
 
-            <section id="course-teaching-courses" className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
-              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+            <section id="course-teaching-courses" className="course-teaching-courses flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-2.5">
                 <div className="min-w-0">
-                  <h3 className="text-sm font-black text-slate-900">{YEAR_LABELS[activeYear]} courses</h3>
+                  <h3 className="flex items-center gap-2 text-sm font-black text-slate-900">
+                    {YEAR_LABELS[activeYear]} courses
+                    <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-slate-500">{visibleCourses.length}</span>
+                  </h3>
                   <p className="text-xs text-slate-500">Tick unassigned courses to give them to {responsibleLabel ?? 'the selected college'}.</p>
                 </div>
-                <label className="relative">
-                  <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-                  <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search courses" aria-label="Search courses" className="h-9 w-52 rounded-lg border border-slate-200 pl-8 pr-2 text-xs outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/25" />
-                </label>
-              </div>
-
-              <div>
-                <DataTable
-                  table={courseTable}
-                  variant="embedded"
-                  tableClassName="!min-w-[1040px] table-fixed"
-                  scrollClassName="overflow-x-auto"
-                  scrollAriaLabel="Course teaching assignments"
-                  isLoading={loading}
-                  ariaLabel={`${YEAR_LABELS[activeYear]} courses`}
-                  onRowClick={toggleCourse}
-                  rowClassName={(course) => {
-                    const status = statusOf(course);
-                    const enabled = status === 'Available' || status === 'Selected';
-                    return `${enabled ? '' : '!cursor-default'} ${status === 'Selected' ? '!bg-[#4e0a10]/[0.04]' : ''}`;
-                  }}
-                  emptyState={
-                    <p className="text-sm font-semibold text-slate-500">
-                      {!hasActiveCurriculum
-                        ? `${ownDepartment?.department_code ?? 'Your department'} has no active curriculum, so there are no courses to assign yet. Publish one to manage its minor courses here.`
-                        : yearCourses.length === 0
-                          ? `No courses in ${YEAR_LABELS[activeYear]} of ${ownDepartment?.department_code ?? 'your department'}'s curriculum${activeSemester ? ` for ${fullSemesterLabel(activeSemester)}` : ''}.`
-                          : 'No courses match this filter.'}
-                    </p>
-                  }
+                <SearchInput
+                  compact
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search courses"
+                  aria-label="Search courses"
+                  containerClassName="relative w-full sm:w-56"
                 />
-
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50/70 px-4 py-2.5">
-                <div className="min-w-0 text-xs text-slate-600">
-                  <span className="font-bold text-slate-900">{selectedIds.length} selected</span>
-                  <span className="tabular-nums"> &middot; {selectedUnits} unit{selectedUnits === 1 ? '' : 's'}</span>
+              <DataTable
+                table={courseTable}
+                variant="embedded"
+                density="compact"
+                className="flex min-h-0 flex-1 flex-col"
+                tableClassName="course-teaching-table table-fixed"
+                scrollClassName="min-h-0 flex-1 overflow-auto overscroll-contain max-lg:max-h-[65vh] [scrollbar-width:thin]"
+                scrollAriaLabel="Course teaching assignments"
+                isLoading={loading}
+                ariaLabel={`${YEAR_LABELS[activeYear]} courses`}
+                onRowClick={toggleCourse}
+                rowClassName={(course) => {
+                  const status = statusOf(course);
+                  const enabled = status === 'Available' || status === 'Selected';
+                  return `${enabled ? '' : '!cursor-default'} ${status === 'Selected' ? 'course-teaching-row-selected' : ''}`;
+                }}
+                emptyState={
+                  <p className="text-sm font-semibold text-slate-500">
+                    {!hasActiveCurriculum
+                      ? `${ownDepartment?.department_code ?? 'Your department'} has no active curriculum, so there are no courses to assign yet. Publish one to manage its minor courses here.`
+                      : yearCourses.length === 0
+                        ? `No courses in ${YEAR_LABELS[activeYear]} of ${ownDepartment?.department_code ?? 'your department'}'s curriculum${activeSemester ? ` for ${fullSemesterLabel(activeSemester)}` : ''}.`
+                        : 'No courses match this filter.'}
+                  </p>
+                }
+              />
+
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-4 py-2.5">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className={`inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[11px] font-bold tabular-nums ${selectedIds.length ? 'bg-[#4e0a10] text-white' : 'bg-slate-200 text-slate-600'}`}>{selectedIds.length}</span>
+                    <span className="font-semibold text-slate-900">selected</span>
+                    <span className="tabular-nums text-slate-500">&middot; {selectedUnits} unit{selectedUnits === 1 ? '' : 's'}</span>
+                  </span>
                   {yearCourses.some((course) => course.is_major) && (
-                    <span className="ml-2 inline-flex items-center gap-1 text-slate-500">
-                      <Info className="h-3.5 w-3.5" />
+                    <span className="inline-flex items-center gap-1 text-slate-500">
+                      <Info className="h-3.5 w-3.5 shrink-0" />
                       Within its own college, a major needs a specific program
                     </span>
                   )}
@@ -679,7 +785,7 @@ export default function CourseTeachingAssignments() {
                   type="button"
                   onClick={saveAssignments}
                   disabled={!selectedIds.length || saving || !effectiveTargetDepartment}
-                  className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-[#3a0809] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#4e0a10] px-4 text-xs font-bold text-white shadow-sm transition-colors hover:bg-[#3a0809] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A]/50 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
                 >
                   {saving ? <LoadingSpinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
                   {saving ? 'Saving...' : selectedIds.length ? `Assign ${selectedIds.length} to ${responsibleLabel ?? 'college'}` : 'Save Assignments'}
@@ -694,6 +800,7 @@ export default function CourseTeachingAssignments() {
         isOpen={summaryOpen}
         onClose={() => setSummaryOpen(false)}
         title="Assigned courses"
+        className="course-teaching-summary"
         description={`${assignedInDepartment} course${assignedInDepartment === 1 ? '' : 's'} · ${assignedUnits} unit${assignedUnits === 1 ? '' : 's'} across ${assignedSummary.length} college${assignedSummary.length === 1 ? '' : 's'}${activeSemester ? ` · ${fullSemesterLabel(activeSemester)}` : ''}`}
         size="lg"
       >
@@ -718,19 +825,41 @@ export default function CourseTeachingAssignments() {
                 </span>
               </header>
               <ul className="divide-y divide-slate-100">
-                {group.courses.map((course) => (
-                  <li key={course.id} className="flex items-center gap-3 px-4 py-2 text-xs">
-                    <span className="w-14 shrink-0 font-semibold text-slate-500">{YEAR_LABELS[yearOf(course)] ?? '—'}</span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-black text-slate-900">{course.course_code}</span>
-                      <span className="block truncate text-slate-500">{course.course_name}</span>
-                    </span>
-                    {course.teaching_program_code && (
-                      <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 font-bold text-slate-700" title="Teaching program">{course.teaching_program_code}</span>
-                    )}
-                    <span className="w-16 shrink-0 text-right font-black tabular-nums text-slate-800">{unitsOf(course)} {unitsOf(course) === 1 ? 'unit' : 'units'}</span>
-                  </li>
-                ))}
+                {group.courses.map((course) => {
+                  const sections = course.section_assignments ?? [];
+                  return (
+                    <li key={course.id} className="flex flex-col gap-2 px-4 py-2.5 text-xs sm:flex-row sm:items-start sm:gap-3">
+                      <span className="w-14 shrink-0 pt-0.5 font-semibold text-slate-500">{YEAR_LABELS[yearOf(course)] ?? '—'}</span>
+                      <span className="min-w-0 sm:w-48 sm:shrink-0">
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          <span className="font-black text-slate-900">{course.course_code}</span>
+                          <span className="font-bold tabular-nums text-slate-500">· {unitsOf(course)} {unitsOf(course) === 1 ? 'unit' : 'units'}</span>
+                          {course.teaching_program_code && (
+                            <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-700" title="Teaching program">{course.teaching_program_code}</span>
+                          )}
+                        </span>
+                        <span className="block truncate text-slate-500">{course.course_name}</span>
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        {sections.length === 0 ? (
+                          <p className="pt-0.5 italic text-slate-400">No section scheduled yet</p>
+                        ) : (
+                          <ul className="flex flex-col gap-1">
+                            {sections.map((section) => (
+                              <li key={section.section_id} className="grid grid-cols-[4.5rem_auto_1fr] items-center gap-2">
+                                <span className="font-bold text-slate-800">{section.section_name}</span>
+                                <span className={`w-fit whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-bold ${SECTION_STATUS_TONES[section.status] ?? SECTION_STATUS_TONES['Awaiting instructor']}`}>{section.status}</span>
+                                <span className={`truncate ${section.instructor_name ? 'font-semibold text-slate-700' : 'italic text-slate-400'}`} title={section.instructor_name ?? undefined}>
+                                  {section.instructor_name ?? 'Unassigned'}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           ))}
@@ -740,17 +869,52 @@ export default function CourseTeachingAssignments() {
   );
 }
 
-function Select({ label, description, value, onChange, options }: { label: string; description?: string; value: string; onChange: (value: string) => void; options: string[][] }) {
+function Select({ id, label, description, value, onChange, options }: { id: string; label: string; description?: string; value: string; onChange: (value: string) => void; options: string[][] }) {
   const descriptionId = useId();
   return (
-    <div>
+    <div className="min-w-0">
       <label className="block text-[11px] font-bold uppercase tracking-wide text-slate-500">
         {label}
-        <select value={value} aria-describedby={description ? descriptionId : undefined} onChange={(event) => onChange(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-800 outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/25">
+        <select id={id} value={value} aria-describedby={description ? descriptionId : undefined} onChange={(event) => onChange(event.target.value)} className="mt-1 h-9 w-full cursor-pointer rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-semibold normal-case tracking-normal text-slate-800 outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/25">
           {options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}
         </select>
       </label>
-      {description && <p id={descriptionId} className="mt-1.5 text-xs leading-5 text-slate-500">{description}</p>}
+      {description && <p id={descriptionId} className="mt-1 truncate text-[11px] leading-4 text-slate-500" title={description}>{description}</p>}
     </div>
+  );
+}
+
+const STATUS_PILL_TONES = {
+  unassigned: { pill: 'border-emerald-200 bg-emerald-50 text-emerald-700', dot: 'bg-emerald-500' },
+  assigned: { pill: 'border-amber-200 bg-amber-50 text-amber-800', dot: 'bg-amber-500' },
+  locked: { pill: 'border-slate-200 bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
+  selected: { pill: 'border-[#4e0a10]/20 bg-[#4e0a10]/[0.07] text-[#4e0a10]', dot: 'bg-[#4e0a10]' },
+} as const;
+
+/** One status vocabulary for the course table: Unassigned, Assigned, Locked, Selected. */
+function StatusPill({ tone, label, note, title, locked = false, muted = false }: {
+  tone: keyof typeof STATUS_PILL_TONES;
+  label: string;
+  note?: string | null;
+  title?: string;
+  locked?: boolean;
+  muted?: boolean;
+}) {
+  const styles = muted ? STATUS_PILL_TONES.locked : STATUS_PILL_TONES[tone];
+  return (
+    <span className="inline-flex min-w-0 max-w-full flex-col items-start gap-0.5" title={title}>
+      <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-bold leading-4 ${styles.pill}`}>
+        {locked && tone === 'locked'
+          ? <Lock className="h-3 w-3 shrink-0" aria-hidden="true" />
+          : <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${styles.dot}`} />}
+        {label}
+      </span>
+      {note && (
+        <span className="inline-flex max-w-full items-center gap-1 text-[11px] font-medium leading-4 text-slate-500">
+          {locked && tone !== 'locked' && <Lock className="h-3 w-3 shrink-0" aria-hidden="true" />}
+          <span className="truncate">{note}</span>
+        </span>
+      )}
+    </span>
   );
 }

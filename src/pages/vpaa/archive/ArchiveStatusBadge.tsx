@@ -9,5 +9,5 @@ const toneClasses: Record<ArchiveStatus['tone'], string> = {
 /** Operational status a record keeps through archive and restore. */
 export default function ArchiveStatusBadge({ status }: { status: ArchiveStatus | null }) {
   if (!status) return null;
-  return <span className={`inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-bold ${toneClasses[status.tone]}`}>{status.label}</span>;
+  return <span className={`inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold ${toneClasses[status.tone]}`}>{status.label}</span>;
 }

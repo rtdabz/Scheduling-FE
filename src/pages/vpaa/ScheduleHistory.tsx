@@ -3,7 +3,9 @@ import axios from "axios";
 import {
   ChevronLeft,
   ChevronRight,
+  CopyPlus,
   Eye,
+  FileJson,
   History,
   Printer,
   RefreshCw,
@@ -31,6 +33,11 @@ import type { SchedulePdfInput } from "../ClassSchedules/SchedulerPanel/schedule
 import ScheduleApprovalPreviewModal from "../../components/scheduling/ScheduleApprovalPreviewModal";
 import { semesterLabel } from "../../lib/semesterLabel";
 import TableActionButton from "../../components/ui/TableActionButton";
+import ScheduleReuseIssuesModal, { type ReuseIssue } from "../../components/scheduling/ScheduleReuseIssuesModal";
+import { useToast } from "../../context/ToastContext";
+import { downloadFile } from "../../lib/exportFile";
+import { getStoredUser } from "../../lib/storedUser";
+import { invalidateCacheGroups } from "../../lib/cacheGroups";
 
 type Snapshot = {
   id: number;
@@ -50,7 +57,7 @@ type Snapshot = {
   department_name?: string | null;
   department_code?: string | null;
   department_logo?: string | null;
-  snapshot: Record<string, unknown>;
+  snapshot: Record<string, unknown> & { signatories?: ScheduleSignatories | null };
 };
 type Entry = {
   id: number;
@@ -71,10 +78,10 @@ type Entry = {
   department?: ApiDepartmentRecord | null;
   /** Officials recorded when this decision was made. */
   signatories?: ScheduleSignatories | null;
-  /** Current officials, used only for entries recorded before signatories were kept. */
+  /** Current account data supplied by legacy responses; never historical evidence. */
   users?: UserSummary[];
   snapshot: Record<string, unknown>;
-  actor: { name: string; username: string; role: string } | null;
+  actor: { name: string | null; username: string | null; role: string | null } | null;
   created_at: string;
 };
 type Response = {
@@ -89,18 +96,23 @@ type Response = {
   };
 };
 
-type HistoryType = "" | "approved" | "rejected" | "recalled";
+/** Schedule History lists only officially approved (VPAA) schedules. */
+type HistoryType = "" | "approved" | "archived";
 const TYPE_OPTIONS: [Exclude<HistoryType, "">, string][] = [
-  ["approved", "Approved"],
-  ["rejected", "Rejected"],
-  ["recalled", "Recalled"],
+  ["approved", "Approved by VPAA"],
+  ["archived", "Semester snapshots"],
 ];
 const ACTIONS: Record<string, { label: string; tone: string }> = {
-  schedule_approved_by_dean: { label: "Approved by Dean", tone: "bg-emerald-50 text-emerald-700" },
   schedule_approved_by_vpaa: { label: "Approved by VPAA", tone: "bg-emerald-50 text-emerald-700" },
-  schedule_returned_by_dean: { label: "Rejected by Dean", tone: "bg-red-50 text-red-700" },
-  schedule_returned_by_vpaa: { label: "Rejected by VPAA", tone: "bg-red-50 text-red-700" },
-  schedule_withdrawn: { label: "Recalled", tone: "bg-amber-50 text-amber-700" },
+  schedule_semester_archived: { label: "Semester snapshot", tone: "bg-blue-50 text-blue-700" },
+};
+const apiMessage = (e: unknown, fallback: string): string =>
+  axios.isAxiosError<{ message?: string }>(e) && typeof e.response?.data?.message === "string"
+    ? e.response.data.message
+    : fallback;
+const filenameFrom = (header: unknown, fallback: string): string => {
+  const match = typeof header === "string" ? /filename="?([^";]+)"?/i.exec(header) : null;
+  return match?.[1] ?? fallback;
 };
 const label = (value: string) =>
   ACTIONS[value]?.label ??
@@ -159,6 +171,7 @@ const gridCard = (
       roomId: value(item.snapshot, "room_id"),
       isHybrid: bool(item.snapshot.is_hybrid),
       createdById: number(item.snapshot, "created_by") || null,
+      signatories: item.snapshot.signatories ?? null,
     },
     subject: {
       id: courseId,
@@ -211,6 +224,7 @@ const pdfInputFor = (entry: Entry): SchedulePdfInput => {
     departments,
     users: entry.users ?? [],
     signatories: entry.signatories ?? null,
+    historicalDocument: true,
     activeSemester: {
       id: entry.semester_id ?? 0,
       academic_year: entry.academic_year || "",
@@ -226,6 +240,10 @@ const previewStatus = (action: string): "approved" | "rejected" | "pending" =>
 const historyCacheKey = (page: number, type: HistoryType): string => `page:schedule-overview:history:${page}:${type}`;
 
 export default function ScheduleHistory() {
+  const { toast, confirm } = useToast();
+  const [canReuse] = useState(() => (getStoredUser()?.permissions ?? []).includes("schedule.create"));
+  const [busy, setBusy] = useState<{ id: number; action: "reuse" | "export" } | null>(null);
+  const [reuseIssues, setReuseIssues] = useState<{ issues: ReuseIssue[]; scheduleLabel: string; period: string; returnFocusTo: HTMLElement | null } | null>(null);
   const [cached] = useState(() => getCachedData<Response>(historyCacheKey(1, "")));
   const [entries, setEntries] = useState<Entry[]>(cached?.data ?? []);
   const [selected, setSelected] = useState<Entry | null>(null);
@@ -237,7 +255,7 @@ export default function ScheduleHistory() {
   const [error, setError] = useState("");
   const [meta, setMeta] = useState<Response["meta"]>(cached?.meta ?? {
     current_page: 1,
-    per_page: 25,
+    per_page: 10,
     total: 0,
     last_page: 1,
     from: null,
@@ -255,7 +273,7 @@ export default function ScheduleHistory() {
     setError("");
     try {
       const response = await api.get<Response>("/schedule-history", {
-        params: { page, per_page: 25, type: type || undefined },
+        params: { page, per_page: 10, type: type || undefined },
       });
       setEntries(response.data.data);
       setMeta(response.data.meta);
@@ -283,30 +301,69 @@ export default function ScheduleHistory() {
     setPrintingEntry(entry);
     setIsPrintOpen(true);
   };
+  const exportJson = async (entry: Entry) => {
+    setBusy({ id: entry.id, action: "export" });
+    try {
+      const response = await api.get<Blob>(`/schedule-history/${entry.id}/export`, { responseType: "blob" });
+      downloadFile(response.data, filenameFrom(response.headers?.["content-disposition"], `schedule-history-${entry.id}.json`));
+    } catch {
+      toast.error("Export failed", "Unable to export this schedule as JSON.");
+    } finally {
+      setBusy(null);
+    }
+  };
+  const reuse = async (entry: Entry) => {
+    const returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const period = [semesterLabel(entry.semester), entry.academic_year ? `A.Y. ${entry.academic_year}` : ""].filter(Boolean).join(", ");
+    const confirmed = await confirm({
+      title: "Reuse this schedule?",
+      eyebrow: "Schedule Reuse",
+      message: `${entry.schedule_label} (${period}) will be checked against the active semester, curriculum, rooms and existing classes. If every check passes, its timetable is created as a new draft in the active semester without instructors, and goes through the normal approval workflow. Assign instructors after approval. The original stays unchanged.`,
+      confirmLabel: "Reuse schedule",
+      variant: "info",
+    });
+    if (!confirmed) return;
+    setBusy({ id: entry.id, action: "reuse" });
+    try {
+      const response = await api.post<{ message: string }>(`/schedule-history/${entry.id}/reuse`);
+      invalidateCacheGroups("schedules", "dashboards");
+      toast.success("Schedule reused", response.data.message);
+    } catch (e: unknown) {
+      const issues = axios.isAxiosError<{ issues?: ReuseIssue[] }>(e) ? e.response?.data?.issues : undefined;
+      if (issues?.length) {
+        setReuseIssues({ issues, scheduleLabel: entry.schedule_label, period, returnFocusTo });
+      } else {
+        toast.error("Reuse failed", apiMessage(e, "Unable to reuse this schedule."));
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
   const viewInput = useMemo(() => (selected ? pdfInputFor(selected) : null), [selected]);
   const printInput = useMemo(() => (printingEntry ? pdfInputFor(printingEntry) : null), [printingEntry]);
 
   const historyColumns: ColumnDef<Entry>[] = [
     {
       id: "decision",
-      header: "Decision",
+      header: "Event",
       cell: ({ row }) => (
-        <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold ${ACTIONS[row.original.action]?.tone ?? "bg-gray-100 text-gray-600"}`}>
+        <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${ACTIONS[row.original.action]?.tone ?? "bg-gray-100 text-gray-600"}`}>
           {label(row.original.action)}
         </span>
       ),
     },
     { id: "schedule", header: "Schedule", meta: { cellClassName: "text-sm font-semibold text-gray-900" }, cell: ({ row }) => row.original.schedule_label },
     { id: "semester", header: "Semester", meta: { cellClassName: "text-sm font-semibold text-gray-900" }, cell: ({ row }) => semesterLabel(row.original.semester) },
-    { id: "academic_year", header: "A.Y.", meta: { cellClassName: "text-sm font-semibold text-gray-900" }, cell: ({ row }) => row.original.academic_year || "—" },
+    { id: "academic_year", header: "A.Y.", meta: { hideBelow: "md", cellClassName: "text-sm font-semibold text-gray-900" }, cell: ({ row }) => row.original.academic_year || "—" },
     { id: "created_at", header: "Date and time", meta: { cellClassName: "whitespace-nowrap font-medium text-gray-600" }, cell: ({ row }) => date(row.original.created_at) },
     {
       id: "actor",
+      meta: { hideBelow: "lg" },
       header: "Actor",
       cell: ({ row }) => (
         <>
-          <p className="text-sm font-medium text-gray-800">{row.original.actor?.name || "System"}</p>
-          <p className="font-medium uppercase text-gray-500">{row.original.actor?.role || "system"}</p>
+          <p className="text-sm font-medium text-gray-800">{row.original.actor?.name || "Actor unavailable"}</p>
+          <p className="font-medium uppercase text-gray-500">{row.original.actor?.role || "unknown"}</p>
         </>
       ),
     },
@@ -321,6 +378,27 @@ export default function ScheduleHistory() {
           </TableActionButton>
           <TableActionButton label="Print schedule" variant="print" onClick={() => print(row.original)}>
             <Printer className="h-4 w-4" />
+          </TableActionButton>
+          {canReuse && (
+            <TableActionButton
+              id={`schedule-history-reuse-${row.original.id}`}
+              label="Reuse schedule"
+              variant="success"
+              disabled={busy !== null}
+              aria-busy={busy?.id === row.original.id && busy.action === "reuse"}
+              onClick={() => void reuse(row.original)}
+            >
+              <CopyPlus className="h-4 w-4" />
+            </TableActionButton>
+          )}
+          <TableActionButton
+            label="Export JSON"
+            variant="neutral"
+            disabled={busy?.id === row.original.id}
+            aria-busy={busy?.id === row.original.id && busy.action === "export"}
+            onClick={() => void exportJson(row.original)}
+          >
+            <FileJson className="h-4 w-4" />
           </TableActionButton>
         </div>
       ),
@@ -338,7 +416,7 @@ export default function ScheduleHistory() {
     <div id="schedule-history-page" className="space-y-5">
       <div className="flex items-center justify-between gap-3">
         <select
-          aria-label="Decision"
+          aria-label="History type"
           value={type}
           onChange={(event) => {
             setType(event.target.value as HistoryType);
@@ -346,7 +424,7 @@ export default function ScheduleHistory() {
           }}
           className="w-full max-w-[200px] rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#5A1220]"
         >
-          <option value="">All decisions</option>
+          <option value="">All approved schedules</option>
           {TYPE_OPTIONS.map(([value, text]) => (
             <option key={value} value={value}>{text}</option>
           ))}
@@ -379,7 +457,7 @@ export default function ScheduleHistory() {
             emptyState={
               <>
                 <History className="mx-auto h-10 w-10 text-gray-300" />
-                <p className="mt-3 font-semibold text-gray-700">No schedule history yet</p>
+                <p className="mt-3 font-semibold text-gray-700">No VPAA-approved schedules yet</p>
               </>
             }
           />
@@ -424,7 +502,7 @@ export default function ScheduleHistory() {
           checks={
             <div className="px-5 py-3 text-sm text-gray-600">
               {date(selected.created_at)}
-              {selected.actor ? ` · by ${selected.actor.name}` : ""}
+              {` · by ${selected.actor?.name || "Actor unavailable"}`}
               {" · "}
               {selected.section_count} section{selected.section_count === 1 ? "" : "s"}
               {selected.rejection_reason && (
@@ -439,6 +517,7 @@ export default function ScheduleHistory() {
           onClose={() => setSelected(null)}
         />
       )}
+      {reuseIssues && <ScheduleReuseIssuesModal {...reuseIssues} onClose={() => setReuseIssues(null)} />}
       {printInput && (
         <PrintSchedule
           {...printInput}

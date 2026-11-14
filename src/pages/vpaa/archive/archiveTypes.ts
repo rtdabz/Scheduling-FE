@@ -1,6 +1,6 @@
 export const ARCHIVE_TYPES = [
   'users', 'departments', 'programs', 'buildings', 'rooms', 'faculties',
-  'designations', 'courses', 'semesters', 'schedules', 'schedule-splits',
+  'designations', 'courses', 'semesters',
 ] as const;
 
 export type ArchiveType = (typeof ARCHIVE_TYPES)[number];
@@ -15,13 +15,56 @@ export const ARCHIVE_TYPE_LABELS: Record<ArchiveType, string> = {
   designations: 'Designations',
   courses: 'Courses',
   semesters: 'Semesters',
-  schedules: 'Class schedules',
-  'schedule-splits': 'Meeting splits',
 };
 
+/**
+ * Archived records live in the module that owns them. Each module lists only its fixed types;
+ * restore authority is unchanged (the archive API stays VPAA-only).
+ */
+export const ARCHIVE_MODULES = {
+  users: { types: ['users'], path: '/users', label: 'Archived accounts' },
+  departments: { types: ['departments', 'programs'], path: '/departments', label: 'Archived departments & programs' },
+  facilities: { types: ['buildings', 'rooms'], path: '/facilities', label: 'Archived buildings & rooms' },
+  instructors: { types: ['faculties'], path: '/instructors', label: 'Archived instructors' },
+  designations: { types: ['designations'], path: '/designations', label: 'Archived designations' },
+  semesters: { types: ['semesters'], path: '/settings', label: 'Archived semesters' },
+  curriculum: { types: ['courses'], path: '/curriculum/archived-courses', label: 'Archived courses' },
+} as const satisfies Record<string, { types: readonly ArchiveType[]; path: string; label: string }>;
+
+export type ArchiveModule = keyof typeof ARCHIVE_MODULES;
+
+/** The module that owns an archive type, for redirecting old `/archive?type=` links. */
+export const archiveModuleOf = (type: string | null): ArchiveModule | null => (
+  (Object.keys(ARCHIVE_MODULES) as ArchiveModule[]).find((module) => (ARCHIVE_MODULES[module].types as readonly string[]).includes(type ?? '')) ?? null
+);
+
+/** Query parameter that switches a module page to its archived records. */
+export const ARCHIVED_VIEW_PARAM = 'archived';
+/** Prefix for the archive listing's own filters inside a module page. */
+export const ARCHIVE_PARAM_PREFIX = 'ar_';
+
+const CARRIED_PARAMS = ['q', 'type', 'department', 'program', 'term', 'from', 'to', 'sort', 'page', 'size'];
+
+/** The archive URL a former `/archive?...` link now points to: the owning module's archive. */
+export function archiveRedirectTarget(search: string): string {
+  const params = new URLSearchParams(search);
+  // Schedules have no archive (deletes are permanent); old schedule links open Schedule Approval.
+  if (['schedules', 'schedule-splits'].includes(params.get('type') ?? '')) return '/schedules/approval';
+  const module = archiveModuleOf(params.get('type')) ?? 'users';
+  const { path } = ARCHIVE_MODULES[module];
+  const next = new URLSearchParams();
+  if (module !== 'curriculum') next.set(ARCHIVED_VIEW_PARAM, '1');
+  CARRIED_PARAMS.forEach((name) => {
+    const value = params.get(name);
+    if (value) next.set(`${ARCHIVE_PARAM_PREFIX}${name}`, value);
+  });
+  const query = next.toString();
+  return query ? `${path}?${query}` : path;
+}
+
 /** Types whose records carry a program or term, used to show only relevant filters. */
-export const PROGRAM_TYPES: readonly ArchiveType[] = ['users', 'programs', 'buildings', 'rooms', 'faculties', 'courses', 'schedules', 'schedule-splits'];
-export const TERM_TYPES: readonly ArchiveType[] = ['semesters', 'schedules', 'schedule-splits'];
+export const PROGRAM_TYPES: readonly ArchiveType[] = ['users', 'programs', 'buildings', 'rooms', 'faculties', 'courses'];
+export const TERM_TYPES: readonly ArchiveType[] = ['semesters'];
 
 export interface ArchiveRef {
   type: ArchiveType;
@@ -57,7 +100,7 @@ export interface ArchiveRecord {
   context: ArchiveContext;
   status: ArchiveStatus | null;
   deleted_at: string;
-  restore: { state: 'blocked' | 'validation' | 'clear'; blockers: ArchiveBlocker[] };
+  restore: { state: 'blocked' | 'clear'; blockers: ArchiveBlocker[] };
 }
 
 export interface ArchiveDetail extends ArchiveRecord {
@@ -66,7 +109,7 @@ export interface ArchiveDetail extends ArchiveRecord {
   provenance: {
     archived_at: string | null;
     recorded: boolean;
-    actor: { id: number; name: string; username: string; role: string } | null;
+    actor: { id: number; name: string | null; username: string | null; role: string | null } | null;
     event: string | null;
     note: string | null;
     reason: string | null;
@@ -85,7 +128,8 @@ export interface ArchiveOptions {
 export interface ArchivePage {
   data: ArchiveRecord[];
   meta: { current_page: number; per_page: number; total: number; last_page: number; from: number; to: number };
-  counts: Record<ArchiveType, number>;
+  /** Per-type counts for the requested module scope only. */
+  counts: Partial<Record<ArchiveType, number>>;
   total_archived: number;
   options: ArchiveOptions;
   checked_at: string;
@@ -102,7 +146,6 @@ export interface RestoreFailure {
   message: string;
   code?: string;
   blockers?: ArchiveBlocker[];
-  violations?: { rule?: string; message: string }[];
 }
 
 export const formatArchiveDate = (value: string | null | undefined): string => (value

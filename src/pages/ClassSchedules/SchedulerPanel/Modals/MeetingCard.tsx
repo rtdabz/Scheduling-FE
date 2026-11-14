@@ -16,6 +16,7 @@ const selectClass = "h-10 w-full appearance-none rounded-lg border border-slate-
 
 interface MeetingCardProps {
   title: string;
+  showFieldMode?: boolean;
   mode: ClassMode;
   isModeDisabled: (mode: ClassMode) => boolean;
   modeTitle: (mode: ClassMode) => string | undefined;
@@ -41,6 +42,7 @@ interface MeetingCardProps {
 
 export default function MeetingCard({
   title,
+  showFieldMode = true,
   mode,
   isModeDisabled,
   modeTitle,
@@ -76,8 +78,8 @@ export default function MeetingCard({
 
       <div>
         <span className={fieldLabelClass}>Class mode</span>
-        <div className="grid grid-cols-3 gap-1 rounded-lg bg-[#F7F4F0] p-1">
-          {CLASS_MODE_OPTIONS.map(({ value, label, Icon }) => {
+        <div className={`grid ${showFieldMode ? "grid-cols-3" : "grid-cols-2"} gap-1 rounded-lg bg-[#F7F4F0] p-1`}>
+          {CLASS_MODE_OPTIONS.filter(({ value }) => showFieldMode || value !== "field").map(({ value, label, Icon }) => {
             const isSelected = mode === value;
             const disabled = isModeDisabled(value);
             return (
@@ -88,9 +90,9 @@ export default function MeetingCard({
                 aria-pressed={isSelected}
                 title={modeTitle(value)}
                 onClick={() => { if (!disabled) onModeSelect(value); }}
-                className={`flex h-8 items-center justify-center gap-1.5 rounded-md text-xs font-bold transition-colors ${
+                className={`selection-indicator flex h-8 items-center justify-center gap-1.5 rounded-md text-xs font-bold transition-colors ${
                   isSelected
-                    ? "cursor-default bg-[#5A1220] text-white shadow-sm"
+                    ? "cursor-default shadow-sm"
                     : disabled
                       ? "cursor-not-allowed text-slate-300"
                       : "text-slate-600 hover:bg-white hover:text-slate-900"

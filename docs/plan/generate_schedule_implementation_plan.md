@@ -94,6 +94,11 @@ Implement GS-01 first. It is independent of the unresolved rule-persistence deci
 
 ### GS-02 - Keep one effective course-rule policy through the workflow
 
+*Partly addressed (2026-11-11):* Lecture/Laboratory Required Days of
+Integrated courses now carry one effective context through generation, draft
+review and the generated save ([integrated_required_days_plan.md](integrated_required_days_plan.md)).
+The course-wide Required Day, consecutive-day and field rules below remain open.
+
 **Problem and impact:** The wizard's `withoutCourseRules` removes persisted Required Day, consecutive-day and field-course rules on load. Its rule-edit handlers update local state. Generation sends `rule_overrides`, while draft review and `/schedules/batch` do not carry equivalent effective rules. Generation temporarily uses the override through the existing department course-rule service; review/save evaluate persisted rules. Local rule choices are also absent from the persisted wizard draft.
 
 **Evidence:** With a persisted Monday Required Day rule, a wizard-style generation request with cleared overrides and Tuesday allowed produced a successful Tuesday preview. Saving equivalent, minute-normalized rows failed with a `forced_course_day` violation. Conversely, a newly selected local rule may not become a rule enforced by later manual scheduling.

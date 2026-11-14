@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowRight,
@@ -9,14 +9,12 @@ import {
   CalendarCheck2,
   Check,
   CheckCircle2,
-  GaugeCircle,
   Landmark,
   LayoutGrid,
   Maximize2,
   Minimize2,
   Minus,
   RotateCcw,
-  Search,
   SlidersHorizontal,
   Users,
   type LucideIcon,
@@ -25,8 +23,7 @@ import { Bar, BarChart, LabelList, ResponsiveContainer, XAxis, YAxis } from 'rec
 import DashboardSkeleton from '../../components/ui/DashboardSkeleton';
 import DashboardGantt from './calendar/DashboardGantt';
 import ScheduleDetailModal from './calendar/ScheduleDetailModal';
-import { buildStandardHours, DEFAULT_STANDARD_HOURS, findOverlaps, withCalendarDepartments, type CalendarSchedule, type StandardHours } from './calendar/ganttLayout';
-import { isVpaaApproved } from '../../lib/scheduleStatus';
+import { buildStandardHours, DEFAULT_STANDARD_HOURS, filterVpaaApprovedSchedules, findOverlaps, withCalendarDepartments, type CalendarSchedule, type StandardHours } from './calendar/ganttLayout';
 import type { TimeGridConfigInput } from '../../lib/timeGrid';
 import DashboardMetricCard from '../../components/overview/DashboardMetricCard';
 import BuildingUtilizationPanel from '../../components/vpaa/BuildingUtilizationPanel';
@@ -35,6 +32,7 @@ import AdministrativeActivityPanel, { type ActivityRow } from '../../components/
 import { Donut, DonutLegend, FilterSelect, Panel, type Slice } from '../../components/vpaa/DashboardPrimitives';
 import { grouped } from '../../lib/dashboardFormat';
 import { basicLoadOf } from '../../lib/facultyLoad';
+import { formatPersonName } from '../../lib/personName';
 import api from '../../lib/api';
 import { getStoredUser } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
@@ -45,7 +43,6 @@ import { EMPTY_INSIGHTS, type VpaaInsights } from '../../lib/vpaaInsights';
 import {
   institutionTotals,
   latestSubmissionBySection,
-  percent,
   queueSeverity,
   relativeAge,
   rollupDepartments,
@@ -92,6 +89,16 @@ const WORKFLOW_COLUMNS = 'minmax(0,1.5fr) minmax(0,1.3fr) minmax(0,0.95fr) 92px'
 
 const SCHEDULE_PREVIEW_LIMIT = 2000;
 
+const TABS = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'progress', label: 'Progress' },
+  { key: 'attentions', label: 'Attentions' },
+  { key: 'activity', label: 'Activity' },
+] as const;
+type TabKey = typeof TABS[number]['key'];
+const TAB_PARAM = 'tab';
+const isTabKey = (value: string | null): value is TabKey => TABS.some(t => t.key === value);
+
 const formatSubmittedOn = (value?:string|null) => {
   if (!value) return '—';
   const date = new Date(value);
@@ -100,9 +107,9 @@ const formatSubmittedOn = (value?:string|null) => {
 };
 
 const SEVERITY_STYLES = {
-  overdue: 'bg-rose-50 text-rose-700',
-  ageing: 'bg-amber-50 text-amber-800',
-  fresh: 'bg-slate-100 text-slate-600',
+  overdue: 'bg-stage-returned/10 text-stage-returned',
+  ageing: 'bg-accent/[0.12] text-stage-warnText',
+  fresh: 'bg-stage-idle/60 text-muted',
 } as const;
 
 const DASHBOARD_LIVE_TOPICS = ['schedules', 'approvals', 'assignments', 'sections', 'rooms', 'faculty', 'courses', 'departments', 'users', 'settings', 'curriculum'] as const;
@@ -125,7 +132,7 @@ export default function VpaaDashboardPage() {
   const [sections, setSections] = useState<Section[]>(cached?.sections ?? []);
   const [faculties, setFaculties] = useState<Faculty[]>(cached?.faculties ?? []);
   const [departments, setDepartments] = useState<Department[]>(cached?.departments ?? []);
-  const [subjects, setSubjects] = useState<Subject[]>(cached?.subjects ?? []);
+  const [, setSubjects] = useState<Subject[]>(cached?.subjects ?? []);
   const [activeCurriculaCount, setActiveCurriculaCount] = useState<number>(cached?.activeCurriculaCount ?? 0);
   const [activeSemester, setActiveSemester] = useState<Semester | null>(cached?.activeSemester ?? null);
   const [submissions, setSubmissions] = useState<OverviewSubmission[]>(cached?.submissions ?? []);
@@ -145,7 +152,6 @@ export default function VpaaDashboardPage() {
   const [filterDept, setFilterDept] = useState('all');
   const [filterBuilding, setFilterBuilding] = useState('all');
   const [filterRoom, setFilterRoom] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
   const [showTimetableFilters, setShowTimetableFilters] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -238,7 +244,7 @@ export default function VpaaDashboardPage() {
       setActivityError(false);
       try {
         const rows = await loadCachedData<ActivityRow[]>(activityCacheKey, async () => {
-          const response = await api.get<{ data?: Array<{ id:string; event:string; category:string; occurred_at:string; actor?:{ name?:string }|null }> }>(
+          const response = await api.get<{ data?: Array<{ id:string; event:string; category:string; occurred_at:string; actor?:{ name?:string|null }|null; actor_type?:ActivityRow['actorType'] }> }>(
             '/activity-log',
             { params: { per_page: 10 } },
           );
@@ -247,6 +253,7 @@ export default function VpaaDashboardPage() {
             event: row.event,
             category: row.category,
             actor: row.actor?.name ?? null,
+            actorType: row.actor_type,
             occurredAt: row.occurred_at,
           }));
         }, reloadKey > 0);
@@ -324,12 +331,12 @@ export default function VpaaDashboardPage() {
   }, [departmentStats]);
 
   const readinessSlices: Slice[] = [
-    { key: 'ready', label: 'Ready for Final Approval', value: readiness.readyForApproval, color: '#16a36a' },
-    { key: 'dean', label: 'Waiting on Dean', value: readiness.withDean, color: '#0ea5e9' },
-    { key: 'partial', label: 'Partly Approved', value: readiness.partlyApproved, color: '#14b8a6' },
-    { key: 'drafting', label: 'Still Drafting', value: readiness.stillDrafting, color: '#3b82f6' },
-    { key: 'returned', label: 'Returned for Revision', value: readiness.returned, color: '#f59e0b' },
-    { key: 'approved', label: 'Fully Approved', value: readiness.fullyApproved, color: '#8b5cf6' },
+    { key: 'ready', label: 'Ready for Final Approval', value: readiness.readyForApproval, color: '#C9952A' },
+    { key: 'dean', label: 'Waiting on Dean', value: readiness.withDean, color: '#4A6A8A' },
+    { key: 'partial', label: 'Partly Approved', value: readiness.partlyApproved, color: '#3F7D58' },
+    { key: 'drafting', label: 'Still Drafting', value: readiness.stillDrafting, color: '#A89A8D' },
+    { key: 'returned', label: 'Returned for Revision', value: readiness.returned, color: '#B4432F' },
+    { key: 'approved', label: 'Fully Approved', value: readiness.fullyApproved, color: '#4e0a10' },
   ];
 
   const facultyBands = useMemo(() => {
@@ -351,10 +358,10 @@ export default function VpaaDashboardPage() {
   }, [faculties]);
 
   const facultySlices: Slice[] = [
-    { key: 'complete', label: 'Complete Load', value: facultyBands.completeLoad, color: '#16a36a' },
-    { key: 'remaining', label: 'With Remaining Capacity', value: facultyBands.remainingCapacity, color: '#3b82f6' },
-    { key: 'overloaded', label: 'Overloaded', value: facultyBands.overloaded, color: '#f59e0b' },
-    { key: 'none', label: 'No Assignment', value: facultyBands.noAssignment, color: '#cbd5e1' },
+    { key: 'complete', label: 'Complete Load', value: facultyBands.completeLoad, color: '#3F7D58' },
+    { key: 'remaining', label: 'With Remaining Capacity', value: facultyBands.remainingCapacity, color: '#4A6A8A' },
+    { key: 'overloaded', label: 'Overloaded', value: facultyBands.overloaded, color: '#C9952A' },
+    { key: 'none', label: 'No Assignment', value: facultyBands.noAssignment, color: '#E6DED5' },
   ];
 
   const departmentNames = useMemo(
@@ -369,7 +376,7 @@ export default function VpaaDashboardPage() {
         const max = basicLoadOf(f.max_units, f.deload_units);
         return {
           id: f.id,
-          name: `${f.first_name} ${f.last_name}`.trim(),
+          name: formatPersonName(f),
           department: departmentNames.get(Number(f.department_id)) ?? '—',
           assigned,
           max,
@@ -388,7 +395,7 @@ export default function VpaaDashboardPage() {
     [activeSemesterId, schedules],
   );
 
-  const publishedSchedules = useMemo(() => withCalendarDepartments(semesterSchedules, departments).filter((item) => isVpaaApproved(item.status)).map((item) => ({
+  const publishedSchedules = useMemo(() => withCalendarDepartments(filterVpaaApprovedSchedules(semesterSchedules), departments).map((item) => ({
     ...item,
     course_id: item.course_id ?? item.course?.id ?? item.subject_id,
     mode: item.mode?.toLowerCase().includes('online') || item.room?.room_type?.toLowerCase().includes('online') ? 'online' as const
@@ -408,37 +415,25 @@ export default function VpaaDashboardPage() {
   }, [campusRooms, filterBuilding]);
 
   const timetableSchedules = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
     return publishedSchedules.filter(s => {
       if (filterDept !== 'all' && Number(s.section?.department_id) !== Number(filterDept)) return false;
       if (filterBuilding !== 'all' && (s.room?.building ?? '').trim() !== filterBuilding) return false;
       if (filterRoom !== 'all' && String(s.room_id ?? '') !== filterRoom) return false;
-      if (!query) return true;
-      return [
-        s.section?.section_name,
-        s.course?.course_code,
-        s.course?.course_name,
-        s.subject?.subject_code,
-        s.subject?.subject_name,
-        s.faculty ? `${s.faculty.first_name} ${s.faculty.last_name}` : '',
-        s.room?.room_code,
-        s.room?.building,
-      ].some(value => (value ?? '').toLowerCase().includes(query));
+      return true;
     });
-  }, [publishedSchedules, filterDept, filterBuilding, filterRoom, searchQuery]);
+  }, [publishedSchedules, filterDept, filterBuilding, filterRoom]);
 
   const changeBuilding = (value:string) => {
     setFilterBuilding(value);
     setFilterRoom('all');
   };
 
-  const filtersActive = filterDept !== 'all' || filterBuilding !== 'all' || filterRoom !== 'all' || searchQuery !== '';
+  const filtersActive = filterDept !== 'all' || filterBuilding !== 'all' || filterRoom !== 'all';
   const activeTimetableFilterCount = [filterDept, filterBuilding, filterRoom].filter(value => value !== 'all').length;
   const resetFilters = () => {
     setFilterDept('all');
     setFilterBuilding('all');
     setFilterRoom('all');
-    setSearchQuery('');
   };
 
   useEffect(() => {
@@ -460,6 +455,33 @@ export default function VpaaDashboardPage() {
 
   const openApproval = () => navigate('/schedules/approval');
 
+  // The tab lives in the URL so returning from a review lands on the same tab.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get(TAB_PARAM);
+  const tab: TabKey = isTabKey(tabParam) ? tabParam : 'overview';
+  const selectTab = useCallback((key: TabKey) => {
+    setSearchParams(current => {
+      const next = new URLSearchParams(current);
+      if (key === 'overview') next.delete(TAB_PARAM);
+      else next.set(TAB_PARAM, key);
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+  // A tab mounts on its first visit and stays mounted, so the timetable keeps its view.
+  const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<TabKey>>(() => new Set([tab]));
+  if (!visitedTabs.has(tab)) setVisitedTabs(new Set(visitedTabs).add(tab));
+
+  // One per department package awaiting final approval, matching the Requires Attention list.
+  const attentionCount = departmentStats.filter(d => d.pendingVpaaCount > 0).length;
+
+  const onTabKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+    const index = TABS.findIndex(t => t.key === tab);
+    const next = TABS[(index + (event.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length];
+    selectTab(next.key);
+    document.getElementById(`dashboard-tab-${next.key}`)?.focus();
+  };
+
   const kpis: Tile[] = [
     {
       label: 'Awaiting Your Approval',
@@ -475,40 +497,30 @@ export default function VpaaDashboardPage() {
 
   const inventory: Tile[] = [
     { label: 'Departments', value: grouped(departments.length), detail: 'Academic units', icon: Landmark, path: '/departments', tone: 'brand' },
-    { label: 'Instructors', value: grouped(faculties.length), detail: 'Active instructors', icon: Users, path: '/instructors', tone: 'accent' },
-    { label: 'Curriculums', value: grouped(activeCurriculaCount), detail: 'Active curriculums', icon: BookOpen, path: '/curriculum', tone: 'good' },
-    { label: 'Rooms', value: grouped(campusRooms.length), detail: 'Across campus', icon: Building2, path: '/facilities', tone: 'warn' },
-    { label: 'Sections', value: grouped(totals.sections), detail: 'In the active semester', icon: LayoutGrid, path: '/schedules/approval', tone: 'info' },
+    { label: 'Instructors', value: grouped(faculties.length), detail: 'Active instructors', icon: Users, path: '/instructors', tone: 'brand' },
+    { label: 'Curriculums', value: grouped(activeCurriculaCount), detail: 'Active curriculums', icon: BookOpen, path: '/curriculum', tone: 'brand' },
+    { label: 'Rooms', value: grouped(campusRooms.length), detail: 'Across campus', icon: Building2, path: '/facilities', tone: 'brand' },
+    { label: 'Sections', value: grouped(totals.sections), detail: 'In the active semester', icon: LayoutGrid, path: '/schedules/approval', tone: 'brand' },
   ];
 
   const timetablePanel = (
-    <div className={isFullscreen ? 'fixed inset-0 z-[1000] flex flex-col overflow-auto bg-white p-4 sm:p-6' : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
-      <section aria-label="Institutional master timetable" className="flex min-h-0 flex-1 flex-col rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+    <div className={isFullscreen ? 'fixed inset-0 z-[1000] flex flex-col overflow-auto bg-parchment p-4 font-jakarta text-text sm:p-6' : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
+      <section aria-label="Institutional master timetable" className="flex min-h-0 flex-1 flex-col rounded-xl border border-border bg-white p-5">
         <header className="flex shrink-0 flex-wrap items-center gap-2">
-          <h2 className="font-sans text-sm font-bold text-[#5A1220]">Master timetable</h2>
-          <span title="Preview of VPAA-approved classes" className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">Preview</span>
-          <div className="relative ml-auto">
-            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={event => setSearchQuery(event.target.value)}
-              placeholder="Search timetable"
-              aria-label="Search timetable"
-              className="w-40 rounded-md border border-slate-200 bg-white py-1.5 pl-7 pr-2 text-[11px] font-semibold text-slate-700 shadow-sm outline-none transition focus:border-primary/40"
-            />
-          </div>
+          <h2 className="font-jakarta text-[15px] font-semibold leading-5 tracking-tight text-text">Master timetable</h2>
+          <span title="Preview of VPAA-approved classes" className="rounded-full bg-parchment px-2 py-0.5 text-[11px] font-medium text-muted">Preview</span>
           <button type="button" aria-label="Timetable filters" aria-expanded={showTimetableFilters} aria-controls="dashboard-timetable-filters" onClick={() => setShowTimetableFilters(open => !open)}
-            className={`flex h-7 items-center gap-1.5 rounded-md border px-2 text-[11px] font-semibold ${showTimetableFilters || activeTimetableFilterCount > 0 ? 'border-primary/30 bg-primary/5 text-primary' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+            data-active={showTimetableFilters || activeTimetableFilterCount > 0}
+            className={`selection-indicator ml-auto flex h-7 items-center gap-1.5 rounded-md border px-2 text-[11px] font-semibold ${showTimetableFilters || activeTimetableFilterCount > 0 ? '' : 'border-border text-muted hover:bg-parchment'}`}>
             <SlidersHorizontal className="h-3.5 w-3.5" />Filters
-            {activeTimetableFilterCount > 0 && <span>{activeTimetableFilterCount}</span>}
+            {activeTimetableFilterCount > 0 && <span className="selection-indicator-count">{activeTimetableFilterCount}</span>}
           </button>
           <button
             type="button"
             onClick={() => setIsFullscreen(open => !open)}
             title={isFullscreen ? 'Exit full window (Esc)' : 'Full window view'}
             aria-label={isFullscreen ? 'Exit full window' : 'Full window view'}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-primary/30 hover:text-primary"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-white text-muted transition-colors hover:border-primary/30 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >
             {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
           </button>
@@ -517,16 +529,16 @@ export default function VpaaDashboardPage() {
             onClick={resetFilters}
             title="Reset filters"
             aria-label="Reset filters"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-primary/30 hover:text-primary"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-white text-muted transition-colors hover:border-primary/30 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >
             <RotateCcw className="h-3.5 w-3.5" />
           </button>}
-          <button type="button" onClick={() => navigate('/calendar')} className="inline-flex h-7 items-center gap-1 text-[11px] font-bold text-primary hover:underline">
+          <button type="button" onClick={() => navigate('/calendar')} className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-semibold text-primary transition-colors hover:bg-primary/[0.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
             Master Calendar <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </header>
 
-        {showTimetableFilters && <div id="dashboard-timetable-filters" className="mt-2 flex shrink-0 flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-2">
+        {showTimetableFilters && <div id="dashboard-timetable-filters" className="mt-2 flex shrink-0 flex-wrap items-center gap-2 rounded-lg bg-parchment p-2">
           <FilterSelect label="Dept" value={filterDept} onChange={setFilterDept}>
             <option value="all">All</option>
             {departments.map(dept => <option key={dept.id} value={String(dept.id)}>{dept.department_code}</option>)}
@@ -541,12 +553,12 @@ export default function VpaaDashboardPage() {
           </FilterSelect>
         </div>}
 
-        {previewTruncated && <p className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-800">
+        {previewTruncated && <p className="mt-2 flex items-start gap-1.5 rounded-md border border-accent/30 bg-accent/[0.12] px-2.5 py-1.5 text-[11px] font-semibold text-stage-warnText">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           Preview is based on the most recent {grouped(SCHEDULE_PREVIEW_LIMIT)} meetings; some classes and overlaps may be missing. Campus-wide figures elsewhere on this page cover every meeting.
         </p>}
 
-        <div className="mt-2 flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="mt-4 flex min-h-0 min-w-0 flex-1 flex-col">
           <DashboardGantt
             schedules={timetableSchedules}
             allSchedules={publishedSchedules}
@@ -555,6 +567,7 @@ export default function VpaaDashboardPage() {
             now={now}
             onSelect={setSelectedSchedule}
             isFullscreen={isFullscreen}
+            selectedId={selectedSchedule?.id}
           />
         </div>
 
@@ -563,19 +576,13 @@ export default function VpaaDashboardPage() {
     </div>
   );
 
-  if (loading || insightsLoading || activityLoading) return <DashboardSkeleton variant="vpaa" />;
-
-  return <div id="dashboard-overview" className="space-y-4 pb-8 text-slate-800">
-    {loadError && <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
-      <AlertTriangle className="h-4 w-4 shrink-0" />
-      <span className="flex-1">{loadError}</span>
-      <button type="button" onClick={retry} className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 py-1.5 font-bold text-amber-800 transition hover:bg-amber-100"><RotateCcw className="h-3.5 w-3.5" /> Retry</button>
-    </div>}
-
-    <section id="dashboard-metrics" className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-7">
-      {kpis.map(({ label, value, detail, icon, path, tone }) => <DashboardMetricCard key={label} label={label} value={value} detail={detail} icon={icon} tone={tone} onClick={() => navigate(path)} />)}
+  const dashboardLoading = loading || insightsLoading || activityLoading;
+  const metrics = (
+    <section id="dashboard-metrics" data-skeleton={dashboardLoading ? 'metrics' : undefined} className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-7">
+      {kpis.map(({ label, value, detail, icon, path, tone }) => <DashboardMetricCard loading={dashboardLoading} key={label} label={label} value={value} detail={detail} icon={icon} tone={tone} onClick={() => navigate(path)} />)}
 
       <DashboardMetricCard
+        loading={dashboardLoading}
         label="Overall Approval Completion"
         value={`${totals.progressPercent}%`}
         detail={`${grouped(totals.approved)} / ${grouped(totals.sections)} sections approved`}
@@ -584,65 +591,118 @@ export default function VpaaDashboardPage() {
         onClick={() => navigate('/schedules/approval')}
       />
 
-      {inventory.map(({ label, value, detail, icon, path, tone }) => <DashboardMetricCard key={label} label={label} value={value} detail={detail} icon={icon} tone={tone} onClick={() => navigate(path)} />)}
+      {inventory.map(({ label, value, detail, icon, path, tone }) => <DashboardMetricCard loading={dashboardLoading} key={label} label={label} value={value} detail={detail} icon={icon} tone={tone} onClick={() => navigate(path)} />)}
     </section>
+  );
 
+  if (dashboardLoading) return <DashboardSkeleton metrics={metrics} variant="vpaa" tab={tab} />;
+
+  return <div id="dashboard-overview" className="space-y-4 pb-8 font-jakarta text-text">
+    {loadError && <div className="flex flex-wrap items-center gap-3 rounded-xl bg-accent/[0.12] px-4 py-3 text-[13px] font-medium text-stage-warnText">
+      <AlertTriangle className="h-4 w-4 shrink-0" />
+      <span className="flex-1">{loadError}</span>
+      <button type="button" onClick={retry} className="inline-flex items-center gap-1.5 rounded-md border border-accent/30 bg-white px-2.5 py-1.5 font-bold text-stage-warnText transition hover:bg-accent/[0.12]"><RotateCcw className="h-3.5 w-3.5" /> Retry</button>
+    </div>}
+
+    <div role="tablist" aria-label="Dashboard sections" onKeyDown={onTabKeyDown} className="flex gap-6 border-b border-border">
+      {TABS.map(({ key, label }) => {
+        const active = tab === key;
+        return <button
+          key={key}
+          type="button"
+          role="tab"
+          id={`dashboard-tab-${key}`}
+          aria-selected={active}
+          aria-controls={`dashboard-panel-${key}`}
+          tabIndex={active ? 0 : -1}
+          onClick={() => selectTab(key)}
+          className={`relative -mb-px flex shrink-0 items-center gap-1.5 rounded-sm px-0.5 pb-2.5 pt-1 text-[13px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${active ? 'font-semibold text-primary' : 'font-medium text-muted hover:text-text'}`}
+        >
+          {label}
+          {key === 'attentions' && attentionCount > 0 && <span
+            aria-label={`${attentionCount} item${attentionCount === 1 ? '' : 's'} requiring attention`}
+            className="rounded-full bg-stage-returned px-1.5 py-0.5 text-[11px] font-semibold leading-none tabular-nums text-white"
+          >{attentionCount}</span>}
+          <span aria-hidden="true" className={`absolute inset-x-0 bottom-0 h-0.5 origin-center rounded-full bg-primary transition-transform duration-200 ease-out ${active ? 'scale-x-100' : 'scale-x-0'}`} />
+        </button>;
+      })}
+    </div>
+
+    {visitedTabs.has('overview') && <div role="tabpanel" id="dashboard-panel-overview" aria-labelledby="dashboard-tab-overview" hidden={tab !== 'overview'}><div className="space-y-4">
+    {metrics}
+
+    <section className="flex min-h-0 min-w-0 flex-col xl:h-[640px]">
+      {isFullscreen ? createPortal(timetablePanel, document.body) : timetablePanel}
+    </section>
+    </div></div>}
+
+    {visitedTabs.has('activity') && <div role="tabpanel" id="dashboard-panel-activity" aria-labelledby="dashboard-tab-activity" hidden={tab !== 'activity'}>
+      <AdministrativeActivityPanel
+        rows={activity}
+        loading={activityLoading}
+        error={activityError}
+        now={now}
+        onOpen={() => navigate('/activity-log')}
+      />
+    </div>}
+
+    {visitedTabs.has('attentions') && <div role="tabpanel" id="dashboard-panel-attentions" aria-labelledby="dashboard-tab-attentions" hidden={tab !== 'attentions'}><div className="space-y-4">
     <section className="grid gap-4">
       <Panel
         title="Requires Attention"
         subtitle="Department packages the Deans have cleared for your final approval, longest-waiting first."
         tone={totals.pendingVpaa > 0 ? 'alert' : 'brand'}
-        badge={totals.pendingVpaa}
+        badge={attentionRows.length}
         action="View approval queue"
         onAction={openApproval}
       >
-        <div className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 ${totals.pendingVpaa ? 'border-rose-200 bg-rose-50/70' : 'border-emerald-200 bg-emerald-50/70'}`}>
-          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${totals.pendingVpaa ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
-            {totals.pendingVpaa ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+        <div className={`flex items-center gap-3.5 rounded-xl px-4 py-3.5 ${totals.pendingVpaa ? 'bg-stage-returned/[0.08]' : 'bg-stage-done/[0.08]'}`}>
+          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white ${totals.pendingVpaa ? 'text-stage-returned' : 'text-stage-done'}`}>
+            {totals.pendingVpaa ? <AlertTriangle className="h-[18px] w-[18px]" /> : <CheckCircle2 className="h-[18px] w-[18px]" />}
           </span>
           <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-bold leading-tight text-primary">
+            <div className="text-[15px] font-semibold leading-tight tracking-tight text-primary">
               {grouped(totals.pendingVpaa)} {totals.pendingVpaa === 1 ? 'Section' : 'Sections'} Awaiting VPAA Review
             </div>
-            <p className="mt-0.5 text-[11px] font-semibold leading-tight text-slate-600">
+            <p className="mt-1 text-xs leading-tight text-text/75">
               {totals.pendingVpaa ? 'Cleared by Deans and waiting on your final approval' : 'Nothing is waiting on your final approval'}
             </p>
           </div>
         </div>
 
-        {overrideRows.length > 0 && <div className="mt-2.5 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2">
-          <p className="text-[11px] font-bold text-amber-900">
+        {overrideRows.length > 0 && <div className="mt-2.5 rounded-xl bg-accent/[0.12] px-4 py-3">
+          <p className="text-[11px] font-bold text-stage-warnText">
             {overrideRows.length} package{overrideRows.length === 1 ? '' : 's'} approved by a Dean with an override
           </p>
-          <p className="mt-0.5 text-[11px] font-semibold leading-snug text-amber-800">
+          <p className="mt-0.5 text-[11px] font-semibold leading-snug text-stage-warnText">
             {overrideRows.map(row => row.department_code).join(', ')} — a scheduling rule was waived, so these need your explicit review.
           </p>
         </div>}
 
         {attentionRows.length ? <div className="-mx-1 mt-3 overflow-x-auto px-1 sm:overflow-x-visible">
           <div className="min-w-[520px] sm:min-w-0">
-            <div className="grid gap-2 border-b border-slate-100 pb-2 text-[10px] font-bold uppercase tracking-wide text-slate-400" style={{ gridTemplateColumns: ATTENTION_COLUMNS }}>
+            <div className="grid gap-2 px-3 pb-2 text-[11px] font-bold text-muted" style={{ gridTemplateColumns: ATTENTION_COLUMNS }}>
               <span>Department</span>
               <span>Sections</span>
               <span>Submitted</span>
               <span>Waiting</span>
               <span />
             </div>
-            <ul className="divide-y divide-slate-100">
+            <ul className="space-y-2">
               {attentionRows.map(row => {
                 const severity = queueSeverity(row.submittedAt, now);
-                return <li key={row.id} className="grid items-center gap-2 py-2" style={{ gridTemplateColumns: ATTENTION_COLUMNS }}>
+                return <li key={row.id} className="grid items-center gap-2 rounded-xl border border-border/70 px-3 py-2.5" style={{ gridTemplateColumns: ATTENTION_COLUMNS }}>
                   <span className="min-w-0">
-                    <b className="block truncate text-[12px] text-slate-700" title={`${row.department_code} · ${row.department_name}`}>{row.department_name}</b>
+                    <b className="block truncate text-[13px] text-text" title={`${row.department_code} · ${row.department_name}`}>{row.department_name}</b>
                     <span className="flex flex-wrap items-center gap-1">
-                      {row.hasOverride && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800" title={row.overrideReason ?? 'Approved with an override'}>Override</span>}
-                      {row.revisionNumber > 1 && <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600" title="This package has been through the review loop before">Rev {row.revisionNumber}</span>}
+                      {row.hasOverride && <span className="rounded-full bg-accent/[0.12] px-1.5 py-0.5 text-[11px] font-bold text-stage-warnText" title={row.overrideReason ?? 'Approved with an override'}>Override</span>}
+                      {row.revisionNumber > 1 && <span className="rounded-full bg-stage-idle/60 px-1.5 py-0.5 text-[11px] font-bold text-muted" title="This package has been through the review loop before">Rev {row.revisionNumber}</span>}
                     </span>
                   </span>
-                  <span className="truncate text-[11px] font-semibold text-slate-500">
+                  <span className="truncate text-[11px] font-semibold text-muted">
                     {grouped(row.pendingVpaaCount)} of {grouped(row.sectionsCount)}
                   </span>
-                  <span className="truncate text-[11px] font-semibold text-slate-500">{formatSubmittedOn(row.submittedAt)}</span>
+                  <span className="truncate text-[11px] font-semibold text-muted">{formatSubmittedOn(row.submittedAt)}</span>
                   <span className={`truncate rounded-full px-2 py-0.5 text-center text-[11px] font-bold ${SEVERITY_STYLES[severity]}`} title={severity === 'overdue' ? 'Waiting five days or more' : severity === 'ageing' ? 'Waiting two days or more' : 'Recently submitted'}>
                     {relativeAge(row.submittedAt, now)}
                   </span>
@@ -650,7 +710,7 @@ export default function VpaaDashboardPage() {
                     type="button"
                     onClick={openApproval}
                     title={`Review ${row.department_name} — ${row.pendingVpaaCount} section${row.pendingVpaaCount === 1 ? '' : 's'} awaiting approval`}
-                    className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-600 transition hover:border-rose-300 hover:bg-rose-100"
+                    className="inline-flex h-7 items-center justify-center rounded-md border border-primary/25 bg-white px-2.5 text-xs font-semibold text-primary transition-colors hover:border-primary hover:bg-primary hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                   >
                     Review
                   </button>
@@ -658,72 +718,15 @@ export default function VpaaDashboardPage() {
               })}
             </ul>
           </div>
-        </div> : <p className="mt-3 py-4 text-center text-xs italic text-slate-400">No department packages are awaiting your review.</p>}
+        </div> : <p className="mt-3 py-4 text-center text-xs text-muted">No department packages are awaiting your review.</p>}
       </Panel>
     </section>
 
-    <section className="grid gap-4 xl:grid-cols-12">
-      <Panel
-        title="Workflow · Department Scheduling Progress"
-        subtitle="Approval completion for every academic unit."
-        action="View all departments"
-        onAction={() => navigate('/departments')}
-        className="xl:col-span-6"
-      >
-        {workflowRows.length ? <>
-          <div className="-mx-1 overflow-x-auto px-1 sm:overflow-x-visible">
-            <div className="min-w-[470px] sm:min-w-0">
-              <div className="grid gap-2 border-b border-slate-100 pb-2 text-[10px] font-bold uppercase leading-tight tracking-wide text-slate-400" style={{ gridTemplateColumns: WORKFLOW_COLUMNS }}>
-                <span>Department</span>
-                <span>Completion</span>
-                <span className="text-right">Approved / Total</span>
-                <span className="text-right">Stage</span>
-              </div>
-              <ul className="divide-y divide-slate-100">
-                {workflowRows.map(row => <li key={row.id} className="grid items-center gap-2 py-2" style={{ gridTemplateColumns: WORKFLOW_COLUMNS }}>
-                  <b className="truncate text-[12px] text-slate-700" title={`${row.department_code} · ${row.department_name}`}>{row.department_name}</b>
-                  <span className="h-6 min-w-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={[{ readiness: row.progressPercent, label: `${row.progressPercent}%` }]} layout="vertical" margin={{ top: 4, right: 38, left: 0, bottom: 4 }}>
-                        <XAxis type="number" domain={[0, 100]} hide />
-                        <YAxis type="category" hide />
-                        <Bar dataKey="readiness" fill={row.progressPercent === 100 ? '#16a36a' : row.returnedCount > 0 ? '#e11d48' : '#f59e0b'} radius={[5, 5, 5, 5]} barSize={9} background={{ fill: '#e2e8f0', radius: 5 }}>
-                          <LabelList dataKey="label" position="right" offset={7} style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </span>
-                  <span className="text-right text-[11px] font-semibold tabular-nums text-slate-500">{grouped(row.approvedCount)} / {grouped(row.sectionsCount)}</span>
-                  <span className="flex justify-end">
-                    <StageBadge status={row.approvalStatus} />
-                  </span>
-                </li>)}
-              </ul>
-            </div>
-          </div>
+    </div></div>}
 
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-slate-100 pt-2.5 text-[11px] font-semibold text-slate-500">
-            <span className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-600" /> {fullyApprovedDepartments} of {departments.length} fully approved</span>
-            <span className="flex items-center gap-1.5"><Minus className="h-3.5 w-3.5 text-slate-300" /> {grouped(totals.draft)} sections still drafting</span>
-            <span className="ml-auto font-bold text-primary tabular-nums">{totals.progressPercent}% institutional</span>
-          </div>
-        </> : <p className="py-6 text-center text-xs italic text-slate-400">No departments are configured yet.</p>}
-      </Panel>
-
-      <BuildingUtilizationPanel
-        insights={insights}
-        loading={insightsLoading}
-        onOpenRooms={() => navigate('/facilities')}
-        className="xl:col-span-6"
-      />
-    </section>
-
-    <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="flex min-h-0 min-w-0 flex-col xl:[contain:size]">
-        {isFullscreen ? createPortal(timetablePanel, document.body) : timetablePanel}
-      </div>
-
-      <div className="flex min-w-0 flex-col gap-4">
+    {visitedTabs.has('progress') && <div role="tabpanel" id="dashboard-panel-progress" aria-labelledby="dashboard-tab-progress" hidden={tab !== 'progress'}><div className="space-y-4">
+    <section>
+      <div className="grid items-stretch gap-4 xl:grid-cols-2">
         <FacultyLoadPanel
           slices={facultySlices}
           total={faculties.length}
@@ -742,30 +745,77 @@ export default function VpaaDashboardPage() {
             <DonutLegend slices={readinessSlices} total={departments.length} />
           </div>
         </Panel>
-
-        <AdministrativeActivityPanel
-          rows={activity}
-          loading={activityLoading}
-          error={activityError}
-          now={now}
-          onOpen={() => navigate('/activity-log')}
-          className="min-h-[220px] flex-1"
-          compact
-        />
       </div>
     </section>
+
+    <section className="grid gap-4 xl:grid-cols-12">
+      <Panel
+        title="Workflow · Department Scheduling Progress"
+        subtitle="Approval completion for every academic unit."
+        action="View all departments"
+        onAction={() => navigate('/departments')}
+        className="xl:col-span-6"
+      >
+        {workflowRows.length ? <>
+          <div className="-mx-1 overflow-x-auto px-1 sm:overflow-x-visible">
+            <div className="min-w-[470px] sm:min-w-0">
+              <div className="grid gap-2 px-3 pb-2 text-[11px] font-bold leading-tight text-muted" style={{ gridTemplateColumns: WORKFLOW_COLUMNS }}>
+                <span>Department</span>
+                <span>Completion</span>
+                <span className="text-right">Approved / Total</span>
+                <span className="text-right">Stage</span>
+              </div>
+              <ul className="space-y-2">
+                {workflowRows.map(row => <li key={row.id} className="grid items-center gap-2 rounded-xl border border-border/70 px-3 py-2.5" style={{ gridTemplateColumns: WORKFLOW_COLUMNS }}>
+                  <b className="truncate text-[13px] text-text" title={`${row.department_code} · ${row.department_name}`}>{row.department_name}</b>
+                  <span className="h-6 min-w-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={[{ readiness: row.progressPercent, label: `${row.progressPercent}%` }]} layout="vertical" margin={{ top: 4, right: 42, left: 0, bottom: 4 }}>
+                        <XAxis type="number" domain={[0, 100]} hide />
+                        <YAxis type="category" hide />
+                        <Bar dataKey="readiness" fill={row.progressPercent === 100 ? '#3F7D58' : row.returnedCount > 0 ? '#B4432F' : '#C9952A'} radius={[4, 4, 4, 4]} barSize={6} background={{ fill: '#E6DED5', radius: 4 }}>
+                          <LabelList dataKey="label" position="right" offset={7} style={{ fontSize: 11, fontWeight: 600, fill: '#7A6E67' }} />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </span>
+                  <span className="text-right text-[11px] font-semibold tabular-nums text-muted">{grouped(row.approvedCount)} / {grouped(row.sectionsCount)}</span>
+                  <span className="flex justify-end">
+                    <StageBadge status={row.approvalStatus} />
+                  </span>
+                </li>)}
+              </ul>
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-1 text-[11px] font-semibold text-muted">
+            <span className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-stage-done" /> {fullyApprovedDepartments} of {departments.length} fully approved</span>
+            <span className="flex items-center gap-1.5"><Minus className="h-3.5 w-3.5 text-muted/50" /> {grouped(totals.draft)} sections still drafting</span>
+            <span className="ml-auto font-bold text-primary tabular-nums">{totals.progressPercent}% institutional</span>
+          </div>
+        </> : <p className="py-6 text-center text-xs text-muted">No departments are configured yet.</p>}
+      </Panel>
+
+      <BuildingUtilizationPanel
+        insights={insights}
+        loading={insightsLoading}
+        onOpenRooms={() => navigate('/facilities')}
+        className="xl:col-span-6"
+      />
+    </section>
+    </div></div>}
   </div>;
 }
 
 const STAGE_BADGES: Record<DepartmentRollup['approvalStatus'], { label:string; className:string }> = {
-  'Fully Approved': { label: 'Approved', className: 'bg-emerald-50 text-emerald-700' },
-  'Pending Review': { label: 'In review', className: 'bg-amber-50 text-amber-800' },
-  Returned: { label: 'Returned', className: 'bg-rose-50 text-rose-700' },
-  'Partially Approved': { label: 'Partial', className: 'bg-sky-50 text-sky-700' },
-  Draft: { label: 'Drafting', className: 'bg-slate-100 text-slate-600' },
+  'Fully Approved': { label: 'Approved', className: 'bg-stage-done/10 text-stage-done' },
+  'Pending Review': { label: 'In review', className: 'bg-accent/[0.12] text-stage-warnText' },
+  Returned: { label: 'Returned', className: 'bg-stage-returned/10 text-stage-returned' },
+  'Partially Approved': { label: 'Partial', className: 'bg-stage-waiting/10 text-stage-waiting' },
+  Draft: { label: 'Drafting', className: 'bg-stage-idle/60 text-muted' },
 };
 
 function StageBadge({ status }: { status: DepartmentRollup['approvalStatus'] }) {
   const badge = STAGE_BADGES[status];
-  return <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badge.className}`} title={status}>{badge.label}</span>;
+  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${badge.className}`} title={status}>{badge.label}</span>;
 }

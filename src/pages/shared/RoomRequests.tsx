@@ -10,6 +10,7 @@ import {
   Eye,
   LayoutGrid,
   List,
+  Lock,
   RefreshCw,
   Send,
   type LucideIcon,
@@ -573,9 +574,10 @@ export default function RoomRequests() {
           <button
             type="button"
             onClick={() => setViewMode('grid')}
-            className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+            aria-pressed={viewMode === 'grid'}
+            className={`selection-indicator p-2 rounded-lg transition-all duration-200 cursor-pointer ${
               viewMode === 'grid'
-                ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                ? 'shadow-sm font-bold'
                 : 'text-gray-500 hover:text-gray-800'
             }`}
             title="Grid View"
@@ -585,9 +587,10 @@ export default function RoomRequests() {
           <button
             type="button"
             onClick={() => setViewMode('list')}
-            className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+            aria-pressed={viewMode === 'list'}
+            className={`selection-indicator p-2 rounded-lg transition-all duration-200 cursor-pointer ${
               viewMode === 'list'
-                ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                ? 'shadow-sm font-bold'
                 : 'text-gray-500 hover:text-gray-800'
             }`}
             title="List View"
@@ -616,32 +619,39 @@ export default function RoomRequests() {
       ? loadedBorrowing.message ?? 'This room is not yet available for borrowing.'
       : null;
     const canRequestSelected = canRequest && isLendable(selectedRoom, departmentId);
+    const backButton = (
+      <button
+        type="button"
+        onClick={() => setSelectedRoom(null)}
+        aria-label={`Back to ${selectedDepartment?.department_code ?? 'rooms'}`}
+        title={`Back to ${selectedDepartment?.department_code ?? 'rooms'}`}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 shadow-sm transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-800 cursor-pointer"
+      >
+        <ArrowLeft size={16} />
+      </button>
+    );
+    const requestButton = canRequestSelected ? (
+      <button
+        type="button"
+        onClick={() => setRequestRoom(selectedRoom)}
+        disabled={borrowingClosedMessage !== null}
+        title={borrowingClosedMessage ?? undefined}
+        className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-[#5A1220] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#4e0a10] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220]/30 focus-visible:ring-offset-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#5A1220] sm:w-auto"
+      >
+        {borrowingClosedMessage !== null ? <Lock size={15} /> : <Send size={15} />}
+        Request Room
+      </button>
+    ) : null;
+    const scheduleLoadFailed = roomSchedulesError?.key === roomScheduleKey && roomSchedules?.key !== roomScheduleKey;
     return (
       <div className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <button
-            type="button"
-            onClick={() => setSelectedRoom(null)}
-            aria-label={`Back to ${selectedDepartment?.department_code ?? 'rooms'}`}
-            title={`Back to ${selectedDepartment?.department_code ?? 'rooms'}`}
-            className="p-2 w-fit text-gray-500 hover:text-gray-800 bg-white border border-gray-200 hover:border-gray-300 rounded-xl transition-all shadow-sm flex items-center justify-center cursor-pointer"
-          >
-            <ArrowLeft size={16} />
-          </button>
-          {canRequestSelected && (
-            <button
-              type="button"
-              onClick={() => setRequestRoom(selectedRoom)}
-              disabled={borrowingClosedMessage !== null}
-              title={borrowingClosedMessage ?? undefined}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#5A1220] px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#4e0a10] cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#5A1220]"
-            >
-              <Send size={16} />
-              Request Room
-            </button>
-          )}
-        </div>
-        {roomSchedulesError?.key === roomScheduleKey && roomSchedules?.key !== roomScheduleKey ? (
+        {scheduleLoadFailed && (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            {backButton}
+            {requestButton}
+          </div>
+        )}
+        {scheduleLoadFailed ? (
           <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-6 py-10 text-center font-sans">
             <p className="text-sm font-extrabold text-red-800">The timetable for {selectedRoom.room_code} could not be loaded.</p>
             <p className="mt-1 text-xs font-semibold text-red-700">{roomSchedulesError.message}</p>
@@ -670,6 +680,8 @@ export default function RoomRequests() {
               highlightSlots={linkedHighlight?.roomId === selectedRoom.id ? linkedHighlight.slots : undefined}
               semesterId={semesterId}
               listMode="availability"
+              leading={backButton}
+              actions={requestButton}
               borrowingClosedMessage={canRequestSelected ? borrowingClosedMessage : null}
               onRequestSlot={canRequestSelected && borrowingClosedMessage === null
                 ? (choice) => { setRequestChoice(choice); setRequestRoom(selectedRoom); }
@@ -759,7 +771,6 @@ export default function RoomRequests() {
           requests={requests}
           status={requestsStatus}
           errorMessage={requestsError}
-          semester={semester}
           departmentId={departmentId}
           onRetry={() => { void loadData(true); }}
           onClose={() => setShowRequests(false)}

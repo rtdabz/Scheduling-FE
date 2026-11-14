@@ -62,7 +62,7 @@ describe('describeConflictSchedule', () => {
 });
 
 describe('isReplottable', () => {
-  it.each(['draft', 'completed', 'revision'])('allows a %s class to be moved', (status) => {
+  it.each(['draft', 'completed', 'revision', 'rejected', 'rejected_by_dean'])('allows a %s class to be moved', (status) => {
     expect(isReplottable(schedule({ status }))).toBe(true);
   });
 

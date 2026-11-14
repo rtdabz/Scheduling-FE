@@ -1,0 +1,45 @@
+/* Shared selected state for filter pills, tabs, and segmented view controls. */
+:is(button, a, label).selection-indicator:is(
+  [aria-pressed="true"],
+  [aria-selected="true"],
+  [aria-checked="true"],
+  [aria-current="page"],
+  [data-active="true"]
+) {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+:is(button, a, label).selection-indicator:is(
+  [aria-pressed="true"],
+  [aria-selected="true"],
+  [aria-checked="true"],
+  [aria-current="page"],
+  [data-active="true"]
+):not(:disabled):hover {
+  background-color: var(--color-primary-light);
+  border-color: var(--color-primary-light);
+}
+
+.selection-indicator:focus-visible {
+  outline: 2px solid #9a7020;
+  outline-offset: 2px;
+}
+
+.selection-indicator-count {
+  background-color: rgb(201 149 42 / 14%);
+  color: #775414;
+  opacity: 1;
+}
+
+:is(button, a, label).selection-indicator:is(
+  [aria-pressed="true"],
+  [aria-selected="true"],
+  [aria-checked="true"],
+  [aria-current="page"],
+  [data-active="true"]
+) .selection-indicator-count {
+  background-color: rgb(201 149 42 / 18%);
+  color: var(--color-accent-light);
+}

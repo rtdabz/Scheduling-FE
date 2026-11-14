@@ -30,7 +30,7 @@ export const slotRoomKey = (entry: { mode: DeliveryMode; room_id: number | null 
 export const ALL_ROOMS = "__all__";
 
 export const DELIVERY_SHORT_LABEL: Record<DeliveryMode, string> = {
-  "on-site": "F2F",
+  "on-site": "Face-to-face",
   online: "Online",
   field: "Field",
 };

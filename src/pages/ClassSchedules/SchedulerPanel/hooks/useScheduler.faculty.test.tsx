@@ -71,6 +71,37 @@ const loadScheduler = async () => {
 };
 
 describe('scheduler instructor mutations', () => {
+  it.each([
+    { label: 'retains recorded approval evidence when unchanged signatures are omitted', returned: undefined, retains: true },
+    { label: 'honors an explicit null signature without restoring old evidence', returned: null, retains: false },
+  ])('$label', async ({ returned, retains }) => {
+    const signatories = {
+      prepared: [{ name: 'Original Secretary', title: 'Department Secretary' }],
+      reviewed: { name: 'Original Dean', title: 'Dean' },
+      recommended: null, approved: null, frozen: true,
+    };
+    const creatorIdentity = { id: 17, name: 'Former Secretary', role: 'secretary' };
+    payload.schedules = [meeting(1, { signatories, created_by: 17, creator_identity: creatorIdentity }), meeting(2, { signatories, created_by: 17, creator_identity: creatorIdentity })];
+    const { result } = await loadScheduler();
+    expect(result.current.schedules[0].signatories).toEqual(signatories);
+    // A later GET must not repair a mutation response before its local integrity is checked.
+    get.mockImplementation(() => new Promise(() => {}));
+    patch.mockResolvedValue({ data: { schedules: [
+      meeting(1, { faculty_id: null, faculty: null, signatories: returned, created_by: retains ? undefined : null, creator_identity: retains ? undefined : null }),
+      meeting(2, { faculty_id: null, faculty: null }),
+    ] } });
+
+    await act(async () => { await result.current.handleRemoveInlineFaculty('1'); });
+
+    expect(result.current.schedules[0].facultyId).toBeNull();
+    expect(result.current.schedules[0].signatories).toEqual(retains ? signatories : null);
+    expect(result.current.schedules[1].signatories).toEqual(signatories);
+    expect(result.current.schedules[0].creatorIdentity).toEqual(retains ? creatorIdentity : null);
+    expect(result.current.schedules[0].createdById).toBe(retains ? 17 : null);
+    expect(result.current.schedules[1].creatorIdentity).toEqual(creatorIdentity);
+    expect(result.current.schedules[1].createdById).toBe(17);
+  });
+
   it('removes a delegated class through the instructor endpoint and applies every returned meeting once', async () => {
     const { result } = await loadScheduler();
     let removed = false;

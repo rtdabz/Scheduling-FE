@@ -43,13 +43,54 @@ const toastContext = vi.hoisted(() => ({ toast: { success: () => {}, error: () =
 vi.mock('../../context/ToastContext', () => ({ useToast: () => toastContext }));
 
 import CurriculumListPage from './CurriculumListPage';
+import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 
 const renderPage = () => render(<MemoryRouter><CurriculumListPage /></MemoryRouter>);
 const statusButton = (label: string) => screen.getByRole('button', { name: new RegExp(`^${label}\\s*\\d+$`, 'i') });
 
 afterEach(() => {
   cleanup();
+  vi.mocked(useWorkflowGuide).mockClear();
   role.current = 'secretary';
+});
+
+describe('curriculum help context', () => {
+  const steps = () => {
+    const guide = vi.mocked(useWorkflowGuide).mock.calls.at(-1)![0];
+    return typeof guide.steps === 'function' ? guide.steps() : guide.steps;
+  };
+
+  it('explains import without requiring navigation or claiming an import', async () => {
+    renderPage();
+    await screen.findByText('Active One');
+    const importStep = steps().find((step) => step.element === '#curriculum-import-button');
+    expect(importStep).toBeTruthy();
+    expect(importStep?.action).toBeUndefined();
+    expect(importStep?.description).toContain('separate page');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('includes required effective years and a review-only save in an existing form', async () => {
+    role.current = 'program_head';
+    renderPage();
+    await screen.findByText('Active One');
+    fireEvent.click(screen.getByRole('button', { name: 'Create Curriculum' }));
+    const formSteps = steps();
+    expect(formSteps.some((step) => step.element === '#curriculum-effective-year')).toBe(true);
+    expect(formSteps.every((step) => step.action === undefined || step.action === 'complete')).toBe(true);
+    formSteps.forEach((step) => expect(document.querySelector(step.element)).toBeTruthy());
+    expect((screen.getByRole('textbox', { name: 'Start year' }) as HTMLInputElement).value).toBe('');
+    expect(screen.queryByText('Curriculum name is required')).toBeNull();
+  });
+
+  it('keeps read-only help on controls the reviewer can use', async () => {
+    role.current = 'vpaa';
+    renderPage();
+    await screen.findByText('Active One');
+    const reviewSteps = steps();
+    expect(reviewSteps.some((step) => /create|import/.test(step.element))).toBe(false);
+    reviewSteps.forEach((step) => expect(document.querySelector(step.element)).toBeTruthy());
+  });
 });
 
 describe('Secretary curriculum status buttons', () => {

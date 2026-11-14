@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -8,16 +8,15 @@ import {
   Loader2,
   RefreshCw,
   Save,
-  Settings,
   Sparkles,
   X,
 } from "lucide-react";
 import api from "../../../../lib/api";
+import { EDITABLE_STATUSES } from "../../../../lib/scheduleStatuses";
 import { useToast } from "../../../../context/ToastContext";
-import {
-  useWorkflowGuide,
-  type WorkflowGuideStep,
-} from "../../../../hooks/useWorkflowGuide";
+import { useWorkflowGuide } from "../../../../hooks/useWorkflowGuide";
+import { generatorGuideSteps } from "../workflowGuideContent";
+import { announceJoyrideStart } from "../../../../onboarding/joyrideTour";
 import { mapApiCourse } from "../hooks/initialDataMapper";
 import type {
   ApiCourseRecord,
@@ -32,6 +31,8 @@ import RecommendedAdjustmentPanel from "./RecommendedAdjustmentPanel";
 import DraftIssuesPanel from "./DraftIssuesPanel";
 import {
   applyDraftOptions,
+  componentRequiredDaysContext,
+  componentRequiredDaysPayload,
   draftReviewErrorMessage,
   fetchDraftReview,
   stillUnplaced,
@@ -62,8 +63,9 @@ import {
 import {
   balancedSplitSettingsOf,
   isBalancedSplitSchedulingEligible,
+  hasLectureAndLaboratoryComponents,
   isConfiguredFieldCourse,
-  isHybridSchedulingEligible,
+  isFieldSchedulingEligible,
 } from "../schedulingConfigurationEligibility";
 import { useGenerationRun, type GenerationResult } from "../hooks/useGenerationRun";
 import {
@@ -75,6 +77,10 @@ import {
 import { placeCourse, type SchedulingRoomSettings } from "../courseSlotPlan";
 import {
   EMPTY_COURSE_DEFAULTS,
+  componentDaysSummary,
+  formatComponentRequiredDays,
+  normalizeComponentRequiredDays,
+  type ComponentRequiredDays,
   type ConsecutiveDayRule,
   type CourseDefaults,
   type PreferredRoomOption,
@@ -88,10 +94,11 @@ import WizardProgressStepper from "./WizardProgressStepper";
 import ConfigurationStep from "./ConfigurationStep";
 import type { SetupDraft } from "./ConfigurationStep";
 import { orderDays } from "./generationTypes";
+import { preferredDaysAfterSundayChange } from "./preferredDays";
 import SetupCoursesStep from "./SetupCoursesStep";
-import ReviewGenerateStep, { type ReviewRule } from "./ReviewGenerateStep";
+import ReviewGenerateStep, { type ReviewCourseRow, type ReviewRule } from "./ReviewGenerateStep";
 import ScheduleSummaryStep from "./ScheduleSummaryStep";
-import { configureLabRoomType, normalizeLabRoomType, type LabRoomType } from "../../../../lib/labRoomPolicy";
+import { configureLabRoomType } from "../../../../lib/labRoomPolicy";
 
 type Step = 1 | 2 | 3 | 4;
 type CourseMode = DeliveryModeOption | "automatic";
@@ -106,6 +113,8 @@ type SectionConfig = {
   gecSplitPatternsByCourseId: Record<string, GecSplitPattern>;
   modesByCourseId: Record<string, CourseMode>;
   preferredRoomsByCourseId?: Record<string, string>;
+  /** Run-scoped Lecture/Laboratory Required Days; missing in old drafts. */
+  componentRequiredDaysByCourseId?: Record<string, ComponentRequiredDays>;
 };
 
 type SettingsResponse = SchedulingRoomSettings & {
@@ -165,7 +174,6 @@ const defaultSetupDraft: SetupDraft = {
   preferredDays: [],
   courseDefaults: EMPTY_COURSE_DEFAULTS,
   excludedCourseIds: [],
-  customizedCourseIds: [],
 };
 const courseDefaultsStorageKey = (departmentId: string | number | null | undefined) =>
   `wicars.generator-course-defaults.v1.${departmentId ?? "none"}`;
@@ -229,15 +237,8 @@ export default function YearLevelGenerateScheduleWorkflow({
   const [configs, setConfigs] = useState<Record<string, SectionConfig>>({});
   const [setupDraft, setSetupDraft] = useState<SetupDraft>(defaultSetupDraft);
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
-  const [defaultsOpen, setDefaultsOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(false);
-  useWorkflowGuide({
-    id: "schedule-generator",
-    isReady: !loadingSettings,
-    steps: generatorGuideSteps,
-    mission: "Generate a Schedule",
-  });
   const [applying, setApplying] = useState(false);
   const [rooms, setRooms] = useState<ApiRoomRecord[]>([]);
   const run = useGenerationRun();
@@ -491,7 +492,7 @@ export default function YearLevelGenerateScheduleWorkflow({
   const consecutiveCourseCount = new Set(
     (settings?.consecutive_day_rules ?? []).map((rule) => String(rule.course_id)),
   ).size;
-  const fieldCourseCount = settings?.field_course_codes?.length ?? 0;
+  const fieldCourseCount = scopedCourses.filter((course) => isConfiguredFieldCourse(course, new Set(settings?.field_course_codes ?? []))).length;
   const activeRules: ReviewRule[] = [
     { label: "Operating hours", detail: "Classes stay inside the open timeslots", kind: "core" },
     { label: "Room availability", detail: "No room is double-booked", kind: "core" },
@@ -574,9 +575,6 @@ export default function YearLevelGenerateScheduleWorkflow({
             excludedCourseIds: keepCourseChoices
               ? stringList(parsed.setupDraft?.excludedCourseIds)
               : [],
-            customizedCourseIds: keepCourseChoices
-              ? stringList(parsed.setupDraft?.customizedCourseIds)
-              : [],
           });
           restored = true;
         }
@@ -640,7 +638,7 @@ export default function YearLevelGenerateScheduleWorkflow({
             ...Object.fromEntries(
               scopedCourses.map((course) => [
                 course.id,
-                course.roomTypeRequired === "field" ? "field" : "automatic",
+                isConfiguredFieldCourse(course) ? "field" : "automatic",
               ]),
             ),
             ...(existing?.modesByCourseId ?? {}),
@@ -648,6 +646,13 @@ export default function YearLevelGenerateScheduleWorkflow({
           preferredRoomsByCourseId: Object.fromEntries(
             Object.entries(existing?.preferredRoomsByCourseId ?? {}).filter(([id]) =>
               scopedCourses.some((course) => course.id === id),
+            ),
+          ),
+          componentRequiredDaysByCourseId: Object.fromEntries(
+            Object.entries(existing?.componentRequiredDaysByCourseId ?? {}).filter(
+              ([id, days]) =>
+                scopedCourses.some((course) => course.id === id) &&
+                normalizeComponentRequiredDays(days) !== null,
             ),
           ),
         };
@@ -664,6 +669,14 @@ export default function YearLevelGenerateScheduleWorkflow({
       sectionId,
       {
         ...config,
+        modesByCourseId: Object.fromEntries(Object.entries(config.modesByCourseId ?? {}).map(([courseId, mode]) => [
+          courseId,
+          mode === "field" && !isFieldSchedulingEligible(scopedCourses.find((course) => course.id === courseId)) ? "on-site" : mode,
+        ])),
+        preferredRoomsByCourseId: Object.fromEntries(Object.entries(config.preferredRoomsByCourseId ?? {}).filter(([courseId, roomId]) =>
+          isFieldSchedulingEligible(scopedCourses.find((course) => course.id === courseId))
+          || settings?.preferred_room_options?.find((room) => String(room.id) === roomId)?.room_type !== "field",
+        )),
         gecSplitCourseIds: config.gecSplitCourseIds.filter((courseId) =>
           isBalancedSplitSchedulingEligible(scopedCourses.find((item) => item.id === courseId), splitSettings),
         ),
@@ -677,20 +690,29 @@ export default function YearLevelGenerateScheduleWorkflow({
     const fieldCodes = new Set(settings.field_course_codes ?? []);
     setConfigs((current) =>
       Object.fromEntries(
-        Object.entries(current).map(([sectionId, config]) => [
-          sectionId,
-          {
-            ...config,
-            splitCourseIds: config.splitCourseIds.filter((courseId) => {
-              const course = scopedCourses.find((item) => item.id === courseId);
-              return Boolean(
-                course &&
-                  !forcedDaysByCourseId.has(Number(courseId)) &&
-                  isHybridSchedulingEligible(course, true, fieldCodes),
-              );
-            }),
-          },
-        ]),
+        Object.entries(current).map(([sectionId, config]) => {
+          const splitCourseIds = config.splitCourseIds.filter((courseId) => {
+            const course = scopedCourses.find((item) => item.id === courseId);
+            return Boolean(
+              course &&
+                !forcedDaysByCourseId.has(Number(courseId)) &&
+                hasLectureAndLaboratoryComponents(course, fieldCodes),
+            );
+          });
+          return [
+            sectionId,
+            {
+              ...config,
+              splitCourseIds,
+              // A pin never outlives its Integrated course in this section.
+              componentRequiredDaysByCourseId: Object.fromEntries(
+                Object.entries(config.componentRequiredDaysByCourseId ?? {}).filter(([courseId]) =>
+                  splitCourseIds.includes(courseId),
+                ),
+              ),
+            },
+          ];
+        }),
       ),
     );
   }, [forcedDaysByCourseId, scopedCourses, settings]);
@@ -852,28 +874,6 @@ export default function YearLevelGenerateScheduleWorkflow({
     configureLabRoomType(settings?.lab_room_type);
   }, [settings]);
 
-  const saveLabRoomType = async (labRoomType: LabRoomType) => {
-    if (!settingsSectionId || !settings || (settings.lab_room_type ?? "laboratory") === labRoomType) return;
-    try {
-      const response = await api.patch<SettingsResponse>(
-        "/scheduling-settings",
-        { lab_room_type: labRoomType },
-        { params: { section_id: settingsSectionId } },
-      );
-      setSettings(keepRunRules(settings, { ...settings, ...response.data, lab_room_type: labRoomType }));
-      setCachedData(schedulingSettingsCacheKey(settingsSectionId), {
-        ...response.data,
-        lab_room_type: labRoomType,
-      });
-      run.clear();
-    } catch (error) {
-      toast.error(
-        "Save failed",
-        (error as { response?: { data?: { message?: string } } })?.response?.data?.message
-          ?? "Unable to update the LAB room requirement.",
-      );
-    }
-  };
 
   const saveSundayClasses = async (enabled: boolean) => {
     if (!settingsSectionId || !settings) return;
@@ -890,12 +890,12 @@ export default function YearLevelGenerateScheduleWorkflow({
         ...response.data,
         sunday_classes_enabled: enabled,
       });
-      if (!enabled && setupDraft.preferredDays.includes("Sunday")) {
-        setSetupDraft((draft) => ({
-          ...draft,
-          preferredDays: draft.preferredDays.filter((day) => day !== "Sunday"),
-        }));
-      }
+      // Days are picked by exclusion, so a day that just opened is in by
+      // default and a day that just closed drops out.
+      setSetupDraft((draft) => ({
+        ...draft,
+        preferredDays: preferredDaysAfterSundayChange(draft.preferredDays, enabled),
+      }));
       run.clear();
     } catch (error) {
       toast.error(
@@ -926,7 +926,7 @@ export default function YearLevelGenerateScheduleWorkflow({
     const hybridEligibleCourseIds = new Set(
       scopedCourses
         .filter((course) =>
-          isHybridSchedulingEligible(course, true, new Set(settings?.field_course_codes ?? [])),
+          hasLectureAndLaboratoryComponents(course, new Set(settings?.field_course_codes ?? [])),
         )
         .map((course) => course.id),
     );
@@ -1001,6 +1001,14 @@ export default function YearLevelGenerateScheduleWorkflow({
                 ([id, roomId]) => [Number(id), Number(roomId)],
               ),
             ),
+            component_required_days_by_course_id: componentRequiredDaysPayload(
+              config.componentRequiredDaysByCourseId,
+              (courseId) =>
+                !excludedCourseIdSet.has(courseId) &&
+                config.splitCourseIds.includes(courseId) &&
+                hybridEligibleCourseIds.has(courseId) &&
+                !forcedDaysByCourseId.has(Number(courseId)),
+            ),
             allowed_days:
               activeDraft.preferredDays.length > 0
                 ? activeDraft.preferredDays
@@ -1036,6 +1044,7 @@ export default function YearLevelGenerateScheduleWorkflow({
   const generateFromReview = async () => {
     if (targetState.kind === "scheduled") {
       const confirmed = await confirm({
+        appearance: "workflow",
         title:
           targetSectionIds === null
             ? "Year Level Already Scheduled"
@@ -1136,6 +1145,7 @@ export default function YearLevelGenerateScheduleWorkflow({
     unplaced: unplacedCourses,
     preferredDays:
       setupDraft.preferredDays.length > 0 ? setupDraft.preferredDays : null,
+    componentRequiredDays: run.result?.component_required_days ?? null,
   });
   const reviewDraftRows = async (
     rows: ApiScheduleRecord[],
@@ -1211,6 +1221,7 @@ export default function YearLevelGenerateScheduleWorkflow({
     if (remainingUnplaced.length > 0) {
       const count = remainingUnplaced.length;
       const confirmed = await confirm({
+        appearance: "workflow",
         title: `Save Without ${count} Course${count === 1 ? "" : "s"}`,
         message: `${count} course${count === 1 ? " is" : "s are"} not placed (${remainingUnplaced
           .slice(0, 4)
@@ -1245,7 +1256,7 @@ export default function YearLevelGenerateScheduleWorkflow({
         .filter(
           (schedule) =>
             Boolean(schedule.facultyId) &&
-            ["draft", "completed", "revision"].includes(schedule.status) &&
+            EDITABLE_STATUSES.includes(schedule.status) &&
             replacedCourseKeys.has(`${schedule.sectionId}:${schedule.courseId || schedule.subjectId}`) &&
             (!activeSemester || Number(schedule.semesterId) === Number(activeSemester.id)),
         )
@@ -1254,6 +1265,7 @@ export default function YearLevelGenerateScheduleWorkflow({
     if (recalledSectionIds.size > 0 || instructorClassCount > 0) {
       const count = recalledSectionIds.size;
       const confirmed = await confirm({
+        appearance: "workflow",
         title: count > 0 ? "Replace Recalled Schedules" : "Replace Schedules",
         message: (count > 0
           ? `${count} section${count === 1 ? " was" : "s were"} recalled. Saving updates the working schedule, while the submitted version stays in history.`
@@ -1272,7 +1284,7 @@ export default function YearLevelGenerateScheduleWorkflow({
     onSavingChange?.(true);
     onClose();
     try {
-      const replaceableStatuses = new Set(["draft", "completed", "revision"]);
+      const replaceableStatuses = new Set<string>(EDITABLE_STATUSES);
       const coveredSectionIds = new Set([
         ...preview.map((r) => String(r.section_id)),
         ...remainingUnplaced.map((course) => String(course.section_id)),
@@ -1324,6 +1336,7 @@ export default function YearLevelGenerateScheduleWorkflow({
             .map(Number)
             .filter((id) => id > 0),
           replace_semester_id: activeSemester ? Number(activeSemester.id) : undefined,
+          ...componentRequiredDaysContext(run.result?.component_required_days),
         },
       );
       window.localStorage.removeItem(storageKey);
@@ -1403,23 +1416,53 @@ export default function YearLevelGenerateScheduleWorkflow({
       (section) => configs[section.id]?.modesByCourseId?.[course.id] === "on-site",
     );
     const oneMeeting = forcedDaysByCourseId.has(Number(course.id));
+    const integrated =
+      !oneMeeting &&
+      targetSections.length > 0 &&
+      targetSections.every((section) =>
+        (configs[section.id]?.splitCourseIds ?? []).includes(course.id),
+      );
+    const split =
+      !oneMeeting &&
+      targetSections.length > 0 &&
+      targetSections.every((section) =>
+        (configs[section.id]?.gecSplitCourseIds ?? []).includes(course.id),
+      );
+    // Same reading as the Setup step's Delivery Mode: an explicit Online wins,
+    // Integrated without an On-site override and a hybrid Split are Hybrid,
+    // everything else meets On-site.
+    const online = targetSections.some(
+      (section) => configs[section.id]?.modesByCourseId?.[course.id] === "online",
+    );
+    const hybridSplit =
+      split &&
+      targetSections.some((section) =>
+        (configs[section.id]?.hybridSplitCourseIds ?? []).includes(course.id),
+      );
+    const delivery: ReviewCourseRow["delivery"] = online
+      ? "online"
+      : (integrated && !integratedOnSite) || hybridSplit
+        ? "hybrid"
+        : "onsite";
 
     return {
       course,
-      hybrid:
-        !oneMeeting &&
-        targetSections.length > 0 &&
-        targetSections.every((section) =>
-          (configs[section.id]?.splitCourseIds ?? []).includes(course.id),
-        ),
+      hybrid: integrated,
       integratedOnSite,
-      split:
-        !oneMeeting &&
-        targetSections.length > 0 &&
-        targetSections.every((section) =>
-          (configs[section.id]?.gecSplitCourseIds ?? []).includes(course.id),
-        ),
+      delivery,
+      split,
       preferredRoom: preferredRoomId ? roomCodeByOptionId.get(preferredRoomId) ?? null : null,
+      componentDays: componentDaysSummary(
+        targetSections
+          .filter((section) => (configs[section.id]?.splitCourseIds ?? []).includes(course.id))
+          .map((section) => ({
+            name: section.name,
+            label: formatComponentRequiredDays(
+              configs[section.id]?.componentRequiredDaysByCourseId?.[course.id],
+            ),
+          })),
+        targetSections.length,
+      ),
     };
   });
 
@@ -1441,50 +1484,57 @@ export default function YearLevelGenerateScheduleWorkflow({
           ? "Every course is unchecked in Setup Courses. Include at least one course to generate."
           : null;
 
+  useWorkflowGuide({
+    id: "schedule-generator",
+    variant: `stage-${step}:${run.status}:${failure ? "blocked" : needsReview ? "partial" : preview.length > 0 ? "preview" : "empty"}`,
+    isReady: !loadingSettings && (restoredDraftKey === storageKey || availableYears.length === 0),
+    steps: () => generatorGuideSteps({
+      stage: step,
+      runStatus: run.status,
+      hasFailure: failure !== null,
+      partial: needsReview,
+      hasPreview: preview.length > 0,
+      settingsUnavailable: settingsCacheKey !== null && settings === null && !loadingSettings,
+      generationBlockedReason: !activeSemester ? "Select an active semester before generating a timetable." : generationBlockedReason,
+      saveBlockedReason,
+    }),
+    mission: "Generate a Schedule",
+  });
+
   return (
     <div
-      className={`flex min-h-0 w-[calc(100vw-1rem)] flex-col overflow-hidden bg-white transition-[width] duration-300 ease-out ${stepWidths[step]}`}
+      className={`scheduler-generator-workspace flex min-h-0 min-w-0 w-[calc(100vw-1rem)] flex-col overflow-hidden bg-white transition-[width] duration-300 ease-out ${stepWidths[step]}`}
     >
-      <header className="flex shrink-0 items-center gap-3 bg-[#4e0a10] px-4 py-3 sm:px-5">
-        {departmentLogoUrl && (
-          <img
-            src={departmentLogoUrl}
-            alt=""
-            className="h-9 w-9 shrink-0 rounded-full bg-white/10 object-contain"
-          />
-        )}
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-base font-black text-white sm:text-lg">
-            Generate Schedule
-          </h2>
-          <p className="truncate text-xs font-semibold text-white/70">
-            {formatSemester(activeSemester)} &middot; {yearLabel(yearLevel, scopedSections)} &middot;{" "}
-            {targetSections.length} section
-            {targetSections.length === 1 ? "" : "s"}
-          </p>
+      <header className="scheduler-dialog-header scheduler-brand-header relative flex shrink-0 flex-wrap items-center gap-3 px-4 py-4 sm:px-5">
+        <div className="flex min-w-0 flex-1 basis-64 items-center gap-3">
+          {departmentLogoUrl ? (
+            <img src={departmentLogoUrl} alt="" className="scheduler-generator-logo h-10 w-10 shrink-0 rounded-full object-contain" />
+          ) : (
+            <span className="scheduler-dialog-icon"><Sparkles className="h-6 w-6" /></span>
+          )}
+          <div className="min-w-0">
+            <p className="scheduler-dialog-eyebrow">Schedule builder</p>
+            <h2 id="schedule-generator-title" className="scheduler-dialog-title">Generate Schedule</h2>
+            <p id="schedule-generator-description" className="scheduler-dialog-description">
+              {formatSemester(activeSemester)} &middot; {yearLabel(yearLevel, scopedSections)} &middot;{" "}
+              {targetSections.length} section{targetSections.length === 1 ? "" : "s"}
+            </p>
+          </div>
         </div>
-        {step === 2 && (
-          <button
-            type="button"
-            onClick={() => setDefaultsOpen(true)}
-            aria-label="Default Settings"
-            title="Default Settings"
-            className="rounded-full p-1 text-white/70 transition hover:bg-white/10 hover:text-white"
-          >
-            <Settings className="h-4 w-4" />
-          </button>
-        )}
+        <div className="ml-auto flex shrink-0 items-center gap-1">
         <HelpButton
           title={wizardSteps[step - 1].title}
           text={helpText[step]}
-          tone="onMaroon"
         />
         <button
           type="button"
-          onClick={() => setGuideOpen(true)}
+          onClick={() => {
+            announceJoyrideStart("generator-reference-help");
+            setGuideOpen(true);
+          }}
           aria-label="Open the Generation Guide"
           title="Generation Guide: what each setting means"
-          className="rounded-full p-1 text-white/70 transition hover:bg-white/10 hover:text-white"
+          className="scheduler-dialog-close"
         >
           <BookOpen className="h-4 w-4" />
         </button>
@@ -1495,23 +1545,25 @@ export default function YearLevelGenerateScheduleWorkflow({
               new CustomEvent("restart-workflow-guide:schedule-generator"),
             )
           }
-          aria-label="Replay the guided tutorial"
-          title="Replay the guided tutorial"
-          className="rounded-full p-1 text-white/70 transition hover:bg-white/10 hover:text-white"
+          aria-label="Open help for this generator stage"
+          title="Help for this generator stage"
+          className="scheduler-dialog-close"
         >
           <Compass className="h-4 w-4" />
         </button>
         <button
           type="button"
-          onClick={onClose}
+          onClick={() => !applying && onClose()}
+          disabled={applying}
           aria-label="Close schedule generator"
-          className="rounded-lg bg-white/10 p-2 text-white transition hover:bg-white/20"
+          className="scheduler-dialog-close"
         >
           <X className="h-5 w-5" />
         </button>
+        </div>
       </header>
 
-      <div className="shrink-0 bg-white px-3 py-2.5 sm:px-4">
+      <div className="scheduler-generator-stepper shrink-0 px-4 py-2.5 sm:px-5">
         <WizardProgressStepper
           id="generator-progress"
           currentStep={step}
@@ -1521,8 +1573,8 @@ export default function YearLevelGenerateScheduleWorkflow({
       </div>
 
       <main className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-parchment p-3 sm:p-4">
-        <div className="mx-auto flex min-h-0 w-full flex-1 flex-col gap-3">
-          {failure ? (
+        <div id="generator-workspace" className="mx-auto flex min-h-0 w-full flex-1 flex-col gap-3">
+          {failure && (
             <RecommendedAdjustmentPanel
               failure={failure}
               busy={generating}
@@ -1535,165 +1587,160 @@ export default function YearLevelGenerateScheduleWorkflow({
                 void generate();
               }}
             />
-          ) : (
-            <div
-              key={step}
-              id="generator-step-panel"
-              className={`flex min-h-0 flex-1 flex-col ${
-                stepDirection === "back"
-                  ? "motion-safe:animate-stepInLeft"
-                  : "motion-safe:animate-stepInRight"
-              }`}
-            >
-              {step === 1 && (
-                <ConfigurationStep
-                  activeSemester={activeSemester}
-                  years={availableYears}
-                  yearLevel={yearLevel}
-                  onYearChange={(value) => {
-                    setYearLevel(value);
-                    setTargetSectionIds(null);
-                    run.clear();
-                  }}
-                  targetSectionIds={targetSectionIds}
-                  scheduledSectionIds={scheduledSectionIds}
-                  onTargetSectionIdsChange={(ids) => {
-                    setTargetSectionIds(ids);
-                    run.clear();
-                  }}
-                  targetBlockedReason={targetBlockedReason}
-                  departmentId={departmentId ?? null}
-                  sections={scopedSections}
-                  allSections={availableSections}
-                  courses={scopedCourses}
-                  onCurriculumApplied={handleCurriculumApplied}
-                  yearStates={yearStates}
-                  yearChangeDisabled={generating}
-                  actionsDisabled={!yearLevelGenerationAllowed || generating}
-                  preferredDays={setupDraft.preferredDays}
-                  onPreferredDaysChange={(preferredDays) => {
-                    setSetupDraft((draft) => ({ ...draft, preferredDays }));
-                    run.clear();
-                  }}
-                  requiredDayRules={settings?.forced_day_rules ?? []}
-                  sundayClassesEnabled={settings ? Boolean(settings.sunday_classes_enabled) : null}
-                  canManageSundayClasses={Boolean(settings?.can_manage_sunday_classes)}
-                  sundayClassCount={settings?.sunday_class_count ?? 0}
-                  onSundayClassesChange={saveSundayClasses}
-                />
-              )}
-
-              {step === 2 && (
-                <SetupCoursesStep
-                  courses={scopedCourses}
-                  sections={targetSections}
-                  configs={configs}
-                  onConfigChange={updateConfig}
-                  settings={settings}
-                  preferredDays={setupDraft.preferredDays}
-                  onRequiredDayChange={saveRequiredDay}
-                  onConsecutiveDaysChange={saveConsecutiveDays}
-                  onFieldCourseChange={saveFieldCourse}
-                  defaults={setupDraft.courseDefaults}
-                  onDefaultsChange={(courseDefaults) => {
-                    setSetupDraft((current) => ({ ...current, courseDefaults }));
-                    saveCourseDefaults(courseDefaults);
-                  }}
-                  labRoomType={normalizeLabRoomType(settings?.lab_room_type)}
-                  onLabRoomTypeChange={saveLabRoomType}
-                  excludedCourseIds={setupDraft.excludedCourseIds}
-                  onExcludedChange={(excludedCourseIds) =>
-                    setSetupDraft((current) => ({ ...current, excludedCourseIds }))
-                  }
-                  customizedCourseIds={setupDraft.customizedCourseIds}
-                  onCustomizedChange={(customizedCourseIds) =>
-                    setSetupDraft((current) => ({ ...current, customizedCourseIds }))
-                  }
-                  defaultsOpen={defaultsOpen}
-                  onDefaultsClose={() => setDefaultsOpen(false)}
-                  actionsDisabled={generating || loadingSettings}
-                />
-              )}
-
-              {step === 3 && (
-                <ReviewGenerateStep
-                  activeSemester={activeSemester}
-                  yearLevel={yearLevel}
-                  curriculumName={
-                    scopedSections[0]?.curriculumName ?? null
-                  }
-                  sections={targetSections}
-                  courseRows={reviewCourseRows}
-                  preferredDays={setupDraft.preferredDays}
-                  forcedDayRules={settings?.forced_day_rules ?? []}
-                  consecutiveDayRules={settings?.consecutive_day_rules ?? []}
-                  fieldCourseCodes={settings?.field_course_codes ?? []}
-                  activeRules={activeRules}
-                  generating={generating}
-                  blockedReason={generationBlockedReason}
-                  yearState={targetState}
-                />
-              )}
-
-              {step === 4 && (
-                <ScheduleSummaryStep
-                  preview={preview}
-                  sections={targetSections}
-                  courses={scopedCourses}
-                  roomCodeById={roomCodeById}
-                  changes={generationChanges}
-                  recommendations={generationRecommendations}
-                  onApplyRecommendation={applyRecommendationAndRetry}
-                  applying={generating || applying}
-                  unplacedCount={needsReview ? remainingUnplaced.length : 0}
-                  attentionKeys={
-                    new Set((draftIssues ?? []).map((issue) => issue.key))
-                  }
-                  attention={
-                    needsReview ? (
-                      <DraftIssuesPanel
-                        issues={draftIssues}
-                        reviewing={reviewing}
-                        message={run.result?.message ?? null}
-                        error={currentReview?.error ?? null}
-                        onApply={(options) => void applyDraftFixes(options)}
-                        onRetry={() => {
-                          setReviewing(true);
-                          void reviewDraftRows(preview).finally(() => setReviewing(false));
-                        }}
-                      />
-                    ) : null
-                  }
-                />
-              )}
-            </div>
           )}
+          <div
+            key={step}
+            id="generator-step-panel"
+            className={`flex min-h-0 flex-1 flex-col ${
+              stepDirection === "back"
+                ? "motion-safe:animate-stepInLeft"
+                : "motion-safe:animate-stepInRight"
+            }`}
+          >
+            {step === 1 && (
+              <ConfigurationStep
+                activeSemester={activeSemester}
+                years={availableYears}
+                yearLevel={yearLevel}
+                onYearChange={(value) => {
+                  setYearLevel(value);
+                  setTargetSectionIds(null);
+                  run.clear();
+                }}
+                targetSectionIds={targetSectionIds}
+                scheduledSectionIds={scheduledSectionIds}
+                onTargetSectionIdsChange={(ids) => {
+                  setTargetSectionIds(ids);
+                  run.clear();
+                }}
+                targetBlockedReason={targetBlockedReason}
+                departmentId={departmentId ?? null}
+                sections={scopedSections}
+                allSections={availableSections}
+                courses={scopedCourses}
+                onCurriculumApplied={handleCurriculumApplied}
+                yearStates={yearStates}
+                yearChangeDisabled={generating}
+                actionsDisabled={!yearLevelGenerationAllowed || generating}
+                preferredDays={setupDraft.preferredDays}
+                onPreferredDaysChange={(preferredDays) => {
+                  setSetupDraft((draft) => ({ ...draft, preferredDays }));
+                  run.clear();
+                }}
+                requiredDayRules={settings?.forced_day_rules ?? []}
+                sundayClassesEnabled={settings ? Boolean(settings.sunday_classes_enabled) : null}
+                canManageSundayClasses={Boolean(settings?.can_manage_sunday_classes)}
+                sundayClassCount={settings?.sunday_class_count ?? 0}
+                onSundayClassesChange={saveSundayClasses}
+                allowFridaySaturdaySplit={setupDraft.courseDefaults.allowFridaySaturdaySplit}
+                onAllowFridaySaturdaySplitChange={(allowFridaySaturdaySplit) => {
+                  const courseDefaults = { ...setupDraft.courseDefaults, allowFridaySaturdaySplit };
+                  setSetupDraft((current) => ({ ...current, courseDefaults }));
+                  saveCourseDefaults(courseDefaults);
+                  run.clear();
+                }}
+              />
+            )}
+
+            {step === 2 && (
+              <SetupCoursesStep
+                courses={scopedCourses}
+                sections={targetSections}
+                configs={configs}
+                onConfigChange={updateConfig}
+                settings={settings}
+                preferredDays={setupDraft.preferredDays}
+                onRequiredDayChange={saveRequiredDay}
+                onConsecutiveDaysChange={saveConsecutiveDays}
+                onFieldCourseChange={saveFieldCourse}
+                excludedCourseIds={setupDraft.excludedCourseIds}
+                onExcludedChange={(excludedCourseIds) =>
+                  setSetupDraft((current) => ({ ...current, excludedCourseIds }))
+                }
+                actionsDisabled={generating || loadingSettings}
+              />
+            )}
+
+            {step === 3 && (
+              <ReviewGenerateStep
+                activeSemester={activeSemester}
+                yearLevel={yearLevel}
+                curriculumName={
+                  scopedSections[0]?.curriculumName ?? null
+                }
+                sections={targetSections}
+                courseRows={reviewCourseRows}
+                preferredDays={setupDraft.preferredDays}
+                forcedDayRules={settings?.forced_day_rules ?? []}
+                consecutiveDayRules={settings?.consecutive_day_rules ?? []}
+                fieldCourseCodes={settings?.field_course_codes ?? []}
+                activeRules={activeRules}
+                generating={generating}
+                blockedReason={generationBlockedReason}
+                yearState={targetState}
+              />
+            )}
+
+            {step === 4 && (
+              <ScheduleSummaryStep
+                preview={preview}
+                sections={targetSections}
+                courses={scopedCourses}
+                roomCodeById={roomCodeById}
+                changes={generationChanges}
+                recommendations={generationRecommendations}
+                onApplyRecommendation={applyRecommendationAndRetry}
+                applying={generating || applying}
+                unplacedCount={needsReview ? remainingUnplaced.length : 0}
+                attentionKeys={
+                  new Set((draftIssues ?? []).map((issue) => issue.key))
+                }
+                attention={
+                  needsReview ? (
+                    <DraftIssuesPanel
+                      issues={draftIssues}
+                      reviewing={reviewing}
+                      message={run.result?.message ?? null}
+                      error={currentReview?.error ?? null}
+                      onApply={(options) => void applyDraftFixes(options)}
+                      onRetry={() => {
+                        setReviewing(true);
+                        void reviewDraftRows(preview).finally(() => setReviewing(false));
+                      }}
+                    />
+                  ) : null
+                }
+              />
+            )}
+          </div>
         </div>
       </main>
 
-      <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-5">
+      <footer className="scheduler-dialog-footer flex shrink-0 flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3 sm:px-5">
         <p
-          className={`min-w-0 flex-1 truncate text-xs font-semibold ${
+          className={`mr-auto min-w-0 max-w-3xl flex-1 basis-full text-xs font-medium leading-snug sm:basis-0 ${
             !generating &&
             ((step === 3 && generationBlockedReason) || (step === 4 && saveBlockedReason))
               ? "text-rose-700"
-              : "text-slate-500"
+              : "text-[#6b5f57]"
           }`}
         >
           {generating
-            ? "Cancel stops this run: the worker halts at its next checkpoint and returns you to the summary. Nothing is saved."
+            ? "Closing keeps this job running. Cancel clears it here and requests the worker to stop at its next checkpoint. No timetable is saved by generation."
             : step === 3 && generationBlockedReason
               ? generationBlockedReason
               : step === 4 && saveBlockedReason
                 ? saveBlockedReason
                 : helpText[step]}
         </p>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 [&>button]:grow sm:w-auto sm:[&>button]:grow-0">
           {generating ? (
             <button
+              id="generator-cancel"
               type="button"
               onClick={() => void run.cancel()}
-              className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-bold text-rose-700 transition hover:bg-rose-50"
+              data-variant="cancel"
+              className="scheduler-dialog-button"
             >
               <X className="h-4 w-4" /> Cancel
             </button>
@@ -1702,7 +1749,7 @@ export default function YearLevelGenerateScheduleWorkflow({
               type="button"
               disabled={step === 1 || applying}
               onClick={() => goToStep((step - 1) as Step)}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="scheduler-dialog-button"
             >
               <ArrowLeft className="h-4 w-4" /> Back
             </button>
@@ -1713,7 +1760,7 @@ export default function YearLevelGenerateScheduleWorkflow({
               type="button"
               disabled={!canContinue}
               onClick={() => goToStep((step + 1) as Step)}
-              className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:opacity-50"
+              data-variant="primary" className="scheduler-dialog-button"
             >
               Continue <ArrowRight className="h-4 w-4" />
             </button>
@@ -1724,7 +1771,7 @@ export default function YearLevelGenerateScheduleWorkflow({
               type="button"
               onClick={() => void generateFromReview()}
               disabled={generating || generationBlockedReason !== null}
-              className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-5 py-2 text-sm font-black text-white transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:opacity-50"
+              data-variant="primary" className="scheduler-dialog-button"
             >
               {generating ? (
                 <>
@@ -1745,7 +1792,7 @@ export default function YearLevelGenerateScheduleWorkflow({
                 type="button"
                 onClick={() => void generate()}
                 disabled={generating || applying}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="scheduler-dialog-button"
               >
                 <RefreshCw className="h-4 w-4" /> Generate again
               </button>
@@ -1755,7 +1802,7 @@ export default function YearLevelGenerateScheduleWorkflow({
                 onClick={apply}
                 disabled={applying || generating || preview.length === 0 || saveBlockedReason !== null}
                 title={saveBlockedReason ?? undefined}
-                className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-5 py-2 text-sm font-black text-white transition hover:bg-[#3d080c] disabled:cursor-not-allowed disabled:opacity-50"
+                data-variant="primary" className="scheduler-dialog-button"
               >
                 {applying ? (
                   <>
@@ -1782,142 +1829,39 @@ export default function YearLevelGenerateScheduleWorkflow({
   );
 }
 
-const generatorGuideSteps: WorkflowGuideStep[] = [
-  {
-    id: "overview",
-    element: "#generator-progress",
-    title: "Four steps to a schedule",
-    description:
-      "Configuration, Setup Courses, Review, then Summary. Nothing is saved until the last step, so you can explore freely.",
-    side: "bottom",
-  },
-  {
-    id: "year-level",
-    element: "#generator-year-level",
-    title: "Check the year level",
-    description:
-      "Everything below is scoped to this year level. The section and course counts underneath update with it.",
-    side: "bottom",
-  },
-  {
-    id: "curriculum",
-    element: "#generator-curriculum-select",
-    action: "select",
-    taskHint: "Choose a curriculum to continue.",
-    title: "Pick the curriculum",
-    description:
-      "Every section of this year level must share one curriculum — it decides which courses get scheduled.",
-    side: "bottom",
-  },
-  {
-    id: "apply-curriculum",
-    element: "#generator-apply-curriculum:not([disabled])",
-    action: "click",
-    skipIfMissing: true,
-    waitTimeoutMs: 2500,
-    taskHint: "Click Apply to year level to continue.",
-    title: "Apply it to every section",
-    description:
-      "This writes the curriculum onto each section in scope. The button only appears when there is something to apply.",
-    side: "bottom",
-    align: "end",
-  },
-  {
-    id: "to-setup",
-    element: "#generator-continue:not([disabled])",
-    action: "click",
-    taskHint: "Click Continue to move to Setup Courses.",
-    title: "Continue to Setup Courses",
-    description:
-      "Continue stays greyed out until this year level has a curriculum and courses to schedule.",
-    side: "top",
-    align: "end",
-  },
-  {
-    id: "setup-courses",
-    element: "#generator-setup-head",
-    waitFor: "#generator-setup-head",
-    title: "Tune each course",
-    description:
-      "One row per course. Hybrid switches delivery between face-to-face and online, Split lets the course meet twice, and Configure sets its duration, Required Day and Preferred Room.",
-    side: "bottom",
-    align: "start",
-  },
-  {
-    id: "to-review",
-    element: "#generator-continue:not([disabled])",
-    action: "click",
-    taskHint: "Click Continue to move to Review.",
-    title: "Continue to Review",
-    description: "Setup is per course; the next step shows everything together before anything runs.",
-    side: "top",
-    align: "end",
-  },
-  {
-    id: "review",
-    element: "#generator-step-panel",
-    title: "Check every selection",
-    description:
-      "This is the last look before the solver runs: sections in scope, the courses it will place, and the rules it must respect. Still nothing saved.",
-    side: "center",
-  },
-  {
-    id: "generate",
-    element: "#generator-generate:not([disabled])",
-    action: "click",
-    taskHint: "Click Generate to run the solver.",
-    title: "Generate the schedule",
-    description:
-      "The run is queued on the server, so progress keeps going even if you close this window. A blocked run comes back with recommended adjustments instead of a timetable.",
-    side: "top",
-    align: "end",
-  },
-  {
-    id: "save",
-    element: "#generator-save",
-    waitTimeoutMs: 300000,
-    skipIfMissing: true,
-    title: "Save it as drafts",
-    description:
-      "Review the generated meetings, then save. They land as draft schedules you can still edit in the builder — that is the whole flow.",
-    side: "top",
-    align: "end",
-  },
-];
-
 const helpText: Record<Step, string> = {
-  1: "Pick the year level and curriculum, then choose the Preferred Days.",
-  2: "Set each course's split and hybrid delivery. Duration follows the course's Total Hours; use Configure for its Required Day and Preferred Room.",
-  3: "Check every selection, then generate. Nothing is saved until you apply the result.",
-  4: "Review the generated timetable, then save it as draft schedules.",
+  1: "Check the year level, sections, curriculum, and Preferred Days. Apply curriculum and Sunday classes save separately from the timetable.",
+  2: "Review course delivery and Configure options. Department rule changes can save immediately; course defaults stay in this browser.",
+  3: "Review the selections before queuing a generation job. Generate produces a preview; Save writes the timetable drafts.",
+  4: "Review the result before saving drafts. Save replaces affected working classes and may remove their instructor assignments.",
 };
 
 function HelpButton({
   title,
   text,
-  tone = "default",
 }: {
   title: string;
   text: string;
-  tone?: "default" | "onMaroon";
 }) {
   const [open, setOpen] = useState(false);
+  const helpId = useId();
   return (
-    <span className="relative inline-flex">
+    <span className="inline-flex">
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
-        className={`rounded-full p-1 transition ${
-          tone === "onMaroon"
-            ? "text-white/70 hover:bg-white/10 hover:text-white"
-            : "text-slate-400 hover:bg-slate-100 hover:text-[#4e0a10]"
-        }`}
+        onClick={() => {
+          if (!open) announceJoyrideStart("generator-reference-help");
+          setOpen((value) => !value);
+        }}
+        className="scheduler-dialog-close"
         aria-label={`Help: ${title}`}
+        aria-expanded={open}
+        aria-controls={open ? helpId : undefined}
       >
         <HelpCircle className="h-4 w-4" />
       </button>
       {open && (
-        <span className="absolute left-0 top-7 z-10 w-72 rounded-lg border border-slate-200 bg-white p-3 text-xs font-medium leading-relaxed text-slate-600 shadow-xl">
+        <span id={helpId} className="absolute right-3 top-full z-30 mt-2 w-72 max-w-[calc(100%-1.5rem)] rounded-lg border border-slate-200 bg-white p-3 text-xs font-medium leading-relaxed text-slate-600 shadow-xl sm:right-5">
           {text}
         </span>
       )}

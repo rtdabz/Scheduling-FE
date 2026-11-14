@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DeliveryMode, Department, Faculty, Room, RoomType, ScheduleItem, Section, Subject } from "../types";
 import { getSubjectTotalSlots } from "../types";
 import { getCourseSlotPlan, SLOT_MINUTES } from "../courseSlotPlan";
-import { buildPreferredPattern, closingTimeLabel, consecutiveDayCount, fieldEndMinutes, formatTime12h, FULL_DAY_NAMES, gridOpeningMinutes, isFixedSplitPattern, parsePreferredPattern, slotCount, slotMinutes, slotToTime24h, timeToSlotUnclamped } from "../../../../lib/timeGrid";
-import { instructorConflictMessage, onlineCourseConflictMessage, roomConflictMessage, sectionConflictMessage, type ConflictBooking, type RequestedSlot } from "../../../../lib/conflictMessages";
+import { buildPreferredPattern, closingTimeLabel, consecutiveDayCount, fieldEndMinutes, formatTime12h, FULL_DAY_NAMES, gridOpeningMinutes, isFixedSplitPattern, parsePreferredPattern, slotCount, slotMinutes, slotToTime24h } from "../../../../lib/timeGrid";
+import { instructorConflictMessage, roomConflictMessage, sectionConflictMessage, type ConflictBooking, type RequestedSlot } from "../../../../lib/conflictMessages";
 import { describeWindow, roomGrantFits, windowConflicts } from "../../../../lib/roomRequests";
-import { isLabMeetingRoomType, labRoomTypes } from "../../../../lib/labRoomPolicy";
-import { AVAILABILITY_WARNING_TITLE, availabilityWarningMessage, coveredContinuously } from "../../../../lib/availabilityWindows";
+import { NO_LABORATORY_UNITS_MESSAGE, isLabMeetingRoomType, isMajorWithoutLaboratoryUnits } from "../../../../lib/labRoomPolicy";
+import { AVAILABILITY_WARNING_TITLE, availabilityWarningMessage, isOutsideAvailability, minutesOfTime } from "../../../../lib/availabilityWindows";
+import { isConfiguredFieldCourse, isFieldSchedulingEligible } from "../schedulingConfigurationEligibility";
 
 export type ConflictResult = { conflictType: "room" | "faculty" | "section"; message: string; title?: string } | null;
 
@@ -122,15 +123,12 @@ export const isFieldSubject = (
   fieldCourseAssignmentEnabled: boolean,
   configuredFieldCourseCodes: Set<string>
 ): boolean => {
-  if (!subject) return false;
-  if (subject.roomTypeRequired === "field") return true;
-  if (!fieldCourseAssignmentEnabled) return false;
-
-  return configuredFieldCourseCodes.has(normalizeCourseCode(subject.code ?? ""));
+  return isConfiguredFieldCourse(subject, fieldCourseAssignmentEnabled ? configuredFieldCourseCodes : new Set());
 };
 
 export const isLaboratorySubject = (subject: Subject | undefined): boolean => {
   if (!subject) return false;
+  if (isMajorWithoutLaboratoryUnits(subject)) return false;
 
   return subjectHasCategory(subject, "Laboratory")
     || Number(subject.labHours ?? 0) > 0
@@ -139,22 +137,16 @@ export const isLaboratorySubject = (subject: Subject | undefined): boolean => {
 
 export const requiredRoomTypeForMeeting = (
   subject: Subject | undefined,
-  meetingType?: ScheduleItem["meetingType"]
+  meetingType?: ScheduleItem["meetingType"] | "field"
 ): RoomType | null => {
+  if (isMajorWithoutLaboratoryUnits(subject)) return "lecture";
+  if (meetingType === "field" && subject && !isFieldSchedulingEligible(subject)) return "laboratory";
   if (meetingType) return meetingType;
   if (!subject) return null;
   if (isLaboratorySubject(subject)) return "laboratory";
 
   return subject.roomTypeRequired ?? null;
 };
-
-export const laboratoryServesLecture = (subject: Subject | undefined, room: Room | undefined): boolean =>
-  (subject?.category ?? "major") === "major"
-  && Number(subject?.lectureHours ?? 0) > 0
-  && Number(subject?.labHours ?? 0) === 0
-  && (subject?.roomTypeRequired ?? "lecture") === "lecture"
-  && room?.roomType === "laboratory"
-  && Boolean(room.allowLectureUsage);
 
 export const checkFieldEveningWindow = (
   isFieldPlacement: boolean,
@@ -258,31 +250,20 @@ export const resolveDeliveryMode = (roomId: string, rooms: Room[]): DeliveryMode
   return "on-site";
 };
 
-export const isPartTimeOutsideAvailability = (
+/**
+ * The instructor's availability is the employment type's default week plus any
+ * added windows; a meeting must fit inside it. Mirrors the backend rule.
+ */
+export const isOutsideFacultyAvailability = (
   faculty: Faculty | undefined,
   dayIndex: number,
   startSlot: number,
   durationSlots: number
-): boolean => {
-  if (!faculty) return false;
-  if (faculty.employmentType !== "part-time") return false;
-
-  const recorded = faculty.availabilities ?? [];
-  if (recorded.length === 0) return false;
-  const dayAvailabilities = recorded.filter(
-    (a) => Number(a.day_index) === dayIndex
-  );
-  if (dayAvailabilities.length === 0) return true;
-
-  return !coveredContinuously(
-    dayAvailabilities.map((window): [number, number] => [
-      timeToSlotUnclamped(window.start_time),
-      timeToSlotUnclamped(window.end_time),
-    ]),
-    startSlot,
-    startSlot + durationSlots
-  );
-};
+): boolean => isOutsideAvailability(faculty, {
+  dayIndex,
+  startMinutes: minutesOfTime(slotToTime24h(startSlot)),
+  endMinutes: minutesOfTime(slotToTime24h(startSlot + durationSlots)),
+});
 
 /** The time a schedule occupies, as the conflict wording quotes it. */
 const slotOf = (dayIndex: number, startSlot: number, durationSlots: number): RequestedSlot => ({
@@ -445,7 +426,9 @@ export const useConflict = ({
     startSlot: number,
     durationSlots: number,
     excludeScheduleId?: string | string[],
-    preferredPattern?: string | null
+    preferredPattern?: string | null,
+    /** The day count when the candidate is one day of a Consecutive Days run. */
+    runDayCount?: number | null
   ): ConflictResult => {
     if (!sundayClassesEnabled && dayIndex === SUNDAY_INDEX) {
       return {
@@ -474,7 +457,7 @@ export const useConflict = ({
 
     if (facultyId) {
       const faculty = faculties.find((f) => String(f.id) === String(facultyId));
-      if (isPartTimeOutsideAvailability(faculty, dayIndex, startSlot, durationSlots)) {
+      if (isOutsideFacultyAvailability(faculty, dayIndex, startSlot, durationSlots)) {
         return {
           conflictType: "faculty",
           title: AVAILABILITY_WARNING_TITLE,
@@ -495,6 +478,10 @@ export const useConflict = ({
     const isOnlinePlacement = roomId === "online";
     const isTbaPlacement = isRoomTba(roomId);
     const deliveryMode = resolveDeliveryMode(roomId, rooms);
+
+    if (subject && deliveryMode === "field" && !isFieldSchedulingEligible(subject)) {
+      return { conflictType: "room", message: "Courses with laboratory requirements cannot use Field placement. Choose a laboratory room or Room TBA." };
+    }
 
     const isFieldPlacement = deliveryMode === "field" || subjectRequiresField;
 
@@ -543,13 +530,14 @@ export const useConflict = ({
           && requiredRoomType
           && room.roomType !== requiredRoomType
           && !(room.roomType === "field" && isFieldPlacement)
-          && !(requiredRoomType === "lecture" && room.roomType === "laboratory")
           && !(requiredRoomType === "laboratory" && isLabMeetingRoomType(room.roomType))
         ) {
           return {
             conflictType: "room",
-            message: requiredRoomType === "laboratory"
-              ? `Room type mismatch: ${subject?.code ?? "This class"} has a laboratory component, so it must be scheduled in a ${labRoomTypes().map((type) => type === "lecture" ? "classroom" : "laboratory room").join(" or ")}, but '${room.name}' is a '${room.roomType}' room.`
+            message: requiredRoomType === "lecture" && room.roomType === "laboratory" && isMajorWithoutLaboratoryUnits(subject)
+              ? NO_LABORATORY_UNITS_MESSAGE
+              : requiredRoomType === "laboratory"
+              ? `Room type mismatch: ${subject?.code ?? "This class"} has a laboratory component, so it must be scheduled in a laboratory room (or Room TBA), but '${room.name}' is a '${room.roomType}' room.`
               : `Room type mismatch: ${subject?.code ?? "This class"} requires a '${requiredRoomType}' room, but '${room.name}' is a '${room.roomType}' room.`
           };
         }
@@ -569,7 +557,11 @@ export const useConflict = ({
         const kept = sameCourse.filter((s) => !ignored?.has(s.id));
         const total = kept.reduce((sum, s) => sum + s.durationSlots, 0) + durationSlots;
         const longest = Math.max(durationSlots, ...kept.map((s) => s.durationSlots));
-        const allowedSlots = Math.max(ceilingSlots, Math.min(longest, slotCount()));
+        // A Consecutive Days run repeats the course's time once per linked day, as the server allows.
+        const linkedRunDays = runDayCount
+          ? Math.min(runDayCount, 1 + kept.filter((s) => Boolean(s.splitGroupId) && consecutiveDayCount(s.preferredPattern) !== null).length)
+          : 1;
+        const allowedSlots = Math.max(ceilingSlots * linkedRunDays, Math.min(longest, slotCount()));
         if (total > allowedSlots && total > before) {
           const hours = (slots: number) => `${slots * SLOT_MINUTES / 60} ${slots * SLOT_MINUTES === 60 ? "hour" : "hours"}`;
           return {
@@ -592,20 +584,6 @@ export const useConflict = ({
             conflictType: "section",
             message: sectionConflictMessage(
               sections.find((section) => String(section.id) === String(sectionId))?.name ?? s.sectionName,
-              slotOf(dayIndex, startSlot, durationSlots),
-              bookingOf(s, departments)
-            )
-          };
-        }
-        if (
-          deliveryMode === "online"
-          && s.mode === "online"
-          && String(s.courseId ?? s.subjectId ?? "") === String(subjectId)
-        ) {
-          return {
-            conflictType: "section",
-            message: onlineCourseConflictMessage(
-              subject?.code ?? s.courseCode ?? s.subjectCode,
               slotOf(dayIndex, startSlot, durationSlots),
               bookingOf(s, departments)
             )
@@ -639,7 +617,7 @@ export const useConflict = ({
     const target = schedules.find((s) => s.id === scheduleId);
     if (!target) return null;
     const targetFaculty = faculties.find((f) => String(f.id) === String(facultyId));
-    if (isPartTimeOutsideAvailability(targetFaculty, target.dayIndex, target.startSlot, target.durationSlots)) {
+    if (isOutsideFacultyAvailability(targetFaculty, target.dayIndex, target.startSlot, target.durationSlots)) {
       return availabilityWarningMessage(targetFaculty?.name ?? "the selected instructor");
     }
 
@@ -670,21 +648,17 @@ export const useConflict = ({
 
     if (schedule.splitGroupId && consecutiveDayCount(schedule.preferredPattern) !== null) {
       const run = schedules.filter((item) => item.splitGroupId === schedule.splitGroupId);
-      const shift = dayIndex - schedule.dayIndex;
-      if (run.some((item) => item.dayIndex + shift < 0 || item.dayIndex + shift >= FULL_DAY_NAMES.length)) {
+      const conflict = checkConflict(
+        courseId, schedule.sectionId, schedule.facultyId ?? null, schedule.roomId,
+        dayIndex, startSlot, schedule.durationSlots, schedule.id, schedule.preferredPattern,
+        consecutiveDayCount(schedule.preferredPattern)
+      );
+      if (conflict) return conflict;
+      if (run.some((item) => item.id !== schedule.id && item.dayIndex === dayIndex)) {
         return {
           conflictType: "section",
-          message: `${courseLabel}: moving the run there would push it past the end of the week.`,
+          message: `${courseLabel} already has a consecutive meeting on ${FULL_DAY_NAMES[dayIndex]}. Its meetings must be on different days.`,
         };
-      }
-      const runIds = run.map((item) => item.id);
-      const ordered = [schedule, ...run.filter((item) => item.id !== schedule.id)];
-      for (const item of ordered) {
-        const conflict = checkConflict(
-          courseId, item.sectionId, item.facultyId ?? null, item.roomId,
-          item.dayIndex + shift, startSlot, item.durationSlots, runIds, null
-        );
-        if (conflict) return { ...conflict, message: `${FULL_DAY_NAMES[item.dayIndex + shift]}: ${conflict.message}` };
       }
       return null;
     }

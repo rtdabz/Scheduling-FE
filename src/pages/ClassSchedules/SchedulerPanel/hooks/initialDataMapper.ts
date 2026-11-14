@@ -1,4 +1,5 @@
 import { heldDesignation } from "../../../../lib/designations";
+import { formatPersonName, personSortName } from "../../../../lib/personName";
 import { isRevisionStatus, isSubmissionStatus } from "../../../../lib/submissionStatus";
 import { DAYS, slotToTimeStr } from "../constants";
 import {
@@ -44,6 +45,8 @@ export interface SchedulerCacheData {
   canEditProgramIds?: number[] | null;
   hasDean: boolean;
   schedulesTruncated?: boolean;
+  /** Meetings beyond the schedule limit, reduced to what conflict checks read. Never rendered. */
+  occupancy?: ScheduleItem[];
 }
 
 export interface InitialDataResponse {
@@ -55,6 +58,8 @@ export interface InitialDataResponse {
   sections: ApiSectionRecord[];
   schedules: ApiScheduleRecord[];
   schedules_truncated?: boolean;
+  /** When `schedules` is cut at the limit: every other visible meeting, in compact form, for conflict checks. */
+  schedule_occupancy?: ApiScheduleRecord[];
   /** Recorded signatories keyed by submission id (an empty list when there are none). */
   schedule_signatories?: Record<string, ScheduleSignatories> | ScheduleSignatories[];
   departments: ApiDepartmentRecord[];
@@ -174,9 +179,7 @@ export const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
     startTime: slotToTimeStr(startSlot),
     endTime: slotToTimeStr(endSlot),
     mode: item.mode ?? "on-site",
-    facultyName: item.faculty
-      ? `${item.faculty.first_name ?? ""} ${item.faculty.last_name ?? ""}`.trim()
-      : null,
+    facultyName: item.faculty ? formatPersonName(item.faculty) : null,
     facultyId: (item.faculty_id ?? item.faculty?.id) != null
       ? String(item.faculty_id ?? item.faculty?.id)
       : null,
@@ -192,7 +195,9 @@ export const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
     splitGroupId: item.split_group_id ?? null,
     meetingType: item.meeting_type ?? null,
     meetingIndex: item.meeting_index ?? 1,
-    createdById: item.created_by != null ? Number(item.created_by) : null,
+    createdById: item.created_by != null ? Number(item.created_by) : item.created_by,
+    creatorIdentity: item.creator_identity,
+    signatories: item.signatories,
   };
 };
 
@@ -265,11 +270,14 @@ export const mapApiCourse = (s: ApiCourseRecord): Subject => {
 
 export const mapApiFaculty = (f: InitialDataResponse["faculties"][number]): Faculty => ({
   id: f.id.toString(),
-  name: `${f.first_name} ${f.last_name}`,
+  name: formatPersonName(f),
+  sortName: personSortName(f),
+  honorificPrefix: f.honorific_prefix ?? null,
   firstName: f.first_name,
   middleName: f.middle_name ?? null,
   lastName: f.last_name,
   suffix: f.suffix ?? null,
+  credentials: f.credentials ?? null,
   profilePicture: f.profile_picture ?? null,
   employmentType: f.employment_type,
   administrativeRole: normalizeAdministrativePost(f.administrative_role),
@@ -286,7 +294,9 @@ export const mapApiFaculty = (f: InitialDataResponse["faculties"][number]): Facu
   requiredUnits: numberOrUndefined(f.required_units),
   unitCeiling: numberOrUndefined(f.unit_ceiling),
   status: f.status,
-  availabilities: f.availabilities
+  availabilities: f.availabilities,
+  availabilityMode: f.availability_mode ?? undefined,
+  standardAvailabilities: f.standard_availabilities
 });
 
 export const mapApiSections = (
@@ -315,6 +325,7 @@ export const mapApiSections = (
       status: s.status ?? "active",
       submissionStatus: isSubmissionStatus(s.submission_status) ? s.submission_status : "draft",
       revisionStatus: isRevisionStatus(s.revision_status) ? s.revision_status : "initial",
+      resetSinceSubmission: s.schedule_reset_since_submission === true,
     }));
 
 export const mapInitialData = (
@@ -375,5 +386,61 @@ export const mapInitialData = (
     canEditProgramIds: initialData.can_edit_program_ids?.map(Number) ?? null,
     hasDean: initialData.has_dean !== false,
     schedulesTruncated: initialData.schedules_truncated === true,
+    occupancy: mapOccupancy(initialData.schedule_occupancy, semester?.id),
   };
+};
+
+export const mapOccupancy = (
+  rows: ApiScheduleRecord[] | undefined,
+  semesterId?: number | string | null,
+): ScheduleItem[] => (rows ?? [])
+  .filter((item) => semesterId == null || Number(item.semester_id) === Number(semesterId))
+  .map(mapApiScheduleToItem);
+
+/**
+ * The meetings conflict checks run against: every loaded row, plus the occupancy rows not loaded in
+ * full. Occupancy rows carry ids only, so their course and section names are filled in from the lookups
+ * for conflict messages.
+ */
+export const withConflictOccupancy = (
+  schedules: ScheduleItem[],
+  occupancy: ScheduleItem[],
+  subjects: Subject[],
+  sections: Section[],
+): ScheduleItem[] => {
+  if (occupancy.length === 0) return schedules;
+  const loaded = new Set(schedules.map((schedule) => schedule.id));
+  const subjectsById = new Map(subjects.map((subject) => [String(subject.id), subject]));
+  const sectionsById = new Map(sections.map((section) => [String(section.id), section]));
+  const extra = occupancy
+    .filter((item) => !loaded.has(item.id))
+    .map((item) => {
+      const subject = subjectsById.get(item.courseId ?? "");
+      const section = sectionsById.get(item.sectionId);
+      if (!subject && !section) return item;
+      const code = item.courseCode || subject?.code || "";
+      const name = item.courseName || subject?.name || "";
+      return {
+        ...item,
+        courseCode: code,
+        subjectCode: code,
+        courseName: name,
+        subjectName: name,
+        sectionName: item.sectionName || section?.name || "",
+      };
+    });
+  return extra.length === 0 ? schedules : [...schedules, ...extra];
+};
+
+/** Replace one section's rows with its complete set from the server, keeping every other row. */
+export const replaceSectionSchedules = (
+  schedules: ScheduleItem[],
+  sectionId: string,
+  sectionRows: ScheduleItem[],
+): ScheduleItem[] => {
+  const incoming = new Set(sectionRows.map((row) => row.id));
+  return [
+    ...schedules.filter((schedule) => schedule.sectionId !== sectionId && !incoming.has(schedule.id)),
+    ...sectionRows,
+  ];
 };

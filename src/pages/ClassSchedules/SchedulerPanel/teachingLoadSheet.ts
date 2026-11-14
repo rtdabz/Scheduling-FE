@@ -200,6 +200,7 @@ export interface SheetContext {
   designations: HeldDesignation[];
   instructorName: string;
   preparedBy: string;
+  preparedTitle?: string;
   verifiedBy: string;
   vpaaName: string;
   presidentName: string;
@@ -335,7 +336,7 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
   drawText(doc, "Verified by:", { from: "G", to: "K", row: formRow(44) }, { size: SIZE.label, style: "bold", padding: 1.6 });
   drawSignatory(doc, {
     name: ctx.preparedBy,
-    title: "Program Head/Department Secretary",
+    title: ctx.preparedTitle || "Schedule preparer",
     row: formRow(45),
     from: "A",
     to: "C",

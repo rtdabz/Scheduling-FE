@@ -1,6 +1,5 @@
 import { createElement, type ReactNode } from "react";
 import type { Step } from "react-joyride";
-import { getStoredUser } from "../lib/storedUser";
 
 export type TourAction =
   | "click"
@@ -21,9 +20,9 @@ export interface TaskGuideStep {
   navigateTo?: string;
   waitFor?: string;
   waitTimeoutMs?: number;
-  reveal?: string;
   skipIfMissing?: boolean;
   validate?: (element: Element) => boolean;
+  isSatisfied?: () => boolean;
   side?: "top" | "right" | "bottom" | "left" | "center";
   align?: "start" | "center" | "end";
 }
@@ -31,36 +30,6 @@ export interface TaskGuideStep {
 export type TaskGuideOutcome = "completed" | "dismissed" | "aborted";
 
 const LOCATION_CHANGE_EVENT = "wicars:location-change";
-
-const getTaskTourUserKey = (): string => {
-  const user = getStoredUser();
-  return String(user?.id ?? user?.email ?? "current");
-};
-
-export const taskTourDoneKey = (tourId: string): string =>
-  "wicars_task_tour_done_" + tourId + "_" + getTaskTourUserKey();
-
-export const isTaskTourDone = (tourId: string): boolean => {
-  try {
-    return localStorage.getItem(taskTourDoneKey(tourId)) === "true";
-  } catch {
-    return false;
-  }
-};
-
-export const markTaskTourDone = (tourId: string): void => {
-  try {
-    localStorage.setItem(taskTourDoneKey(tourId), "true");
-  } catch {
-  }
-};
-
-export const clearTaskTourDone = (tourId: string): void => {
-  try {
-    localStorage.removeItem(taskTourDoneKey(tourId));
-  } catch {
-  }
-};
 
 export const stepRequiresAction = (step: TaskGuideStep): boolean => step.action !== "complete";
 
@@ -90,20 +59,54 @@ export const defaultTaskHint = (step: TaskGuideStep): string => {
 };
 
 export const isElementVisible = (element: Element | null): element is HTMLElement => {
-  if (!(element instanceof HTMLElement)) return false;
-  const styles = window.getComputedStyle(element);
-  if (styles.display === "none" || styles.visibility === "hidden") return false;
+  if (!(element instanceof HTMLElement) || !element.isConnected) return false;
+  if (element.closest('[inert], [hidden], [aria-hidden="true"]')) return false;
+  for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+    const styles = window.getComputedStyle(node);
+    if (styles.display === "none" || styles.visibility === "hidden" || styles.visibility === "collapse" || styles.opacity === "0") return false;
+  }
   return element.getClientRects().length > 0;
 };
 
-const MODAL_SELECTOR = '[aria-modal="true"]:not([role="alertdialog"]), dialog[open]';
+const GUIDE_OWN_SELECTOR = '[data-wicars-guide-root], #react-joyride-portal, [data-wicars-guide-portal], [data-wicars-guide-help], [data-wicars-guide-recovery], .wicars-task-tip, [class*="react-joyride__"]';
+const MODAL_SELECTOR = '[aria-modal="true"][role="dialog"], [aria-modal="true"][role="alertdialog"], dialog[open]';
+
+// Compare enclosing stacking contexts, since a shared Modal's z-index lives on
+// its backdrop rather than the dialog element itself.
+const stackingPath = (element: HTMLElement): number[] => {
+  const path: number[] = [];
+  for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+    const style = window.getComputedStyle(node);
+    const z = Number.parseInt(style.zIndex, 10);
+    if (Number.isFinite(z)) path.unshift(z);
+    else if (style.position === "fixed" || style.position === "sticky" || (style.transform && style.transform !== "none") || style.isolation === "isolate") path.unshift(0);
+  }
+  return path;
+};
+
+const isNativeModal = (element: HTMLElement): boolean => {
+  try {
+    return element.matches("dialog:modal");
+  } catch {
+    return false;
+  }
+};
 
 export const openModalLayer = (): HTMLElement | null => {
   let layer: HTMLElement | null = null;
+  let layerPath: number[] = [];
   try {
     for (const node of document.querySelectorAll(MODAL_SELECTOR)) {
-      if (node.closest("[data-wicars-guide-root]")) continue;
-      if (isElementVisible(node)) layer = node;
+      if (node.closest(GUIDE_OWN_SELECTOR) || !isElementVisible(node)) continue;
+      const path = stackingPath(node);
+      const depth = Math.max(path.length, layerPath.length);
+      let order = 0;
+      for (let index = 0; index < depth && order === 0; index += 1) order = (path[index] ?? 0) - (layerPath[index] ?? 0);
+      const nativeOrder = Number(isNativeModal(node)) - Number(layer !== null && isNativeModal(layer));
+      if (!layer || nativeOrder > 0 || (nativeOrder === 0 && order >= 0)) {
+        layer = node;
+        layerPath = path;
+      }
     }
   } catch {
   }
@@ -146,14 +149,13 @@ export const queryVisible = (selector: string, root: ParentNode = document): HTM
 export interface WaitForElementOptions {
   timeoutMs?: number;
   root?: ParentNode;
+  signal?: AbortSignal;
 }
 
 const DEFAULT_WAIT_TIMEOUT_MS = 12000;
 export const DOM_POLL_INTERVAL_MS = 150;
 
-export const WATCHED_ATTRIBUTES = ["class", "disabled", "aria-disabled", "aria-modal", "hidden", "open", "role"];
-
-const GUIDE_OWN_SELECTOR = '[data-wicars-guide-root], #react-joyride-portal, [class*="react-joyride__"]';
+export const WATCHED_ATTRIBUTES = ["class", "style", "disabled", "aria-disabled", "aria-modal", "aria-hidden", "aria-expanded", "aria-checked", "hidden", "inert", "open", "role"];
 
 export const isSelfInflicted = (records: MutationRecord[]): boolean =>
   records.every((record) => {
@@ -163,22 +165,26 @@ export const isSelfInflicted = (records: MutationRecord[]): boolean =>
 
 export const waitForElement = (
   selector: string,
-  { timeoutMs = DEFAULT_WAIT_TIMEOUT_MS, root = document }: WaitForElementOptions = {},
+  { timeoutMs = DEFAULT_WAIT_TIMEOUT_MS, root = document, signal }: WaitForElementOptions = {},
 ): Promise<HTMLElement | null> => {
+  if (signal?.aborted) return Promise.resolve(null);
   const existing = queryVisible(selector, root);
   if (existing) return Promise.resolve(existing);
 
   return new Promise((resolve) => {
     let settled = false;
     let pollId = 0;
+    let timer = 0;
     const finish = (element: HTMLElement | null) => {
       if (settled) return;
       settled = true;
       window.clearInterval(pollId);
       observer.disconnect();
       window.clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
       resolve(element);
     };
+    const abort = () => finish(null);
     const check = () => {
       if (settled) return;
       const found = queryVisible(selector, root);
@@ -198,37 +204,37 @@ export const waitForElement = (
       });
     }
     pollId = window.setInterval(check, DOM_POLL_INTERVAL_MS);
-    let timer = 0;
-    const arm = () => {
-      timer = window.setTimeout(() => {
-        if (!settled && isSelectorCovered(selector, root)) {
-          arm();
-          return;
-        }
-        finish(queryVisible(selector, root));
-      }, timeoutMs);
-    };
-    arm();
+    timer = window.setTimeout(() => finish(queryVisible(selector, root)), timeoutMs);
+    signal?.addEventListener("abort", abort, { once: true });
     check();
   });
 };
 
-let locationPatchInstalled = false;
-export const ensureLocationChangeEvents = (): void => {
-  if (locationPatchInstalled || typeof window === "undefined" || !window.history) return;
-  locationPatchInstalled = true;
-  const notify = () => window.dispatchEvent(new Event(LOCATION_CHANGE_EVENT));
-  const originalPush = window.history.pushState.bind(window.history);
-  const originalReplace = window.history.replaceState.bind(window.history);
-  window.history.pushState = (...args) => {
-    originalPush(...args);
-    notify();
+let locationListenerCount = 0;
+let restoreLocationEvents: () => void = () => undefined;
+export const ensureLocationChangeEvents = (): (() => void) => {
+  if (typeof window === "undefined" || !window.history) return () => undefined;
+  if (locationListenerCount++ === 0) {
+    const notify = () => window.dispatchEvent(new Event(LOCATION_CHANGE_EVENT));
+    const originalPush = window.history.pushState;
+    const originalReplace = window.history.replaceState;
+    const push: History["pushState"] = (...args) => { originalPush.apply(window.history, args); notify(); };
+    const replace: History["replaceState"] = (...args) => { originalReplace.apply(window.history, args); notify(); };
+    window.history.pushState = push;
+    window.history.replaceState = replace;
+    window.addEventListener("popstate", notify);
+    restoreLocationEvents = () => {
+      if (window.history.pushState === push) window.history.pushState = originalPush;
+      if (window.history.replaceState === replace) window.history.replaceState = originalReplace;
+      window.removeEventListener("popstate", notify);
+    };
+  }
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    if (--locationListenerCount === 0) restoreLocationEvents();
   };
-  window.history.replaceState = (...args) => {
-    originalReplace(...args);
-    notify();
-  };
-  window.addEventListener("popstate", notify);
 };
 
 export const locationMatches = (expected: string): boolean => {
@@ -258,16 +264,21 @@ export const defaultValidate = (action: TourAction, element: Element): boolean =
   switch (action) {
     case "select":
     case "input": {
+      const control = element.matches("input, select, textarea") ? element : element.querySelector("input, select, textarea");
+      if ((control instanceof HTMLInputElement || control instanceof HTMLSelectElement || control instanceof HTMLTextAreaElement) && !control.validity.valid) return false;
       const value = readControlValue(element);
       return value !== null && value.trim() !== "";
     }
     case "toggle": {
+      const checked = element.getAttribute("aria-checked");
+      const expanded = element.getAttribute("aria-expanded");
+      if (checked !== null || expanded !== null) return (checked ?? expanded) === "true";
       if (element instanceof HTMLInputElement && (element.type === "checkbox" || element.type === "radio")) {
         return element.checked;
       }
       const nested = element.querySelector("input[type='checkbox'], input[type='radio']");
       if (nested instanceof HTMLInputElement) return nested.checked;
-      return true;
+      return false;
     }
     default:
       return true;
@@ -281,9 +292,9 @@ const controlOf = (element: Element): Element => {
   return element.querySelector("select, input, textarea, button") ?? element;
 };
 
-const isControlUnavailable = (element: Element): boolean => {
-  const control = controlOf(element);
-  if (control.getAttribute("aria-disabled") === "true") return true;
+export const isControlUnavailable = (element: Element): boolean => {
+  const control = element.closest("select, input, textarea, button, [role='switch'], [role='checkbox']") ?? controlOf(element);
+  if (control.closest('[inert], [aria-disabled="true"]') || control.matches(":disabled")) return true;
   return (
     control instanceof HTMLSelectElement
     || control instanceof HTMLInputElement
@@ -292,45 +303,41 @@ const isControlUnavailable = (element: Element): boolean => {
   ) && control.disabled;
 };
 
-export type StepSatisfaction = "value" | "unavailable";
+export type StepSatisfaction = "value";
+
+export const isTaskStepSatisfied = (step: TaskGuideStep, element: Element): boolean => {
+  if (isControlUnavailable(element)) return false;
+  try {
+    if (step.isSatisfied) return step.isSatisfied() && (!step.validate || step.validate(element));
+    if (step.action === "navigate") return !!step.navigateTo && locationMatches(step.navigateTo);
+    if (!isElementVisible(element) || isCoveredByModal(element)) return false;
+    if (!VALUE_ACTIONS.has(step.action)) return false;
+    return (step.validate ?? ((el: Element) => defaultValidate(step.action, el)))(element);
+  } catch {
+    return false;
+  }
+};
 
 export const stepSatisfaction = (step: TaskGuideStep, element: Element): StepSatisfaction | null => {
   if (step.action === "complete") return null;
-  if (isControlUnavailable(element)) return "unavailable";
-  if (!VALUE_ACTIONS.has(step.action)) return null;
-  try {
-    const validate = step.validate ?? ((el: Element) => defaultValidate(step.action, el));
-    return validate(element) ? "value" : null;
-  } catch {
-    return null;
-  }
+  return isTaskStepSatisfied(step, element) ? "value" : null;
 };
 
-const matchesTarget = (event: Event, selector: string): Element | null => {
-  const target = event.target;
-  if (!(target instanceof Element)) return null;
-  const direct = target.closest(selector);
-  if (direct) return direct;
-  if (event.type === "submit" && target instanceof HTMLFormElement) {
-    if (target.matches(selector)) return target;
-    return target.querySelector(selector);
-  }
-  return null;
-};
-
-export const attachTaskListener = (step: TaskGuideStep, onDone: () => void): (() => void) => {
+export const attachTaskListener = (step: TaskGuideStep, onDone: () => void, targetElement = queryVisible(step.target)): (() => void) => {
   if (step.action === "complete") return () => undefined;
-  ensureLocationChangeEvents();
 
   const controller = new AbortController();
   const { signal } = controller;
   let fired = false;
-  const complete = (element: Element) => {
+  const reachableEvents = new WeakSet<Event>();
+  const complete = (element: Element, event?: Event) => {
     if (fired || signal.aborted) return;
-    const validate = step.validate ?? ((el: Element) => defaultValidate(step.action, el));
-    let valid: boolean;
+    if (event && (event.defaultPrevented || !reachableEvents.has(event))) return;
+    let valid = false;
     try {
-      valid = validate(element);
+      if (step.isSatisfied) valid = step.isSatisfied();
+      else if (step.action !== "submit") valid = defaultValidate(step.action, element);
+      if (valid && step.validate) valid = step.validate(element);
     } catch {
       valid = false;
     }
@@ -341,6 +348,7 @@ export const attachTaskListener = (step: TaskGuideStep, onDone: () => void): (()
   };
 
   if (step.action === "navigate") {
+    signal.addEventListener("abort", ensureLocationChangeEvents(), { once: true });
     if (step.navigateTo && locationMatches(step.navigateTo)) {
       queueMicrotask(() => complete(document.body));
       return () => controller.abort();
@@ -349,56 +357,58 @@ export const attachTaskListener = (step: TaskGuideStep, onDone: () => void): (()
       if (step.navigateTo && locationMatches(step.navigateTo)) complete(document.body);
     };
     window.addEventListener(LOCATION_CHANGE_EVENT, onLocation, { signal });
-    window.addEventListener("popstate", onLocation, { signal });
     return () => controller.abort();
   }
 
+  if (!targetElement) return () => controller.abort();
+  const matchesTarget = (event: Event): boolean =>
+    event.target instanceof Node && targetElement.contains(event.target);
+  const listen = (type: string, handler: (event: Event) => void) => {
+    document.addEventListener(type, (event) => {
+      if (matchesTarget(event) && isElementVisible(targetElement) && !isCoveredByModal(targetElement) && !isControlUnavailable(event.target instanceof Element ? event.target : targetElement)) reachableEvents.add(event);
+    }, { capture: true, signal });
+    // Run after application handlers, so preventDefault and resulting state
+    // are available. A click may legitimately replace or cover its own target.
+    document.addEventListener(type, handler, { signal });
+  };
+
   if (step.action === "select" || step.action === "input") {
     const onChange = (event: Event) => {
-      const element = matchesTarget(event, step.target);
-      if (!element) return;
+      if (!matchesTarget(event)) return;
       const source = event.target;
       const control = source instanceof HTMLSelectElement
         || source instanceof HTMLInputElement
         || source instanceof HTMLTextAreaElement
         ? source
-        : element;
-      complete(control);
+        : targetElement;
+      complete(control, event);
     };
-    document.addEventListener("input", onChange, { capture: true, signal });
-    document.addEventListener("change", onChange, { capture: true, signal });
+    // Input events update validation/Next in the runner; they never dismiss
+    // instructions while the user is still typing.
+    listen("change", onChange);
+    if (step.action === "input") listen("focusout", onChange);
     return () => controller.abort();
   }
 
   if (step.action === "submit") {
     const onSubmit = (event: Event) => {
-      const element = matchesTarget(event, step.target);
-      if (element) complete(element);
+      if (matchesTarget(event)) complete(targetElement, event);
     };
-    const onClickSubmit = (event: Event) => {
-      const clicked = event.target instanceof Element
-        ? event.target.closest("[type='submit']")
-        : null;
-      if (!clicked) return;
-      const scope = clicked.closest(step.target) ?? (clicked.matches(step.target) ? clicked : null);
-      if (scope && !(scope instanceof HTMLFormElement)) complete(scope);
-    };
-    document.addEventListener("submit", onSubmit, { capture: true, signal });
-    document.addEventListener("click", onClickSubmit, { capture: true, signal });
+    // Dispatching submit is not proof of a successful operation. Persistent
+    // actions are review-only; legacy submit tasks need an explicit result.
+    listen("submit", onSubmit);
     return () => controller.abort();
   }
 
   const onClick = (event: Event) => {
-    const element = matchesTarget(event, step.target);
-    if (element) complete(element);
+    if (matchesTarget(event)) complete(targetElement, event);
   };
-  document.addEventListener("click", onClick, { capture: true, signal });
+  listen("click", onClick);
   if (step.action === "toggle") {
     const onToggle = (event: Event) => {
-      const element = matchesTarget(event, step.target);
-      if (element) complete(element);
+      if (matchesTarget(event)) complete(targetElement, event);
     };
-    document.addEventListener("change", onToggle, { capture: true, signal });
+    listen("change", onToggle);
   }
   return () => controller.abort();
 };
@@ -417,6 +427,7 @@ export interface JoyrideTaskData {
   completed: boolean;
   satisfied: StepSatisfaction | null;
   mission: string;
+  targetElement?: HTMLElement;
 }
 
 export const toJoyrideSteps = (
@@ -424,6 +435,7 @@ export const toJoyrideSteps = (
   completedIds: ReadonlySet<string>,
   mission: string,
   satisfiedIds: ReadonlyMap<string, StepSatisfaction> = new Map(),
+  targets: ReadonlyMap<string, HTMLElement> = new Map(),
 ): Step[] => steps.map((step, index) => {
   const copy: ReactNode = createElement(
     "div",
@@ -438,9 +450,11 @@ export const toJoyrideSteps = (
     completed: completedIds.has(step.id),
     satisfied: satisfiedIds.get(step.id) ?? null,
     mission,
+    targetElement: targets.get(step.id),
   };
   return {
-    target: step.target,
+    id: step.id,
+    target: targets.get(step.id) ?? step.target,
     title: (index + 1) + ". " + step.title,
     content: copy,
     placement: joyridePlacement(step),

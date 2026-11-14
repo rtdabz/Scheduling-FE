@@ -293,9 +293,9 @@ describe.each(['dean', 'vpaa'] as const)('%s approval preview details', (stage) 
     expect(within(changes).getByText('vs. returned version #1')).toBeTruthy();
     expect(within(changes).getByText('Return reason: Spread the labs out.')).toBeTruthy();
     const table = within(changes).getByRole('table', { name: 'Changes from the previous version' });
-    expect(within(table).getAllByRole('row')).toHaveLength(26);
+    expect(within(table).getAllByRole('row')).toHaveLength(11);
     fireEvent.click(within(changes).getByRole('button', { name: 'Next page' }));
-    expect(within(table).getByText('C29')).toBeTruthy();
+    expect(within(table).getByText('C10')).toBeTruthy();
     expect(within(changes).queryByRole('button', { name: 'View details' })).toBeNull();
 
     const checks = within(details).getByRole('region', { name: 'Scheduling checks' });

@@ -12,7 +12,11 @@
 }
 
 .wicars-task-tip {
+  display: flex;
+  flex-direction: column;
   width: min(360px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  max-height: min(calc(100dvh - 24px), var(--wicars-tour-max-height, 100dvh));
   overflow: hidden;
   border: 1px solid rgba(201, 149, 42, 0.45);
   border-radius: 18px;
@@ -20,9 +24,11 @@
   box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
   text-align: left;
   outline: none;
+  overflow-wrap: anywhere;
 }
 
 .wicars-task-tip-head {
+  flex-shrink: 0;
   position: relative;
   background: #4e0a10;
   color: #ffffff;
@@ -97,19 +103,15 @@
 }
 
 .wicars-task-tip-anim {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   animation: wicars-task-in 0.28s ease-out;
 }
 
 @keyframes wicars-task-in {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .wicars-task-tip-anim,
-  .wicars-task-tip-status.is-waiting .wicars-task-tip-dot {
-    animation: none;
-  }
 }
 
 .wicars-task-tip-status {
@@ -170,6 +172,8 @@
 
 .wicars-task-tip-foot {
   display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
@@ -178,11 +182,13 @@
 
 .wicars-task-tip-foot-left {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
 }
 
-.wicars-task-tip-back {
+.wicars-task-tip-back,
+.wicars-task-tip-focus {
   border: 0;
   border-radius: 0.7rem;
   background: transparent;
@@ -193,7 +199,8 @@
   cursor: pointer;
 }
 
-.wicars-task-tip-back:hover {
+.wicars-task-tip-back:hover,
+.wicars-task-tip-focus:hover {
   background: #f1f5f9;
 }
 
@@ -213,6 +220,7 @@
 }
 
 .wicars-task-tip-next {
+  margin-left: auto;
   border: 0;
   border-radius: 0.7rem;
   background: #4e0a10;
@@ -225,4 +233,16 @@
 
 .wicars-task-tip-next:hover {
   background: #6b0f1a;
+}
+
+.wicars-task-tip button:focus-visible {
+  outline: 2px solid #c9952a;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wicars-task-tip-anim,
+  .wicars-task-tip-status.is-waiting .wicars-task-tip-dot {
+    animation: none;
+  }
 }

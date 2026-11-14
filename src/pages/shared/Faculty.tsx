@@ -4,7 +4,9 @@ import SegmentedLoadBar from '../../components/faculty/SegmentedLoadBar';
 import SearchInput from '../../components/ui/SearchInput';
 import { LOAD_LEVELS, UNAVAILABLE_STATUS, loadLevelOf } from '../../lib/facultyLoad';
 import { NAME_SUFFIXES, capitalizeNameInput, formatFacultyListName } from '../../lib/formatters';
-import { createPortal } from 'react-dom';
+import Modal from '../../components/ui/Modal';
+import { ModalButton, ModalNotice } from '../../components/ui/ModalForm';
+import { modalBody, modalControl, modalError, modalHint, modalLabel } from '../../components/ui/modalStyles';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import FacultyListTable from '../../components/faculty/FacultyListTable';
@@ -19,7 +21,6 @@ import {
   Camera,
   UserRound,
   Archive,
-  AlertTriangle,
 } from 'lucide-react';
 import api from '../../lib/api';
 import { programLabel } from '../../lib/programLabel';
@@ -30,7 +31,11 @@ import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
-import { apiErrorMessage } from '../../lib/apiError';
+import { apiErrorMessage, apiFieldErrors } from '../../lib/apiError';
+import { CREDENTIALS_MAX_LENGTH, formatPersonName, titleOptions } from '../../lib/personName';
+import { useNameOptions } from '../../hooks/useNameOptions';
+import { fetchInstitutionSettings, type InstitutionSettings } from '../../lib/institutionSettings';
+import { summarizeWeek } from '../../lib/availabilityWindows';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import InstructorTimetableButton from '../../components/InstructorTimetableButton';
 import FacultyRoleBadge, { type FacultyAdministrativeRole } from '../../components/faculty/FacultyRoleBadge';
@@ -105,6 +110,8 @@ interface FacultyMember {
   last_name: string;
   middle_name: string | null;
   suffix?: string | null;
+  honorific_prefix?: string | null;
+  credentials?: string | null;
   employment_type: 'full-time' | 'part-time';
   max_units: number;
   overload_units: number;
@@ -132,6 +139,8 @@ interface ApiFacultyMember {
   last_name: string;
   middle_name: string | null;
   suffix?: string | null;
+  honorific_prefix?: string | null;
+  credentials?: string | null;
   employment_type: 'full-time' | 'part-time';
   max_units: number;
   overload_units?: number | null;
@@ -166,6 +175,8 @@ const mapApiFaculty = (f: ApiFacultyMember): FacultyMember => ({
   last_name: f.last_name,
   middle_name: f.middle_name,
   suffix: f.suffix ?? null,
+  honorific_prefix: f.honorific_prefix ?? null,
+  credentials: f.credentials ?? null,
   employment_type: f.employment_type,
   max_units: f.max_units ?? 21,
   overload_units: f.overload_units || 0,
@@ -200,6 +211,12 @@ const getWorkloadStatus = (f: FacultyMember) => f.status === 'inactive' ? UNAVAI
 type ListPayload<T> = T[] | { data?: T[] } | null | undefined;
 const listOf = <T,>(payload: ListPayload<T>): T[] => (Array.isArray(payload) ? payload : payload?.data ?? []);
 
+const EMPLOYMENT_FILTERS = [
+  { value: '', label: 'All' },
+  { value: 'full-time', label: 'Full-time' },
+  { value: 'part-time', label: 'Part-time' },
+];
+
 export default function Faculty() {
   const { toast, confirm } = useToast();
   const user = getStoredUser();
@@ -211,6 +228,7 @@ export default function Faculty() {
   const [departments, setDepartments] = useState<Department[]>(cachedFacultyData?.departments ?? []);
   const [programs, setPrograms] = useState<Program[]>(cachedFacultyData?.programs ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(facultyCacheKey));
+  const [loadError, setLoadError] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('');
@@ -233,7 +251,7 @@ export default function Faculty() {
   const isProgramHead = userRole === 'program_head';
   const canManageFaculty = isVpaa;
   const canEditLoad = isVpaa || hasStoredCapability('schedule.assign_instructor');
-  const canEditAvailability = canEditLoad;
+  const canEditAvailability = !isVpaa && canEditLoad;
 
   const isInstructorsPath = window.location.pathname.includes('instructors');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
@@ -249,7 +267,23 @@ export default function Faculty() {
   const [lastName, setLastName] = useState('');
   const [middleName, setMiddleName] = useState('');
   const [suffix, setSuffix] = useState('');
+  const [honorificPrefix, setHonorificPrefix] = useState('');
+  const [credentials, setCredentials] = useState('');
+  const [affixErrors, setAffixErrors] = useState<{ honorific_prefix?: string; credentials?: string }>({});
+  const nameOptions = useNameOptions();
   const [employmentType, setEmploymentType] = useState<'full-time' | 'part-time'>('full-time');
+  const [defaultAvailability, setDefaultAvailability] = useState<InstitutionSettings['default_faculty_availability']>();
+  useEffect(() => {
+    let active = true;
+    // Display only: without it the form still works and defaults still apply.
+    void Promise.resolve()
+      .then(fetchInstitutionSettings)
+      .then(settings => {
+        if (active) setDefaultAvailability(settings.default_faculty_availability);
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
   const [maxUnits, setMaxUnits] = useState<number>(21);
   const [overloadUnits, setOverloadUnits] = useState<number>(0);
   const [deloadUnits, setDeloadUnits] = useState<number>(0);
@@ -269,6 +303,10 @@ export default function Faculty() {
   const formPrograms = programs.filter(program =>
     Number(program.department_id) === Number(isVpaa ? departmentId : user?.department_id)
   );
+  // One program in the department → it is the only valid choice, so select it automatically
+  // (same as sections). Several programs → the user picks one, or leaves it unset.
+  const singleFormProgram = formPrograms.length === 1 ? formPrograms[0] : null;
+  const effectiveProgramId = singleFormProgram ? String(singleFormProgram.id) : programId;
   const [status, setStatus] = useState<'active' | 'inactive'>('active');
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -334,7 +372,9 @@ export default function Faculty() {
       setFaculties(data.faculties);
       setDepartments(data.departments);
       setPrograms(data.programs ?? []);
+      setLoadError(false);
     } catch (err) {
+      setLoadError(true);
       toast.error('Error', apiErrorMessage(err, 'Failed to load faculties and departments.'));
     } finally {
       setIsLoading(false);
@@ -354,6 +394,9 @@ export default function Faculty() {
     setLastName(faculty.last_name);
     setMiddleName(faculty.middle_name || '');
     setSuffix(faculty.suffix || '');
+    setHonorificPrefix(faculty.honorific_prefix || '');
+    setCredentials(faculty.credentials || '');
+    setAffixErrors({});
     setEmploymentType(faculty.employment_type);
     setMaxUnits(faculty.max_units);
     setOverloadUnits(faculty.overload_units);
@@ -387,7 +430,7 @@ export default function Faculty() {
     const confirmed = await confirm({
       title: 'Archive Instructor',
       message: (faculty
-        ? `Archive ${faculty.first_name} ${faculty.last_name}? `
+        ? `Archive ${formatPersonName(faculty)}? `
         : 'Archive this instructor? ')
         + 'The record can be restored from the Archive.'
         + liveWarning,
@@ -490,9 +533,11 @@ export default function Faculty() {
       last_name: trimmedLast,
       middle_name: keptMiddleName(trimmedMiddle),
       suffix: suffix || null,
+      honorific_prefix: honorificPrefix || null,
+      credentials: credentials.trim() || null,
       employment_type: employmentType,
       department_id: Number(deptVal),
-      program_id: programId ? Number(programId) : null,
+      program_id: effectiveProgramId ? Number(effectiveProgramId) : null,
       ...(canManageDesignations ? { designation_ids: designationIds.map(Number) } : {}),
       status,
       profile_picture: profilePicture,
@@ -531,6 +576,8 @@ export default function Faculty() {
       }
       setIsModalOpen(false);
     } catch (err) {
+      const fieldErrors = apiFieldErrors(err);
+      setAffixErrors({ honorific_prefix: fieldErrors.honorific_prefix, credentials: fieldErrors.credentials });
       toast.error(
         'Error',
         apiErrorMessage(err, isEditMode ? 'Failed to update instructor' : 'Failed to create instructor')
@@ -627,21 +674,52 @@ export default function Faculty() {
   }, [sortedFaculties, activePage, pageSize]);
 
 
-  const showGuide = userRole === 'secretary';
-  const instructorGuideSteps = useMemo(() => [
-    { element: '#instructors-filters select', action: 'select' as const, taskHint: 'Change a filter to continue.', title: 'Find an instructor', description: 'Search by name or filter by job type or workload.', side: 'bottom' as const },
-    { element: '[data-tour="view-details"]', waitFor: '#instructors-workspace', action: 'click' as const, skipIfMissing: true, taskHint: 'Open an instructor to continue.', title: 'Check an instructor', description: 'Open an instructor to see their load, availability and classes. Great work — that is the whole flow.', side: 'top' as const },
-  ], []);
-  useWorkflowGuide({ id: 'instructors', isReady: showGuide, steps: instructorGuideSteps, mission: 'Find an Instructor' });
+  const showGuide = isDepartmentOfficeRole(userRole);
+  useWorkflowGuide({
+    id: 'instructors', isReady: showGuide && !isLoading, mission: 'Find an Instructor',
+    variant: isDetailsModalOpen ? 'details' : loadError ? 'unavailable' : `${viewMode}-${sortedFaculties.length ? 'results' : 'empty'}`,
+    steps: () => {
+      const details = { id: 'details', element: '[aria-labelledby="faculty-details-title"]', title: 'Review the instructor', description: 'Review teaching load, classes and availability. Any editing controls save through their normal workflow; finishing help does not change the instructor.' };
+      if (isDetailsModalOpen) return [details];
+      if (loadError) return [{ id: 'unavailable', element: '#instructors-workspace', title: 'Instructor information could not be refreshed', description: 'The list may be unavailable or outdated. Reload the page to retry before relying on workload or availability.' }];
+      return [
+        { id: 'find', element: '#instructors-search', title: 'Find an instructor', description: 'Search by name. Use the employment type filter and workload sorting, or switch between List and Grid without changing instructor records.' },
+        ...(paginatedFaculties.length > 0 ? [
+          { id: 'open-details', element: '[data-tour="view-details"]', action: 'click' as const, isSatisfied: () => document.querySelector('[aria-labelledby="faculty-details-title"]') !== null, taskHint: 'Open an instructor to review their details.', title: 'Open an instructor', description: 'Use View to inspect the instructor’s teaching load and timetable.' },
+          details,
+        ] : [{ id: 'empty', element: '#instructors-workspace', title: 'No instructors match', description: 'Clear the name search or employment type filter. If the list is still empty, instructors must be added before you can view their details.' }]),
+      ];
+    },
+  });
 
   return (
     <div id="faculty-page" className="space-y-6 font-sans">
       <FilterBar id="instructors-filters">
-        <SearchInput
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search instructors by name..."
-        />
+        <div className="flex min-w-0 flex-wrap items-center gap-3 lg:flex-nowrap">
+          <SearchInput
+            id="instructors-search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search instructors by name..."
+            containerClassName="relative min-w-[200px] flex-1 lg:w-72 lg:flex-none"
+          />
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5" role="group" aria-label="Instructor type">
+            {EMPLOYMENT_FILTERS.map(({ value, label }) => {
+              const selected = employmentFilter === value;
+              return (
+                <button
+                  key={value || 'all'}
+                  type="button"
+                  onClick={() => setEmploymentFilter(value)}
+                  aria-pressed={selected}
+                  className={`selection-indicator rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${selected ? '' : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:text-[#5A1220]'}`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         <div className="flex flex-wrap items-center gap-3">
           {isVpaa && (
@@ -661,19 +739,6 @@ export default function Faculty() {
           )}
 
           <div className="flex items-center gap-1.5">
-            <Filter size={13} className="text-gray-400" />
-            <select
-              value={employmentFilter}
-              onChange={(e) => setEmploymentFilter(e.target.value)}
-              className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
-            >
-              <option value="">All Types</option>
-              <option value="full-time">Full-time</option>
-              <option value="part-time">Part-time</option>
-            </select>
-          </div>
-
-          <div className="flex items-center gap-1.5">
             <ArrowUpDown size={13} className="text-gray-400" />
             <select
               value={sortBy}
@@ -691,9 +756,10 @@ export default function Faculty() {
             <button
               type="button"
               onClick={() => setViewMode('grid')}
-              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+              aria-pressed={viewMode === 'grid'}
+              className={`selection-indicator p-2 rounded-lg transition-all duration-200 cursor-pointer ${
                 viewMode === 'grid'
-                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                  ? 'shadow-sm font-bold'
                   : 'text-gray-500 hover:text-gray-800'
               }`}
               title="Grid View"
@@ -703,9 +769,10 @@ export default function Faculty() {
             <button
               type="button"
               onClick={() => setViewMode('list')}
-              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+              aria-pressed={viewMode === 'list'}
+              className={`selection-indicator p-2 rounded-lg transition-all duration-200 cursor-pointer ${
                 viewMode === 'list'
-                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                  ? 'shadow-sm font-bold'
                   : 'text-gray-500 hover:text-gray-800'
               }`}
               title="List View"
@@ -717,6 +784,7 @@ export default function Faculty() {
           {canManageFaculty && (
             <button
               id="instructors-add-button"
+              type="button"
               onClick={() => {
                 setIsEditMode(false);
                 setEditingId(null);
@@ -724,16 +792,18 @@ export default function Faculty() {
                 setLastName('');
                 setMiddleName('');
                 setSuffix('');
+                setHonorificPrefix('');
+                setCredentials('');
+                setAffixErrors({});
                 setEmploymentType('full-time');
                 setMaxUnits(21);
                 setOverloadUnits(0);
                 setDeloadUnits(0);
-                setDepartmentId(isVpaa ? '' : (user?.department_id?.toString() || ''));
+                setDepartmentId('');
                 setProgramId('');
                 setDesignationIds([]);
                 setStatus('active');
                 setProfilePicture(null);
-
                 setFirstNameError('');
                 setLastNameError('');
                 setMaxUnitsError('');
@@ -742,7 +812,7 @@ export default function Faculty() {
               }}
               className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer ml-auto whitespace-nowrap"
             >
-              <Plus size={15} />
+              <Plus size={15} aria-hidden="true" />
               <span>Add Instructor</span>
             </button>
           )}
@@ -773,7 +843,7 @@ export default function Faculty() {
           ) : sortedFaculties.length === 0 ? (
             <div className="col-span-full py-16 text-center text-gray-400 border border-dashed border-gray-200 rounded-2xl bg-white">
               <p className="text-base font-semibold font-sans">No instructors found.</p>
-              <p className="text-xs font-sans">Try adjusting search parameters or add a new record.</p>
+              <p className="text-xs font-sans">Try adjusting search parameters.</p>
             </div>
           ) : (
             paginatedFaculties.map((f) => {
@@ -1041,56 +1111,54 @@ export default function Faculty() {
         />
       )}
 
-      {isModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200 font-sans">
-          <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
-            <div className="p-5 flex shrink-0 justify-between items-center bg-[#4e0a10]">
-              <h2 className="text-lg font-bold text-white font-display">
-                {isEditMode ? 'Edit Instructor' : 'Add New Instructor'}
-              </h2>
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <form id="instructor-form" onSubmit={handleSubmit} noValidate className="p-6 min-h-0 flex-1 overflow-y-auto font-sans">
+      {isModalOpen && (
+        <Modal
+          isOpen
+          onClose={() => setIsModalOpen(false)}
+          title={isEditMode ? 'Edit Instructor' : 'Add New Instructor'}
+          description={isEditMode ? 'Update the instructor profile, designations, and teaching load.' : 'Set the instructor profile, designations, and teaching load.'}
+          size="lg"
+          closeOnOverlayClick={false}
+          closeOnEscape={!isSubmitting}
+          footer={<>
+            <ModalButton onClick={() => setIsModalOpen(false)} disabled={isSubmitting}>Cancel</ModalButton>
+            <ModalButton type="submit" form="instructor-form" variant="primary" loading={isSubmitting}>
+              {isEditMode ? 'Save Changes' : 'Add Instructor'}
+            </ModalButton>
+          </>}
+        >
+            <form id="instructor-form" onSubmit={handleSubmit} noValidate className={modalBody}>
               {liveInstructorDuplicate && (
-                <div className="mb-4 flex items-center gap-2.5 p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-700 animate-in fade-in">
-                  <AlertTriangle size={16} className="shrink-0 text-red-600" />
-                  <span>
-                    Duplicate detected: An instructor named &ldquo;{liveInstructorDuplicate.first_name} {liveInstructorDuplicate.last_name}&rdquo; already exists{liveInstructorDuplicate.department_id && departments.find((d) => d.id === liveInstructorDuplicate.department_id) ? ` in ${departments.find((d) => d.id === liveInstructorDuplicate.department_id)?.department_name}` : ''}.
-                  </span>
-                </div>
+                <ModalNotice tone="error">
+                  Duplicate detected: An instructor named &ldquo;{liveInstructorDuplicate.first_name} {liveInstructorDuplicate.last_name}&rdquo; already exists{liveInstructorDuplicate.department_id && departments.find((d) => d.id === liveInstructorDuplicate.department_id) ? ` in ${departments.find((d) => d.id === liveInstructorDuplicate.department_id)?.department_name}` : ''}.
+                </ModalNotice>
               )}
 
-              <div className="flex items-center gap-4 pb-4 mb-4 border-b border-gray-200/80">
-                <div className="relative group shrink-0">
-                  <div
+              <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-3">
+                <div className="relative shrink-0">
+                  <button
+                    type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-16 h-16 rounded-full border-2 border-dashed border-gray-300 hover:border-[#5A1220] bg-white shadow-sm overflow-hidden flex items-center justify-center transition-all cursor-pointer relative"
+                    className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-slate-300 bg-white transition-colors hover:border-[#4e0a10] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] focus-visible:ring-offset-2 cursor-pointer"
                     title="Click to upload picture"
+                    aria-label={profilePicture ? 'Change profile photo' : 'Upload profile photo'}
                   >
                     {profilePicture ? (
-                      <img src={profilePicture} alt="Instructor Preview" className="w-full h-full object-cover" />
+                      <img src={profilePicture} alt="Instructor Preview" className="h-full w-full object-cover" />
                     ) : (
-                      <div className="flex flex-col items-center justify-center text-gray-400 hover:text-[#5A1220] transition-colors">
-                        <Camera size={20} />
-                      </div>
+                      <Camera size={20} className="text-slate-400" />
                     )}
-                  </div>
+                  </button>
                   {profilePicture && (
                     <button
                       type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
+                      onClick={() => {
                         setProfilePicture(null);
                         if (fileInputRef.current) fileInputRef.current.value = '';
                       }}
-                      className="absolute -top-1 -right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-md transition-transform hover:scale-110 cursor-pointer"
+                      className="absolute -right-1 -top-1 rounded-full bg-red-500 p-1 text-white shadow-md hover:bg-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-2 cursor-pointer"
                       title="Remove Photo"
+                      aria-label="Remove photo"
                     >
                       <X size={12} />
                     </button>
@@ -1104,17 +1172,17 @@ export default function Faculty() {
                   className="hidden"
                 />
                 <div className="min-w-0">
-                  <p className="text-xs font-bold uppercase tracking-wider text-gray-500 font-sans">Profile Photo</p>
-                  <p className="text-[11px] text-gray-500 font-sans">
+                  <p className="text-sm font-semibold text-slate-800">Profile Photo</p>
+                  <p className="mt-0.5 text-xs leading-5 text-slate-500">
                     {profilePicture ? 'Click the photo to change it.' : 'Optional. Click the circle to upload.'}
                   </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4">
+              <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">
                 <div className="sm:col-span-2 grid grid-cols-2 gap-4 sm:grid-cols-[1fr_1fr_4.5rem_6.5rem]">
                   <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                    <label className={modalLabel}>
                       Last Name <span className="text-red-500">*</span>
                     </label>
                     <input
@@ -1125,20 +1193,17 @@ export default function Faculty() {
                         setLastNameError('');
                       }}
                       placeholder="Doe"
-                      className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${lastNameError || liveInstructorDuplicate
-                          ? 'border-red-500 focus:ring-red-500'
-                          : 'border-gray-200 focus:ring-[#C9952A]'
-                        }`}
+                      className={modalControl(Boolean(lastNameError || liveInstructorDuplicate))}
                     />
                     {(lastNameError || liveInstructorDuplicate) && (
-                      <p className="text-xs text-red-500 mt-1 font-semibold font-sans">
+                      <p className={modalError}>
                         {lastNameError || `Duplicate: "${liveInstructorDuplicate?.first_name} ${liveInstructorDuplicate?.last_name}" is already registered.`}
                       </p>
                     )}
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                    <label className={modalLabel}>
                       First Name <span className="text-red-500">*</span>
                     </label>
                     <input
@@ -1149,16 +1214,13 @@ export default function Faculty() {
                         setFirstNameError('');
                       }}
                       placeholder="John"
-                      className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${firstNameError || liveInstructorDuplicate
-                          ? 'border-red-500 focus:ring-red-500'
-                          : 'border-gray-200 focus:ring-[#C9952A]'
-                        }`}
+                      className={modalControl(Boolean(firstNameError || liveInstructorDuplicate))}
                     />
-                    {firstNameError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{firstNameError}</p>}
+                    {firstNameError && <p className={modalError}>{firstNameError}</p>}
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                    <label className={modalLabel}>
                       M.I.
                     </label>
                     <input
@@ -1167,18 +1229,18 @@ export default function Faculty() {
                       value={middleName.charAt(0)}
                       onChange={(e) => setMiddleName(e.target.value.toUpperCase())}
                       placeholder="S"
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white text-center uppercase font-sans"
+                      className={`${modalControl()} text-center uppercase`}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                    <label className={modalLabel}>
                       Suffix
                     </label>
                     <select
                       value={suffix}
                       onChange={(e) => setSuffix(e.target.value)}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
+                      className={modalControl()}
                     >
                       <option value="">None</option>
                       {NAME_SUFFIXES.map((option) => <option key={option} value={option}>{option}</option>)}
@@ -1186,8 +1248,48 @@ export default function Faculty() {
                   </div>
                 </div>
 
+                <div className="sm:col-span-2 grid grid-cols-1 gap-4 sm:grid-cols-[8rem_1fr]">
+                  <div>
+                    <label htmlFor="faculty-honorific-prefix" className={modalLabel}>
+                      Title
+                    </label>
+                    <select
+                      id="faculty-honorific-prefix"
+                      value={honorificPrefix}
+                      onChange={(e) => {
+                        setHonorificPrefix(e.target.value);
+                        setAffixErrors((prev) => ({ ...prev, honorific_prefix: undefined }));
+                      }}
+                      className={modalControl(Boolean(affixErrors.honorific_prefix))}
+                    >
+                      <option value="">None</option>
+                      {titleOptions(nameOptions.honorific_prefixes, honorificPrefix).map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select>
+                    {affixErrors.honorific_prefix && <p className={modalError}>{affixErrors.honorific_prefix}</p>}
+                  </div>
+
+                  <div>
+                    <label htmlFor="faculty-credentials" className={modalLabel}>
+                      Credentials / Degrees
+                    </label>
+                    <input
+                      id="faculty-credentials"
+                      type="text"
+                      maxLength={CREDENTIALS_MAX_LENGTH}
+                      value={credentials}
+                      onChange={(e) => {
+                        setCredentials(e.target.value);
+                        setAffixErrors((prev) => ({ ...prev, credentials: undefined }));
+                      }}
+                      placeholder="e.g. PhD, EdD"
+                      className={modalControl(Boolean(affixErrors.credentials))}
+                    />
+                    {affixErrors.credentials && <p className={modalError}>{affixErrors.credentials}</p>}
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                  <label className={modalLabel}>
                   Designations
                 </label>
                 <DesignationPicker
@@ -1201,21 +1303,27 @@ export default function Faculty() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                  <label className={modalLabel}>
                     Employment Type <span className="text-red-500">*</span>
                   </label>
                   <select
                     value={employmentType}
                     onChange={(e) => setEmploymentType(e.target.value as 'full-time' | 'part-time')}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
+                    className={modalControl()}
                   >
                     <option value="full-time">Full-Time</option>
                     <option value="part-time">Part-Time</option>
                   </select>
+                  {defaultAvailability?.[employmentType]?.length ? (
+                    <p className="mt-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold leading-5 text-slate-700">
+                      <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-500">Default availability (applied automatically)</span>
+                      {summarizeWeek(defaultAvailability[employmentType] ?? [])}
+                    </p>
+                  ) : null}
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                  <label className={modalLabel}>
                     {employmentType === 'full-time' ? 'Full-Time' : 'Part-Time'} Basic Load (Units) <span className="text-red-500">*</span>
                   </label>
                   <NumberInput
@@ -1225,17 +1333,15 @@ export default function Faculty() {
                       setMaxUnitsError('');
                     }}
                     min="0"
-                    className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${maxUnitsError
-                        ? 'border-red-500 focus:ring-red-500'
-                        : 'border-gray-200 focus:ring-[#C9952A]'
-                      }`}
+                    className={modalControl(Boolean(maxUnitsError))}
                   />
-                  {maxUnitsError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{maxUnitsError}</p>}
-                  <p className="text-[10px] text-gray-500 mt-1 font-semibold font-sans">The units this instructor is expected to carry each semester.</p>
+                  {maxUnitsError
+                    ? <p className={modalError}>{maxUnitsError}</p>
+                    : <p className={modalHint}>The units this instructor is expected to carry each semester.</p>}
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                  <label className={modalLabel}>
                     Overload (Units)
                   </label>
                   <NumberInput
@@ -1243,15 +1349,15 @@ export default function Faculty() {
                     onChange={(e) => setOverloadUnits(Number(e.target.value))}
                     min="0"
                     placeholder="0"
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
+                    className={modalControl()}
                   />
-                  <p className="text-[10px] text-gray-500 mt-1 font-semibold font-sans">Optional. Units granted on top of the basic load.</p>
+                  <p className={modalHint}>Optional. Units granted on top of the basic load.</p>
                 </div>
 
-                <div className="sm:col-span-2 rounded-xl border border-gray-200 bg-white px-4 py-3">
-                  <div className="flex items-center justify-between gap-3 text-xs font-bold text-gray-500 font-sans">
-                    <span className="uppercase tracking-wider">Load Preview</span>
-                    <span className="text-gray-700">{previewLoad.assignedUnits} / {Math.max(0, maxUnits - previewLoad.deloadUnits) + overloadUnits} units</span>
+                <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                  <div className="flex items-center justify-between gap-3 text-[11px] font-bold text-slate-500">
+                    <span className="uppercase tracking-wide">Load Preview</span>
+                    <span className="text-sm tabular-nums text-slate-800">{previewLoad.assignedUnits} / {Math.max(0, maxUnits - previewLoad.deloadUnits) + overloadUnits} units</span>
                   </div>
                   <SegmentedLoadBar
                     className="mt-2"
@@ -1264,7 +1370,7 @@ export default function Faculty() {
                 </div>
                 {isVpaa ? (
                   <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                    <label className={modalLabel}>
                       Assigned Department <span className="text-red-500">*</span>
                     </label>
                     <select
@@ -1274,10 +1380,7 @@ export default function Faculty() {
                         setDepartmentError('');
                         setProgramId('');
                       }}
-                      className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all font-sans ${departmentError
-                          ? 'border-red-500 focus:ring-red-500'
-                          : 'border-gray-200 focus:ring-[#C9952A]'
-                        }`}
+                      className={modalControl(Boolean(departmentError))}
                     >
                       <option value="">Select Department</option>
                       {departments.map(dept => (
@@ -1286,11 +1389,11 @@ export default function Faculty() {
                         </option>
                       ))}
                     </select>
-                    {departmentError && <p className="text-xs text-red-500 mt-1 font-semibold font-sans">{departmentError}</p>}
+                    {departmentError && <p className={modalError}>{departmentError}</p>}
                   </div>
                 ) : (
                   <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                    <label className={modalLabel}>
                       Department
                     </label>
                     <input
@@ -1301,7 +1404,7 @@ export default function Faculty() {
                           ? `${departments.find(d => d.id === user?.department_id)?.department_code} - ${departments.find(d => d.id === user?.department_id)?.department_name}`
                           : 'No Department Assigned'
                       }
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-gray-500 text-sm outline-none cursor-not-allowed font-sans"
+                      className={modalControl()}
                     />
                   </div>
                 )}
@@ -1309,73 +1412,56 @@ export default function Faculty() {
                 {!isVpaa && (
                   <>
                     <div>
-                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                      <label className={modalLabel}>
                         Deload Units
                       </label>
                       <NumberInput
                         value={deloadUnits}
                         onChange={(e) => setDeloadUnits(Number(e.target.value))}
                         min="0"
-                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
+                        className={modalControl()}
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                      <label className={modalLabel}>
                         Overload Units
                       </label>
                       <NumberInput
                         value={overloadUnits}
                         onChange={(e) => setOverloadUnits(Number(e.target.value))}
                         min="0"
-                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
+                        className={modalControl()}
                       />
                     </div>
                   </>
                 )}
 
                 <div className={isVpaa ? '' : 'sm:col-span-2'}>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5 font-sans">
+                  <label className={modalLabel}>
                     Program / Major
                   </label>
                   <select
-                    value={programId}
+                    value={effectiveProgramId}
                     onChange={(e) => setProgramId(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white font-sans"
+                    disabled={Boolean(singleFormProgram)}
+                    className={modalControl()}
                   >
-                    <option value="">Not program-specific</option>
+                    {!singleFormProgram && <option value="">No Specific Program</option>}
                     {formPrograms.map(program => (
                       <option key={program.id} value={program.id.toString()}>
                         {programLabel(program)}
                       </option>
                     ))}
                   </select>
-                  <p className="text-[10px] text-gray-500 mt-1 font-semibold font-sans">
-                    Major subjects tied to a program can only be assigned to instructors of that program.
+                  <p className={modalHint}>
+                    {singleFormProgram
+                      ? 'Selected automatically. This is the only program in the department.'
+                      : 'Major subjects tied to a program can only be assigned to instructors of that program. With No Specific Program, the instructor can teach the department\'s other subjects.'}
                   </p>
                 </div>
               </div>
             </form>
-            <div className="flex shrink-0 justify-end gap-3 border-t border-gray-200/80 bg-gray-50/50 px-6 py-4 font-sans">
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="px-4 py-2.5 border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-700 font-semibold text-sm transition-all cursor-pointer font-sans"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                form="instructor-form"
-                disabled={isSubmitting}
-                className="bg-[#4e0a10] hover:bg-[#C9952A] text-white px-5 py-2.5 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:opacity-50 font-sans"
-              >
-                {isSubmitting && <LoadingSpinner size={16} className="animate-spin" />}
-                <span>{isEditMode ? 'Save Changes' : 'Add Instructor'}</span>
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
+        </Modal>
       )}
 
       {loadEditorFaculty && (
@@ -1403,5 +1489,5 @@ export default function Faculty() {
     </div>
   );
 }
-import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import FilterBar from '../../components/ui/FilterBar';
+import { isDepartmentOfficeRole } from '../../lib/roles';

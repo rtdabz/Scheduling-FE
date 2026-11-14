@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
 import CourseCategoryBadge from '../CourseCategoryBadge';
 import { TERM_LABELS, YEAR_LABELS } from '../../../lib/curriculumImport/normalize';
 import type { ResolvedRow } from '../../../lib/curriculumImport/types';
+import { TABLE_GROUP_ROW, TABLE_HEAD, TABLE_HEAD_ROW, TABLE_ROW } from '../../ui/tableStyles';
+import Badge from '../../ui/Badge';
+import SearchInput from '../../ui/SearchInput';
 
 type RecordFilter = 'all' | 'create' | 'reuse';
 
@@ -39,24 +41,22 @@ export default function ImportCoursesTable({ rows }: { rows: ResolvedRow[] }) {
   return (
     <div className="rounded-xl border border-border bg-white">
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2.5">
-        <label className="relative min-w-[12rem] flex-1">
-          <span className="sr-only">Search courses</span>
-          <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" aria-hidden="true" />
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search code or title"
-            className="h-9 w-full rounded-lg border border-border bg-white pl-8 pr-3 text-[13px] text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-        </label>
+        <SearchInput
+          compact
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search code or title"
+          aria-label="Search courses"
+          containerClassName="relative min-w-[12rem] flex-1"
+        />
         <div className="flex gap-1.5" role="group" aria-label="Filter by course record">
           {(['all', 'create', 'reuse'] as RecordFilter[]).map((option) => {
             const active = filter === option;
             return (
-              <button key={option} type="button" aria-pressed={active} onClick={() => setFilter(option)} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${active ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text hover:border-primary/50'}`}>
+              <button key={option} type="button" aria-pressed={active} onClick={() => setFilter(option)} className={`selection-indicator inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${active ? '' : 'border-border bg-white text-text hover:border-primary/50'}`}>
                 {FILTER_LABELS[option]}
-                <span className={`tabular-nums ${active ? 'text-white/80' : 'text-muted'}`}>{counts[option]}</span>
+                <span className="selection-indicator-count rounded-full px-1.5 tabular-nums">{counts[option]}</span>
               </button>
             );
           })}
@@ -68,8 +68,8 @@ export default function ImportCoursesTable({ rows }: { rows: ResolvedRow[] }) {
       ) : (
         <div className="max-h-[28rem] overflow-y-auto">
           <table className="w-full text-left text-[13px]" aria-label="Courses in this import">
-            <thead className="sticky top-0 z-10 bg-white max-sm:sr-only">
-              <tr className="border-b border-border text-[11px] font-bold uppercase tracking-wide text-muted">
+            <thead className={`sticky top-0 z-10 max-sm:sr-only ${TABLE_HEAD}`}>
+              <tr className={TABLE_HEAD_ROW}>
                 <th scope="col" className="px-3 py-2">Code</th>
                 <th scope="col" className="py-2 pr-3">Title</th>
                 <th scope="col" className="py-2 pr-3 text-center">Units</th>
@@ -80,7 +80,7 @@ export default function ImportCoursesTable({ rows }: { rows: ResolvedRow[] }) {
             {groups.map((group) => (
               <tbody key={`${group.year}-${group.term}`}>
                 <tr>
-                  <th scope="rowgroup" colSpan={5} className="bg-parchment/70 px-3 py-1.5 text-xs font-bold text-text">
+                  <th scope="rowgroup" colSpan={5} className={`px-3 py-1.5 text-left ${TABLE_GROUP_ROW}`}>
                     {YEAR_LABELS[group.year]}, {TERM_LABELS[group.term]}
                     <span className="ml-2 font-semibold tabular-nums text-muted">
                       {group.rows.length} {group.rows.length === 1 ? 'course' : 'courses'} · {group.rows.reduce((sum, row) => sum + row.total_credits, 0)} units
@@ -92,7 +92,7 @@ export default function ImportCoursesTable({ rows }: { rows: ResolvedRow[] }) {
                   const course = row.catalog.course;
                   const inactive = reused && course?.status !== 'active';
                   return (
-                    <tr key={row.row_id} className="border-b border-border/70 last:border-b-0">
+                    <tr key={row.row_id} className={TABLE_ROW}>
                       <th scope="row" className="whitespace-nowrap px-3 py-2 font-semibold text-text">{reused ? catalogText(course?.code, row.code) : row.code}</th>
                       <td className="py-2 pr-3 text-text">{reused ? catalogText(course?.title, row.title) : row.title}</td>
                       <td className="whitespace-nowrap py-2 pr-3 text-center tabular-nums text-text" aria-label={`${row.lecture_units} lecture, ${row.lab_units} laboratory, ${row.total_credits} total units`}>
@@ -100,9 +100,9 @@ export default function ImportCoursesTable({ rows }: { rows: ResolvedRow[] }) {
                       </td>
                       <td className="py-2 pr-3 text-text">{row.category ? <CourseCategoryBadge category={row.category} /> : '—'}</td>
                       <td className="py-2 pr-3">
-                        <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ${reused ? 'bg-white text-primary ring-primary/30' : row.catalog.action === 'create' ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-red-50 text-red-800 ring-red-200'}`}>
+                        <Badge tone={reused ? 'brand' : row.catalog.action === 'create' ? 'success' : 'danger'}>
                           {reused ? 'Reused' : row.catalog.action === 'create' ? 'New' : 'Conflict'}
-                        </span>
+                        </Badge>
                         {inactive && <span className="mt-0.5 block text-[11px] text-muted">Inactive, stays inactive</span>}
                       </td>
                     </tr>

@@ -42,8 +42,9 @@ import { curriculumService } from '../../services/curriculum/curriculumService';
 import { printCurriculum } from '../../lib/curriculumPrintable';
 import { useToast } from '../../context/ToastContext';
 import { canAuthorCurriculum } from '../../lib/curriculumAccess';
-import { hasStoredCapability } from '../../lib/storedUser';
+import { getStoredUserDepartmentId, hasStoredCapability } from '../../lib/storedUser';
 import CurriculumReviewPage from './CurriculumReviewPage';
+import { isDepartmentOfficeRole } from '../../lib/roles';
 
 const GRID_PAGE_SIZE = 9;
 
@@ -70,6 +71,7 @@ function CurriculumManagePage() {
     curriculumList,
     rawCurriculumList,
     isLoading,
+    loadError,
     userRole,
     canManageCurriculum,
     statusFilter,
@@ -189,6 +191,7 @@ function CurriculumManagePage() {
       },
       {
         accessorKey: 'effective_school_year',
+        meta: { hideBelow: 'md' },
         header: 'Effective Year',
         cell: (info) => (
           <span className="text-gray-700 font-semibold text-xs">
@@ -198,6 +201,7 @@ function CurriculumManagePage() {
       },
       {
         accessorKey: 'courses_count',
+        meta: { hideBelow: 'sm' },
         header: 'Courses',
         cell: (info) => (
           <span className="bg-gray-100 text-gray-800 px-2.5 py-1 rounded-full text-xs font-bold">
@@ -336,8 +340,8 @@ function CurriculumManagePage() {
     getPaginationRowModel: getPaginationRowModel(),
   });
 
-  // Secretaries add curricula through Import only; manual creation and search are hidden for them.
-  const isSecretary = userRole === 'secretary';
+  // The department office (Secretary or Director) adds curricula through Import only; manual creation and search are hidden for it.
+  const isDepartmentOffice = isDepartmentOfficeRole(userRole);
 
   const statusCounts = useMemo(() => ({
     active: rawCurriculumList.filter((item) => item.status === 'active').length,
@@ -350,22 +354,36 @@ function CurriculumManagePage() {
     setGridPage(1);
   };
 
-  const curriculumGuideSteps = useMemo(() => isSecretary ? [
-    { element: '#curriculum-import-button', action: 'click' as const, taskHint: 'Click Import to open the curriculum import page.', title: 'Import a curriculum', description: 'New curricula are added by importing a PDF, CSV, XLSX, or DOCX file.', side: 'bottom' as const },
-  ] : [
-    { element: '#curriculum-create-button', action: 'click' as const, taskHint: 'Click Create Curriculum to open the form.', title: 'Start a curriculum', description: 'New curricula begin from this page. Open the form to see every field.', side: 'bottom' as const },
-    { element: '#curriculum-name-input', action: 'input' as const, taskHint: 'Type a curriculum name to continue.', title: 'Name the curriculum', description: 'Use the official program name and curriculum year.', side: 'bottom' as const },
-    { element: '#curriculum-code-input', action: 'input' as const, taskHint: 'Type a curriculum code to continue.', title: 'Give it a code', description: 'The code appears on lists, cards, and printouts.', side: 'bottom' as const },
-    { element: '#curriculum-program-select', action: 'select' as const, skipIfMissing: true, taskHint: 'Choose the program you want to manage.', title: 'Select a program', description: 'Pick the program this curriculum is for, if your department has several.', side: 'bottom' as const },
-    { element: '#curriculum-form', action: 'submit' as const, taskHint: 'Click Create Curriculum to save it.', title: 'Save the curriculum', description: 'Submit the form to create it. Great work — that is the whole flow.', side: 'top' as const },
-  ], [isSecretary]);
-  useWorkflowGuide({ id: 'curriculum', isReady: true, steps: curriculumGuideSteps, mission: isSecretary ? 'Import a Curriculum' : 'Create a Curriculum' });
+  useWorkflowGuide({
+    id: 'curriculum', isReady: !isLoading, mission: 'Manage Curricula',
+    variant: isFormModalOpen ? (isEditMode ? 'edit' : 'create') : viewCurriculumId !== null ? 'preview' : isArchiveOpen ? 'archive' : loadError ? 'unavailable' : isDepartmentOffice ? 'import' : 'manage',
+    steps: () => {
+      const formSteps = [
+        { id: 'name', element: '#curriculum-name-input', title: 'Use the official curriculum name', description: 'The curriculum name is required. Review the fields without changing them if you are only learning the workflow.' },
+        { id: 'code', element: '#curriculum-code-input', title: 'Enter the CMO number', description: 'CMO No. is required and appears as the curriculum code in lists and printouts.' },
+        { id: 'effective-year', element: '#curriculum-effective-year', title: 'Set the effective school year', description: 'Both years are required. Enter a four-digit starting year; the ending year must be the next year. The form fills the ending year when a complete starting year is entered.' },
+        ...(userRole !== 'program_head' && programs.some((program) => program.department_id === (isFormModalOpen && isEditMode ? editingCurriculum?.department_id ?? getStoredUserDepartmentId() : getStoredUserDepartmentId())) ? [{ id: 'program', element: '#curriculum-program-select', title: 'Check the program', description: 'Choose the applicable program or major. This field is optional in this form; Program Heads use their existing program scope.' }] : []),
+        { id: 'save', element: '#curriculum-save', title: 'Save through the normal form', description: 'Create Curriculum or Save Changes validates the fields and sends them to the server. Errors leave the form available for correction. Finishing help does not save a curriculum; use Cancel to leave the form without saving.' },
+      ];
+      if (isFormModalOpen) return formSteps;
+      if (viewCurriculumId !== null) return [{ id: 'preview', element: '#curriculum-detail-preview', title: 'Review the curriculum document', description: 'The preview prepares the selected curriculum document. Wait for it to load; any preparation error appears here. Close returns to the list. Reviewing or closing the preview does not change the curriculum.' }];
+      if (isArchiveOpen) return [{ id: 'archive', element: '#curriculum-archive-dialog', title: 'Review archived curricula', description: 'Search archived curricula here. Restore, when your access allows it, saves a status change back to Deactivated. Finishing this guide does not restore or activate a curriculum.' }];
+      if (loadError) return [{ id: 'unavailable', element: '#curriculum-list', title: 'Curricula could not be refreshed', description: 'The list may be missing or outdated. Reload this page to retry before relying on its status or editing a curriculum.' }];
+      return [
+        { id: 'browse', element: '#curriculum-list', title: curriculumList.length ? 'Review existing curricula' : 'No curricula match', description: curriculumList.length ? 'Review the current List or Grid results and open View to inspect courses. Status, search and other filters affect these results.' : 'Clear the current filters or search to look for existing curricula. Import or creation is available only with management access.' },
+        ...(!canManageCurriculum ? [] : isDepartmentOffice ? [{ id: 'import', element: '#curriculum-import-button', title: 'Import on the next page', description: 'Import opens a separate page for PDF, CSV, XLSX or DOCX files. Finish this guide before opening it, then review and confirm the parsed curriculum there. Opening that page does not import or save a file.' }] : [
+          { id: 'open-form', element: '#curriculum-create-button', action: 'click' as const, isSatisfied: () => document.querySelector('#curriculum-form') !== null, taskHint: 'Open Create Curriculum to review the required fields.', title: 'Review the creation form', description: 'Opening the form does not save a curriculum.' },
+          ...formSteps,
+        ]),
+      ];
+    },
+  });
 
   return (
     <div className="w-full">
       <div id="curriculum-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md mb-6 font-sans flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 min-w-[18rem]">
-          {isSecretary && (
+          {isDepartmentOffice && (
             <CurriculumStatusTabs
               id="curriculum-status-tabs"
               className="flex flex-wrap gap-2"
@@ -376,7 +394,7 @@ function CurriculumManagePage() {
             />
           )}
 
-          {!isSecretary && (
+          {!isDepartmentOffice && (
             <SearchInput
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -384,7 +402,7 @@ function CurriculumManagePage() {
             />
           )}
 
-          {!isSecretary && (
+          {!isDepartmentOffice && (
           <div className="flex items-center gap-1.5">
             <Filter size={13} className="text-gray-400" />
             <select
@@ -403,18 +421,22 @@ function CurriculumManagePage() {
         <div className="flex flex-wrap items-center gap-2 shrink-0">
           <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1">
             <button
+              type="button"
+              aria-pressed={viewMode === 'grid'}
               onClick={() => setViewMode('grid')}
-              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
-                viewMode === 'grid' ? 'bg-[#5A1220] text-white shadow-sm font-bold' : 'text-gray-500 hover:text-gray-800'
+              className={`selection-indicator p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+                viewMode === 'grid' ? 'shadow-sm font-bold' : 'text-gray-500 hover:text-gray-800'
               }`}
               title="Grid View"
             >
               <LayoutGrid size={15} />
             </button>
             <button
+              type="button"
+              aria-pressed={viewMode === 'list'}
               onClick={() => setViewMode('list')}
-              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
-                viewMode === 'list' ? 'bg-[#5A1220] text-white shadow-sm font-bold' : 'text-gray-500 hover:text-gray-800'
+              className={`selection-indicator p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+                viewMode === 'list' ? 'shadow-sm font-bold' : 'text-gray-500 hover:text-gray-800'
               }`}
               title="List View"
             >
@@ -447,7 +469,7 @@ function CurriculumManagePage() {
                   <span>Import</span>
                 </button>
               )}
-              {!isSecretary && (
+              {!isDepartmentOffice && (
                 <button
                   id="curriculum-create-button"
                   onClick={() => {
@@ -494,6 +516,7 @@ function CurriculumManagePage() {
           variant="card"
           totalLabel="curricula"
           ariaLabel="Curriculum"
+          onRowClick={(item) => setViewCurriculumId(item.id)}
           scrollClassName="overflow-x-auto"
           cellClassName={() => 'whitespace-nowrap'}
           emptyState={

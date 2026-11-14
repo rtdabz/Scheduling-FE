@@ -50,6 +50,7 @@ function HybridModalHarness({
   setDropContext = () => undefined,
   splitEnabled = false,
   secondMeetingMode = "on-site",
+  firstMeetingMode = "on-site",
   firstMeetingRoomId = "lecture-room",
   run = null,
   requiredDay,
@@ -67,6 +68,7 @@ function HybridModalHarness({
   /** Start with Split Session on: two 1.5h meetings sharing one start time. */
   splitEnabled?: boolean;
   secondMeetingMode?: DeliveryMode;
+  firstMeetingMode?: DeliveryMode;
   firstMeetingRoomId?: string;
   /** The course's Consecutive Days rule for this section. */
   run?: ConsecutivePlacement | null;
@@ -76,7 +78,7 @@ function HybridModalHarness({
 }) {
   const [modalValidationError, setModalValidationError] = useState(initialValidationError);
   const [modalRoomId, setModalRoomId] = useState(firstMeetingRoomId);
-  const [modalClassMode, setModalClassModeState] = useState<DeliveryMode>("on-site");
+  const [modalClassMode, setModalClassModeState] = useState<DeliveryMode>(firstMeetingMode);
   const [modalDay2RoomId, setModalDay2RoomId] = useState(secondMeetingMode === "online" ? "online" : "lab-room");
   const [modalDay2ClassMode, setModalDay2ClassMode] = useState<DeliveryMode>(secondMeetingMode);
   const [modalIsHybrid, setModalIsHybrid] = useState(false);
@@ -115,7 +117,6 @@ function HybridModalHarness({
       selectedSectionId="1"
       dropContext={rescheduling ? EDIT_CONTEXT : DROP_CONTEXT}
       dropSubject={lectureOnly ? LECTURE_COURSE : LAB_COURSE}
-      dropSubjectIsField={false}
       modalRoomId={modalRoomId}
       setModalRoomId={setModalRoomId}
       modalClassMode={modalClassMode}
@@ -194,6 +195,21 @@ const mockRecommendationApi = (slots: unknown[] = [], rooms: unknown[] = [], ser
 };
 
 describe("DropModal Integrated configuration", () => {
+  it("removes Field mode for laboratory courses", () => {
+    render(<HybridModalHarness />);
+    expect(screen.queryByRole("button", { name: "Field" })).toBeNull();
+  });
+
+  it("retains Field mode for courses without laboratory requirements", () => {
+    render(<HybridModalHarness lectureOnly />);
+    expect(screen.getByRole("button", { name: "Field" })).toBeDefined();
+  });
+
+  it("reopens an old Field laboratory meeting as on-site laboratory placement", async () => {
+    render(<HybridModalHarness rescheduling firstMeetingMode="field" firstMeetingRoomId="field" />);
+    await waitFor(() => expect((screen.getByLabelText("Meeting room") as HTMLSelectElement).value).toBe("lab-room"));
+    expect(screen.queryByRole("button", { name: "Field" })).toBeNull();
+  });
   beforeEach(() => {
     vi.mocked(api.post).mockReset();
     mockRecommendationApi();
@@ -211,7 +227,7 @@ describe("DropModal Integrated configuration", () => {
 
   afterEach(cleanup);
 
-  it("keeps Thursday as the laboratory day and adds the online lecture separately", () => {
+  it("keeps Thursday as the laboratory day and adds the on-site lecture separately", () => {
     render(<HybridModalHarness />);
 
     expect(screen.queryByRole("heading", { name: "Laboratory Meeting" })).toBeNull();
@@ -226,23 +242,25 @@ describe("DropModal Integrated configuration", () => {
     expect(lectureCard).toBeTruthy();
     expect(screen.getByRole("radio", { name: /Integrated/i }).getAttribute("aria-checked")).toBe("true");
     expect((laboratoryCard?.querySelector('[aria-label="First meeting day"]') as HTMLSelectElement).value).toBe("3");
-    expect((lectureCard?.querySelector('input[readonly]') as HTMLInputElement).value).toBe("Online");
+    // The lecture meets on-site in a lecture room; online stays an explicit choice.
+    expect((lectureCard?.querySelector('[aria-label="Lecture Meeting room"]') as HTMLSelectElement).value).toBe("lecture-room");
     const laboratoryOnlineButton = Array.from(laboratoryCard?.querySelectorAll("button") ?? [])
       .find((button) => button.textContent?.includes("Online"));
     const lectureOnlineButton = Array.from(lectureCard?.querySelectorAll("button") ?? [])
       .find((button) => button.textContent?.includes("Online"));
     expect(laboratoryOnlineButton?.disabled).toBe(true);
-    expect(lectureOnlineButton?.disabled).toBe(false);
+    expect(lectureOnlineButton?.disabled).toBe(true);
+    // An online lecture is still available to a major as the explicit Hybrid delivery.
+    const delivery = screen.getByRole("combobox", { name: /Delivery mode/i }) as HTMLSelectElement;
+    expect(Array.from(delivery.options).some((option) => option.value === "hybrid")).toBe(true);
   });
 
-  it("keeps both Integrated meetings on site when the delivery is On-Site", () => {
+  it("keeps both Integrated meetings on site by default", () => {
     render(<HybridModalHarness />);
 
     fireEvent.click(screen.getByRole("radio", { name: /Integrated/i }));
     const delivery = screen.getByRole("combobox", { name: /Delivery mode/i }) as HTMLSelectElement;
-    expect(delivery.value).toBe("hybrid");
-
-    fireEvent.change(delivery, { target: { value: "onsite" } });
+    expect(delivery.value).toBe("onsite");
 
     const lectureCard = screen.getByRole("heading", { name: "Lecture Meeting" }).parentElement;
     const roomSelect = lectureCard?.querySelector('[aria-label="Lecture Meeting room"]') as HTMLSelectElement;
@@ -649,7 +667,7 @@ describe("DropModal manual placement support", () => {
 
       // Only start slot 0 is free on Thursday *and* Friday. Slot 4 is Thursday
       // only and slot 8 Friday only, so neither can hold a shared-time pair.
-      await waitFor(() => expect(panel.getAllByText("F2F | Online")).toHaveLength(1));
+      await waitFor(() => expect(panel.getAllByText("Face-to-face | Online")).toHaveLength(1));
       expect(panel.getByText("7 AM – 8:30 AM")).toBeTruthy();
 
       // The room filter means nothing for a pair whose rooms come from its

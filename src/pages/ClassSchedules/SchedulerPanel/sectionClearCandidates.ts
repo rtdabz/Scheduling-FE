@@ -1,7 +1,7 @@
+import { resetBlockReason } from "../../../lib/scheduleReset";
 import type { ScheduleItem, Section, SectionDoneCandidate } from "./types";
 
-const CLEARABLE_STATUSES: ScheduleItem["status"][] = ["draft", "completed", "revision"];
-
+/** Matches the server: Reset deletes sections whose loaded meetings are all editable, including returns. */
 export function buildSectionClearCandidates(
   sections: Section[], schedules: ScheduleItem[], departmentId: number | null, semesterId: number | null,
 ): SectionDoneCandidate[] {
@@ -16,14 +16,14 @@ export function buildSectionClearCandidates(
     .filter((section) => Number(section.departmentId) === Number(departmentId) && Number(section.semesterId) === Number(semesterId))
     .map((section) => {
       const rows = rowsBySection.get(section.id) ?? [];
-      const isLocked = rows.some((row) => !CLEARABLE_STATUSES.includes(row.status));
+      const lockReason = resetBlockReason(rows.map((row) => row.status));
       const classCount = new Set(rows.map((row) => row.courseId || row.subjectId || row.courseCode)).size;
       return {
         sectionId: section.id, sectionName: section.name, yearLevel: section.yearLevel,
         requiredSubjects: classCount, plottedSubjects: classCount,
         scheduleIds: rows.map((row) => Number(row.id)).filter((id) => Number.isFinite(id) && id > 0),
-        isReady: rows.length > 0 && !isLocked,
-        blockedReason: isLocked ? "Locked for approval or instructor assignment" : rows.length === 0 ? "No loaded meetings to clear" : "",
+        isReady: rows.length > 0 && lockReason === null,
+        blockedReason: lockReason ?? (rows.length === 0 ? "No schedules to reset" : ""),
       };
     })
     .sort((a, b) => a.yearLevel - b.yearLevel || a.sectionName.localeCompare(b.sectionName));

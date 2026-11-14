@@ -15,6 +15,7 @@ interface PrintScheduleProps {
   activeSemester: Semester | null;
   printAllSections?: boolean;
   signatories?: ScheduleSignatories | null;
+  historicalDocument?: boolean;
 }
 
 export default function PrintSchedule({
@@ -28,6 +29,7 @@ export default function PrintSchedule({
   activeSemester,
   printAllSections = false,
   signatories = null,
+  historicalDocument = false,
 }: PrintScheduleProps) {
   const { toast } = useToast();
   useEffect(() => {
@@ -42,6 +44,7 @@ export default function PrintSchedule({
         activeSemester,
         printAllSections,
         signatories,
+        historicalDocument,
       };
       void buildSchedulePdf(input).then(async (blob) => {
         await preview.show(blob, getSchedulePdfFilename(input));

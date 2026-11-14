@@ -25,6 +25,8 @@ interface Props {
   busy: boolean;
   onApply?: (recommendation: GenerationRecommendation) => void;
   onReviewConstraints?: (sectionId: number | null) => void;
+  /** Rendered inside a host that already shows the heading and frame: no heading, no outer border. */
+  embedded?: boolean;
 }
 
 export default function RecommendationList({
@@ -35,6 +37,7 @@ export default function RecommendationList({
   busy,
   onApply,
   onReviewConstraints,
+  embedded = false,
 }: Props) {
   const { groups, manual, resolved } = useMemo(
     () => groupRecommendations(recommendations, attempts, bottleneck),
@@ -53,14 +56,16 @@ export default function RecommendationList({
   if (groups.length === 0 && manual.length === 0 && resolved.length === 0) return null;
 
   return (
-    <div>
+    <div className={embedded ? "px-3 py-2" : undefined}>
       {groups.length > 0 && (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-slate-500">
-              {heading}
-              <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] text-slate-700">{groups.length}</span>
-            </p>
+          <div className={`flex flex-wrap items-center justify-between gap-2 ${embedded ? "empty:hidden" : ""}`}>
+            {!embedded && (
+              <p className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-slate-500">
+                {heading}
+                <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] text-slate-700">{groups.length}</span>
+              </p>
+            )}
             {onApply && groups.length > 1 && !requiresIndividualApply && (
               <button
                 type="button"
@@ -74,11 +79,11 @@ export default function RecommendationList({
           </div>
 
           {requiresIndividualApply && <p className="mt-2 text-xs text-slate-600">Apply one session alternative and generate again before combining adjustments.</p>}
-          <ul className="mt-1.5 divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white">
+          <ul className={embedded ? "divide-y divide-slate-100" : "mt-1.5 divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white"}>
             {groups.map((group) => {
               const selected = selectedOption(group.key, group.options);
               return (
-                <li key={group.key} className="px-3 py-2.5">
+                <li key={group.key} className={embedded ? "py-2" : "px-3 py-2.5"}>
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-sm font-black text-slate-950">{group.target}</p>
@@ -111,9 +116,9 @@ export default function RecommendationList({
                             role="radio"
                             aria-checked={active}
                             onClick={() => setChosen((current) => ({ ...current, [group.key]: option.recommendation.id }))}
-                            className={`rounded-full px-2.5 py-1 text-[11px] font-black transition ${
+                            className={`selection-indicator rounded-full px-2.5 py-1 text-[11px] font-black transition ${
                               active
-                                ? "bg-[#4e0a10] text-white"
+                                ? ""
                                 : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                             }`}
                           >

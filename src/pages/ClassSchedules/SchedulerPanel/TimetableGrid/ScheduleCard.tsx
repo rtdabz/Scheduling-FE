@@ -136,8 +136,9 @@ const ScheduleCard = memo(function ScheduleCard({
       onDragStart={(e) => !isPhase2Active && onDragStart(e, schedule)}
       onDragEnd={onDragEnd}
       onClick={isInteractive ? () => onCardClick(schedule.id) : undefined}
-      className={`w-full rounded-xl border-2 border-l-4 box-border relative transition-all duration-150 motion-reduce:transition-none motion-reduce:hover:scale-100 group overflow-visible ${
-        slotHeight ? "" : "h-full"
+      className={`rounded-lg border border-l-[3px] box-border relative transition-all duration-150 motion-reduce:transition-none motion-reduce:hover:scale-100 group overflow-visible ${
+        // Grid blocks stretch to their time span; the inset separates back-to-back classes without moving them.
+        slotHeight ? "w-full" : "mx-[3px] my-px min-w-0"
       } ${paddingClasses} ${gridStyles.container} ${
         isDraggingThis ? "opacity-60 scale-95 rotate-1 cursor-grabbing" : "opacity-100"
       } ${
@@ -152,7 +153,7 @@ const ScheduleCard = memo(function ScheduleCard({
           : isReadOnlyViewer
           ? "cursor-default"
           : "cursor-not-allowed"
-      } ${isMoving ? "ring-4 ring-blue-500 ring-offset-1 z-40" : ""} ${currentStatus === "finalized" && !isFinalizedFacultyEditing ? "cursor-default" : ""}`}
+      } ${isMoving ? "ring-2 ring-[#4e0a10] ring-offset-1 z-40" : ""} ${currentStatus === "finalized" && !isFinalizedFacultyEditing ? "cursor-default" : ""}`}
       style={{
         gridColumn: schedule.dayIndex + 2,
         gridRow: `${schedule.startSlot + 2} / span ${schedule.durationSlots}`,
@@ -191,6 +192,9 @@ const ScheduleCard = memo(function ScheduleCard({
                   ? `Remove ${subject.code} and all its linked split meetings from the timetable?`
                   : `Remove ${subject.code} from the timetable?`}
               </p>
+              <p className="text-[11px] font-medium text-amber-200">
+                It will be permanently deleted and cannot be restored. Schedule History is not changed.
+              </p>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -211,7 +215,7 @@ const ScheduleCard = memo(function ScheduleCard({
           ) : (
             <div className="space-y-2 border-t border-slate-800 pt-2">
               <p className="flex items-center gap-1.5 text-[10.5px] text-slate-400">
-                <Move className="h-3 w-3 shrink-0 text-blue-300" />
+                <Move className="h-3 w-3 shrink-0 text-[#c9952a]" />
                 Click an empty slot to move it here.
               </p>
               <div className="flex gap-2">
@@ -272,16 +276,16 @@ const ScheduleCard = memo(function ScheduleCard({
             </span>
             <div className="flex flex-wrap items-start justify-end gap-0.5 shrink-0 max-w-[58%]">
               <span
-                className={`text-[8px] rounded px-1 py-0.2 font-bold break-words whitespace-normal text-right leading-tight ${modeBadgeClass}`}
+                className={`text-[9px] rounded px-1 py-0.2 font-bold break-words whitespace-normal text-right leading-tight ${modeBadgeClass}`}
               >
                 {displayModeLabel}
               </span>
-              <span className={`text-[8.5px] px-1 rounded font-bold ${gridStyles.badgeText}`}>
+              <span className={`text-[9px] px-1 rounded font-bold ${gridStyles.badgeText}`}>
                 {subject.units} {subject.units === 1 ? "unit" : "units"}
               </span>
             </div>
           </div>
-          <div className="flex items-start justify-between text-[9.5px] text-slate-500 mt-0.5 gap-1">
+          <div className="flex items-start justify-between text-[10px] text-slate-500 mt-0.5 gap-1">
             {roomDisplayName ? (
               <span className="break-words whitespace-normal font-semibold leading-tight min-w-0"><span className="font-medium text-slate-400">Room: </span>{roomDisplayName}</span>
             ) : null}
@@ -295,7 +299,7 @@ const ScheduleCard = memo(function ScheduleCard({
         <div className="flex flex-col h-full justify-between min-w-0">
           <div className={`flex items-start justify-between min-w-0 ${isWideView ? "gap-1.5" : "gap-1"}`}>
             <span
-              className={`min-w-0 flex-1 truncate whitespace-nowrap font-black uppercase tracking-tight ${
+              className={`max-w-full shrink-0 truncate whitespace-nowrap font-black uppercase tracking-tight ${
                 isWideView ? "text-[14px]" : "text-[12px] leading-tight"
               } ${gridStyles.text}`}
               title={subject.code}
@@ -303,21 +307,21 @@ const ScheduleCard = memo(function ScheduleCard({
               {subject.code}
             </span>
             <span
-              className={`shrink-0 whitespace-nowrap rounded py-0.5 font-bold ${
-                isWideView ? "text-[10px]" : "text-[9px] text-right leading-tight"
+              className={`min-w-0 truncate whitespace-nowrap rounded py-0.5 font-bold ${
+                isWideView ? "text-[10px]" : "text-[10px] text-right leading-tight"
               } px-1 ${modeBadgeClass}`}
             >
               {displayModeLabel}
             </span>
           </div>
 
-          <div className="mt-0.5 flex min-w-0 items-start justify-between gap-1">
+          <div className="mt-0.5 flex min-w-0 flex-wrap items-start justify-between gap-x-1 gap-y-0.5">
             {roomDisplayName ? (
               <div className={`min-w-0 break-words font-semibold text-slate-600 ${isWideView ? "text-[12px]" : "text-[11px] leading-tight"}`}>
                 <span className="font-medium text-slate-400">Room: </span>{roomDisplayName}
               </div>
             ) : <span />}
-            <span className={`shrink-0 rounded px-1 py-0.5 font-bold leading-none ${isWideView ? "text-[10.5px]" : "text-[9.5px]"} ${gridStyles.badgeText}`}>
+            <span className={`shrink-0 rounded px-1 py-0.5 font-bold leading-none ${isWideView ? "text-[10.5px]" : "text-[10px]"} ${gridStyles.badgeText}`}>
               {subject.units} {subject.units === 1 ? "unit" : "units"}
             </span>
           </div>

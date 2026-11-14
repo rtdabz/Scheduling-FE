@@ -161,7 +161,7 @@ describe("PlacementAlternatives", () => {
     expect(pairs.getByText("Mon + Wed")).toBeTruthy();
     expect(pairs.getByText("IT 105 | Online")).toBeTruthy();
     expect(pairs.getByText("Split · both meetings")).toBeTruthy();
-    expect(pairs.getByText("F2F | Online")).toBeTruthy();
+    expect(pairs.getByText("Face-to-face | Online")).toBeTruthy();
   });
 
   it("recommends Online Class when no physical room fits and lets it be chosen", () => {

@@ -11,8 +11,11 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        display: ['"Playfair Display"', 'Georgia', 'serif'],
-        sans: ['"DM Sans"', 'system-ui', 'sans-serif'],
+        // The system uses one typeface (the dashboard's); `font-display` is kept so existing headings follow it.
+        display: ['"Plus Jakarta Sans"', '"DM Sans"', 'system-ui', 'sans-serif'],
+        serif: ['"Plus Jakarta Sans"', '"DM Sans"', 'system-ui', 'sans-serif'],
+        sans: ['"Plus Jakarta Sans"', '"DM Sans"', 'system-ui', 'sans-serif'],
+        jakarta: ['"Plus Jakarta Sans"', '"DM Sans"', 'system-ui', 'sans-serif'],
       },
       colors: {
         primary: {

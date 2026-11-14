@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { AlertTriangle, Plus } from "lucide-react";
+import { TIMETABLE_CELL_STATE } from "../../../../components/scheduling/timetableStyles";
 
 interface GridCellProps {
   dayIndex: number;
@@ -9,6 +10,8 @@ interface GridCellProps {
   isEditable: boolean;
   isPhase2Active: boolean;
   isPlacementMode: boolean;
+  /** The slot closes a 1 hour 30 minute time band, so its bottom line is drawn stronger. */
+  endsBand?: boolean;
   onDragOver: (e: React.DragEvent, d: number, t: number) => void;
   onDragLeave: () => void;
   onDrop: (e: React.DragEvent, d: number, t: number) => void;
@@ -23,6 +26,7 @@ const GridCell = memo(function GridCell({
   isEditable,
   isPhase2Active,
   isPlacementMode,
+  endsBand = true,
   onDragOver,
   onDragLeave,
   onDrop,
@@ -45,19 +49,19 @@ const GridCell = memo(function GridCell({
           onCellClick(dayIndex, timeIndex);
         }
       }}
-      className={`group border-r border-b border-slate-200 transition-all duration-150 relative flex items-center justify-center ${
+      data-slot-state={isHovered ? (hasConflict ? "invalid" : "target") : clickable ? "available" : undefined}
+      // Quiet day dividers; a faint line every 30 minutes and a firmer one closing each 1.5-hour band.
+      className={`group relative flex items-center justify-center border-b border-r border-r-slate-100 transition-colors duration-100 motion-reduce:transition-none ${
+        endsBand ? "border-b-slate-200" : "border-b-slate-100/80"
+      } ${
         isHovered
-          ? hasConflict
-            ? "bg-rose-100 ring-2 ring-rose-500/20 ring-inset"
-            : "bg-blue-50 ring-2 ring-blue-500/20 ring-inset"
-          : clickable
-          ? "bg-blue-50/30 cursor-pointer hover:bg-blue-100 hover:ring-2 hover:ring-blue-500/40 hover:ring-inset focus:outline-none focus:bg-blue-100 focus:ring-2 focus:ring-blue-500/50 focus:ring-inset"
-          : "bg-white"
+          ? hasConflict ? TIMETABLE_CELL_STATE.conflict : TIMETABLE_CELL_STATE.target
+          : clickable ? TIMETABLE_CELL_STATE.available : TIMETABLE_CELL_STATE.idle
       }`}
       style={{ gridColumn: dayIndex + 2, gridRow: timeIndex + 2 }}
     >
       {isHovered && (
-        <span className={`text-[11px] font-extrabold select-none pointer-events-none flex items-center gap-0.5 ${hasConflict ? "text-rose-600" : "text-blue-600"}`}>
+        <span className={`text-[11px] font-bold select-none pointer-events-none flex items-center gap-0.5 ${hasConflict ? "text-rose-700" : "text-[#8a5a12]"}`}>
           {hasConflict
             ? <><AlertTriangle className="w-3 h-3" /> Conflict</>
             : <><Plus className="w-3 h-3" /> Place</>
@@ -65,7 +69,7 @@ const GridCell = memo(function GridCell({
         </span>
       )}
       {!isHovered && clickable && (
-        <span className="opacity-0 group-hover:opacity-100 group-focus:opacity-100 text-[11px] font-extrabold text-blue-700 select-none pointer-events-none flex items-center gap-0.5 transition-opacity duration-150">
+        <span className="opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 text-[11px] font-bold text-[#8a5a12] select-none pointer-events-none flex items-center gap-0.5 transition-opacity duration-150">
           <Plus className="w-3 h-3" /> Place here
         </span>
       )}

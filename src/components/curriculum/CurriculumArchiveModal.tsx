@@ -1,10 +1,12 @@
 import { useCallback, useState, useMemo, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import type { ColumnDef } from '@tanstack/react-table';
-import { X, Search, RotateCcw, Archive, BookOpen } from 'lucide-react';
+import { RotateCcw, Archive, BookOpen } from 'lucide-react';
+import Modal from '../ui/Modal';
+import { ModalButton, ModalState } from '../ui/ModalForm';
 import DataTable from '../ui/DataTable';
 import { useDataTable } from '../ui/useDataTable';
 import type { Curriculum } from '../../types/curriculum';
+import SearchInput from '../ui/SearchInput';
 
 interface CurriculumArchiveModalProps {
   isOpen: boolean;
@@ -94,75 +96,39 @@ export default function CurriculumArchiveModal({
     getRowId: (item) => String(item.id),
   });
 
-  if (!isOpen) return null;
+  return (
+    <Modal
+      id="curriculum-archive-dialog"
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Archived Curriculum"
+      description="View and restore previously archived curricula."
+      icon={<Archive size={18} />}
+      size="lg"
+      bodyClassName="flex flex-col px-4 py-4 sm:px-5 sm:py-5"
+      footer={<ModalButton onClick={onClose}>Close</ModalButton>}
+    >
+      <SearchInput
+        compact
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        placeholder="Search archived curriculum name or code..."
+        aria-label="Search archived curricula"
+        containerClassName="relative mb-3 shrink-0 sm:max-w-sm"
+      />
 
-  return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 animate-in fade-in duration-200">
-      <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)] animate-in zoom-in-95 duration-200">
-        <div className="bg-[#4e0a10] px-6 py-4 flex items-center justify-between text-white shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#C9952A]/20 border border-[#C9952A]/30 flex items-center justify-center text-[#C9952A]">
-              <Archive size={20} />
-            </div>
-            <div>
-              <h2 className="text-base font-extrabold tracking-wide uppercase">Archived Curriculum</h2>
-              <p className="text-xs text-gray-300 mt-0.5">
-                View and restore previously archived curriculum frameworks.
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-gray-300 hover:text-white transition-colors cursor-pointer"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-6 flex flex-col min-h-0">
-          <div className="relative mb-4 shrink-0">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search archived curriculum name or code..."
-              className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#C9952A] bg-white shadow-sm"
-            />
-          </div>
-
-          <div className="flex-1 overflow-y-auto min-h-0 border border-gray-100 rounded-xl bg-gray-50/20">
-            <DataTable
-              table={table}
-              variant="embedded"
-              ariaLabel="Archived curriculum"
-              emptyState={
-                <div className="py-2">
-                  <BookOpen size={44} className="mx-auto text-gray-300 mb-3" />
-                  <p className="text-sm font-bold text-gray-700 mb-1">No archived curriculum found</p>
-                  <p className="text-xs text-gray-500 max-w-xs mx-auto">
-                    {searchQuery ? 'Try searching for a different semester or keyword.' : 'Curriculum records that you archive will appear here.'}
-                  </p>
-                </div>
-              }
-            />
-
-          </div>
-        </div>
-
-        <div className="bg-gray-50 px-6 py-4 border-t border-gray-100 flex justify-end shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-5 py-2 border border-gray-200 text-gray-600 hover:bg-gray-100 text-xs font-bold rounded-xl transition-colors cursor-pointer shadow-sm"
-          >
-            Close
-          </button>
-        </div>
+      <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+        <DataTable
+          table={table}
+          variant="embedded"
+          ariaLabel="Archived curriculum"
+          emptyState={
+            <ModalState title="No archived curriculum found" icon={<BookOpen size={36} />}>
+              {searchQuery ? 'Try a different curriculum name or code.' : 'Curriculum records that you archive will appear here.'}
+            </ModalState>
+          }
+        />
       </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }

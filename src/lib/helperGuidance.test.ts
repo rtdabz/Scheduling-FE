@@ -15,6 +15,13 @@ describe("getHelperReply", () => {
     expect(reply.action?.path).toBe("/secretary/schedule-management");
   });
 
+  it("guides a director to its own schedule workspace", () => {
+    const reply = getHelperReply("What should I do next?", context({ role: "director", route: "/director/dashboard", draftCount: 1 }));
+    expect(reply.action?.path).toBe("/director/schedule-management");
+    const approved = getHelperReply("What should I do next?", context({ role: "director", scheduleStatus: "approved" }));
+    expect(approved.action?.path).toBe("/director/schedule-management");
+  });
+
   it("guides a program head to the correct role route", () => {
     const reply = getHelperReply("Help with a conflict", context({ role: "program_head" }));
     expect(reply.action?.path).toBe("/program_head/schedule-management");

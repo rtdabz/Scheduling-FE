@@ -86,6 +86,14 @@ const mapApiCourse = (s: ApiCourse): Course => ({
   created_at: s.created_at
 });
 
+const YEAR_FILTERS = [
+  { value: 'all', label: 'All' },
+  { value: '1', label: '1st Year' },
+  { value: '2', label: '2nd Year' },
+  { value: '3', label: '3rd Year' },
+  { value: '4', label: '4th Year' },
+];
+
 export default function CourseManager() {
   const { toast } = useToast();
   const user = getStoredUser();
@@ -98,6 +106,7 @@ export default function CourseManager() {
   const [isLoading, setIsLoading] = useState(() => {
     return !hasCachedData(coursesCacheKey);
   });
+  const [loadError, setLoadError] = useState(false);
 
 
   const [globalFilter, setGlobalFilter] = useState('');
@@ -156,7 +165,9 @@ export default function CourseManager() {
         };
       }, true);
       setCourses(data.courses);
+      setLoadError(false);
     } catch {
+      setLoadError(true);
       toast.error('Error', 'Failed to load courses data.');
     } finally {
       setIsLoading(false);
@@ -169,6 +180,7 @@ export default function CourseManager() {
         {
           accessorKey: 'course_code',
           header: 'Code',
+          size: 130,
           cell: info => (
             <span className="bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-full text-xs font-mono font-bold uppercase border border-[#C9952A]/20">
               {info.getValue() as string}
@@ -178,11 +190,16 @@ export default function CourseManager() {
         {
           accessorKey: 'course_name',
           header: 'Course Name',
-          cell: info => <span className="font-bold text-gray-800">{info.getValue() as string}</span>
+          size: 320,
+          cell: info => {
+            const name = info.getValue() as string;
+            return <span className="block font-bold text-gray-800 break-words">{name}</span>;
+          }
         },
         {
           accessorKey: 'course_category',
           header: 'Category',
+          size: 110,
           cell: info => {
             const raw = (info.getValue() as string) || '';
             const val = raw.toLowerCase() === 'major' ? 'major' : 'minor';
@@ -192,6 +209,7 @@ export default function CourseManager() {
         {
           accessorKey: 'units',
           header: 'Units',
+          size: 90,
           cell: info => {
             const val = info.getValue() as number;
             return <span className="font-bold text-gray-700 text-xs">{val} {val === 1 ? 'unit' : 'units'}</span>;
@@ -200,12 +218,14 @@ export default function CourseManager() {
         {
           id: 'hours',
           header: 'Lec / Lab',
+          size: 100,
           accessorFn: row => `${row.lecture_hours} / ${row.lab_hours}`,
-          cell: info => <span className="text-gray-600 font-medium text-xs">{info.getValue() as string} hrs</span>
+          cell: info => <span className="text-gray-600 font-medium text-xs">{info.getValue() as string}</span>
         },
         {
           accessorKey: 'year_level',
           header: 'Year Level',
+          size: 100,
           cell: info => {
             const val = (info.getValue() as string) || '';
             return <span className="font-bold text-gray-700 text-xs">{val}</span>;
@@ -214,6 +234,7 @@ export default function CourseManager() {
         {
           accessorKey: 'semester',
           header: 'Semester',
+          size: 100,
           cell: info => {
             const val = (info.getValue() as string) || '';
             return <span className="font-bold text-gray-700 text-xs capitalize">{val}</span>;
@@ -223,6 +244,7 @@ export default function CourseManager() {
         {
           accessorKey: 'department',
           header: 'Department',
+          size: 120,
           cell: info => {
             const dept = info.getValue() as Department | null;
             return (
@@ -257,38 +279,47 @@ export default function CourseManager() {
     getPaginationRowModel: getPaginationRowModel()
   });
 
-  const courseGuideSteps = useMemo(() => [
-    { element: '#course-list-filters input[type="text"]', action: 'input' as const, taskHint: 'Type in the search box to continue.', title: 'Find a course', description: 'Search by code or name. Filter by year, category, or semester.', side: 'bottom' as const },
-    { element: '#course-list-table', title: 'Check course details', description: 'Review units, category, semester, and department.', side: 'top' as const },
-  ], []);
-  useWorkflowGuide({ id: 'course-list', isReady: true, steps: courseGuideSteps, mission: 'Manage Courses' });
+  useWorkflowGuide({
+    id: 'course-list', isReady: !isLoading, mission: 'Browse Courses',
+    variant: loadError ? 'unavailable' : courses.length ? 'browse' : 'empty',
+    steps: () => loadError ? [{ id: 'unavailable', element: '#course-list-table', title: 'Courses could not be refreshed', description: 'The course list may be missing or outdated. Reload the page to retry before relying on these details.' }] : [
+      { id: 'find', element: '#course-list-search', title: 'Find a course', description: 'Search by code or name, then filter by year, category or semester. Searching is optional; you can review help without changing the current results.' },
+      { id: 'details', element: '#course-list-table', title: 'Review course details', description: courses.length ? 'Review units, category, semester and department. If no rows match, clear the search and filters. This page shows existing course records.' : 'There are no course records to browse yet. Courses must be added through curriculum management before they appear here.' },
+    ],
+  });
 
   return (
     <div className="w-full">
       <FilterBar id="course-list-filters" className="mb-6">
-        <SearchInput
-          value={globalFilter}
-          onChange={(e) => setGlobalFilter(e.target.value)}
-          placeholder="Search course code, name, etc..."
-        />
+        <div className="flex min-w-0 flex-wrap items-center gap-3 lg:flex-nowrap">
+          <SearchInput
+            id="course-list-search"
+            value={globalFilter}
+            onChange={(e) => setGlobalFilter(e.target.value)}
+            placeholder="Search course code, name, etc..."
+            containerClassName="relative min-w-[200px] flex-1 lg:w-72 lg:flex-none"
+          />
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5" role="group" aria-label="Year level">
+            {YEAR_FILTERS.map(({ value, label }) => {
+              const count = value === 'all' ? courses.length : courses.filter((course) => course.year_level?.toString() === value).length;
+              const selected = yearLevelFilter === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setYearLevelFilter(value)}
+                  aria-pressed={selected}
+                  className={`selection-indicator flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${selected ? '' : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:text-[#5A1220]'}`}
+                >
+                  {label}
+                  <span className="selection-indicator-count rounded-full px-1.5 text-[10px] tabular-nums">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1.5">
-            <Filter size={13} className="text-gray-400" />
-            <select
-              value={yearLevelFilter}
-              onChange={(e) => setYearLevelFilter(e.target.value)}
-              title="Filter by Year Level"
-              className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
-            >
-              <option value="all">All Year Levels</option>
-              <option value="1">1st Year</option>
-              <option value="2">2nd Year</option>
-              <option value="3">3rd Year</option>
-              <option value="4">4th Year</option>
-            </select>
-          </div>
-
           <div className="flex items-center gap-1.5">
             <Filter size={13} className="text-gray-400" />
             <select
@@ -330,7 +361,8 @@ export default function CourseManager() {
           emptyTitle="No courses found in the active curriculum."
           emptyDescription="Ensure an active curriculum is set with assigned courses."
           scrollClassName="overflow-x-auto"
-          cellClassName={() => 'whitespace-nowrap'}
+          tableClassName="table-fixed min-w-[1070px]"
+          cellClassName={(columnId) => columnId === 'course_name' ? 'whitespace-normal' : 'whitespace-nowrap overflow-hidden'}
         />
       </div>
     </div>

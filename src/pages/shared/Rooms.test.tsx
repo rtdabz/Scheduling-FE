@@ -31,8 +31,10 @@ vi.mock('../../hooks/useLiveRefresh', () => ({ useLiveRevision: () => 0 }));
 vi.mock('../../lib/liveUpdates', () => ({ publishLiveTopics: vi.fn() }));
 
 import Rooms from './Rooms';
-import { clearDataCache } from '../../lib/dataCache';
+import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
+import { clearDataCache, setCachedData } from '../../lib/dataCache';
 import { publishLiveTopics } from '../../lib/liveUpdates';
+import { getPhilippineNowParts } from '../../lib/philippineTime';
 
 afterEach(() => {
   cleanup();
@@ -96,6 +98,58 @@ describe('Rooms component', () => {
     expect(await screen.findByRole('button', { name: 'Lecture' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Laboratory' })).toBeDefined();
     expect(await screen.findByText('Main Bldg')).toBeDefined();
+  });
+
+  it.each(['dean', 'vpaa'])('uses only published classes for %s Facilities occupancy and both room views', async (role) => {
+    const departmentId = role === 'dean' ? 1 : null;
+    sessionStorage.setItem('user', JSON.stringify({ id: 1, role, department_id: departmentId }));
+    setCachedData(`page:rooms:${role}:${departmentId ?? 'all'}:all`, { rooms: [], departments: [], schedules: [] });
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const todayIndex = getPhilippineNowParts().weekdayIndex;
+    const publishedDay = days[(todayIndex + 1) % days.length];
+    const meeting = (id: number, status: string, day: string) => ({
+      id, status, day, semester_id: 1, department_id: 1, room_id: 1, section_id: 1, course_id: id, faculty_id: null,
+      start_time: status === 'draft' ? '00:00' : '08:00', end_time: status === 'draft' ? '23:59' : '09:00', mode: 'on-site',
+      section: { id: 1, section_name: 'IT-1A' },
+      course: { id, course_code: status === 'draft' ? 'DRAFT101' : 'APPROVED101', course_name: 'Test class' },
+    });
+    get.mockImplementation((url: string) => Promise.resolve({ data: url === '/initial-data' ? {
+      rooms: [{ id: 1, room_code: 'LAB-101', building: 'Main Bldg', room_type: 'laboratory', status: 'available', department_id: 1 }],
+      departments: [{ id: 1, department_name: 'CCS', department_code: 'CCS' }],
+      active_semester: { id: 1 },
+      schedules: [meeting(1, 'draft', days[todayIndex]), meeting(2, 'approved', publishedDay)],
+    } : [] }));
+    render(<MemoryRouter><Rooms /></MemoryRouter>);
+    fireEvent.click(await screen.findByText('Main Bldg'));
+    expect(get).toHaveBeenCalledWith('/initial-data', {
+      params: { include: 'rooms,departments,schedules', view: 'published', schedule_limit: 2000 },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Grid View' }));
+    expect(screen.getByText('Vacant')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'View details of LAB-101' }));
+    const dialog = screen.getByRole('dialog', { name: 'Classroom Details' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'List View' }));
+    expect(within(dialog).getByText('No classes scheduled')).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: new RegExp(publishedDay) }));
+    expect(within(dialog).getByText(/APPROVED101/)).toBeTruthy();
+    expect(within(dialog).queryByText(/DRAFT101/)).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Grid View' }));
+    expect(within(dialog).getAllByText(/APPROVED101/).length).toBeGreaterThan(0);
+    expect(within(dialog).queryByText(/DRAFT101/)).toBeNull();
+  });
+
+  it('starts building help from the current room list instead of requiring another building', async () => {
+    render(<MemoryRouter><Rooms /></MemoryRouter>);
+    await screen.findByText('Main Bldg');
+    fireEvent.click(screen.getByRole('button', { name: 'Grid View' }));
+    fireEvent.keyDown(screen.getByRole('button', { name: /Main Bldg/ }), { key: 'Enter' });
+    const guide = vi.mocked(useWorkflowGuide).mock.calls.at(-1)![0];
+    const steps = typeof guide.steps === 'function' ? guide.steps() : guide.steps;
+    expect(guide.isReady).toBe(true);
+    expect(steps.some((step) => step.element === '[data-tour="building-card"]')).toBe(false);
+    steps.forEach((step) => expect(document.querySelector(step.element)).toBeTruthy());
+    expect(post).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
   });
 
   const editAsVpaa = async () => {

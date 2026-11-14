@@ -6,13 +6,11 @@ import AutoAssignModal from './SchedulerPanel/Modals/AutoAssignModal';
 import { useScheduler } from './SchedulerPanel/hooks/useScheduler';
 import { INSTRUCTOR_ASSIGNABLE_STATUSES } from './SchedulerPanel/types';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
-import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 
 export default function CrossDepartmentAssignments() {
   const scheduler = useScheduler();
   const [isOpen, setIsOpen] = useState(false);
   const [isUpdatingDone, setIsUpdatingDone] = useState(false);
-  const [isAssignmentWorkspaceReady, setIsAssignmentWorkspaceReady] = useState(false);
   const [completionOverride, setCompletionOverride] = useState<boolean | null>(null);
   const [assignmentRefreshToken, setAssignmentRefreshToken] = useState(0);
   const [workspaceState, setWorkspaceState] = useState<InstructorAssignmentWorkspaceState>({
@@ -48,12 +46,6 @@ export default function CrossDepartmentAssignments() {
     [scheduler.schedules, scheduler.subjects, scheduler.userDepartmentId, scheduler.userProgramId],
   );
   const assignmentDone = completionOverride ?? workspaceState.assignmentDone;
-  const crossDepartmentGuideSteps = useMemo(() => [
-    { element: '[data-tour="department-card"]', waitFor: '#instructor-assignment-departments', action: 'click' as const, skipIfMissing: true, taskHint: 'Click a department card to continue.', title: 'Choose a source department', description: 'Open the department that owns the course.', side: 'top' as const },
-    { element: '#assignment-status-filter', action: 'select' as const, skipIfMissing: true, taskHint: 'Choose "Needs instructor" to continue.', title: 'Show only what is left', description: 'Narrow the list to classes that still have nobody assigned.', side: 'bottom' as const },
-    { element: "#instructor-assignment-worklist select[id^='worklist-faculty-']:not([disabled])", waitFor: '#instructor-assignment-worklist', skipIfMissing: true, title: 'Assign an instructor', description: 'Pick an eligible instructor straight from the row — it saves as you choose.', side: 'top' as const },
-  ], []);
-  useWorkflowGuide({ id: 'cross-department-assignment', isReady: !scheduler.isLoading && isAssignmentWorkspaceReady, steps: crossDepartmentGuideSteps, mission: 'Cover Delegated Courses' });
   const allAssigned = workspaceState.allAssigned;
   const visibleDelegatedSchedules = useMemo(
     () => delegatedSchedules.filter((schedule) => workspaceState.scheduleIds.includes(Number(schedule.id))),
@@ -76,7 +68,6 @@ export default function CrossDepartmentAssignments() {
     }
     setWorkspaceState(state);
   }, []);
-  const handleWorkflowReady = useCallback(() => setIsAssignmentWorkspaceReady(true), []);
   const handleAutoAssign = useCallback(async (assignments: { scheduleIds: string[]; facultyId: string }[]) => {
     if (assignmentDone || assignments.some((assignment) => assignment.scheduleIds.some(
       (id) => !editableDelegatedSchedules.some((schedule) => schedule.id === id),
@@ -112,8 +103,8 @@ export default function CrossDepartmentAssignments() {
       <InstructorAssignment
         refreshToken={assignmentRefreshToken}
         scrollableTimetable={false}
-        workflowGuideId={null}
-        onWorkflowReady={handleWorkflowReady}
+        workflowGuideId="cross-department-assignment"
+        workflowGuideReady={!scheduler.isLoading}
         assignmentLocked={assignmentDone}
         onWorkspaceStateChange={handleWorkspaceStateChange}
         headerActions={(

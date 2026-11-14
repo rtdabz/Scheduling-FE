@@ -1,0 +1,1612 @@
+{
+  "generatedAt": "2026-11-08T22:13:56.598Z",
+  "appUrl": "http://127.0.0.1:5173",
+  "apiUrl": "http://127.0.0.1:8000/api",
+  "summary": {
+    "passed": 30,
+    "failed": 0
+  },
+  "results": [
+    {
+      "name": "rooms-list",
+      "guide": "rooms",
+      "role": "secretary",
+      "route": "/secretary/facilities",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "room-type",
+          "action": "complete",
+          "bounds": {
+            "x": 234,
+            "y": 266,
+            "width": 360,
+            "height": 246
+          }
+        },
+        {
+          "stepId": "open-building",
+          "action": "click",
+          "bounds": {
+            "x": 684,
+            "y": 406,
+            "width": 360,
+            "height": 284
+          },
+          "focusHit": {
+            "tag": "TR",
+            "tour": "building-card",
+            "id": "",
+            "x": 305,
+            "y": 313,
+            "width": 1118,
+            "height": 57,
+            "hitTag": "TD",
+            "hitClass": "break-words px-4 py-3 align-middle [&_.rounded-full]:whitespace-nowrap text-xs font-semibold text-gray-700 text-left whitespace-nowrap text-emerald-600  ",
+            "receivesClick": true
+          }
+        },
+        {
+          "stepId": "room-list",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 12,
+            "width": 360,
+            "height": 334
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "rooms-grid",
+      "guide": "rooms",
+      "role": "secretary",
+      "route": "/secretary/facilities",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "room-type",
+          "action": "complete",
+          "bounds": {
+            "x": 234,
+            "y": 266,
+            "width": 360,
+            "height": 246
+          }
+        },
+        {
+          "stepId": "open-building",
+          "action": "click",
+          "bounds": {
+            "x": 303,
+            "y": 509,
+            "width": 360,
+            "height": 284
+          },
+          "focusHit": {
+            "tag": "DIV",
+            "tour": "building-card",
+            "id": "",
+            "x": 304,
+            "y": 268,
+            "width": 357,
+            "height": 205,
+            "hitTag": "H3",
+            "hitClass": "text-base font-bold text-gray-800 font-sans leading-tight",
+            "receivesClick": true
+          }
+        },
+        {
+          "stepId": "room-list",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 12,
+            "width": 360,
+            "height": 334
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "rooms-open-building",
+      "guide": "rooms",
+      "role": "secretary",
+      "route": "/secretary/facilities",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "room-type",
+          "action": "complete",
+          "bounds": {
+            "x": 234,
+            "y": 266,
+            "width": 360,
+            "height": 246
+          }
+        },
+        {
+          "stepId": "room-list",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 12,
+            "width": 360,
+            "height": 334
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "rooms-empty-fixture",
+      "guide": "rooms",
+      "role": "secretary",
+      "route": "/secretary/facilities",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "browser-only response fixture: rooms-empty",
+      "steps": [
+        {
+          "stepId": "room-type",
+          "action": "complete",
+          "bounds": {
+            "x": 234,
+            "y": 266,
+            "width": 360,
+            "height": 246
+          }
+        },
+        {
+          "stepId": "room-list",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 474,
+            "width": 360,
+            "height": 334
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "rooms-mobile-320",
+      "guide": "rooms",
+      "role": "secretary",
+      "route": "/secretary/facilities",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "room-type",
+          "action": "complete",
+          "bounds": {
+            "x": 12,
+            "y": 243,
+            "width": 296,
+            "height": 313
+          }
+        },
+        {
+          "stepId": "open-building",
+          "action": "click",
+          "bounds": {
+            "x": 12,
+            "y": 89,
+            "width": 296,
+            "height": 299
+          },
+          "focusHit": {
+            "tag": "TR",
+            "tour": "building-card",
+            "id": "",
+            "x": 17,
+            "y": 424,
+            "width": 473,
+            "height": 57,
+            "hitTag": "TD",
+            "hitClass": "break-words px-4 py-3 align-middle [&_.rounded-full]:whitespace-nowrap text-xs font-semibold text-gray-700 text-left whitespace-nowrap text-emerald-600  ",
+            "receivesClick": true
+          }
+        },
+        {
+          "stepId": "room-list",
+          "action": "complete",
+          "bounds": {
+            "x": 12,
+            "y": 12,
+            "width": 296,
+            "height": 355
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "instructors-list",
+      "guide": "instructors",
+      "role": "secretary",
+      "route": "/secretary/instructors",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "find",
+          "action": "complete",
+          "bounds": {
+            "x": 333,
+            "y": 268,
+            "width": 360,
+            "height": 267
+          }
+        },
+        {
+          "stepId": "open-details",
+          "action": "click",
+          "bounds": {
+            "x": 1068,
+            "y": 390,
+            "width": 360,
+            "height": 299
+          },
+          "focusHit": {
+            "tag": "BUTTON",
+            "tour": "view-details",
+            "id": "",
+            "x": 1337,
+            "y": 322,
+            "width": 32,
+            "height": 32,
+            "hitTag": "svg",
+            "hitClass": null,
+            "receivesClick": true
+          }
+        },
+        {
+          "stepId": "details",
+          "action": "complete",
+          "bounds": {
+            "x": 540,
+            "y": 575,
+            "width": 360,
+            "height": 313
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "instructors-grid",
+      "guide": "instructors",
+      "role": "secretary",
+      "route": "/secretary/instructors",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "find",
+          "action": "complete",
+          "bounds": {
+            "x": 333,
+            "y": 171,
+            "width": 360,
+            "height": 267
+          }
+        },
+        {
+          "stepId": "open-details",
+          "action": "click",
+          "bounds": {
+            "x": 185,
+            "y": 215,
+            "width": 360,
+            "height": 299
+          },
+          "focusHit": {
+            "tag": "BUTTON",
+            "tour": "view-details",
+            "id": "",
+            "x": 329,
+            "y": 550,
+            "width": 72,
+            "height": 16,
+            "hitTag": "BUTTON",
+            "hitClass": "text-xs font-bold text-[#5A1220] hover:text-[#410b15] hover:underline cursor-pointer",
+            "receivesClick": true
+          }
+        },
+        {
+          "stepId": "details",
+          "action": "complete",
+          "bounds": {
+            "x": 540,
+            "y": 575,
+            "width": 360,
+            "height": 313
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "instructors-filtered-empty",
+      "guide": "instructors",
+      "role": "secretary",
+      "route": "/secretary/instructors",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "find",
+          "action": "complete",
+          "bounds": {
+            "x": 333,
+            "y": 268,
+            "width": 360,
+            "height": 267
+          }
+        },
+        {
+          "stepId": "empty",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 499,
+            "width": 360,
+            "height": 313
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "instructors-open-details",
+      "guide": "instructors",
+      "role": "secretary",
+      "route": "/secretary/instructors",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "details",
+          "action": "complete",
+          "bounds": {
+            "x": 540,
+            "y": 621,
+            "width": 360,
+            "height": 267
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "sections-create",
+      "guide": "sections",
+      "role": "secretary",
+      "route": "/secretary/sections",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "browse",
+          "action": "complete",
+          "bounds": {
+            "x": 412,
+            "y": 263,
+            "width": 360,
+            "height": 267
+          }
+        },
+        {
+          "stepId": "open-form",
+          "action": "click",
+          "bounds": {
+            "x": 1068,
+            "y": 212,
+            "width": 360,
+            "height": 284
+          },
+          "focusHit": {
+            "tag": "BUTTON",
+            "tour": null,
+            "id": "sections-add-button",
+            "x": 1274,
+            "y": 140,
+            "width": 133,
+            "height": 36,
+            "hitTag": "SPAN",
+            "hitClass": "",
+            "receivesClick": true
+          }
+        },
+        {
+          "stepId": "program",
+          "action": "complete",
+          "bounds": {
+            "x": 540,
+            "y": 425,
+            "width": 360,
+            "height": 313
+          }
+        },
+        {
+          "stepId": "name",
+          "action": "complete",
+          "bounds": {
+            "x": 442,
+            "y": 115,
+            "width": 360,
+            "height": 334
+          }
+        },
+        {
+          "stepId": "year",
+          "action": "complete",
+          "bounds": {
+            "x": 695,
+            "y": 560,
+            "width": 360,
+            "height": 313
+          }
+        },
+        {
+          "stepId": "save",
+          "action": "complete",
+          "bounds": {
+            "x": 792,
+            "y": 242,
+            "width": 360,
+            "height": 334
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "sections-read-only",
+      "guide": "sections",
+      "role": "dean",
+      "route": "/dean/sections",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "browse",
+          "action": "complete",
+          "bounds": {
+            "x": 412,
+            "y": 263,
+            "width": 360,
+            "height": 267
+          }
+        },
+        {
+          "stepId": "read-only",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 12,
+            "width": 360,
+            "height": 313
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "sections-open-form",
+      "guide": "sections",
+      "role": "secretary",
+      "route": "/secretary/sections",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "program",
+          "action": "complete",
+          "bounds": {
+            "x": 540,
+            "y": 425,
+            "width": 360,
+            "height": 267
+          }
+        },
+        {
+          "stepId": "name",
+          "action": "complete",
+          "bounds": {
+            "x": 442,
+            "y": 115,
+            "width": 360,
+            "height": 334
+          }
+        },
+        {
+          "stepId": "year",
+          "action": "complete",
+          "bounds": {
+            "x": 695,
+            "y": 560,
+            "width": 360,
+            "height": 313
+          }
+        },
+        {
+          "stepId": "save",
+          "action": "complete",
+          "bounds": {
+            "x": 792,
+            "y": 242,
+            "width": 360,
+            "height": 334
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "sections-mobile-390",
+      "guide": "sections",
+      "role": "secretary",
+      "route": "/secretary/sections",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "browse",
+          "action": "complete",
+          "bounds": {
+            "x": 15,
+            "y": 205,
+            "width": 360,
+            "height": 267
+          }
+        },
+        {
+          "stepId": "open-form",
+          "action": "click",
+          "bounds": {
+            "x": 18,
+            "y": 165,
+            "width": 360,
+            "height": 284
+          },
+          "focusHit": {
+            "tag": "BUTTON",
+            "tour": null,
+            "id": "sections-add-button",
+            "x": 224,
+            "y": 93,
+            "width": 133,
+            "height": 36,
+            "hitTag": "SPAN",
+            "hitClass": "",
+            "receivesClick": true
+          }
+        },
+        {
+          "stepId": "program",
+          "action": "complete",
+          "bounds": {
+            "x": 15,
+            "y": 203,
+            "width": 360,
+            "height": 313
+          }
+        },
+        {
+          "stepId": "name",
+          "action": "complete",
+          "bounds": {
+            "x": 12,
+            "y": 304,
+            "width": 360,
+            "height": 334
+          }
+        },
+        {
+          "stepId": "year",
+          "action": "complete",
+          "bounds": {
+            "x": 12,
+            "y": 352,
+            "width": 360,
+            "height": 313
+          }
+        },
+        {
+          "stepId": "save",
+          "action": "complete",
+          "bounds": {
+            "x": 18,
+            "y": 479,
+            "width": 360,
+            "height": 334
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "course-list",
+      "guide": "course-list",
+      "role": "secretary",
+      "route": "/secretary/courses",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "find",
+          "action": "complete",
+          "bounds": {
+            "x": 333,
+            "y": 305,
+            "width": 360,
+            "height": 267
+          }
+        },
+        {
+          "stepId": "details",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 12,
+            "width": 360,
+            "height": 313
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "course-list-filtered-empty",
+      "guide": "course-list",
+      "role": "program_head",
+      "route": "/program_head/courses",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "find",
+          "action": "complete",
+          "bounds": {
+            "x": 333,
+            "y": 305,
+            "width": 360,
+            "height": 267
+          }
+        },
+        {
+          "stepId": "details",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 540,
+            "width": 360,
+            "height": 313
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "course-list-keyboard",
+      "guide": "course-list",
+      "role": "dean",
+      "route": "/dean/courses",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "keyboard",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "find",
+          "action": "complete",
+          "bounds": {
+            "x": 333,
+            "y": 272,
+            "width": 360,
+            "height": 267
+          }
+        },
+        {
+          "stepId": "details",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 12,
+            "width": 360,
+            "height": 313
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "curriculum-import",
+      "guide": "curriculum",
+      "role": "secretary",
+      "route": "/secretary/curriculum",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "browse",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 12,
+            "width": 360,
+            "height": 267
+          }
+        },
+        {
+          "stepId": "import",
+          "action": "complete",
+          "bounds": {
+            "x": 1068,
+            "y": 274,
+            "width": 360,
+            "height": 334
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "curriculum-create-form",
+      "guide": "curriculum",
+      "role": "program_head",
+      "route": "/program_head/curriculum",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "browse",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 510,
+            "width": 360,
+            "height": 267
+          }
+        },
+        {
+          "stepId": "open-form",
+          "action": "click",
+          "bounds": {
+            "x": 1068,
+            "y": 306,
+            "width": 360,
+            "height": 278
+          },
+          "focusHit": {
+            "tag": "BUTTON",
+            "tour": null,
+            "id": "curriculum-create-button",
+            "x": 1233,
+            "y": 234,
+            "width": 170,
+            "height": 36,
+            "hitTag": "SPAN",
+            "hitClass": "",
+            "receivesClick": true
+          }
+        },
+        {
+          "stepId": "name",
+          "action": "complete",
+          "bounds": {
+            "x": 420,
+            "y": 477,
+            "width": 360,
+            "height": 313
+          }
+        },
+        {
+          "stepId": "code",
+          "action": "complete",
+          "bounds": {
+            "x": 660,
+            "y": 477,
+            "width": 360,
+            "height": 292
+          }
+        },
+        {
+          "stepId": "effective-year",
+          "action": "complete",
+          "bounds": {
+            "x": 540,
+            "y": 87,
+            "width": 360,
+            "height": 334
+          }
+        },
+        {
+          "stepId": "save",
+          "action": "complete",
+          "bounds": {
+            "x": 686,
+            "y": 164,
+            "width": 360,
+            "height": 355
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "curriculum-read-only-vpaa",
+      "guide": "curriculum",
+      "role": "vpaa",
+      "route": "/curriculum",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "status",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 183,
+            "width": 360,
+            "height": 267
+          }
+        },
+        {
+          "stepId": "filters",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 195,
+            "width": 360,
+            "height": 292
+          }
+        },
+        {
+          "stepId": "list",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 12,
+            "width": 360,
+            "height": 334
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "curriculum-read-only-dean",
+      "guide": "curriculum",
+      "role": "dean",
+      "route": "/dean/curriculum",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "status",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 267,
+            "width": 360,
+            "height": 267
+          }
+        },
+        {
+          "stepId": "filters",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 349,
+            "width": 360,
+            "height": 292
+          }
+        },
+        {
+          "stepId": "list",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 12,
+            "width": 360,
+            "height": 334
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "curriculum-mobile-320",
+      "guide": "curriculum",
+      "role": "program_head",
+      "route": "/program_head/curriculum",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "browse",
+          "action": "complete",
+          "bounds": {
+            "x": 12,
+            "y": 12,
+            "width": 296,
+            "height": 334
+          }
+        },
+        {
+          "stepId": "open-form",
+          "action": "click",
+          "bounds": {
+            "x": 12,
+            "y": 12,
+            "width": 296,
+            "height": 258
+          },
+          "focusHit": {
+            "tag": "BUTTON",
+            "tour": null,
+            "id": "curriculum-create-button",
+            "x": 148,
+            "y": 306,
+            "width": 173,
+            "height": 37,
+            "hitTag": "SPAN",
+            "hitClass": "",
+            "receivesClick": true
+          }
+        },
+        {
+          "stepId": "name",
+          "action": "complete",
+          "bounds": {
+            "x": 12,
+            "y": 221,
+            "width": 296,
+            "height": 335
+          }
+        },
+        {
+          "stepId": "code",
+          "action": "complete",
+          "bounds": {
+            "x": 12,
+            "y": 12,
+            "width": 296,
+            "height": 292
+          }
+        },
+        {
+          "stepId": "effective-year",
+          "action": "complete",
+          "bounds": {
+            "x": 12,
+            "y": 12,
+            "width": 296,
+            "height": 334
+          }
+        },
+        {
+          "stepId": "save",
+          "action": "complete",
+          "bounds": {
+            "x": 12,
+            "y": 12,
+            "width": 296,
+            "height": 376
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "course-teaching-live",
+      "guide": "course-teaching",
+      "role": "secretary",
+      "route": "/secretary/course-assignments",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "target",
+          "action": "complete",
+          "bounds": {
+            "x": 274,
+            "y": 12,
+            "width": 360,
+            "height": 288
+          }
+        },
+        {
+          "stepId": "year",
+          "action": "complete",
+          "bounds": {
+            "x": 648,
+            "y": 373,
+            "width": 360,
+            "height": 313
+          }
+        },
+        {
+          "stepId": "course-filter",
+          "action": "complete",
+          "bounds": {
+            "x": 642,
+            "y": 446,
+            "width": 360,
+            "height": 313
+          }
+        },
+        {
+          "stepId": "program",
+          "action": "complete",
+          "bounds": {
+            "x": 1039,
+            "y": 446,
+            "width": 360,
+            "height": 334
+          }
+        },
+        {
+          "stepId": "courses",
+          "action": "complete",
+          "bounds": {
+            "x": 840,
+            "y": 91,
+            "width": 360,
+            "height": 334
+          }
+        },
+        {
+          "stepId": "save",
+          "action": "complete",
+          "bounds": {
+            "x": 1068,
+            "y": 450,
+            "width": 360,
+            "height": 355
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "course-teaching-locked",
+      "guide": "course-teaching",
+      "role": "secretary",
+      "route": "/secretary/course-assignments",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "course-teaching-mobile-unlock-fixture",
+      "guide": "course-teaching",
+      "role": "secretary",
+      "route": "/secretary/course-assignments",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "input": "mouse",
+      "evidence": "browser-only response fixture: unlock",
+      "steps": [
+        {
+          "stepId": "target",
+          "action": "complete",
+          "bounds": {
+            "x": 15,
+            "y": 544,
+            "width": 360,
+            "height": 288
+          }
+        },
+        {
+          "stepId": "year",
+          "action": "complete",
+          "bounds": {
+            "x": 15,
+            "y": 213,
+            "width": 360,
+            "height": 313
+          }
+        },
+        {
+          "stepId": "course-filter",
+          "action": "complete",
+          "bounds": {
+            "x": 15,
+            "y": 322,
+            "width": 360,
+            "height": 313
+          }
+        },
+        {
+          "stepId": "program",
+          "action": "complete",
+          "bounds": {
+            "x": 15,
+            "y": 373,
+            "width": 360,
+            "height": 334
+          }
+        },
+        {
+          "stepId": "courses",
+          "action": "complete",
+          "bounds": {
+            "x": 15,
+            "y": 12,
+            "width": 360,
+            "height": 334
+          }
+        },
+        {
+          "stepId": "save",
+          "action": "complete",
+          "bounds": {
+            "x": 12,
+            "y": 440,
+            "width": 360,
+            "height": 309
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "course-teaching-no-curriculum-fixture",
+      "guide": "course-teaching",
+      "role": "secretary",
+      "route": "/secretary/course-assignments",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "browser-only response fixture: no-curriculum",
+      "steps": [
+        {
+          "stepId": "prerequisites",
+          "action": "complete",
+          "bounds": {
+            "x": 840,
+            "y": 124,
+            "width": 360,
+            "height": 267
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "instructor-assignment-list",
+      "guide": "instructor-assignment",
+      "role": "secretary",
+      "route": "/secretary/instructor-assignment",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "overview",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 339,
+            "width": 360,
+            "height": 267
+          }
+        },
+        {
+          "stepId": "open-department",
+          "action": "click",
+          "bounds": {
+            "x": 684,
+            "y": 521,
+            "width": 360,
+            "height": 320
+          },
+          "focusHit": {
+            "tag": "TR",
+            "tour": "department-card",
+            "id": "",
+            "x": 305,
+            "y": 425,
+            "width": 1118,
+            "height": 61,
+            "hitTag": "TD",
+            "hitClass": "px-4 py-3 text-right font-bold text-slate-600",
+            "receivesClick": true
+          }
+        },
+        {
+          "stepId": "section",
+          "action": "complete",
+          "bounds": {
+            "x": 637,
+            "y": 335,
+            "width": 360,
+            "height": 313
+          }
+        },
+        {
+          "stepId": "status",
+          "action": "complete",
+          "bounds": {
+            "x": 477,
+            "y": 335,
+            "width": 360,
+            "height": 313
+          }
+        },
+        {
+          "stepId": "assign",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 12,
+            "width": 360,
+            "height": 376
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "instructor-assignment-deep-grid",
+      "guide": "instructor-assignment",
+      "role": "secretary",
+      "route": "/secretary/instructor-assignment?department=6",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "section",
+          "action": "complete",
+          "bounds": {
+            "x": 637,
+            "y": 335,
+            "width": 360,
+            "height": 267
+          }
+        },
+        {
+          "stepId": "status",
+          "action": "complete",
+          "bounds": {
+            "x": 477,
+            "y": 335,
+            "width": 360,
+            "height": 313
+          }
+        },
+        {
+          "stepId": "assign",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 12,
+            "width": 360,
+            "height": 376
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "instructor-assignment-empty-fixture",
+      "guide": "instructor-assignment",
+      "role": "secretary",
+      "route": "/secretary/instructor-assignment",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "browser-only response fixture: assignments-empty",
+      "steps": [
+        {
+          "stepId": "empty",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 339,
+            "width": 360,
+            "height": 267
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "cross-department-list",
+      "guide": "cross-department-assignment",
+      "role": "secretary",
+      "route": "/secretary/cross-department-assignments",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "overview",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 339,
+            "width": 360,
+            "height": 267
+          }
+        },
+        {
+          "stepId": "open-department",
+          "action": "click",
+          "bounds": {
+            "x": 684,
+            "y": 521,
+            "width": 360,
+            "height": 320
+          },
+          "focusHit": {
+            "tag": "TR",
+            "tour": "department-card",
+            "id": "",
+            "x": 305,
+            "y": 425,
+            "width": 1118,
+            "height": 61,
+            "hitTag": "TD",
+            "hitClass": "px-4 py-3 text-right font-bold text-slate-600",
+            "receivesClick": true
+          }
+        },
+        {
+          "stepId": "section",
+          "action": "complete",
+          "bounds": {
+            "x": 637,
+            "y": 335,
+            "width": 360,
+            "height": 313
+          }
+        },
+        {
+          "stepId": "status",
+          "action": "complete",
+          "bounds": {
+            "x": 477,
+            "y": 335,
+            "width": 360,
+            "height": 313
+          }
+        },
+        {
+          "stepId": "assign",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 12,
+            "width": 360,
+            "height": 376
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    },
+    {
+      "name": "cross-department-program-head-deep-grid",
+      "guide": "cross-department-assignment",
+      "role": "program_head",
+      "route": "/program_head/cross-department-assignments?department=6",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "input": "mouse",
+      "evidence": "authenticated live local API",
+      "steps": [
+        {
+          "stepId": "section",
+          "action": "complete",
+          "bounds": {
+            "x": 637,
+            "y": 335,
+            "width": 360,
+            "height": 267
+          }
+        },
+        {
+          "stepId": "status",
+          "action": "complete",
+          "bounds": {
+            "x": 477,
+            "y": 335,
+            "width": 360,
+            "height": 313
+          }
+        },
+        {
+          "stepId": "assign",
+          "action": "complete",
+          "bounds": {
+            "x": 684,
+            "y": 12,
+            "width": 360,
+            "height": 376
+          }
+        }
+      ],
+      "writes": [],
+      "pageErrors": [],
+      "passed": true
+    }
+  ]
+}

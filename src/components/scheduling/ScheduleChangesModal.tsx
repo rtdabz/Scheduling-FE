@@ -89,7 +89,7 @@ export function ScheduleChangesTable({
   const table = useDataTable<ScheduleChangeDetailRow>({
     data,
     columns,
-    pageSize: 25,
+    pageSize: 10,
     getRowId: (row) => row.key,
   });
 

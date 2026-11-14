@@ -1,0 +1,742 @@
+{
+  "status": "failed",
+  "results": [
+    {
+      "dialog": "submit",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "x": 400,
+      "y": 24,
+      "width": 640,
+      "height": 852,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "done",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "x": 336,
+      "y": 24,
+      "width": 768,
+      "height": 852,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "finalize",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "x": 336,
+      "y": 24,
+      "width": 768,
+      "height": 852,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "reassign",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "x": 336,
+      "y": 24,
+      "width": 768,
+      "height": 852,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "reset",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "x": 336,
+      "y": 24,
+      "width": 768,
+      "height": 852,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "recall",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "x": 336,
+      "y": 24,
+      "width": 768,
+      "height": 852,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "faculty",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "x": 448,
+      "y": 153.484375,
+      "width": 544,
+      "height": 593.03125,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "instructor",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "x": 144,
+      "y": 262.984375,
+      "width": 1152,
+      "height": 374.03125,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "room",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "x": 24,
+      "y": 24,
+      "width": 1392,
+      "height": 852,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "alternatives",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "x": 384,
+      "y": 234.015625,
+      "width": 672,
+      "height": 431.96875,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "conflicts",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "x": 336,
+      "y": 160.765625,
+      "width": 768,
+      "height": 578.46875,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "bulk",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "x": 40,
+      "y": 24,
+      "width": 1360,
+      "height": 852,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "generator",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "x": 24,
+      "y": 113.921875,
+      "width": 1392,
+      "height": 672.15625,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "configure",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 900,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "confirm",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "x": 464,
+      "y": 249.40625,
+      "width": 512,
+      "height": 401.1875,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "placement",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "x": 272,
+      "y": 24,
+      "width": 896,
+      "height": 852,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "submit",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "x": 8,
+      "y": 8,
+      "width": 374,
+      "height": 828,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "done",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "x": 8,
+      "y": 8,
+      "width": 374,
+      "height": 828,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "finalize",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "x": 8,
+      "y": 8,
+      "width": 374,
+      "height": 828,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "reassign",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "x": 8,
+      "y": 8,
+      "width": 374,
+      "height": 828,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "reset",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "x": 8,
+      "y": 8,
+      "width": 374,
+      "height": 828,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "recall",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "x": 8,
+      "y": 8,
+      "width": 374,
+      "height": 828,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "faculty",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "x": 8,
+      "y": 39.703125,
+      "width": 374,
+      "height": 764.59375,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "instructor",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "x": 8,
+      "y": 105.09375,
+      "width": 374,
+      "height": 633.796875,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "room",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "x": 8,
+      "y": 8,
+      "width": 374,
+      "height": 828,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "alternatives",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "x": 8,
+      "y": 203.15625,
+      "width": 374,
+      "height": 437.6875,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "conflicts",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "x": 8,
+      "y": 8,
+      "width": 374,
+      "height": 659.890625,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "bulk",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "x": 8,
+      "y": 8,
+      "width": 374,
+      "height": 828,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "generator",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "x": 8,
+      "y": 8,
+      "width": 374,
+      "height": 828,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "configure",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "x": 0,
+      "y": 0,
+      "width": 390,
+      "height": 844,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "confirm",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "x": 8,
+      "y": 8,
+      "width": 374,
+      "height": 425,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "placement",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "x": 8,
+      "y": 8,
+      "width": 374,
+      "height": 828,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "submit",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "x": 8,
+      "y": 8,
+      "width": 304,
+      "height": 552,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "done",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "x": 8,
+      "y": 8,
+      "width": 304,
+      "height": 552,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "finalize",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "x": 8,
+      "y": 8,
+      "width": 304,
+      "height": 552,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "reassign",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "x": 8,
+      "y": 8,
+      "width": 304,
+      "height": 552,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "reset",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "x": 8,
+      "y": 8,
+      "width": 304,
+      "height": 552,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "recall",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "x": 8,
+      "y": 8,
+      "width": 304,
+      "height": 552,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "faculty",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "x": 8,
+      "y": 8,
+      "width": 304,
+      "height": 552,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "instructor",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "x": 8,
+      "y": 8,
+      "width": 304,
+      "height": 552,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "room",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "x": 8,
+      "y": 8,
+      "width": 304,
+      "height": 552,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "alternatives",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "x": 8,
+      "y": 16.5,
+      "width": 304,
+      "height": 534.984375,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "conflicts",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "x": 8,
+      "y": 8,
+      "width": 304,
+      "height": 552,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "bulk",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "x": 8,
+      "y": 8,
+      "width": 304,
+      "height": 552,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "generator",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "x": 8,
+      "y": 8,
+      "width": 304,
+      "height": 552,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "configure",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "x": 0,
+      "y": 0,
+      "width": 320,
+      "height": 568,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "confirm",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "x": 8,
+      "y": 8,
+      "width": 304,
+      "height": 510,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "placement",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "x": 8,
+      "y": 8,
+      "width": 304,
+      "height": 552,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    },
+    {
+      "dialog": "submit",
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "x": 102,
+      "y": 24,
+      "width": 640,
+      "height": 342,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": false
+    }
+  ],
+  "interactions": [],
+  "errors": []
+}

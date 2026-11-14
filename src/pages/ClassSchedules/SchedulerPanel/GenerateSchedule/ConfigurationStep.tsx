@@ -3,14 +3,23 @@ import {
   AlertTriangle,
   BookOpen,
   CalendarDays,
+  Check,
   GraduationCap,
+  Lock,
+  RotateCcw,
   Users,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { FULL_DAY_NAMES } from "../../../../lib/timeGrid";
 import type { Course, Section, Semester } from "../types";
 import YearLevelCurriculumSelector from "./YearLevelCurriculumSelector";
-import { orderDays } from "./generationTypes";
+import {
+  availableDays,
+  excludedDays,
+  includedDays,
+  toggleExcludedDay,
+} from "./preferredDays";
 import { YearLevelStateBadge } from "./YearLevelStateNotice";
 import type { YearLevelScheduleState } from "./yearLevelGenerationEligibility";
 import type { CourseDefaults } from "./courseClassConfig";
@@ -21,7 +30,6 @@ export type SetupDraft = {
   preferredDays: string[];
   courseDefaults: CourseDefaults;
   excludedCourseIds: string[];
-  customizedCourseIds: string[];
 };
 
 const FIELD_LABEL =
@@ -47,6 +55,8 @@ export default function ConfigurationStep({
   canManageSundayClasses = false,
   sundayClassCount = 0,
   onSundayClassesChange,
+  allowFridaySaturdaySplit = false,
+  onAllowFridaySaturdaySplitChange,
   targetSectionIds = null,
   scheduledSectionIds = new Set<string>(),
   onTargetSectionIdsChange,
@@ -71,6 +81,8 @@ export default function ConfigurationStep({
   canManageSundayClasses?: boolean;
   sundayClassCount?: number;
   onSundayClassesChange?: (enabled: boolean) => void | Promise<void>;
+  allowFridaySaturdaySplit?: boolean;
+  onAllowFridaySaturdaySplitChange?: (allowed: boolean) => void;
   targetSectionIds?: string[] | null;
   scheduledSectionIds?: Set<string>;
   onTargetSectionIdsChange?: (ids: string[] | null) => void;
@@ -87,14 +99,11 @@ export default function ConfigurationStep({
       setSavingSunday(false);
     }
   };
+  const openDays = availableDays(sundayClassesEnabled);
+  const included = includedDays(preferredDays, openDays);
+  const excluded = excludedDays(preferredDays, openDays);
   const toggleDay = (day: string) =>
-    onPreferredDaysChange(
-      orderDays(
-        preferredDays.includes(day)
-          ? preferredDays.filter((item) => item !== day)
-          : [...preferredDays, day],
-      ),
-    );
+    onPreferredDaysChange(toggleExcludedDay(preferredDays, day, openDays));
   const excludedRequiredDays =
     preferredDays.length === 0
       ? []
@@ -108,7 +117,14 @@ export default function ConfigurationStep({
         });
 
   const disabled = actionsDisabled;
-  const anyDay = preferredDays.length === 0;
+  const anyDay = excluded.length === 0;
+  const fridaySaturdayExcluded = ["Friday", "Saturday"].filter(
+    (day) => !included.includes(day),
+  );
+  const fridaySaturdayUnavailable = fridaySaturdayExcluded.length > 0;
+  // An excluded Friday or Saturday cannot hold the pair, so it reads as off;
+  // the saved choice comes back when both days are restored.
+  const fridaySaturdayOn = allowFridaySaturdaySplit && !fridaySaturdayUnavailable;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -120,7 +136,7 @@ export default function ConfigurationStep({
             detail="Every later step applies to the sections of this year level."
           />
 
-          <div className="mt-4 grid gap-x-4 gap-y-3 sm:grid-cols-2">
+          <div className="mb-4 mt-4 grid gap-x-4 gap-y-3 sm:grid-cols-2">
             <div>
               <label htmlFor="generator-year-level" className={FIELD_LABEL}>
                 Year level
@@ -183,7 +199,7 @@ export default function ConfigurationStep({
             )}
           </div>
 
-          <div className="mt-4 border-t border-slate-100 pt-4">
+          <div className="mt-auto border-t border-slate-100 pt-4">
             <YearLevelCurriculumSelector
               departmentId={departmentId}
               semesterId={activeSemester?.id ?? null}
@@ -204,105 +220,141 @@ export default function ConfigurationStep({
             title="Preferred Days"
             detail={
               anyDay
-                ? sundayClosed
-                  ? "Any day from Monday to Saturday. Pick days to schedule this year level only on them."
-                  : "Any day. Pick days to schedule this year level only on them."
-                : `Every class, including Split Session and Hybrid, meets only on ${preferredDays.join(", ")}.`
+                ? "All open days are used. Click a day to exclude it."
+                : `Meets only on ${included.join(", ")}. Click an excluded day to restore it.`
             }
             action={
-              anyDay ? (
-                <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-black text-emerald-700 ring-1 ring-emerald-200">
-                  Any day
+              <div className="flex shrink-0 items-center gap-1">
+                <span
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-black tabular-nums ring-1 ${
+                    anyDay
+                      ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                      : "bg-[#4e0a10]/5 text-[#4e0a10] ring-[#4e0a10]/15"
+                  }`}
+                >
+                  {anyDay
+                    ? "All days"
+                    : `${included.length} of ${openDays.length} days`}
                 </span>
-              ) : (
-                <div className="flex shrink-0 items-center gap-1">
-                  <span className="rounded-full bg-[#4e0a10]/10 px-2.5 py-1 text-[11px] font-black text-[#4e0a10]">
-                    {preferredDays.length}{" "}
-                    {preferredDays.length === 1 ? "day" : "days"}
-                  </span>
+                {!anyDay && (
                   <button
                     type="button"
                     disabled={disabled}
                     onClick={() => onPreferredDaysChange([])}
-                    className="rounded-md px-2 py-1 text-[11px] font-black text-[#4e0a10] hover:bg-[#4e0a10]/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    title="Restore every excluded day"
+                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-black text-[#4e0a10] hover:bg-[#4e0a10]/10 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Clear
+                    <RotateCcw className="h-3 w-3" aria-hidden />
+                    Reset
                   </button>
-                </div>
-              )
+                )}
+              </div>
             }
           />
 
           <div
             role="group"
             aria-label="Preferred days"
-            className="mt-4 grid grid-cols-4 gap-1.5 sm:grid-cols-7"
+            className="mt-3 grid grid-cols-2 gap-1.5 sm:grid-cols-4"
           >
             {FULL_DAY_NAMES.map((day) => {
-              const selected = preferredDays.includes(day);
-              const closed = day === "Sunday" && sundayClosed && !selected;
-              const [status, tone, statusTone] = closed
-                ? ["Closed", "border-slate-200 bg-slate-100 text-slate-400", ""]
-                : selected
+              const closed = !openDays.includes(day);
+              const isExcluded = excluded.includes(day);
+              const lastDay = !closed && !isExcluded && included.length === 1;
+              const [StatusIcon, tone] = closed
+                ? [Lock, "border-slate-200 bg-slate-100 text-slate-300"]
+                : isExcluded
                   ? [
-                      "Picked",
-                      "border-[#4e0a10] bg-[#4e0a10] text-white shadow-sm",
-                      "text-white/75",
+                      X,
+                      "border-dashed border-slate-300 bg-slate-50 text-slate-400 hover:border-slate-400 hover:bg-white hover:text-slate-600",
                     ]
-                  : anyDay
-                    ? [
-                        "Open",
-                        "border-emerald-200 bg-emerald-50/60 text-slate-800 hover:border-emerald-300 hover:bg-emerald-50",
-                        "text-emerald-700",
-                      ]
-                    : [
-                        "Skipped",
-                        "border-dashed border-slate-300 bg-white text-slate-400 hover:border-[#4e0a10]/40 hover:text-slate-700",
-                        "",
-                      ];
+                  : [
+                      Check,
+                      "border-[#4e0a10]/20 bg-[#4e0a10]/[0.04] text-[#4e0a10] hover:border-[#4e0a10]/40 hover:bg-[#4e0a10]/[0.08]",
+                    ];
 
               return (
                 <button
                   key={day}
                   type="button"
-                  aria-pressed={selected}
+                  aria-pressed={isExcluded}
                   title={
                     closed
-                      ? "Sunday classes are not enabled for this department"
-                      : day
+                      ? "Sunday classes are off for this department"
+                      : isExcluded
+                        ? `${day} is excluded. Click to restore it.`
+                        : lastDay
+                          ? "At least one day must stay open."
+                          : `Click to exclude ${day}.`
                   }
-                  disabled={disabled || closed}
+                  disabled={disabled || closed || lastDay}
                   onClick={() => toggleDay(day)}
-                  className={`flex flex-col items-center gap-1 rounded-lg border px-1 py-2.5 transition disabled:cursor-not-allowed ${
-                    closed ? "" : "disabled:opacity-50"
+                  className={`flex h-9 min-w-0 items-center gap-1.5 rounded-lg border px-2.5 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9a7020] disabled:cursor-not-allowed ${
+                    closed || lastDay ? "" : "disabled:opacity-50"
                   } ${tone}`}
                 >
-                  <span className="text-sm font-black leading-none">
-                    {day.slice(0, 3)}
-                  </span>
-                  <span
+                  <StatusIcon
                     aria-hidden
-                    className={`text-[10px] font-bold uppercase leading-none tracking-wide ${statusTone}`}
+                    className="h-3.5 w-3.5 shrink-0"
+                    strokeWidth={3}
+                  />
+                  <span
+                    className={`truncate text-xs font-black leading-none ${
+                      isExcluded ? "line-through decoration-[1.5px]" : ""
+                    }`}
                   >
-                    {status}
+                    {day}
                   </span>
                 </button>
               );
             })}
           </div>
 
+          <div
+            aria-hidden
+            className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-bold text-slate-400"
+          >
+            <span className="inline-flex items-center gap-1">
+              <Check className="h-3 w-3 text-[#4e0a10]" strokeWidth={3} />
+              Included
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <X className="h-3 w-3" strokeWidth={3} />
+              Excluded
+            </span>
+            {!openDays.includes("Sunday") && (
+              <span className="inline-flex items-center gap-1">
+                <Lock className="h-3 w-3" strokeWidth={3} />
+                Closed
+              </span>
+            )}
+          </div>
+
+          {/* Soaks up the height matched to the curriculum card so the
+              toggle rows sit at the bottom instead of leaving a gap below. */}
+          <div aria-hidden className="min-h-0 flex-1" />
+
           {sundayClassesEnabled !== null && (
-            <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
+            <div className="mt-3 flex items-center gap-3 border-t border-slate-100 pt-3">
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-black leading-tight text-slate-900">
                   Sunday classes
+                  <span
+                    className={`ml-1.5 rounded px-1.5 py-px text-[10px] font-black uppercase tracking-wide ${
+                      sundayClassesEnabled
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    {sundayClassesEnabled ? "On" : "Off"}
+                  </span>
                 </p>
                 <p className="mt-0.5 text-[11px] font-semibold leading-tight text-slate-500">
                   {sundayClassesEnabled
-                    ? "On. Generation and manual scheduling may use Sunday."
+                    ? "Generation and manual scheduling may use Sunday."
                     : canManageSundayClasses
-                      ? "Off. Turn on to let generation and manual scheduling use Sunday."
-                      : "Off. Only the department secretary can turn on Sunday classes."}
+                      ? "Turn on to let generation and manual scheduling use Sunday."
+                      : "Only the department Secretary, Director, or Program Head can turn this on."}
                 </p>
               </div>
               {canManageSundayClasses && onSundayClassesChange && (
@@ -335,6 +387,59 @@ export default function ConfigurationStep({
               )}
             </div>
           )}
+          {onAllowFridaySaturdaySplitChange && (
+            <div className="mt-3 flex items-center gap-3 border-t border-slate-100 pt-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-black leading-tight text-slate-900">
+                  Split Days: Friday + Saturday
+                  <span
+                    className={`ml-1.5 rounded px-1.5 py-px text-[10px] font-black uppercase tracking-wide ${
+                      fridaySaturdayOn
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    {fridaySaturdayOn ? "On" : "Off"}
+                  </span>
+                </p>
+                <p
+                  id="generator-friday-saturday-help"
+                  className="mt-0.5 text-[11px] font-semibold leading-tight text-slate-500"
+                >
+                  {fridaySaturdayUnavailable
+                    ? `Restore ${fridaySaturdayExcluded.join(" and ")} to pair Friday with Saturday.`
+                    : "Split courses may also meet Friday + Saturday. Mon/Wed and Tue/Thu are still tried first."}
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={fridaySaturdayOn}
+                aria-label="Allow Friday and Saturday as Paired Days"
+                aria-describedby="generator-friday-saturday-help"
+                disabled={disabled || fridaySaturdayUnavailable}
+                onClick={() =>
+                  onAllowFridaySaturdaySplitChange(!allowFridaySaturdaySplit)
+                }
+                title={
+                  allowFridaySaturdaySplit
+                    ? "Stop pairing Friday with Saturday"
+                    : "Allow Friday and Saturday as paired days"
+                }
+                className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${
+                  fridaySaturdayOn
+                    ? "cursor-pointer bg-[#4e0a10]"
+                    : "cursor-pointer bg-gray-300"
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    fridaySaturdayOn ? "translate-x-4" : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
+          )}
           {sundayClosed && sundayClassCount > 0 && (
             <Notice tone="warning">
               {sundayClassCount}{" "}
@@ -343,7 +448,7 @@ export default function ConfigurationStep({
               can be placed on Sunday.
             </Notice>
           )}
-          {preferredDays.length === 1 && (
+          {included.length === 1 && (
             <Notice tone="warning">
               Hybrid classes meet on two different days, so one day cannot hold
               them. A Split Session falls back to a single meeting.
@@ -351,9 +456,9 @@ export default function ConfigurationStep({
           )}
           {excludedRequiredDays.length > 0 && (
             <Notice tone="error">
-              Required Day not in the Preferred Days:{" "}
-              {excludedRequiredDays.join(", ")}. Add the day here, or change the
-              Required Day in Setup Courses.
+              Required Day on an excluded day:{" "}
+              {excludedRequiredDays.join(", ")}. Restore the day here, or change
+              the Required Day in Setup Courses.
             </Notice>
           )}
         </section>
@@ -379,9 +484,6 @@ function SectionTargetPicker({
 }) {
   const perSection = targetSectionIds !== null;
   const selected = new Set(targetSectionIds ?? []);
-  const unscheduledIds = sections
-    .map((section) => String(section.id))
-    .filter((id) => !scheduledSectionIds.has(id));
   const toggle = (id: string) =>
     onChange(
       selected.has(id)
@@ -389,9 +491,9 @@ function SectionTargetPicker({
         : [...selected, id],
     );
   const modeButton = (active: boolean) =>
-    `rounded-md px-3 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-60 ${
+    `selection-indicator rounded-md px-3 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-60 ${
       active
-        ? "bg-[#4e0a10] text-white shadow-sm"
+        ? "shadow-sm"
         : "text-slate-600 hover:bg-slate-100"
     }`;
 
@@ -419,7 +521,7 @@ function SectionTargetPicker({
             role="radio"
             aria-checked={perSection}
             disabled={disabled}
-            onClick={() => onChange(unscheduledIds)}
+            onClick={() => onChange(targetSectionIds ?? [])}
             className={modeButton(perSection)}
           >
             Selected sections

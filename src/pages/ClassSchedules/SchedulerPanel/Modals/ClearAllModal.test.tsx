@@ -15,15 +15,17 @@ const props = () => ({
 });
 
 describe('Reset schedules checklist', () => {
-  it('selects only the open section initially and waits for explicit confirmation', () => {
+  it('starts unchecked and waits for a manually selected section and explicit confirmation', () => {
     const input = props();
     render(<ClearAllModal {...input} />);
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryAllByRole('button', { pressed: true })).toHaveLength(0);
+    expect((screen.getByRole('button', { name: 'Reset Sections' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: /BSIT 12/ }));
     expect(input.confirmClearAll).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Reset 2 Sections' }));
-    expect(input.confirmClearAll).toHaveBeenCalledWith(['1', '2']);
-    expect(screen.getByText(/cannot be restored from the Archive/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Reset 1 Section' }));
+    expect(input.confirmClearAll).toHaveBeenCalledWith(['2']);
+    expect(screen.getByText(/permanently deleted\. This cannot be undone\. Schedule History will remain unchanged\./)).toBeTruthy();
   });
 
   it('selects only eligible sections and disables confirmation when nothing is selected', () => {
@@ -52,6 +54,7 @@ describe('Reset schedules checklist', () => {
     fireEvent.click(screen.getByRole('button', { name: /BSIT 12/ }));
     rerender(<ClearAllModal {...input} isClearAllModalOpen={false} />);
     rerender(<ClearAllModal {...input} />);
-    expect(screen.getByRole('button', { name: 'Reset 1 Section' })).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Reset Sections' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryAllByRole('button', { pressed: true })).toHaveLength(0);
   });
 });

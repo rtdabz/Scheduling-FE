@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useMemo, useState } from 'react';
 import { BadgeCheck, ChevronRight, X } from 'lucide-react';
+import Modal from '../ui/Modal';
+import { ModalButton, ModalState } from '../ui/ModalForm';
 import {
   describeDeload,
   designationLabel,
@@ -67,17 +68,6 @@ export default function DesignationPicker({
     setOpen(false);
   };
 
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.stopImmediatePropagation();
-      setOpen(false);
-    };
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [open]);
-
   const summary = (deloadUnits: number) => {
     if (maxUnits === undefined) return deloadUnits > 0 ? `Deloads ${deloadUnits} units in total.` : '';
     const load = describeDeload(maxUnits, deloadUnits);
@@ -137,100 +127,60 @@ export default function DesignationPicker({
         {disabled ? disabledHint : summary(deload)}
       </p>
 
-      {open && createPortal(
-        <div
-          className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 p-4 font-sans animate-in fade-in duration-200"
-          onClick={(event) => {
-            event.stopPropagation();
-            setOpen(false);
-          }}
+      {/* The dialog is portalled, but its clicks still bubble here through React; keep them from reaching the trigger row. */}
+      <div className="contents" onClick={(event) => event.stopPropagation()}>
+        <Modal
+          isOpen={open}
+          onClose={() => setOpen(false)}
+          title="Select Designations"
+          description={`${draft.length} selected`}
+          icon={<BadgeCheck size={18} />}
+          footerClassName="!justify-between"
+          footer={<>
+            <p className="min-w-0 flex-1 text-xs leading-5 text-slate-500">{summary(draftDeload)}</p>
+            <div className="flex gap-2.5">
+              <ModalButton onClick={() => setOpen(false)}>Cancel</ModalButton>
+              <ModalButton variant="primary" onClick={apply}>Done</ModalButton>
+            </div>
+          </>}
         >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="designation-picker-title"
-            className="flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-[#F7F4F0] shadow-2xl animate-in zoom-in-95 duration-200"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex shrink-0 items-start gap-3 bg-[#4e0a10] p-5">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-[#C9952A]">
-                <BadgeCheck size={18} />
-              </span>
-              <div className="flex-1">
-                <h2 id="designation-picker-title" className="text-base font-bold text-white">Select Designations</h2>
-                <p className="mt-0.5 text-[11px] font-semibold text-amber-100/75">
-                  {draft.length} selected
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                aria-label="Close"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+          <div role="group" aria-label="Designations" className="space-y-2 px-4 py-4 sm:px-5">
+            {groups.length === 0 && <ModalState title="No designations yet">Designations appear here once they have been set up.</ModalState>}
+            {groups.map((group, groupIndex) => (
+              <div
+                key={group.heading?.id ?? `standalone-${groupIndex}`}
+                className="rounded-xl border border-slate-200 bg-white p-1.5"
               >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div role="group" aria-label="Designations" className="min-h-0 flex-1 overflow-y-auto p-3">
-              {groups.length === 0 && <p className="px-2 py-3 text-xs italic text-gray-400">No designations have been set up yet.</p>}
-              {groups.map((group, groupIndex) => (
-                <div
-                  key={group.heading?.id ?? `standalone-${groupIndex}`}
-                  className={`rounded-xl border border-gray-200 bg-white p-1.5 ${groupIndex > 0 ? 'mt-2' : ''}`}
-                >
-                  {group.heading && (
-                    <p className="px-2 pb-1 pt-1 text-[10px] font-extrabold uppercase tracking-wider text-gray-500">{group.heading.name}</p>
-                  )}
-                  {group.options.map((designation) => {
-                    const id = String(designation.id);
-                    const checked = draft.includes(id);
-                    const unavailable = !checked && blocked(id);
-                    return (
-                      <label
-                        key={designation.id}
-                        className={`flex items-center gap-3 rounded-lg px-2 py-2 text-sm ${group.heading ? 'pl-4' : ''} ${unavailable ? 'cursor-not-allowed text-gray-400' : 'cursor-pointer text-gray-700 hover:bg-gray-50'}`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={unavailable}
-                          onChange={() => toggleDraft(id)}
-                          className="h-4 w-4 accent-[#5A1220]"
-                        />
-                        <span className="flex-1 truncate">{group.heading ? designation.name : designationLabel(designation)}</span>
-                        {designation.status === 'inactive' && <span className="text-[10px] font-bold uppercase text-gray-400">Inactive</span>}
-                        {designation.deload_units > 0 && <span className="shrink-0 text-xs font-semibold text-gray-500">-{designation.deload_units} units</span>}
-                      </label>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-
-            <div className="shrink-0 border-t border-gray-200 bg-white/60 p-4">
-              <p className="mb-3 text-[11px] font-semibold text-gray-500">{summary(draftDeload)}</p>
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={apply}
-                  className="rounded-xl bg-[#5A1220] px-4 py-2 text-sm font-bold text-white hover:bg-[#4a0f1a]"
-                >
-                  Done
-                </button>
+                {group.heading && (
+                  <p className="px-2 pb-1 pt-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">{group.heading.name}</p>
+                )}
+                {group.options.map((designation) => {
+                  const id = String(designation.id);
+                  const checked = draft.includes(id);
+                  const unavailable = !checked && blocked(id);
+                  return (
+                    <label
+                      key={designation.id}
+                      className={`flex min-h-10 items-center gap-3 rounded-lg px-2 py-2 text-sm ${group.heading ? 'pl-4' : ''} ${unavailable ? 'cursor-not-allowed text-slate-400' : 'cursor-pointer text-slate-700 hover:bg-slate-50'}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={unavailable}
+                        onChange={() => toggleDraft(id)}
+                        className="h-4 w-4 accent-[#4e0a10]"
+                      />
+                      <span className="flex-1 truncate">{group.heading ? designation.name : designationLabel(designation)}</span>
+                      {designation.status === 'inactive' && <span className="text-[10px] font-bold uppercase text-slate-400">Inactive</span>}
+                      {designation.deload_units > 0 && <span className="shrink-0 text-xs font-semibold tabular-nums text-slate-500">-{designation.deload_units} units</span>}
+                    </label>
+                  );
+                })}
               </div>
-            </div>
+            ))}
           </div>
-        </div>,
-        document.body,
-      )}
+        </Modal>
+      </div>
     </div>
   );
 }

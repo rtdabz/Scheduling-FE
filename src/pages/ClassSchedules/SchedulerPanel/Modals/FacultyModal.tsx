@@ -7,6 +7,7 @@ import InstructorPickerModal from "./InstructorPickerModal";
 import { eligibleFacultiesForSubject, majorTeachingDepartmentId, requiredTeachingProgramId } from "../facultyEligibility";
 import { AVAILABILITY_WARNING_TITLE, isAvailabilityWarning } from "../../../../lib/availabilityWindows";
 import { proBonoStatusOf } from "../../../../lib/facultyLoad";
+import { useModalScrollLock } from "../../../../hooks/useModalScrollLock";
 import type { FacultyAssignmentPopupState, ScheduleItem, Subject, Faculty } from "../types";
 
 interface FacultyModalProps {
@@ -45,20 +46,29 @@ export default function FacultyModal({
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [pickerScheduleId, setPickerScheduleId] = useState<string | null>(null);
   const closePicker = useCallback(() => setPickerScheduleId(null), []);
+  const isOpen = Boolean(facultyAssignmentPopup);
+  const isSavingFaculty = Boolean(facultyAssignmentPopup && facultyActionSlotId === facultyAssignmentPopup.scheduleId);
+  useModalScrollLock(isOpen);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeButtonRef.current?.focus();
+    return () => { if (opener?.isConnected) opener.focus(); };
+  }, [isOpen]);
 
   useEffect(() => {
     if (!facultyAssignmentPopup) return;
 
-    closeButtonRef.current?.focus();
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !isSavingFaculty && pickerScheduleId !== facultyAssignmentPopup.scheduleId) {
         setFacultyAssignmentPopup(null);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [facultyAssignmentPopup, setFacultyAssignmentPopup]);
+  }, [facultyAssignmentPopup, isSavingFaculty, pickerScheduleId, setFacultyAssignmentPopup]);
 
   if (!facultyAssignmentPopup) return null;
 
@@ -66,7 +76,6 @@ export default function FacultyModal({
   if (!schedule) return null;
 
   const subject = subjects.find((item) => item.id === schedule.subjectId);
-  const isSavingFaculty = facultyActionSlotId === schedule.id;
   const selectedFaculty = faculties.find((faculty) => faculty.id === facultyAssignmentPopup.facultyId);
   const canManageFaculty = canManageScheduleFaculty(schedule);
   const restrictionMessage = getFacultyRestrictionMessage(schedule);
@@ -125,22 +134,24 @@ export default function FacultyModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 min-h-screen p-4"
-      onClick={(event) => { if (event.target === event.currentTarget) setFacultyAssignmentPopup(null); }}
+      className="scheduler-dialog-overlay fixed inset-0 z-50 flex items-center justify-center overflow-y-auto"
+      onClick={(event) => { if (event.target === event.currentTarget && !isSavingFaculty) setFacultyAssignmentPopup(null); }}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="faculty-modal-title"
         aria-describedby="faculty-modal-desc"
-        className="bg-[#F7F4F0] rounded-2xl shadow-2xl w-full max-w-[34rem] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200"
+        aria-busy={isSavingFaculty}
+        className="scheduler-dialog w-full max-w-[34rem] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200"
       >
-        <div className="flex justify-between items-start px-5 py-4 bg-[#4e0a10]">
-          <div className="flex items-start gap-3">
-            <UserCheck className="w-5 h-5 text-[#C9952A] mt-0.5 shrink-0" />
-            <div>
-              <h3 id="faculty-modal-title" className="text-lg font-semibold text-white leading-tight">Assign Instructor</h3>
-              <p id="faculty-modal-desc" className="text-sm text-amber-100/75 mt-0.5">
+        <div className="scheduler-dialog-header flex justify-between items-start gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="scheduler-dialog-icon"><UserCheck className="w-5 h-5" /></span>
+            <div className="min-w-0">
+              <p className="scheduler-dialog-eyebrow">Instructor assignment</p>
+              <h3 id="faculty-modal-title" className="scheduler-dialog-title">Assign Instructor</h3>
+              <p id="faculty-modal-desc" className="scheduler-dialog-description">
                 Choose the eligible instructor for this scheduled subject.
               </p>
             </div>
@@ -149,14 +160,16 @@ export default function FacultyModal({
             ref={closeButtonRef}
             type="button"
             onClick={() => setFacultyAssignmentPopup(null)}
+            disabled={isSavingFaculty}
             aria-label="Close instructor assignment dialog"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+            className="scheduler-dialog-close"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <form onSubmit={handleAssignFaculty} className="px-5 py-4 space-y-4">
+        <form onSubmit={handleAssignFaculty} className="min-h-0 flex flex-1 flex-col">
+          <div className="scheduler-dialog-body min-h-0 flex-1 overflow-y-auto space-y-4">
           {subject && (
             <section className="rounded-xl border border-[#4e0a10]/10 bg-[#4e0a10]/5 px-4 py-3">
               <div className="flex flex-col gap-3">
@@ -306,15 +319,13 @@ export default function FacultyModal({
             </div>
           )}
 
-          <div className="flex gap-2 pt-1">
+          </div>
+          <div className="scheduler-dialog-footer flex gap-2 max-sm:flex-col">
             <button
               type="submit"
               disabled={isSavingFaculty || !canManageFaculty || isSameAssignedFaculty || Boolean(popupConflictWarning) || loadBlocked}
-              className={`flex-1 px-4 py-2.5 text-white rounded-lg text-sm font-bold shadow-xs transition-colors flex items-center justify-center gap-2 ${
-                "bg-[#4e0a10] hover:bg-[#3a0809]"
-              } ${
-                isSavingFaculty || !canManageFaculty || isSameAssignedFaculty || popupConflictWarning || loadBlocked ? "cursor-not-allowed opacity-75" : ""
-              }`}
+              data-variant="primary"
+              className="scheduler-dialog-button flex-1"
             >
               {isSavingFaculty ? (
                 <>
@@ -330,9 +341,8 @@ export default function FacultyModal({
                 type="button"
                 onClick={handleRemoveFaculty}
                 disabled={isSavingFaculty || !canManageFaculty}
-                className={`px-4 py-2.5 border border-rose-200 hover:bg-rose-50 text-rose-600 rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2 ${
-                  isSavingFaculty || !canManageFaculty ? "cursor-not-allowed opacity-70" : ""
-                }`}
+                data-variant="danger"
+                className="scheduler-dialog-button"
               >
                 {isSavingFaculty ? <LoadingSpinner className="w-3.5 h-3.5" /> : "Remove"}
               </button>

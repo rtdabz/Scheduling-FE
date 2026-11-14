@@ -33,12 +33,12 @@ export const GENERATION_GUIDE: GuideChapter[] = [
       {
         term: "Curriculum",
         meaning:
-          "The curriculum whose courses are scheduled this semester. Applying it gives every section of the year level the same course list.",
+          "The curriculum whose courses are scheduled this semester. Apply curriculum saves that assignment to the sections immediately, separately from saving a timetable.",
       },
       {
         term: "Generate for",
         meaning:
-          "Whole year level replaces the timetable of every section. Selected sections generates only the ticked sections.",
+          "Whole year level previews a timetable for all its sections. Selected sections generates only the ticked sections. Existing working classes are replaced when you save the result.",
         whenToUse:
           "Choose Selected sections when a new section was added after the year level was already scheduled.",
         notes: [
@@ -49,12 +49,23 @@ export const GENERATION_GUIDE: GuideChapter[] = [
       {
         term: "Preferred Days",
         meaning:
-          "The days this year level may meet. With no day picked, every open day may be used. Once you pick days, no class is placed on a day you left out, including Split Session and Hybrid meetings.",
+          "The days this year level may meet. Every open day is in by default; click a day to exclude it, and click it again to restore it. No class is placed on an excluded day, including Split Session and Hybrid meetings.",
         example:
-          "Pick Monday to Thursday to keep Friday and Saturday free for this year level.",
+          "Click Friday and Saturday to keep them free for this year level.",
         notes: [
-          "With only one day picked, Hybrid classes cannot be placed, because they need two different days. A Split Session falls back to a single meeting.",
+          "At least one day must stay open. With only one day left, Hybrid classes cannot be placed, because they need two different days. A Split Session falls back to a single meeting.",
           "Every course's Required Day must be one of the Preferred Days, or the run is refused.",
+        ],
+      },
+      {
+        term: "Allow Friday and Saturday as Paired Days",
+        meaning:
+          "The Split Days switch under the Preferred Days. Split Session and Hybrid Split courses may also meet on Friday and Saturday. Monday/Wednesday and Tuesday/Thursday are still tried first.",
+        whenToUse:
+          "Turn it on when a year level has too many split courses to fit Monday to Thursday.",
+        notes: [
+          "It is unavailable while Friday or Saturday is excluded from the Preferred Days.",
+          "The choice is kept in this browser for the department, so the next year level opens with it.",
         ],
       },
       {
@@ -62,7 +73,8 @@ export const GENERATION_GUIDE: GuideChapter[] = [
         meaning:
           "A department setting. While it is off, neither generation nor manual scheduling places a class on Sunday.",
         notes: [
-          "Only the department secretary can turn it on.",
+          "Only the department Secretary, Director, or Program Head can turn it on.",
+          "Changing this switch saves the department setting immediately.",
           "Turning it off keeps the classes already on Sunday. It only stops new ones.",
         ],
       },
@@ -87,7 +99,7 @@ export const GENERATION_GUIDE: GuideChapter[] = [
         example:
           "A 3-hour lecture becomes 1.5 hours on Monday and 1.5 hours on Wednesday.",
         notes: [
-          "Monday/Wednesday and Tuesday/Thursday pairs are tried first. Friday/Saturday is tried only when Default Settings allows it.",
+          "Monday/Wednesday and Tuesday/Thursday pairs are tried first. Friday/Saturday is tried only when it is allowed under the Preferred Days in Configuration.",
           "Only lecture courses can be split. Laboratory and field courses cannot.",
         ],
       },
@@ -137,22 +149,22 @@ export const GENERATION_GUIDE: GuideChapter[] = [
     title: "Configure a course",
     step: 2,
     intro:
-      "The Configure panel of a course holds rules for that course only. A course saved from Configure no longer follows the Default Settings.",
+      "Configure holds per-course choices and department rules. Required Day, Consecutive Days and field-course eligibility can save department settings immediately.",
     entries: [
       {
         term: "Class Component",
         meaning:
-          "For a course with laboratory units: whether it is scheduled as a lecture or as a laboratory, which decides the type of room it needs.",
+          "Set automatically from the course's units. Lecture and laboratory units become a lecture session in a lecture room and a laboratory session in a laboratory room (Room TBA when none is free); laboratory-only courses meet in a laboratory room.",
       },
       {
         term: "Class Duration",
         meaning:
           "How long the course meets each week: its Total Hours. For an imported curriculum these are the lecture and laboratory hours the curriculum recorded on import; otherwise they are the course's own lecture and laboratory hours. It cannot be changed here.",
         notes: [
-          "Every shape's meetings add up to exactly the Total Hours.",
+          "Every shape's meetings add up to exactly the Total Hours, except Consecutive Days, which repeats them on each selected day.",
           "For a Split Session, the two meetings share it equally.",
           "For Integrated, the lecture and the laboratory each keep their own hours.",
-          "For Consecutive Days, the days share it equally, so the number of days must divide it evenly.",
+          "For Consecutive Days, every selected day repeats the full Total Hours: PRAC 101 at 6 hours on 3 days meets 6 hours/day × 3 days = 18 hours. Academic units are unchanged.",
           "Hybrid Split has a fixed length of two 1.5-hour meetings.",
         ],
       },
@@ -175,8 +187,22 @@ export const GENERATION_GUIDE: GuideChapter[] = [
         whenToUse:
           "Use it for a fixed commitment, such as a course that must meet on Saturday.",
         notes: [
-          "A course with a Required Day is always scheduled as one Regular meeting. A Split or Integrated setting is dropped for it.",
+          "A course with a Required Day is always scheduled as one Regular meeting. A Split setting is dropped for it.",
+          "An Integrated course uses a Lecture Required Day and a Laboratory Required Day instead.",
           "The day must be one of the Preferred Days in Step 1.",
+        ],
+      },
+      {
+        term: "Lecture and Laboratory Required Days",
+        meaning:
+          "For an Integrated course, On-site or Hybrid, the day its lecture meets and the day its laboratory meets. Each is optional; a blank one lets the generator choose. The course keeps both meetings.",
+        whenToUse:
+          "Use them when, for example, the lecture must be on Monday and the laboratory on Thursday.",
+        notes: [
+          "The lecture and laboratory always meet on different days.",
+          "Both days must be Preferred Days, and Sunday needs Sunday classes.",
+          "They apply to the sections chosen in Apply To, for this generation only. Fixes and the final save keep them.",
+          "Changing the course away from Integrated clears them.",
         ],
       },
       {
@@ -193,46 +219,23 @@ export const GENERATION_GUIDE: GuideChapter[] = [
     ],
   },
   {
-    id: "defaults",
-    title: "Default Settings",
-    step: 2,
-    intro:
-      "The gear icon in the header during Setup Courses. Default Settings apply to every course that has no Configure settings of its own.",
-    entries: [
-      {
-        term: "Lecture Duration",
-        meaning:
-          "The weekly length of every lecture course, and of the lecture session of an Integrated course.",
-        notes: [
-          "A course whose own limits the default would break keeps its own length, and the course is listed as skipped.",
-        ],
-      },
-      {
-        term: "Laboratory Duration",
-        meaning:
-          "The weekly length of every laboratory course, and of the laboratory session of an Integrated course.",
-      },
-      {
-        term: "Allow Friday and Saturday as Paired Days",
-        meaning:
-          "Split Session and Hybrid Split courses may also meet on Friday and Saturday. Monday/Wednesday and Tuesday/Thursday are still tried first.",
-        whenToUse:
-          "Turn it on when a year level has too many split courses to fit Monday to Thursday.",
-      },
-      {
-        term: "Customized courses",
-        meaning:
-          "A course saved from its own Configure panel is marked as customized. The Default Settings skip it, so your per-course changes are kept.",
-      },
-    ],
-  },
-  {
     id: "generate",
     title: "Generate & results",
     step: 3,
     intro:
-      "Review what will be sent to the generator, run it, then look at the result. Nothing is saved until you apply it.",
+      "Review the scope and rules, queue a generation job, then inspect its preview. Save writes the working timetable drafts. Curriculum assignments and department settings save separately.",
     entries: [
+      {
+        term: "Queued and running jobs",
+        meaning:
+          "Queued means the server is waiting to start the job; running means it is generating. Closing the generator keeps the job available through its status panel. Neither state saves a working timetable.",
+      },
+      {
+        term: "Cancel, blocked, and failed runs",
+        meaning:
+          "Cancel clears the active run from this view and requests the worker to stop at its next checkpoint. A blocked run offers constraints and recommendations to review. A failed or server-cancelled run reports an error and has no saveable timetable.",
+        notes: ["Applying recommendations or retrying may change settings or launch another job. Review those actions before using them."],
+      },
       {
         term: "Course plan and Rules applied",
         meaning:
@@ -255,7 +258,11 @@ export const GENERATION_GUIDE: GuideChapter[] = [
       {
         term: "Schedule Summary and drafts",
         meaning:
-          "Step 4 shows the generated timetable. Saving it creates draft schedules, which you can still adjust by hand before they are finalized.",
+          "Step 4 shows the generated preview. Saving creates draft schedules and replaces affected working classes in the selected scope; instructor assignments on replaced classes may be removed. Review the normal confirmations before saving.",
+        notes: [
+          "A partial result can leave courses unplaced. Resolve conflicts before saving; saving without unplaced courses requires confirmation and can remove their old classes in the replacement scope.",
+          "Starting or finishing Help never queues a job, changes a setting, or saves the timetable.",
+        ],
       },
     ],
   },

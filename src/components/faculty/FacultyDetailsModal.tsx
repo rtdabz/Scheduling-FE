@@ -1,13 +1,15 @@
-import { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { AlertTriangle, BookOpen, History, Pencil, UserRound, X } from 'lucide-react';
+import { useState } from 'react';
+import { AlertTriangle, BookOpen, History, Pencil, UserRound } from 'lucide-react';
+import Modal from '../ui/Modal';
+import { ModalButton } from '../ui/ModalForm';
 import FacultyAvailabilityPanel from './FacultyAvailabilityPanel';
 import TeachingHistoryModal from './TeachingHistoryModal';
 import InstructorTeachingLoadButton from '../InstructorTeachingLoadButton';
 import { LOAD_TIER_BADGE_CLASSES, LOAD_TIER_LABELS, loadBandsOf, loadTierForUnits } from '../../lib/facultyLoad';
 import SegmentedLoadBar from './SegmentedLoadBar';
+import { formatPersonName, type PersonNameParts } from '../../lib/personName';
 
-export interface FacultyDetailsRecord {
+export interface FacultyDetailsRecord extends PersonNameParts {
   id: number;
   first_name: string;
   last_name: string;
@@ -35,16 +37,7 @@ interface FacultyDetailsModalProps {
 export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canEditAvailability, onNotify }: FacultyDetailsModalProps) {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
-  useEffect(() => {
-    if (isHistoryOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose, isHistoryOpen]);
-
-  const name = `${faculty.first_name} ${faculty.last_name}`;
+  const name = formatPersonName(faculty);
   const basicLoad = faculty.required_units;
   const assigned = faculty.assigned_units;
   const tier = basicLoad + Math.max(0, faculty.overload_units) > 0
@@ -73,45 +66,29 @@ export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canE
     { label: 'Ceiling', value: faculty.unit_ceiling },
   ];
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-slate-950/50 p-3 sm:items-center sm:p-4"
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
-      role="presentation"
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="faculty-details-title"
-        className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col md:max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl motion-safe:animate-modalIn"
+  return (
+    <>
+      <Modal
+        isOpen
+        onClose={onClose}
+        title={name}
+        description={`${faculty.department ? `${faculty.department.department_code} · ${faculty.department.department_name}` : 'No department'} · ${faculty.employment_type === 'part-time' ? 'Part-time' : 'Full-time'}`}
+        size="form"
+        className="md:!max-w-4xl"
+        bodyClassName="p-4 sm:p-5"
+        leading={faculty.profile_picture ? (
+          <img src={faculty.profile_picture} alt="" className="h-10 w-10 shrink-0 rounded-full border-2 border-white/20 object-cover" />
+        ) : (
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/80">
+            <UserRound className="h-5 w-5" aria-hidden="true" />
+          </span>
+        )}
+        footer={<>
+          <ModalButton onClick={() => setIsHistoryOpen(true)}><History size={16} /> Teaching History</ModalButton>
+          {onEditLoad && <ModalButton onClick={onEditLoad}><Pencil size={16} /> Edit load</ModalButton>}
+          <InstructorTeachingLoadButton facultyId={faculty.id} />
+        </>}
       >
-        <header className="flex shrink-0 items-center gap-3 bg-[#4e0a10] px-5 py-4 text-white">
-          {faculty.profile_picture ? (
-            <img src={faculty.profile_picture} alt="" className="h-12 w-12 shrink-0 rounded-full border-2 border-white/20 object-cover" />
-          ) : (
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/80">
-              <UserRound className="h-6 w-6" aria-hidden="true" />
-            </span>
-          )}
-          <div className="min-w-0 flex-1">
-            <h2 id="faculty-details-title" className="truncate font-display text-lg font-black leading-6">{name}</h2>
-            <p className="truncate text-xs font-medium text-amber-100/75">
-              {faculty.department ? `${faculty.department.department_code} · ${faculty.department.department_name}` : 'No department'}
-              {' · '}
-              {faculty.employment_type === 'part-time' ? 'Part-time' : 'Full-time'}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 transition hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-[#C9952A]"
-          >
-            <X size={18} />
-          </button>
-        </header>
-
-        <div className="min-h-0 flex-1 overflow-y-auto bg-parchment p-5">
           <div className="grid gap-4 md:grid-cols-5">
             <div className="space-y-4 md:col-span-3">
               <section className="rounded-xl border border-slate-200 bg-white p-4">
@@ -215,32 +192,10 @@ export default function FacultyDetailsModal({ faculty, onClose, onEditLoad, canE
               />
             </div>
           </div>
-        </div>
-
-        <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white px-5 py-3">
-          <button
-            type="button"
-            onClick={() => setIsHistoryOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
-          >
-            <History size={14} /> Teaching History
-          </button>
-          {onEditLoad && (
-            <button
-              type="button"
-              onClick={onEditLoad}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
-            >
-              <Pencil size={14} /> Edit load
-            </button>
-          )}
-          <InstructorTeachingLoadButton facultyId={faculty.id} />
-        </footer>
-      </div>
+      </Modal>
       {isHistoryOpen && (
         <TeachingHistoryModal facultyId={faculty.id} facultyName={name} onClose={() => setIsHistoryOpen(false)} />
       )}
-    </div>,
-    document.body,
+    </>
   );
 }

@@ -3,6 +3,8 @@ import { CalendarClock, Pencil } from 'lucide-react';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
 import { FULL_DAY_NAMES, formatTime12h } from '../../lib/timeGrid';
+import { summarizeWeek } from '../../lib/availabilityWindows';
+import { publishLiveTopics } from '../../lib/liveUpdates';
 import FacultyAvailabilityEditor from './FacultyAvailabilityEditor';
 import Skeleton from '../ui/Skeleton';
 import type { AvailabilityResponse, AvailabilityWindow } from './facultyAvailability';
@@ -23,6 +25,7 @@ export default function FacultyAvailabilityPanel({
   onNotify,
 }: FacultyAvailabilityPanelProps) {
   const [windows, setWindows] = useState<AvailabilityWindow[]>([]);
+  const [standardWindows, setStandardWindows] = useState<AvailabilityWindow[]>([]);
   const [openingTime, setOpeningTime] = useState('07:00:00');
   const [closingTime, setClosingTime] = useState('21:00:00');
   const [isLoading, setIsLoading] = useState(true);
@@ -37,6 +40,7 @@ export default function FacultyAvailabilityPanel({
         const res = await api.get<AvailabilityResponse>(`/faculties/${facultyId}/availabilities`);
         if (!active) return;
         setWindows(res.data?.availabilities ?? []);
+        setStandardWindows(res.data?.standard_availabilities ?? []);
         if (res.data?.opening_time) setOpeningTime(res.data.opening_time);
         if (res.data?.closing_time) setClosingTime(res.data.closing_time);
         setLoadError('');
@@ -62,7 +66,8 @@ export default function FacultyAvailabilityPanel({
       .sort((a, b) => a.start_time.localeCompare(b.start_time)),
   }));
 
-  const isUnrestricted = windows.length === 0;
+  const hasAddedWindows = windows.length > 0;
+  const employmentLabel = employmentType === 'part-time' ? 'part-time' : 'full-time';
 
   return (
     <div className="space-y-2">
@@ -83,7 +88,7 @@ export default function FacultyAvailabilityPanel({
             className="flex items-center gap-1 text-[11px] font-bold text-[#5A1220] hover:text-[#C9952A] transition-colors cursor-pointer"
           >
             <Pencil size={12} />
-            {isUnrestricted ? 'Set windows' : 'Edit windows'}
+            {hasAddedWindows ? 'Edit added windows' : 'Add window'}
           </button>
         )}
       </div>
@@ -97,25 +102,17 @@ export default function FacultyAvailabilityPanel({
         <p className="rounded-xl border border-red-100 bg-red-50 p-3 text-[11px] font-semibold text-red-600">
           {loadError}
         </p>
-      ) : isUnrestricted && employmentType === 'part-time' ? (
-        <p className="rounded-xl border border-red-100 bg-red-50 p-3 text-xs font-semibold text-red-700 font-sans">
-          No windows recorded. A part-time instructor is only scheduled inside their windows,
-          so this instructor cannot be assigned to any class until windows are set
-          {canEdit ? '.' : ' by an account with instructor-assignment access.'}
-        </p>
-      ) : isUnrestricted ? (
-        <p className="rounded-xl border border-gray-100 bg-white p-3 text-xs text-gray-500 font-sans">
-          No windows set &mdash; schedulable during any operating hour
-          <span className="text-gray-400">
-            {' '}({formatTime12h(openingTime)} &ndash; {formatTime12h(closingTime)})
-          </span>
-          .
-        </p>
       ) : (
         <div className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-100 bg-white font-sans">
-          {employmentType === 'part-time' && (
-            <p className="bg-amber-50/60 px-3 py-2 text-[11px] font-semibold text-amber-800">
-              Days not listed below are treated as unavailable.
+          <div className="space-y-0.5 px-3 py-2 text-xs">
+            <p className="font-bold text-gray-700">Default {employmentLabel} hours</p>
+            <p className="font-semibold text-slate-700">
+              {standardWindows.length > 0 ? summarizeWeek(standardWindows) : 'No default hours within operating hours.'}
+            </p>
+          </div>
+          {hasAddedWindows && (
+            <p className="bg-slate-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Added windows
             </p>
           )}
           {byDay
@@ -135,6 +132,9 @@ export default function FacultyAvailabilityPanel({
                 </div>
               </div>
             ))}
+          <p className="px-3 py-2 text-[11px] text-gray-500">
+            Classes must fit inside the default hours or an added window.
+          </p>
         </div>
       )}
 
@@ -144,17 +144,20 @@ export default function FacultyAvailabilityPanel({
           facultyName={facultyName}
           employmentType={employmentType}
           windows={windows}
+          standardWindows={standardWindows}
           openingTime={openingTime}
           closingTime={closingTime}
           onClose={() => setIsEditorOpen(false)}
           onSaved={saved => {
             setWindows(saved);
+            // Assignment and scheduler pages hold their own copy of each instructor's windows.
+            publishLiveTopics(['faculty', 'assignments', 'schedules']);
             onNotify?.(
               'success',
               'Availability Saved',
               saved.length === 0
-                ? `${facultyName} is now available during any operating hour.`
-                : `${saved.length} weekly window${saved.length === 1 ? '' : 's'} saved for ${facultyName}.`
+                ? `${facultyName} now follows the default ${employmentLabel} hours only.`
+                : `${saved.length} added window${saved.length === 1 ? '' : 's'} saved for ${facultyName}, on top of the default hours.`
             );
           }}
           onError={message => onNotify?.('error', 'Availability', message)}

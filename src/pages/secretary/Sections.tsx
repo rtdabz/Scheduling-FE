@@ -29,6 +29,7 @@ import { yearLevelLabel } from '../../lib/semesterLabel';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 import FilterBar from '../../components/ui/FilterBar';
+import { isDepartmentOfficeRole } from '../../lib/roles';
 
 interface Department {
   id: number;
@@ -112,11 +113,12 @@ export default function SecretarySections() {
   const [programs, setPrograms] = useState<Program[]>(cachedSectionsData?.programs ?? []);
   const [semesters, setSemesters] = useState<Semester[]>(cachedSectionsData?.semesters ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(sectionsCacheKey));
+  const [loadError, setLoadError] = useState(false);
 
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
-  const isSecretary = user?.role?.toLowerCase() === 'secretary';
+  const isDepartmentOffice = isDepartmentOfficeRole(user?.role);
   const isProgramHead = user?.role?.toLowerCase() === 'program_head';
-  const canManageSections = hasStoredCapability('schedule.create') || ((isSecretary || isProgramHead) && (programs.length > 0 || user?.scheduling_ready !== false));
+  const canManageSections = hasStoredCapability('schedule.create') || ((isDepartmentOffice || isProgramHead) && (programs.length > 0 || user?.scheduling_ready !== false));
 
   const selectablePrograms = useMemo(
     () => (isProgramHead ? programs.filter((p) => Number(p.id) === Number(user?.program_id)) : programs),
@@ -200,7 +202,9 @@ export default function SecretarySections() {
       setDepartments(data.departments);
       setSemesters(data.semesters);
       setPrograms(data.programs);
+      setLoadError(false);
     } catch {
+      setLoadError(true);
       toast.error('Error', 'Failed to load sections, departments, and semesters data.');
     } finally {
       setIsLoading(false);
@@ -308,6 +312,7 @@ export default function SecretarySections() {
       if (isVpaa) {
         cols.push({
           accessorKey: 'department',
+          meta: { hideBelow: 'sm' },
           header: 'Department',
           cell: info => {
             const dept = info.getValue() as Department | null;
@@ -377,15 +382,35 @@ export default function SecretarySections() {
     getPaginationRowModel: getPaginationRowModel()
   });
 
-  const sectionGuideSteps = useMemo(() => [
-    { element: '#sections-year-tabs', action: 'click' as const, taskHint: 'Pick a year level to continue.', title: 'Browse by year level', description: 'Each button shows how many sections that year level has.', side: 'bottom' as const },
-    { element: '#sections-add-button', action: 'click' as const, taskHint: 'Click Add Section to open the form.', title: 'Add a section', description: 'New sections are created from this page.', side: 'bottom' as const },
-    { element: '#section-program-select', waitFor: '#section-form', action: 'select' as const, taskHint: 'Choose the program to continue.', title: 'Select a program', description: 'The section belongs to a program in your department.', side: 'bottom' as const },
-    { element: '[data-tour="section-row-name"]', waitFor: '#section-form', action: 'input' as const, taskHint: 'Type a section name to continue.', title: 'Name the section', description: 'Use the official section code, e.g. BSIT 1A.', side: 'bottom' as const },
-    { element: '[data-tour="section-row-year"]', waitFor: '#section-form', action: 'select' as const, taskHint: 'Choose the year level to continue.', title: 'Set the year level', description: 'Year level decides which courses the section takes.', side: 'bottom' as const },
-    { element: '#section-form', action: 'submit' as const, taskHint: 'Click Save section to create it.', title: 'Save the section', description: 'Submit the form to create it. Great work — that is the whole flow.', side: 'top' as const },
-  ].slice(0, canManageSections ? undefined : 1), [canManageSections]);
-  useWorkflowGuide({ id: 'sections', isReady: true, steps: sectionGuideSteps, mission: 'Manage Sections' });
+  useWorkflowGuide({
+    id: 'sections', isReady: !isLoading, mission: 'Manage Sections',
+    variant: isModalOpen ? (isEditMode ? 'edit' : 'create') : loadError ? 'unavailable' : canManageSections ? 'manage' : 'browse',
+    steps: () => {
+      const formSteps = [
+        ...(isVpaa ? [{ id: 'department', element: '#section-department-select', title: 'Choose the department', description: 'Select the department first. The program choices depend on this department.' }] : []),
+        { id: 'program', element: '#section-program-select', title: 'Choose the program', description: 'A program is required for each section. If there are no choices, the department must have a program before sections can be saved.' },
+        ...(isModalOpen && isEditMode ? [
+          { id: 'name', element: '#section-edit-name', title: 'Use the official section name', description: 'Enter a section code such as BSIT 1A. Names must be unique within the department and semester.' },
+          { id: 'year', element: '#section-edit-year', title: 'Check the year level', description: 'Choose the section’s actual year level.' },
+        ] : [
+          { id: 'name', element: '#section-base-name', title: 'Enter the program name', description: 'Type the program name only, such as BSIT. It is pre-filled from the selected program. The year number and letters are added automatically (BSIT 3A, BSIT 3B…). You can review these fields without saving anything.' },
+          { id: 'quantity', element: '#section-quantity', title: 'Choose how many sections', description: `Enter how many sections to create (up to 50 at a time). If some already exist, such as BSIT 3A and 3B, naming continues from the next letter.` },
+          { id: 'year', element: '#section-year-level', title: 'Check the year level', description: 'Every generated section gets this year level, and its number is used in the name (3rd Year → BSIT 3A).' },
+          { id: 'preview', element: '#section-preview', title: 'Review the preview', description: 'The preview lists every section that will be created and updates as you type. Names already taken in this department and semester are flagged.' },
+        ]),
+        { id: 'save', element: '#section-save', title: 'Save when the form is ready', description: 'Save creates all previewed sections together, or none if any name is rejected. It may report duplicate names or other errors. Finishing help does not save; Cancel closes the form without saving.' },
+      ];
+      if (isModalOpen) return formSteps;
+      if (loadError) return [{ id: 'unavailable', element: '#sections-table', title: 'Sections could not be refreshed', description: 'Section, program or semester information may be missing or outdated. Reload the page to retry before creating or editing sections.' }];
+      return [
+        { id: 'browse', element: '#sections-year-tabs', title: 'Browse by year level', description: 'Each button shows its section count. The table follows the selected year and program filters; clear them if you cannot find a section.' },
+        ...(!canManageSections ? [{ id: 'read-only', element: '#sections-table', title: 'Review the sections', description: 'Review section names, programs and year levels. Your current access does not include creating or changing sections.' }] : !activeSemester?.is_active || selectablePrograms.length === 0 ? [{ id: 'prerequisites', element: '#sections-toolbar', title: 'Section setup is required', description: !activeSemester?.is_active ? 'An active semester is required before creating sections. Ask an administrator to activate the semester, then reload this page.' : 'Your department needs a program before sections can be created. Complete program setup, then reload this page.' }] : [
+          { id: 'open-form', element: '#sections-add-button', action: 'click' as const, isSatisfied: () => document.querySelector('#section-form') !== null, taskHint: 'Open Add Section to review the form.', title: 'Review the creation form', description: 'Open Add Section to see the required fields. Opening the form does not create a section.' },
+          ...formSteps,
+        ]),
+      ];
+    },
+  });
 
   return (
     <div>
@@ -402,17 +427,15 @@ export default function SecretarySections() {
                   setYearLevelFilter(value);
                   setPagination((p) => ({ ...p, pageIndex: 0 }));
                 }}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-bold transition-colors cursor-pointer ${
+                className={`selection-indicator flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-bold transition-colors cursor-pointer ${
                   isActive
-                    ? 'bg-[#5A1220] border-[#5A1220] text-white shadow-sm'
+                    ? 'shadow-sm'
                     : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400 hover:bg-gray-50'
                 }`}
               >
                 <span>{label}</span>
                 <span
-                  className={`min-w-[1.375rem] px-1.5 py-0.5 rounded-full text-[10px] leading-none text-center tabular-nums ${
-                    isActive ? 'bg-white/20 text-white' : 'bg-[#C9952A]/15 text-[#9a7020]'
-                  }`}
+                  className="selection-indicator-count min-w-[1.375rem] px-1.5 py-0.5 rounded-full text-[10px] leading-none text-center tabular-nums"
                 >
                   {yearLevelCounts[value] ?? 0}
                 </span>

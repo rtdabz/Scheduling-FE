@@ -438,7 +438,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
               section: formatSectionSummary(sectionsByDepartment.get(departmentId) ?? [], sectionIds),
               subjectsScheduled: wholeSubmission ? submission.subject_count ?? liveSubjects : liveSubjects,
               sectionCount: wholeSubmission ? submission.section_count ?? sectionIds.length : sectionIds.length,
-              submittedBy: submission.submitter?.name ?? 'Secretary',
+              submittedBy: submission.submitter?.name ?? 'Submitter unavailable',
               submittedAt: submission.submitted_at ?? '',
               deanReviewedAt: submission.dean_reviewed_at,
               status: submissionDisplayStatus(submission),
@@ -857,7 +857,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
           return (
             <div className="flex flex-col items-center gap-1 text-center" title={row.original.section}>
               <span className="whitespace-nowrap font-semibold text-gray-700">{`${count}/${row.original.originalSectionCount} Active`}</span>
-              <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800 ring-1 ring-inset ring-amber-200">
+              <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-200">
                 <Undo2 size={11} aria-hidden="true" />{`${recalled} Recalled`}
               </span>
             </div>
@@ -962,15 +962,16 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
             <button
               key={tab.id}
               type="button"
+              aria-pressed={active}
               onClick={() => {
                 setSelectedQueueTab(tab.id);
                 setSelectedStatus('all');
                 resetPage();
               }}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold uppercase tracking-wide transition-colors ${active ? 'bg-[#4e0a10] text-white shadow-sm' : 'bg-gray-50 text-gray-600 hover:bg-[#4e0a10]/5 hover:text-[#4e0a10]'}`}
+              className={`selection-indicator inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold uppercase tracking-wide transition-colors ${active ? 'shadow-sm' : 'bg-gray-50 text-gray-600 hover:bg-[#4e0a10]/5 hover:text-[#4e0a10]'}`}
             >
               {tab.label}
-              <span className={`rounded-full px-2 py-0.5 text-[10px] ${active ? 'bg-white/20 text-white' : 'bg-white text-gray-500'}`}>{queueCounts[tab.id]}</span>
+              <span className="selection-indicator-count rounded-full px-2 py-0.5 text-[10px]">{queueCounts[tab.id]}</span>
             </button>
           );
         })}
@@ -1034,6 +1035,7 @@ export default function ScheduleApprovalPage({ stage }: { stage: ApprovalStage }
           isLoading={isLoading || transfersLoading}
           totalLabel="requests"
           ariaLabel="Schedule submissions"
+          onRowClick={(entry) => openView(entry)}
           scrollClassName="overflow-x-auto"
           scrollAriaLabel="Approval requests scroll area"
           emptyTitle={loadError ? 'The queue could not be loaded.' : 'No schedules found.'}

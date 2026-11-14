@@ -29,18 +29,17 @@ export default function YearLevelTabs({
             <button
               key={year}
               type="button"
+              aria-pressed={isSelected}
               onClick={() => onSelectYear(year)}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-bold transition-all duration-200 whitespace-nowrap cursor-pointer ${
+              className={`selection-indicator flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-bold transition-all duration-200 whitespace-nowrap cursor-pointer ${
                 isSelected
-                  ? 'bg-[#4e0a10] text-white shadow-sm border border-[#4e0a10]'
+                  ? 'shadow-sm border'
                   : 'bg-white text-gray-700 hover:text-[#4e0a10] hover:bg-gray-100/70 border border-gray-200/60'
               }`}
             >
               <span>{yearLabels[year]}</span>
               <span
-                className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
-                  isSelected ? 'bg-[#C9952A] text-white' : 'bg-gray-100 text-gray-600'
-                }`}
+                className="selection-indicator-count px-2 py-0.5 rounded-full text-[10px] font-mono"
               >
                 {stats.units} {stats.units === 1 ? 'unit' : 'units'}
               </span>

@@ -19,6 +19,8 @@ import { useToast } from '../../context/ToastContext';
 import type { Curriculum, CurriculumStatus } from '../../types/curriculum';
 import { curriculumLifecycleBadge } from '../../types/curriculum';
 import FilterBar from '../../components/ui/FilterBar';
+import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
+import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 
 type ReviewTab = CurriculumStatus;
 
@@ -39,7 +41,7 @@ const selectClassName =
 
 export default function CurriculumReviewPage() {
   const { toast } = useToast();
-  const { rawCurriculumList, departments, programs, isLoading } = useCurriculum();
+  const { rawCurriculumList, departments, programs, isLoading, loadError } = useCurriculum();
 
   const [selectedTab, setSelectedTab] = useState<ReviewTab>('active');
   const [selectedDept, setSelectedDept] = useState('all');
@@ -135,17 +137,20 @@ export default function CurriculumReviewPage() {
       },
       {
         id: 'department',
+        meta: { hideBelow: 'lg' },
         accessorFn: (row) => departmentName(row),
         header: 'Department',
         cell: (info) => <span className="text-gray-600 font-medium whitespace-nowrap">{info.getValue() as string}</span>,
       },
       {
         accessorKey: 'effective_school_year',
+        meta: { hideBelow: 'md' },
         header: 'Effective Year',
         cell: (info) => <span className="text-gray-500 font-medium">{info.getValue() as string}</span>,
       },
       {
         accessorKey: 'courses_count',
+        meta: { hideBelow: 'sm' },
         header: () => <div className="text-center">Courses</div>,
         cell: (info) => <div className="text-center font-semibold text-gray-700">{info.getValue() as number}</div>,
       },
@@ -215,6 +220,15 @@ export default function CurriculumReviewPage() {
     getPaginationRowModel: getPaginationRowModel(),
   });
 
+  useWorkflowGuide({
+    id: 'curriculum', isReady: !isLoading, variant: viewCurriculumId !== null ? 'review-preview' : loadError ? 'review-unavailable' : 'review', mission: 'Review Curricula',
+    steps: () => viewCurriculumId !== null ? [{ id: 'preview', element: '#curriculum-detail-preview', title: 'Review the curriculum document', description: 'Wait for the selected curriculum document to load. A preparation error appears here if it cannot be opened. Close returns to the review list without changing curriculum records.' }] : loadError ? [{ id: 'unavailable', element: '#curriculum-review-list', title: 'Curricula could not be refreshed', description: 'Curriculum information may be missing or outdated. Reload the page to retry before relying on these results.' }] : [
+      { id: 'status', element: '#curriculum-review-tabs', title: 'Review by status', description: 'Active, Deactivated and Archived show existing curricula in each state. These tabs do not change curriculum status.' },
+      { id: 'filters', element: '#curriculum-review-filters', title: 'Narrow the list', description: 'Use effective year and any available department filter. Reset Filters restores the default review list.' },
+      { id: 'list', element: '#curriculum-review-list', title: filteredData.length ? 'Inspect the curriculum' : 'No curricula match', description: filteredData.length ? 'View opens curriculum details and courses. Print prepares a printable copy. Your current access is for review; this guide does not create or change curriculum records.' : 'Try Reset Filters or another status tab. If the list stays empty, there are no curricula available in your current scope.' },
+    ],
+  });
+
   return (
     <div className="relative">
       <CurriculumStatusTabs
@@ -268,6 +282,7 @@ export default function CurriculumReviewPage() {
         >
           Reset Filters
         </button>
+        <WorkflowGuideButton guideId="curriculum" />
       </FilterBar>
 
       <div id="curriculum-review-list">
@@ -276,6 +291,7 @@ export default function CurriculumReviewPage() {
           isLoading={isLoading}
           totalLabel="curricula"
           ariaLabel="Curricula"
+          onRowClick={(item) => setViewCurriculumId(item.id)}
           emptyTitle="No curricula found."
           emptyDescription="Adjust your department or year filters and try again."
           cellClassName={(columnId) => (['effective_school_year', 'courses_count', 'status', 'actions'].includes(columnId) ? 'whitespace-nowrap' : '')}

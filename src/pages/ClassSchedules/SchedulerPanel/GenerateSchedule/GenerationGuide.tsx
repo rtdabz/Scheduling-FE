@@ -33,7 +33,7 @@ export default function GenerationGuide({
     <SlideOverPanel
       ariaLabel="Generation Guide"
       icon={<BookOpen className="h-5 w-5" />}
-      heading={<h3 className="text-base font-black tracking-tight">Generation Guide</h3>}
+      heading={<h3>Generation Guide</h3>}
       subheading="What each setting means and how it shapes the timetable"
       onClose={onClose}
       footer={(close) => (
@@ -42,14 +42,14 @@ export default function GenerationGuide({
             type="button"
             disabled={searching || chapterIndex === 0}
             onClick={() => setChapterIndex((index) => index - 1)}
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+            className="scheduler-dialog-button inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <ChevronLeft className="h-4 w-4" /> Previous
           </button>
           <button
             type="button"
             onClick={() => close()}
-            className="rounded-lg px-3 py-2 text-xs font-bold text-slate-500 transition hover:bg-slate-100"
+            className="scheduler-dialog-button rounded-lg px-3 py-2 text-xs font-bold text-slate-500 transition hover:bg-slate-100"
           >
             Close
           </button>
@@ -57,7 +57,7 @@ export default function GenerationGuide({
             type="button"
             disabled={searching || chapterIndex === GENERATION_GUIDE.length - 1}
             onClick={() => setChapterIndex((index) => index + 1)}
-            className="inline-flex items-center gap-1 rounded-lg bg-[#4e0a10] px-3 py-2 text-xs font-black text-white transition hover:bg-[#34070a] disabled:cursor-not-allowed disabled:opacity-40"
+            data-variant="primary" className="scheduler-dialog-button inline-flex items-center gap-1 rounded-lg bg-[#4e0a10] px-3 py-2 text-xs font-black text-white transition hover:bg-[#34070a] disabled:cursor-not-allowed disabled:opacity-40"
           >
             Next <ChevronRight className="h-4 w-4" />
           </button>
@@ -84,10 +84,11 @@ export default function GenerationGuide({
                 key={item.id}
                 type="button"
                 aria-current={index === chapterIndex ? "page" : undefined}
+                aria-pressed={index === chapterIndex}
                 onClick={() => setChapterIndex(index)}
-                className={`rounded-full px-2.5 py-1 text-[11px] font-black transition ${
+                className={`selection-indicator rounded-full px-2.5 py-1 text-[11px] font-black transition ${
                   index === chapterIndex
-                    ? "bg-[#4e0a10] text-white"
+                    ? ""
                     : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 }`}
               >

@@ -7,7 +7,7 @@ export type Density = 'comfortable' | 'compact';
 export const ZOOM_PX_PER_HOUR: Record<ZoomLevel, number> = { fit: 64, normal: 132, wide: 220 };
 
 export const LAB_PATTERN: CSSProperties = {
-  backgroundImage: 'repeating-linear-gradient(135deg, rgba(15, 23, 42, 0.07) 0 5px, transparent 5px 11px)',
+  backgroundImage: 'repeating-linear-gradient(135deg, rgba(26, 20, 16, 0.06) 0 1.5px, transparent 1.5px 7px)',
 };
 
 export const overlapSummary = (entries: readonly OverlapEntry[] | undefined): string => {
@@ -18,5 +18,5 @@ export const overlapSummary = (entries: readonly OverlapEntry[] | undefined): st
 };
 
 export const OFF_HOURS_PATTERN: CSSProperties = {
-  backgroundImage: 'repeating-linear-gradient(45deg, rgba(100, 116, 139, 0.10) 0 4px, transparent 4px 9px)',
+  backgroundImage: 'repeating-linear-gradient(45deg, rgba(122, 110, 103, 0.09) 0 1.5px, transparent 1.5px 8px)',
 };

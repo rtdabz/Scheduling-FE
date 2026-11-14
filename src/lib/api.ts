@@ -10,6 +10,7 @@ import {
 } from './idempotency';
 import { disconnectLiveUpdates, getLiveSocketId } from './liveSocket';
 import { isRetryableRead, readRetryDelayMs } from './requestRetry';
+import { clearSessionEnded, markSessionEnded, sessionEndedError } from './sessionEnded';
 import { announceSessionEnded, clearLastActivity } from './sessionTimeout';
 
 declare module 'axios' {
@@ -55,6 +56,7 @@ const releaseController = (signal?: unknown): void => {
 
 export const beginLogout = (): void => {
     loggingOut = true;
+    markSessionEnded();
     clearIdempotencyKeys();
     resetConnectionStatus();
 };
@@ -69,6 +71,7 @@ api.interceptors.request.use((config) => {
 
     if (config.url === '/login' || config.url === '/auth/google/exchange') {
         loggingOut = false;
+        clearSessionEnded();
         return config;
     }
 
@@ -112,7 +115,7 @@ api.interceptors.response.use(
         if (!axios.isCancel(error)) reportOutcome(error.config, Boolean(error.response));
 
         if (loggingOut && requestUrl !== '/logout') {
-            return new Promise(() => undefined);
+            return Promise.reject(sessionEndedError(error.config));
         }
 
         if (error.response?.status === 401 && requestUrl !== '/login' && requestUrl !== '/logout') {
@@ -130,14 +133,14 @@ api.interceptors.response.use(
             if (!announceSessionEnded(reason)) {
                 window.location.href = '/';
             }
-            return new Promise(() => undefined);
+            return Promise.reject(sessionEndedError(error.config));
         }
 
         const config = error.config;
         const attempt = config?.retryAttempt ?? 0;
         if (config && isRetryableRead(error, attempt)) {
             await new Promise((resolve) => setTimeout(resolve, readRetryDelayMs(attempt)));
-            if (loggingOut) return new Promise(() => undefined);
+            if (loggingOut) return Promise.reject(sessionEndedError(config));
 
             config.retryAttempt = attempt + 1;
             if (config.ownsSignal) {

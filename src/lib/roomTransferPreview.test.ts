@@ -9,6 +9,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 const request = (): RoomTransferRequest => ({
   id: 'plan-1', status: 'pending_dean', department_id: 1, department: 'Science', semester_id: 3, semester_label: '2025-2026 2nd',
+  signatories: { prepared: [{ user_id: 2, program_id: null, name: 'Department Staff', title: 'Department Secretary' }], reviewed: { name: 'College Dean', title: 'Dean' }, recommended: { name: 'Academic Vice President', title: 'Vice-President for Academic Affairs' }, approved: { name: 'College President', title: 'President' }, frozen: false },
   submitted_by: 'Secretary', submitted_at: '', reviewed_at: null, rejection_reason: null, schedule_ids: [11],
   preview_semester: { id: 3, academic_year: '2025-2026', semester: '2nd', is_active: false },
   preview_department: { id: 1, department_name: 'Science', department_code: 'SCI' },
@@ -68,7 +69,7 @@ describe('roomTransferPreview', () => {
   });
   it.each(['pending_dean', 'approved'] as const)('passes Schedule Approval PDF input without change highlighting (%s)', status => {
     const transfer = request(); transfer.status = status;
-    expect(Object.keys(roomTransferPreview(transfer)!).sort()).toEqual(['activeSemester', 'allSchedules', 'departments', 'sections', 'selectedSectionId', 'users']);
+    expect(Object.keys(roomTransferPreview(transfer)!).sort()).toEqual(['activeSemester', 'allSchedules', 'departments', 'historicalDocument', 'sections', 'selectedSectionId', 'signatories', 'users']);
   });
   it('does not fabricate missing academic information', () => {
     const transfer = request(); delete transfer.changes[0].preview_schedule;
@@ -118,23 +119,19 @@ describe('roomTransferPreview', () => {
     };
     const pdf = await readPdf();
     expect(pdf).toContain('%PDF-');
-    for (const text of ['PROGRAM LEAD', 'Program Head', 'COLLEGE DEAN', 'Dean', 'ACADEMIC VICE PRESIDENT', 'Vice-President for Academic Affairs', 'College President', 'President', 'Lab 2', 'Wednesday', '10:00 AM']) {
+    for (const text of ['DEPARTMENT STAFF', 'Department Secretary', 'COLLEGE DEAN', 'Dean', 'ACADEMIC VICE PRESIDENT', 'Vice-President for Academic', 'Affairs', 'College President', 'President', 'Lab 2', 'Wednesday', '10:00 AM']) {
       expect(pdf).toContain(`(${text}`);
     }
     expect(pdf).not.toContain('PROPOSED ROOM TRANSFERS');
     expect(pdf).not.toContain('ROOM TRANSFER RECORD');
     expect(pdf).not.toContain('Changed day, time and room values are highlighted.');
     expect(pdf).not.toContain('This document does not apply changes.');
-    expect(pdf).not.toContain('(Department Secretary)');
-    // Rows with no recorded creator fall back to the Program Head, never to another department user.
-    input.users = input.users.filter(user => user.role !== 'program_head');
-    const withoutHead = await readPdf();
-    expect(withoutHead).toContain('(Program Head)');
-    expect(withoutHead).not.toContain('(DEPARTMENT STAFF)');
-    expect(withoutHead).not.toContain('(Department Secretary)');
-    expect(withoutHead).not.toContain('(PROGRAM LEAD)');
+    input.users = input.users.map(user => ({ ...user, name: 'Replacement Official' }));
+    const afterReplacement = await readPdf();
+    expect(afterReplacement).toContain('(DEPARTMENT STAFF)');
+    expect(afterReplacement).not.toContain('(REPLACEMENT OFFICIAL)');
   });
-  it('lists the Program Head of every printed program as preparer', async () => {
+  it('keeps the recorded transfer submitter when printing additional programs', async () => {
     vi.stubGlobal('Image', class {
       onerror: (() => void) | null = null;
       constructor() { queueMicrotask(() => this.onerror?.()); }
@@ -151,11 +148,11 @@ describe('roomTransferPreview', () => {
       reader.onerror = reject;
       reader.readAsText(blob);
     });
-    expect(pdf).toContain('(PROGRAM LEAD / SECOND LEAD)');
-    expect(pdf).toContain('(Program Head)');
-    expect(pdf).not.toContain('(DEPARTMENT STAFF)');
+    expect(pdf).toContain('(DEPARTMENT STAFF)');
+    expect(pdf).not.toContain('(PROGRAM LEAD');
+    expect(pdf).not.toContain('(SECOND LEAD');
   });
-  it('prints whoever created the schedule as preparer, ignoring approvers', async () => {
+  it('uses the transfer actor snapshot rather than current schedule creators', async () => {
     vi.stubGlobal('Image', class {
       onerror: (() => void) | null = null;
       constructor() { queueMicrotask(() => this.onerror?.()); }
@@ -174,7 +171,7 @@ describe('roomTransferPreview', () => {
       reader.readAsText(blob);
     });
     expect(pdf).toContain('(DEPARTMENT STAFF)');
-    expect(pdf).toContain('(Program Head)');
+    expect(pdf).toContain('(Department Secretary)');
     expect(pdf).not.toContain('(PROGRAM LEAD)');
     expect(pdf).not.toContain('(DEPARTMENT STAFF / COLLEGE DEAN)');
   });

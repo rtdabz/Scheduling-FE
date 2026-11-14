@@ -1,0 +1,1868 @@
+{
+  "generatedAt": "2026-11-08T22:13:51.361Z",
+  "browser": "Chrome headless",
+  "safeMode": "All domain writes aborted; run/status fixtures are browser-only.",
+  "results": [
+    {
+      "name": "plotting-closed-live",
+      "roleId": 30,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "live data",
+      "steps": [
+        "selected-section",
+        "workflow",
+        "generator",
+        "timetable",
+        "next-action"
+      ],
+      "geometry": [
+        {
+          "step": "selected-section",
+          "tooltip": {
+            "x": 324,
+            "y": 276,
+            "width": 360,
+            "height": 288.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "workflow",
+          "tooltip": {
+            "x": 672,
+            "y": 269,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "generator",
+          "tooltip": {
+            "x": 991,
+            "y": 270,
+            "width": 360,
+            "height": 354.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "timetable",
+          "tooltip": {
+            "x": 684,
+            "y": 61,
+            "width": 360,
+            "height": 312.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "next-action",
+          "tooltip": {
+            "x": 684,
+            "y": 375,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "outcomes": [
+        {
+          "variant": "draft:view:section",
+          "outcome": "completed"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "plotting-closed-ownership-fixture",
+      "roleId": 30,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "browser-only editable-program mapping; existing section/course data",
+      "steps": [
+        "selected-section",
+        "workflow",
+        "generator",
+        "open-manual-plotting",
+        "course-bank",
+        "timetable",
+        "next-action"
+      ],
+      "geometry": [
+        {
+          "step": "selected-section",
+          "tooltip": {
+            "x": 324,
+            "y": 276,
+            "width": 360,
+            "height": 288.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "workflow",
+          "tooltip": {
+            "x": 672,
+            "y": 269,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "generator",
+          "tooltip": {
+            "x": 991,
+            "y": 270,
+            "width": 360,
+            "height": 354.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "open-manual-plotting",
+          "tooltip": {
+            "x": 1014,
+            "y": 442,
+            "width": 360,
+            "height": 305.09375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "course-bank",
+          "tooltip": {
+            "x": 620,
+            "y": 554,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "timetable",
+          "tooltip": {
+            "x": 832,
+            "y": 12,
+            "width": 360,
+            "height": 312.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "next-action",
+          "tooltip": {
+            "x": 684,
+            "y": 375,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "keyboardTargetActivation": true,
+      "outcomes": [
+        {
+          "variant": "draft:edit:section",
+          "outcome": "completed"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "plotting-open-ownership-fixture",
+      "roleId": 30,
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "fixture": "browser-only editable-program mapping; existing section/course data",
+      "steps": [
+        "selected-section",
+        "workflow",
+        "generator",
+        "open-manual-plotting",
+        "course-bank",
+        "timetable",
+        "next-action"
+      ],
+      "geometry": [
+        {
+          "step": "selected-section",
+          "tooltip": {
+            "x": 324,
+            "y": 276,
+            "width": 360,
+            "height": 288.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "workflow",
+          "tooltip": {
+            "x": 635,
+            "y": 269,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "generator",
+          "tooltip": {
+            "x": 917,
+            "y": 270,
+            "width": 360,
+            "height": 354.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "open-manual-plotting",
+          "tooltip": {
+            "x": 994,
+            "y": 441,
+            "width": 360,
+            "height": 291.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "course-bank",
+          "tooltip": {
+            "x": 620,
+            "y": 422,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "timetable",
+          "tooltip": {
+            "x": 795,
+            "y": 12,
+            "width": 360,
+            "height": 312.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "next-action",
+          "tooltip": {
+            "x": 647,
+            "y": 375,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "outcomes": [
+        {
+          "variant": "draft:edit:section",
+          "outcome": "completed"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "plotting-programhead-empty-live",
+      "roleId": 29,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "live data",
+      "steps": [
+        "no-sections"
+      ],
+      "geometry": [
+        {
+          "step": "no-sections",
+          "tooltip": {
+            "x": 274,
+            "y": 276,
+            "width": 360,
+            "height": 267.4375
+          },
+          "inViewport": true,
+          "targetVisible": false,
+          "targetCoveredPct": null,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "outcomes": [
+        {
+          "variant": "draft:view:no-section",
+          "outcome": "completed"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "plotting-picker-open-live",
+      "roleId": 30,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "live data",
+      "steps": [
+        "selected-section",
+        "workflow",
+        "generator",
+        "timetable",
+        "next-action"
+      ],
+      "geometry": [
+        {
+          "step": "selected-section",
+          "tooltip": {
+            "x": 324,
+            "y": 276,
+            "width": 360,
+            "height": 288.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "workflow",
+          "tooltip": {
+            "x": 672,
+            "y": 269,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "generator",
+          "tooltip": {
+            "x": 991,
+            "y": 270,
+            "width": 360,
+            "height": 354.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "timetable",
+          "tooltip": {
+            "x": 684,
+            "y": 61,
+            "width": 360,
+            "height": 312.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "next-action",
+          "tooltip": {
+            "x": 684,
+            "y": 375,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "outcomes": [
+        {
+          "variant": "draft:view:section",
+          "outcome": "completed"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "faculty-assignment-fixture",
+      "roleId": 30,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "initial-data status=faculty_assignment; browser-only editable-program mapping",
+      "steps": [
+        "selected-section",
+        "workflow",
+        "assign-instructors",
+        "timetable",
+        "next-action"
+      ],
+      "geometry": [
+        {
+          "step": "selected-section",
+          "tooltip": {
+            "x": 324,
+            "y": 276,
+            "width": 360,
+            "height": 288.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "workflow",
+          "tooltip": {
+            "x": 647,
+            "y": 269,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "assign-instructors",
+          "tooltip": {
+            "x": 933,
+            "y": 270,
+            "width": 360,
+            "height": 354.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "timetable",
+          "tooltip": {
+            "x": 684,
+            "y": 40,
+            "width": 360,
+            "height": 312.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "next-action",
+          "tooltip": {
+            "x": 684,
+            "y": 408,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "outcomes": [
+        {
+          "variant": "faculty_assignment:view:section",
+          "outcome": "completed"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "review-submitted-fixture",
+      "roleId": 30,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "initial-data status=submitted; browser-only editable-program mapping",
+      "steps": [
+        "selected-section",
+        "workflow",
+        "timetable",
+        "next-action"
+      ],
+      "geometry": [
+        {
+          "step": "selected-section",
+          "tooltip": {
+            "x": 324,
+            "y": 276,
+            "width": 360,
+            "height": 288.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "workflow",
+          "tooltip": {
+            "x": 770,
+            "y": 269,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "timetable",
+          "tooltip": {
+            "x": 684,
+            "y": 40,
+            "width": 360,
+            "height": 312.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "next-action",
+          "tooltip": {
+            "x": 684,
+            "y": 408,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "outcomes": [
+        {
+          "variant": "submitted:view:section",
+          "outcome": "completed"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "generator-empty-live",
+      "roleId": 30,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "live data",
+      "steps": [
+        "stage-1",
+        "year-level",
+        "curriculum",
+        "preferred-days",
+        "continue-setup"
+      ],
+      "geometry": [
+        {
+          "step": "stage-1",
+          "tooltip": {
+            "x": 540,
+            "y": 381,
+            "width": 360,
+            "height": 330.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "year-level",
+          "tooltip": {
+            "x": 19,
+            "y": 541,
+            "width": 360,
+            "height": 267.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "curriculum",
+          "tooltip": {
+            "x": 177,
+            "y": 239,
+            "width": 360,
+            "height": 309.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "preferred-days",
+          "tooltip": {
+            "x": 871,
+            "y": 46,
+            "width": 360,
+            "height": 288.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "continue-setup",
+          "tooltip": {
+            "x": 1068,
+            "y": 414,
+            "width": 360,
+            "height": 225.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "outcomes": [
+        {
+          "variant": "stage-1:idle:empty",
+          "outcome": "completed"
+        }
+      ],
+      "draftPreserved": true,
+      "generatorRemainsOpen": true,
+      "passed": true
+    },
+    {
+      "name": "generator-stage-1",
+      "roleId": 30,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "browser-only editable-program mapping; existing section/course data",
+      "steps": [
+        "stage-1",
+        "year-level",
+        "section-scope",
+        "curriculum",
+        "preferred-days",
+        "continue-setup"
+      ],
+      "geometry": [
+        {
+          "step": "stage-1",
+          "tooltip": {
+            "x": 540,
+            "y": 353,
+            "width": 360,
+            "height": 330.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "year-level",
+          "tooltip": {
+            "x": 19,
+            "y": 513,
+            "width": 360,
+            "height": 312.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "section-scope",
+          "tooltip": {
+            "x": 335,
+            "y": 537,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "curriculum",
+          "tooltip": {
+            "x": 177,
+            "y": 178,
+            "width": 360,
+            "height": 354.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "preferred-days",
+          "tooltip": {
+            "x": 871,
+            "y": 12,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "continue-setup",
+          "tooltip": {
+            "x": 1068,
+            "y": 421,
+            "width": 360,
+            "height": 246.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "outcomes": [
+        {
+          "variant": "stage-1:idle:empty",
+          "outcome": "completed"
+        }
+      ],
+      "draftPreserved": true,
+      "generatorRemainsOpen": true,
+      "passed": true
+    },
+    {
+      "name": "generator-stage-2",
+      "roleId": 30,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "browser-only editable-program mapping; existing section/course data",
+      "steps": [
+        "stage-2",
+        "setup-courses",
+        "defaults",
+        "continue-review"
+      ],
+      "geometry": [
+        {
+          "step": "stage-2",
+          "tooltip": {
+            "x": 540,
+            "y": 213,
+            "width": 360,
+            "height": 330.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "setup-courses",
+          "tooltip": {
+            "x": 553,
+            "y": 363,
+            "width": 360,
+            "height": 398.421875
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "defaults",
+          "tooltip": {
+            "x": 992,
+            "y": 90,
+            "width": 360,
+            "height": 354.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "continue-review",
+          "tooltip": {
+            "x": 1068,
+            "y": 515,
+            "width": 360,
+            "height": 291.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "outcomes": [
+        {
+          "variant": "stage-2:idle:empty",
+          "outcome": "completed"
+        }
+      ],
+      "draftPreserved": true,
+      "generatorRemainsOpen": true,
+      "passed": true
+    },
+    {
+      "name": "generator-stage-3",
+      "roleId": 30,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "browser-only editable-program mapping; existing section/course data",
+      "steps": [
+        "stage-3",
+        "review-selections",
+        "generate"
+      ],
+      "geometry": [
+        {
+          "step": "stage-3",
+          "tooltip": {
+            "x": 540,
+            "y": 213,
+            "width": 360,
+            "height": 330.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "review-selections",
+          "tooltip": {
+            "x": 540,
+            "y": 12,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 7,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "generate",
+          "tooltip": {
+            "x": 1068,
+            "y": 561,
+            "width": 360,
+            "height": 246.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "outcomes": [
+        {
+          "variant": "stage-3:idle:empty",
+          "outcome": "completed"
+        }
+      ],
+      "draftPreserved": true,
+      "generatorRemainsOpen": true,
+      "passed": true
+    },
+    {
+      "name": "generator-stage-4",
+      "roleId": 30,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "browser-only editable-program mapping; existing section/course data",
+      "steps": [
+        "stage-4",
+        "summary",
+        "save"
+      ],
+      "geometry": [
+        {
+          "step": "stage-4",
+          "tooltip": {
+            "x": 540,
+            "y": 400,
+            "width": 360,
+            "height": 330.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "summary",
+          "tooltip": {
+            "x": 540,
+            "y": 20,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "save",
+          "tooltip": {
+            "x": 1068,
+            "y": 353,
+            "width": 360,
+            "height": 267.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "outcomes": [
+        {
+          "variant": "stage-4:idle:empty",
+          "outcome": "completed"
+        }
+      ],
+      "draftPreserved": true,
+      "generatorRemainsOpen": true,
+      "passed": true
+    },
+    {
+      "name": "generator-run-queued-fixture",
+      "roleId": 30,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "browser-only editable-program mapping; existing section/course data",
+      "steps": [
+        "stage-3",
+        "run-status",
+        "cancel-run"
+      ],
+      "geometry": [
+        {
+          "step": "stage-3",
+          "tooltip": {
+            "x": 540,
+            "y": 311,
+            "width": 360,
+            "height": 330.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "run-status",
+          "tooltip": {
+            "x": 540,
+            "y": 12,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 3,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "cancel-run",
+          "tooltip": {
+            "x": 881,
+            "y": 374,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "outcomes": [
+        {
+          "variant": "stage-3:queued:empty",
+          "outcome": "completed"
+        }
+      ],
+      "draftPreserved": true,
+      "generatorRemainsOpen": true,
+      "passed": true
+    },
+    {
+      "name": "generator-run-running-fixture",
+      "roleId": 30,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "browser-only editable-program mapping; existing section/course data",
+      "steps": [
+        "stage-3",
+        "run-status",
+        "cancel-run"
+      ],
+      "geometry": [
+        {
+          "step": "stage-3",
+          "tooltip": {
+            "x": 540,
+            "y": 343,
+            "width": 360,
+            "height": 330.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "run-status",
+          "tooltip": {
+            "x": 540,
+            "y": 12,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 1,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "cancel-run",
+          "tooltip": {
+            "x": 881,
+            "y": 342,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "outcomes": [
+        {
+          "variant": "stage-3:running:empty",
+          "outcome": "completed"
+        }
+      ],
+      "draftPreserved": true,
+      "generatorRemainsOpen": true,
+      "passed": true
+    },
+    {
+      "name": "generator-run-blocked-fixture",
+      "roleId": 30,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "browser-only editable-program mapping; existing section/course data",
+      "steps": [
+        "stage-4",
+        "blocked-result"
+      ],
+      "geometry": [
+        {
+          "step": "stage-4",
+          "tooltip": {
+            "x": 540,
+            "y": 406,
+            "width": 360,
+            "height": 330.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "blocked-result",
+          "tooltip": {
+            "x": 540,
+            "y": 12,
+            "width": 360,
+            "height": 375.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "outcomes": [
+        {
+          "variant": "stage-4:failed:blocked",
+          "outcome": "completed"
+        }
+      ],
+      "draftPreserved": true,
+      "generatorRemainsOpen": true,
+      "passed": true
+    },
+    {
+      "name": "generator-run-failed-fixture",
+      "roleId": 30,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "browser-only editable-program mapping; existing section/course data",
+      "steps": [
+        "stage-4",
+        "failed-result"
+      ],
+      "geometry": [
+        {
+          "step": "stage-4",
+          "tooltip": {
+            "x": 540,
+            "y": 400,
+            "width": 360,
+            "height": 330.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "failed-result",
+          "tooltip": {
+            "x": 540,
+            "y": 12,
+            "width": 360,
+            "height": 375.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "outcomes": [
+        {
+          "variant": "stage-4:failed:empty",
+          "outcome": "completed"
+        }
+      ],
+      "draftPreserved": true,
+      "generatorRemainsOpen": true,
+      "passed": true
+    },
+    {
+      "name": "generator-run-cancelled-fixture",
+      "roleId": 30,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "browser-only editable-program mapping; existing section/course data",
+      "steps": [
+        "stage-4",
+        "failed-result"
+      ],
+      "geometry": [
+        {
+          "step": "stage-4",
+          "tooltip": {
+            "x": 540,
+            "y": 400,
+            "width": 360,
+            "height": 330.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "failed-result",
+          "tooltip": {
+            "x": 540,
+            "y": 12,
+            "width": 360,
+            "height": 375.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "outcomes": [
+        {
+          "variant": "stage-4:failed:empty",
+          "outcome": "completed"
+        }
+      ],
+      "draftPreserved": true,
+      "generatorRemainsOpen": true,
+      "passed": true
+    },
+    {
+      "name": "generator-run-completed-fixture",
+      "roleId": 30,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "browser-only editable-program mapping; existing section/course data",
+      "steps": [
+        "stage-4",
+        "summary",
+        "save"
+      ],
+      "geometry": [
+        {
+          "step": "stage-4",
+          "tooltip": {
+            "x": 540,
+            "y": 408,
+            "width": 360,
+            "height": 330.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "summary",
+          "tooltip": {
+            "x": 540,
+            "y": 49,
+            "width": 360,
+            "height": 312.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "save",
+          "tooltip": {
+            "x": 1068,
+            "y": 258,
+            "width": 360,
+            "height": 354.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "outcomes": [
+        {
+          "variant": "stage-4:completed:preview",
+          "outcome": "completed"
+        }
+      ],
+      "draftPreserved": true,
+      "generatorRemainsOpen": true,
+      "passed": true
+    },
+    {
+      "name": "generator-run-partial-fixture",
+      "roleId": 30,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "browser-only editable-program mapping; existing section/course data",
+      "steps": [
+        "stage-4",
+        "summary",
+        "save"
+      ],
+      "geometry": [
+        {
+          "step": "stage-4",
+          "tooltip": {
+            "x": 540,
+            "y": 408,
+            "width": 360,
+            "height": 330.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "summary",
+          "tooltip": {
+            "x": 540,
+            "y": 12,
+            "width": 360,
+            "height": 375.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "save",
+          "tooltip": {
+            "x": 1068,
+            "y": 258,
+            "width": 360,
+            "height": 354.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [
+        {
+          "method": "POST",
+          "path": "/api/schedule-recommendations/draft-review",
+          "browserFixture": true
+        }
+      ],
+      "errors": [],
+      "outcomes": [
+        {
+          "variant": "stage-4:completed:partial",
+          "outcome": "completed"
+        }
+      ],
+      "draftPreserved": true,
+      "generatorRemainsOpen": true,
+      "passed": true
+    },
+    {
+      "name": "plotting-narrow-390",
+      "roleId": 30,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "fixture": "browser-only editable-program mapping; existing section/course data",
+      "steps": [
+        "selected-section",
+        "workflow",
+        "generator",
+        "open-manual-plotting",
+        "course-bank",
+        "timetable",
+        "next-action"
+      ],
+      "geometry": [
+        {
+          "step": "selected-section",
+          "tooltip": {
+            "x": 18,
+            "y": 272,
+            "width": 360,
+            "height": 288.4375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "workflow",
+          "tooltip": {
+            "x": 15,
+            "y": 317,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "generator",
+          "tooltip": {
+            "x": 12,
+            "y": 365,
+            "width": 360,
+            "height": 354.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "open-manual-plotting",
+          "tooltip": {
+            "x": 12,
+            "y": 331,
+            "width": 360,
+            "height": 305.09375
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "course-bank",
+          "tooltip": {
+            "x": 15,
+            "y": 195,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "timetable",
+          "tooltip": {
+            "x": 15,
+            "y": 12,
+            "width": 360,
+            "height": 312.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 34,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "next-action",
+          "tooltip": {
+            "x": 15,
+            "y": 12,
+            "width": 360,
+            "height": 333.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 2,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "keyboardTargetActivation": true,
+      "outcomes": [
+        {
+          "variant": "draft:edit:section",
+          "outcome": "completed"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "generator-narrow-320",
+      "roleId": 30,
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "fixture": "browser-only editable-program mapping; existing section/course data",
+      "steps": [
+        "stage-2",
+        "setup-courses",
+        "defaults",
+        "continue-review"
+      ],
+      "geometry": [
+        {
+          "step": "stage-2",
+          "tooltip": {
+            "x": 12,
+            "y": 159,
+            "width": 296,
+            "height": 396.625
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 15,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "setup-courses",
+          "tooltip": {
+            "x": 12,
+            "y": 12,
+            "width": 296,
+            "height": 419.421875
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 23,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "defaults",
+          "tooltip": {
+            "x": 12,
+            "y": 88,
+            "width": 296,
+            "height": 398.421875
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        },
+        {
+          "step": "continue-review",
+          "tooltip": {
+            "x": 12,
+            "y": 161,
+            "width": 296,
+            "height": 314.421875
+          },
+          "inViewport": true,
+          "targetVisible": true,
+          "targetCoveredPct": 0,
+          "accessibleNameLinked": true,
+          "accessibleDescriptionLinked": true,
+          "exitReachable": true
+        }
+      ],
+      "writeViolations": [],
+      "interceptedReadValidations": [],
+      "errors": [],
+      "outcomes": [
+        {
+          "variant": "stage-2:idle:empty",
+          "outcome": "completed"
+        }
+      ],
+      "draftPreserved": true,
+      "generatorRemainsOpen": true,
+      "passed": true
+    }
+  ]
+}

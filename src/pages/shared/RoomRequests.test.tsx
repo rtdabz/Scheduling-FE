@@ -27,7 +27,7 @@ vi.mock('../../context/ToastContext', () => ({
 import RoomRequests from './RoomRequests';
 import { clearDataCache, getCachedData, isCacheFresh, setCachedData } from '../../lib/dataCache';
 import { resetTimeGrid } from '../../lib/timeGrid';
-import { publishLiveTopics } from '../../lib/liveUpdates';
+import { publishLiveTopics, stopLiveUpdates } from '../../lib/liveUpdates';
 import type { RoomOccupancyBlock, RoomRequest } from '../../lib/roomRequests';
 
 const SEMESTER = { id: 7, academic_year: '2026-2027', semester: '1st', is_active: true };
@@ -136,6 +136,7 @@ describe('RoomRequests', () => {
 
   afterEach(() => {
     cleanup();
+    stopLiveUpdates();
   });
 
   it('shows the pending-from-others badge on the Requests button', async () => {
@@ -145,23 +146,39 @@ describe('RoomRequests', () => {
     await waitFor(() => expect(requestsBtn.textContent).toContain('1'));
   });
 
-  it('labels the list tabs Sent and Received and shows room, semester, window, and status', async () => {
+  it('labels the list tabs Requester and Requestee and shows room, semester, window, and status', async () => {
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: /Requests/i }));
 
     const dialog = await screen.findByRole('dialog', { name: 'Room Requests' });
-    expect(within(dialog).getByText(/1st Semester, AY 2026-2027/)).toBeDefined();
-    // Received opens first because another department is waiting on a decision.
-    expect(within(dialog).getByRole('tab', { name: /Received/ }).getAttribute('aria-selected')).toBe('true');
+    expect(within(dialog).queryByText(/Pending and approved requests/)).toBeNull();
+    const tabs = within(within(dialog).getByRole('tablist'));
+    expect(tabs.getAllByRole('tab')).toHaveLength(2);
+    for (const [name, caption] of [[/Requester/, 'Sends a request'], [/Requestee/, 'Receives a request']] as const) {
+      const tab = tabs.getByRole('tab', { name });
+      const description = within(dialog).getByText(caption);
+      expect(within(tab).queryByText(caption)).toBeNull();
+      expect(tabs.queryByText(caption)).toBeNull();
+      expect(description.tagName).toBe('P');
+      expect(tab.getAttribute('aria-describedby')).toBe(description.id);
+    }
+    // Requestee opens first because another department is waiting on a decision.
+    expect(within(dialog).getByRole('tab', { name: /Requestee/ }).getAttribute('aria-selected')).toBe('true');
+    // Only the selected tab's caption is shown.
+    expect(within(dialog).getByText('Receives a request').classList.contains('invisible')).toBe(false);
+    expect(within(dialog).getByText('Sends a request').classList.contains('invisible')).toBe(true);
+    fireEvent.click(tabs.getByRole('tab', { name: /Requester/ }));
+    expect(within(dialog).getByText('Sends a request').classList.contains('invisible')).toBe(false);
+    expect(within(dialog).getByText('Receives a request').classList.contains('invisible')).toBe(true);
+    fireEvent.click(tabs.getByRole('tab', { name: /Requestee/ }));
     expect(within(dialog).getByText('NEE 201')).toBeDefined();
     expect(within(dialog).getByText('1st Sem · AY 2026-2027')).toBeDefined();
     expect(within(dialog).getByText('7:00 AM – 8:30 AM')).toBeDefined();
     expect(within(dialog).queryByText('BUILDING 9-101')).toBeNull();
 
-    fireEvent.click(within(dialog).getByRole('tab', { name: /Sent/ }));
+    fireEvent.click(within(dialog).getByRole('tab', { name: /Requester/ }));
     expect(within(dialog).getByText('BUILDING 9-101')).toBeDefined();
     expect(within(dialog).queryByText('NEE 201')).toBeNull();
-    expect(screen.queryByText(/Requester|Requestor/)).toBeNull();
   });
 
   it('requests the list for the active semester only (RR-06)', async () => {
@@ -346,7 +363,7 @@ describe('RoomRequests', () => {
     expect(post).not.toHaveBeenCalled();
   });
 
-  it('explains the Room TBA consequence with the affected classes before revoking', async () => {
+  it('explains temporary Online classes before revoking and refreshes the grant-dependent caches', async () => {
     requestList = [request({ id: 1, status: 'approved', windows: [{ day: 'Monday', start_time: '11:00', end_time: '13:00' }] })];
     occupancy = () => Promise.resolve({
       data: occupancyOf([], [
@@ -354,18 +371,63 @@ describe('RoomRequests', () => {
         { id: 56, semester_id: 7, section_id: 2, course_id: 2, faculty_id: null, room_id: 101, department_id: 1, day: 'Monday', start_time: '11:00:00', end_time: '12:30:00', mode: 'on-site', status: 'finalized', course: { id: 2, course_code: 'CAS 100', course_name: 'Owner class' }, section: { id: 2, section_name: 'CAS 1A' } },
       ]),
     });
+    const message = 'Room grant revoked. 1 class meeting moved temporarily online until a replacement room is assigned.';
+    post.mockImplementation(async () => {
+      requestList = [{ ...requestList[0], status: 'revoked', review_remarks: 'Room needed by CAS' }];
+      return { data: { message, data: requestList[0], released_schedule_count: 1, released_schedule_ids: [55] } };
+    });
+    setCachedData('scheduler:initial-data:7', { rooms: [] });
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: /Requests/i }));
-    fireEvent.click(await screen.findByRole('tab', { name: /Received/ }));
+    fireEvent.click(await screen.findByRole('tab', { name: /Requestee/ }));
     fireEvent.click(await screen.findByRole('button', { name: /View request for NEE 201/ }));
 
-    expect(await screen.findByText(/1 class meeting will move to/)).toBeDefined();
+    expect(await screen.findByText(/1 class meeting will temporarily move to/)).toBeDefined();
+    expect(screen.getByText('Online')).toBeDefined();
+    expect(screen.getByText(/until a replacement room is assigned/)).toBeDefined();
     expect(screen.getByText(/CRIM 101 CRIM 1A/)).toBeDefined();
     expect(screen.queryByText(/CAS 100/)).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /Revoke Grant/ }));
     expect(await screen.findByText('Enter a reason to revoke this grant.')).toBeDefined();
     expect(confirm).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByRole('textbox', { name: /Reason for revoking/ }), { target: { value: 'Room needed by CAS' } });
+    fireEvent.click(screen.getByRole('button', { name: /Revoke Grant/ }));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/room-requests/1/revoke', { remarks: 'Room needed by CAS' }));
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Revoke Room Grant',
+      message: expect.stringContaining('temporarily move to Online until a replacement room is assigned: CRIM 101 CRIM 1A'),
+    }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Room Request', message));
+    expect(getCachedData<{ requests: RoomRequest[] }>(CACHE_KEY)?.requests[0]?.status).toBe('revoked');
+    expect(isCacheFresh('scheduler:initial-data:7')).toBe(false);
+  });
+
+  it('keeps the borrowing department\'s Give Back preview and confirmation on Room TBA', async () => {
+    requestList = [{ ...requestList[1], status: 'approved' }];
+    occupancy = () => Promise.resolve({
+      data: occupancyOf([], [
+        { id: 57, semester_id: 7, room_id: 102, department_id: 1, day: 'Tuesday', start_time: '13:00:00', end_time: '14:30:00', mode: 'on-site', status: 'finalized' },
+      ]),
+    });
+    confirm.mockResolvedValue(false);
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Requests/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /View request for BUILDING 9-101/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Room Request' });
+
+    expect(await within(dialog).findByText(/1 class meeting will move to/)).toBeDefined();
+    expect(within(dialog).getByText('Room TBA')).toBeDefined();
+    expect(within(dialog).queryByText('Online')).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: /Give Back Room/ }));
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Give Back Room',
+      message: expect.stringContaining('will move to Room TBA and need a new room'),
+    })));
+    expect(post).not.toHaveBeenCalled();
   });
 
   it('does not offer approval when the room was reassigned after the request (RR-01)', async () => {

@@ -6,7 +6,9 @@ import { apiErrorMessage } from '../../lib/apiError';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { useLiveRefresh } from '../useLiveRefresh';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
-import type { Curriculum, CurriculumSemester, CurriculumCourse, Program } from '../../types/curriculum';
+import type { Curriculum, CurriculumSemester, CurriculumCourse, CurriculumCourseHours, Program } from '../../types/curriculum';
+import { hoursForUnits } from '../../lib/curriculumHours';
+import { termsForYear, yearLevelStatsFor } from '../../lib/curriculumTerms';
 import type { CourseOption } from '../../components/curriculum/AddCourseForm';
 
 type FullCurriculum = Curriculum & {
@@ -155,41 +157,9 @@ export function useCurriculumDetail(id: string | undefined) {
     return { totalCourses, totalLec, totalLab, totalUnits };
   }, [semesters]);
 
-  const yearLevelStats = useMemo(() => {
-    const stats: Record<number, { courses: number; units: number; lec: number; lab: number }> = {
-      1: { courses: 0, units: 0, lec: 0, lab: 0 },
-      2: { courses: 0, units: 0, lec: 0, lab: 0 },
-      3: { courses: 0, units: 0, lec: 0, lab: 0 },
-      4: { courses: 0, units: 0, lec: 0, lab: 0 },
-    };
+  const yearLevelStats = useMemo(() => yearLevelStatsFor(semesters), [semesters]);
 
-    semesters.forEach((t) => {
-      if (stats[t.year_level]) {
-        stats[t.year_level].courses += t.courses.length;
-        stats[t.year_level].units += t.totals.tu;
-        stats[t.year_level].lec += t.totals.lec;
-        stats[t.year_level].lab += t.totals.lab;
-      }
-    });
-
-    return stats;
-  }, [semesters]);
-
-  const currentYearSemesters = useMemo(() => {
-    const semNums = [1, 2, 3];
-
-    return semNums.map((sem) => {
-      const existing = semesters.find((t) => t.year_level === selectedYear && t.semester === sem);
-      return (
-        existing || {
-          year_level: selectedYear,
-          semester: sem,
-          courses: [],
-          totals: { lec: 0, lab: 0, tu: 0 },
-        }
-      );
-    });
-  }, [semesters, selectedYear]);
+  const currentYearSemesters = useMemo(() => termsForYear(semesters, selectedYear), [semesters, selectedYear]);
 
   const handleActivate = async () => {
     if (!id) return;
@@ -510,6 +480,8 @@ export function useCurriculumDetail(id: string | undefined) {
                     lab_units: labUnits,
                     total_units: totalUnits,
                     program_id: programId,
+                    // The server keeps the placement's hours per unit and recalculates its minutes.
+                    hours: hoursForUnits(c.hours, lecUnits, labUnits),
                   }
                 : c
             );
@@ -568,6 +540,25 @@ export function useCurriculumDetail(id: string | undefined) {
     [id, cacheKey, curriculum, semesters, allCourses, toast, fetchCurriculum]
   );
 
+  const handleCourseHoursSaved = useCallback(
+    (courseId: number, hours: CurriculumCourseHours) => {
+      setSemesters((prev) => {
+        const next = prev.map((semester) =>
+          semester.courses.some((course) => course.id === courseId)
+            ? { ...semester, courses: semester.courses.map((course) => (course.id === courseId ? { ...course, hours } : course)) }
+            : semester
+        );
+        if (cacheKey && curriculum) {
+          setCachedData(cacheKey, { curriculum, semesters: next });
+        }
+        return next;
+      });
+      setHighlightedCourseId(courseId);
+      invalidateCacheGroups('curriculum', 'courses', 'schedules', 'dashboards');
+    },
+    [cacheKey, curriculum]
+  );
+
   return {
     curriculum,
     semesters,
@@ -588,5 +579,6 @@ export function useCurriculumDetail(id: string | undefined) {
     handleAddCourseToSemester,
     handleEditCourse,
     handleRemoveCourse,
+    handleCourseHoursSaved,
   };
 }

@@ -1336,8 +1336,9 @@ application file was removed, committed, pushed or deployed.
   existing finder/kernel/group validator. No full placement found is bounded
   search evidence, not proof of impossibility. New Split options retain delivery;
   Integrated Hybrid explicitly describes changing the lecture to online. Required
-  Days, permitted days, fixed patterns, faculty/section/room occupancy and online
-  same-course concurrency still apply. Lab capacity must remain available.
+  Days, permitted days, fixed patterns and faculty/section/room occupancy still
+  apply; online same-course concurrency is allowed. Lab capacity must remain
+  available.
 - Manual Placement adds an explicit **Check session alternatives** action. Normal
   refreshes retain one discovery pass and an empty catalog. The opt-in request
   uses the same guarded endpoint and server-derived group identity. Exact ignored
@@ -1387,8 +1388,8 @@ No development database was migrated, reset or written.
 The new positive controls require nonempty results before inspecting candidate
 rows. They cover both Regular deliveries in Manual, Draft Review and Generate,
 complete batch saves, exact ignored persisted rows also present in the timetable,
-partial-draft occupancy, allowed-day refusal, marker-only runs, same-course
-online contention, Integrated lab capacity, field/lab exclusions, duration limits,
+partial-draft occupancy, allowed-day refusal, marker-only runs, Integrated lab
+capacity, field/lab exclusions, duration limits,
 expired budgets, and unchanged settings outside the target. Sync and queued runs
 exercise all three new shapes. Shared JSON fixtures exercise identical PHP and
 TypeScript adjustment semantics, including rejection of combined selections.

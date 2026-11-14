@@ -29,7 +29,7 @@
   }
 
   html, body {
-    font-family: 'DM Sans', system-ui, sans-serif;
+    font-family: 'Plus Jakarta Sans', 'DM Sans', system-ui, sans-serif;
     background-color: var(--color-bg);
     color: var(--color-text);
     -webkit-font-smoothing: antialiased;
@@ -39,9 +39,27 @@
   img, svg, video, canvas { max-width: 100%; }
   button, input, select, textarea { max-width: 100%; }
 
+  /* One typeface system-wide: the dashboard's Plus Jakarta Sans, headings included. */
   h1, h2, h3 {
-    font-family: 'Playfair Display', Georgia, serif;
+    font-family: 'Plus Jakarta Sans', 'DM Sans', system-ui, sans-serif;
   }
+}
+
+/* One typeface system-wide. These mirror the Tailwind font config so the page header and every
+   other `font-display` / `font-serif` / `font-sans` heading follows it even on a dev server that
+   has not reloaded tailwind.config.js. */
+.font-display,
+.font-serif,
+.font-sans {
+  font-family: 'Plus Jakarta Sans', 'DM Sans', system-ui, sans-serif;
+}
+
+/* A dashboard that opts into Plus Jakarta Sans (`font-jakarta` on
+   #dashboard-overview) carries it to the page title above it and to the
+   overlays it portals to <body>, so no serif or DM Sans leaks in. */
+body:has(#dashboard-overview.font-jakarta) :is(main :is(h1, h2, h3), [role="tooltip"], [role="dialog"], [role="dialog"] :is(h1, h2, h3)),
+.font-jakarta :is(h1, h2, h3) {
+  font-family: 'Plus Jakarta Sans', 'DM Sans', system-ui, sans-serif;
 }
 
 *,
@@ -77,6 +95,29 @@
     );
     background-size: 200% 100%;
     animation: skeleton-shimmer 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+
+  /* The system header's maroon gradient. `bg-wicars-header` runs left to right for wide bands;
+     `bg-wicars-header-v` runs bottom to top for header cells, so neighbouring cells line up. */
+  .bg-wicars-header {
+    background-color: #4e0a10;
+    background-image: linear-gradient(to right, #36060b 0%, #4e0a10 50%, #5A1220 100%);
+  }
+  .bg-wicars-header-v {
+    background-color: #4e0a10;
+    background-image: linear-gradient(to top, #36060b 0%, #4e0a10 55%, #5A1220 100%);
+  }
+
+  /* Every table header uses the vertical header gradient, so sticky headers stay solid while scrolling. */
+  table thead th {
+    background-color: #4e0a10 !important;
+    background-image: linear-gradient(to top, #36060b 0%, #4e0a10 55%, #5A1220 100%) !important;
+    color: #ffffff !important;
+    border-color: rgba(201, 149, 42, 0.25) !important;
+  }
+
+  table thead th :where(span, abbr, div, p, button:not(:disabled)) {
+    color: inherit;
   }
 
   table tbody > tr:not(.animate-pulse):not(:has(> td[colspan])):hover {
@@ -135,16 +176,16 @@
 }
 
 @keyframes toastIn {
-  from { transform: translateX(100%); opacity: 0; }
-  to   { transform: translateX(0);    opacity: 1; }
+  from { transform: translateX(1.5rem); opacity: 0; }
+  to   { transform: translateX(0);      opacity: 1; }
 }
 @keyframes toastOut {
-  from { transform: translateX(0);    opacity: 1; }
-  to   { transform: translateX(110%); opacity: 0; }
+  from { transform: translateX(0);      opacity: 1; }
+  to   { transform: translateX(0.75rem); opacity: 0; }
 }
 @keyframes toastProgress {
-  from { width: 100%; }
-  to   { width: 0%; }
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
 }
 
 @keyframes indeterminate {
@@ -155,16 +196,74 @@
 
 .animate-indeterminate { animation: indeterminate 1.5s ease-in-out infinite; }
 
-.animate-toastIn  { animation: toastIn  0.4s ease-out forwards; }
-.animate-toastOut { animation: toastOut 0.3s ease-in  forwards; }
+@keyframes drawerIn {
+  from { transform: translateX(2rem); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+@keyframes overlayIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .animate-drawerIn  { animation: drawerIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .animate-overlayIn { animation: overlayIn 0.15s ease-out both; }
+}
+
+.animate-toastIn  { animation: toastIn  0.24s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.animate-toastOut { animation: toastOut 0.2s ease-in both; }
+
+/* One toast look for every module: white card, hairline border, tone-coloured left edge. */
+.wicars-toast {
+  --toast-tone: #4e0a10;
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  width: 100%;
+  overflow: hidden;
+  padding: 0.75rem 0.5rem 0.75rem 0.75rem;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--toast-tone);
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 2px rgb(58 7 12 / 0.06), 0 10px 24px -10px rgb(58 7 12 / 0.22);
+  pointer-events: auto;
+}
+.wicars-toast[data-type='success'] { --toast-tone: #3F7D58; }
+.wicars-toast[data-type='error']   { --toast-tone: #B4432F; }
+.wicars-toast[data-type='warning'] { --toast-tone: #C9952A; }
+.wicars-toast[data-type='info']    { --toast-tone: #4A6A8A; }
+.wicars-toast[data-type='loading'] { --toast-tone: #4e0a10; }
+.wicars-toast-icon { flex-shrink: 0; margin-top: 1px; color: var(--toast-tone); }
+.wicars-toast-progress {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 2px;
+  background: var(--toast-tone);
+  opacity: 0.55;
+  transform-origin: left;
+  animation: toastProgress linear forwards;
+}
+.wicars-toast[data-paused='true'] .wicars-toast-progress { animation-play-state: paused; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-toastIn, .animate-toastOut { animation-duration: 1ms; }
+}
 
 @keyframes sidebarChildFall {
   from { opacity: 0; transform: translateY(-10px); }
-  to   { opacity: 1; transform: translateY(0); }
+  to   { opacity: var(--sidebar-item-opacity, 1); transform: translateY(0); }
 }
 
 .sidebar-submenu-item {
   animation: sidebarChildFall 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* The animation's fill holds its final opacity, which would override `opacity-50`,
+   so locked sub-items end the fall-in at the dimmed value instead. */
+.sidebar-submenu-item-locked {
+  --sidebar-item-opacity: 0.5;
+  opacity: 0.5;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -204,4 +303,14 @@
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
+}
+
+/* Conditional form fields (e.g. the account form's teaching profile) ease in when revealed. */
+@keyframes formReveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.form-reveal { animation: formReveal 180ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .form-reveal { animation: none; }
 }

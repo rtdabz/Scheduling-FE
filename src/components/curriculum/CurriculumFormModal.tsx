@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { X, } from 'lucide-react';
+import Modal from '../ui/Modal';
+import { ModalButton, ModalField } from '../ui/ModalForm';
+import { modalBody, modalControl } from '../ui/modalStyles';
 import type { Curriculum, Program } from '../../types/curriculum';
 import { programLabel } from '../../lib/programLabel';
 import { getStoredUserDepartmentId, getStoredUserRole } from '../../lib/storedUser';
@@ -102,64 +103,58 @@ export default function CurriculumFormModal({
     }
   };
 
-  if (!isOpen) return null;
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={isEditMode ? 'Edit Curriculum' : 'Add New Curriculum'}
+      description={isEditMode ? 'Update the curriculum name, CMO number, and effective school year.' : 'Create the curriculum record, then add or import its courses.'}
+      closeOnOverlayClick={false}
+      closeOnEscape={!isSubmitting}
+      footer={<>
+        <ModalButton onClick={onClose} disabled={isSubmitting}>Cancel</ModalButton>
+        <ModalButton id="curriculum-save" type="submit" form="curriculum-form" variant="primary" loading={isSubmitting}>
+          {isEditMode ? 'Save Changes' : 'Create Curriculum'}
+        </ModalButton>
+      </>}
+    >
+      <form id="curriculum-form" onSubmit={handleSubmit} noValidate className={modalBody}>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <ModalField label="Curriculum Name" htmlFor="curriculum-name-input" required error={nameError}>
+            <input
+              id="curriculum-name-input"
+              type="text"
+              value={name}
+              onChange={(e) => { setName(e.target.value); setNameError(''); }}
+              placeholder="e.g. BS Computer Science 2024"
+              aria-invalid={nameError ? true : undefined}
+              aria-describedby={nameError ? 'curriculum-name-input-error' : undefined}
+              className={modalControl(!!nameError)}
+            />
+          </ModalField>
 
-  return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
-      <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
-        <div className="p-5 flex shrink-0 justify-between items-center bg-[#4e0a10]">
-          <h2 className="text-lg font-bold text-white font-display">
-            {isEditMode ? 'Edit Curriculum' : 'Add New Curriculum'}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 cursor-pointer"
-          >
-            <X size={20} />
-          </button>
+          <ModalField label="CMO No." htmlFor="curriculum-code-input" required error={codeError}>
+            <input
+              id="curriculum-code-input"
+              type="text"
+              value={code}
+              onChange={(e) => { setCode(e.target.value.toUpperCase()); setCodeError(''); }}
+              placeholder="e.g. CMO 1 S 2026"
+              aria-invalid={codeError ? true : undefined}
+              aria-describedby={codeError ? 'curriculum-code-input-error' : undefined}
+              className={`${modalControl(!!codeError)} font-mono`}
+            />
+          </ModalField>
         </div>
-        <form id="curriculum-form" onSubmit={handleSubmit} noValidate className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                Curriculum Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="curriculum-name-input"
-                type="text"
-                value={name}
-                onChange={(e) => { setName(e.target.value); setNameError(''); }}
-                placeholder="e.g. BS Computer Science 2024"
-                className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                  nameError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
-                }`}
-              />
-              {nameError && <p className="text-xs text-red-500 mt-1 font-semibold">{nameError}</p>}
-            </div>
 
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                CMO No. <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="curriculum-code-input"
-                type="text"
-                value={code}
-                onChange={(e) => { setCode(e.target.value.toUpperCase()); setCodeError(''); }}
-                placeholder="e.g. CMO 1 S 2026"
-                className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white font-mono transition-all ${
-                  codeError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
-                }`}
-              />
-              {codeError && <p className="text-xs text-red-500 mt-1 font-semibold">{codeError}</p>}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-              Effective School Year <span className="text-red-500">*</span>
-            </label>
+        <div id="curriculum-effective-year">
+          <ModalField
+            label="Effective School Year"
+            htmlFor="curriculum-start-year-input"
+            required
+            error={effectiveYearError}
+            hint="Enter the starting year; the ending year is the year after."
+          >
             <div className="flex items-center gap-2">
               <input
                 id="curriculum-start-year-input"
@@ -167,6 +162,7 @@ export default function CurriculumFormModal({
                 inputMode="numeric"
                 maxLength={4}
                 aria-label="Start year"
+                aria-invalid={effectiveYearError ? true : undefined}
                 value={startYear}
                 onChange={(e) => {
                   const value = e.target.value.replace(/\D/g, '');
@@ -175,70 +171,43 @@ export default function CurriculumFormModal({
                   setEffectiveYearError('');
                 }}
                 placeholder="2025"
-                className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                  effectiveYearError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
-                }`}
+                className={modalControl(!!effectiveYearError)}
               />
-              <span className="text-gray-400 font-semibold">&ndash;</span>
+              <span className="font-semibold text-slate-400" aria-hidden="true">&ndash;</span>
               <input
                 id="curriculum-end-year-input"
                 type="text"
                 inputMode="numeric"
                 maxLength={4}
                 aria-label="End year"
+                aria-invalid={effectiveYearError ? true : undefined}
                 value={endYear}
                 onChange={(e) => { setEndYear(e.target.value.replace(/\D/g, '')); setEffectiveYearError(''); }}
                 placeholder="2026"
-                className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                  effectiveYearError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
-                }`}
+                className={modalControl(!!effectiveYearError)}
               />
             </div>
-            {effectiveYearError && <p className="text-xs text-red-500 mt-1 font-semibold">{effectiveYearError}</p>}
-          </div>
+          </ModalField>
+        </div>
 
-          {canChooseProgram && departmentPrograms.length > 0 && (
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                Program / Major
-              </label>
-              <select
-                id="curriculum-program-select"
-                value={programId}
-                onChange={(e) => setProgramId(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#C9952A] outline-none text-sm bg-white"
-              >
-                <option value="">None</option>
-                {departmentPrograms.map((program) => (
-                  <option key={program.id} value={program.id}>
-                    {programLabel(program)}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div id="curriculum-form-actions" className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-5 py-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-100 font-semibold text-sm transition-colors cursor-pointer"
+        {canChooseProgram && departmentPrograms.length > 0 && (
+          <ModalField label="Program / Major" htmlFor="curriculum-program-select">
+            <select
+              id="curriculum-program-select"
+              value={programId}
+              onChange={(e) => setProgramId(e.target.value)}
+              className={modalControl()}
             >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="px-6 py-2.5 bg-[#4e0a10] hover:bg-[#C9952A] text-white font-semibold text-sm rounded-xl transition-all duration-200 flex items-center gap-2 cursor-pointer disabled:opacity-50"
-            >
-              {isSubmitting && <LoadingSpinner className="w-4 h-4" />}
-              {isEditMode ? 'Save Changes' : 'Create Curriculum'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>,
-    document.body
+              <option value="">None</option>
+              {departmentPrograms.map((program) => (
+                <option key={program.id} value={program.id}>
+                  {programLabel(program)}
+                </option>
+              ))}
+            </select>
+          </ModalField>
+        )}
+      </form>
+    </Modal>
   );
 }
-import LoadingSpinner from "../ui/LoadingSpinner";

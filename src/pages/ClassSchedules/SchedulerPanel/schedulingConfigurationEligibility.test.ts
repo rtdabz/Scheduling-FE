@@ -3,6 +3,7 @@ import type { Course } from "./types";
 import {
   isBalancedSplitSchedulingEligible,
   isConfiguredFieldCourse,
+  isFieldSchedulingEligible,
   isHybridSplitEligible,
   isHybridSchedulingEligible,
   isOnlineSplitEligible,
@@ -26,20 +27,27 @@ const fieldCapableCourse: Course = {
 
 describe("scheduling configuration eligibility", () => {
   it("recognizes configured field-course codes using normalized values", () => {
-    expect(isConfiguredFieldCourse(fieldCapableCourse, new Set([" pathfit  1 "]))).toBe(true);
+    expect(isConfiguredFieldCourse({ ...fieldCapableCourse, labHours: 0 }, new Set([" pathfit  1 "]))).toBe(true);
   });
 
-  it("does not offer Hybrid for configured Field Courses", () => {
-    expect(isHybridSchedulingEligible(fieldCapableCourse, true, new Set(["PATHFIT 1"]))).toBe(false);
+  it("keeps laboratory components when an old setting lists the course as Field", () => {
+    expect(isConfiguredFieldCourse(fieldCapableCourse, new Set(["PATHFIT 1"]))).toBe(false);
+    expect(isHybridSchedulingEligible(fieldCapableCourse, true, new Set(["PATHFIT 1"]))).toBe(true);
   });
 
-  it("does not offer Hybrid when the course explicitly requires a field room", () => {
+  it("lets laboratory units take precedence over an old field room requirement", () => {
     expect(
       isHybridSchedulingEligible(
         { ...fieldCapableCourse, roomTypeRequired: "field" },
         true,
       ),
-    ).toBe(false);
+    ).toBe(true);
+  });
+
+  it("offers Field only to courses without laboratory requirements", () => {
+    expect(isFieldSchedulingEligible(fieldCapableCourse)).toBe(false);
+    expect(isFieldSchedulingEligible({ ...fieldCapableCourse, labHours: 0 })).toBe(true);
+    expect(isFieldSchedulingEligible({ ...fieldCapableCourse, labHours: 0, roomTypeRequired: "laboratory" })).toBe(false);
   });
 
   describe("balanced split eligibility", () => {
@@ -83,10 +91,11 @@ describe("scheduling configuration eligibility", () => {
       ).toBe(true);
     });
 
-    it("offers a split for a major carrying laboratory units, laboratory-only included", () => {
+    it("never offers a split for a course carrying laboratory units, laboratory-only included", () => {
       const settings = { minorEnabled: true, majorLectureEnabled: true };
-      expect(isBalancedSplitSchedulingEligible(labMajor, settings)).toBe(true);
-      expect(isBalancedSplitSchedulingEligible({ ...labMajor, lectureHours: 0, labHours: 3, units: 3 }, settings)).toBe(true);
+      expect(isBalancedSplitSchedulingEligible(labMajor, settings)).toBe(false);
+      expect(isBalancedSplitSchedulingEligible({ ...labMajor, lectureHours: 0, labHours: 3, units: 3 }, settings)).toBe(false);
+      expect(isBalancedSplitSchedulingEligible({ ...labMajor, category: "minor" }, settings)).toBe(false);
     });
 
     it("only offers Hybrid Split for three-unit lecture-only courses", () => {

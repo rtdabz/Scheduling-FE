@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CalendarClock, CalendarPlus, CheckCircle2, Clock, Info, Lightbulb, Loader2, MapPin, Save, Sparkles, X } from "lucide-react";
 import { DAYS, slotToTimeStr } from "../constants";
 import CourseCategoryBadge from "../../../../components/curriculum/CourseCategoryBadge";
 import api from "../../../../lib/api";
 import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
-import { laboratoryServesLecture, requiredRoomTypeForMeeting } from "../hooks/useConflict";
+import { useModalScrollLock } from "../../../../hooks/useModalScrollLock";
+import { requiredRoomTypeForMeeting } from "../hooks/useConflict";
 import { FIXED_SPLIT_PATTERNS, FULL_DAY_NAMES, parsePreferredPattern, slotCount, slotToTime24h, timeToSlotUnclamped } from "../../../../lib/timeGrid";
 import { isLabMeetingRoomType } from "../../../../lib/labRoomPolicy";
 import type { DeliveryMode, DropContext, ScheduleItem, Section, Subject, Room } from "../types";
@@ -13,7 +14,7 @@ import { consecutiveMeetingSlots, getCourseSlotPlan, laboratoryComponentSlots, s
 import { evaluatePlacementQuality, type PlannedMeeting } from "../placementQuality";
 import {
   isFieldSchedulingEligible,
-  isHybridSchedulingEligible,
+  hasLectureAndLaboratoryComponents,
   isHybridSplitEligible,
   isOnlineSplitEligible,
   balancedSplitSettingsOf,
@@ -61,7 +62,6 @@ interface DropModalProps {
   selectedSectionId: string;
   dropContext: DropContext | null;
   dropSubject: Subject | null;
-  dropSubjectIsField: boolean;
   modalRoomId: string;
   setModalRoomId: (value: string) => void;
   modalClassMode: "on-site" | "online" | "field";
@@ -82,9 +82,9 @@ interface DropModalProps {
   setModalForcedDayIndex: (value: number) => void;
   canGenerateSchedule: boolean;
   manualSchedulingSettings: (SchedulingRoomSettings & {
+    lecture_lab_schedule_override_enabled?: boolean;
     forced_day_rules?: Array<{ course_id: number; day: string }>;
     field_course_codes?: string[];
-    lecture_lab_schedule_override_enabled?: boolean;
     gec_split_schedule_override_enabled?: boolean;
     major_lecture_split_schedule_override_enabled?: boolean;
     sunday_classes_enabled?: boolean;
@@ -145,7 +145,6 @@ export default function DropModal({
   selectedSectionId,
   dropContext,
   dropSubject,
-  dropSubjectIsField,
   modalRoomId,
   setModalRoomId,
   modalClassMode,
@@ -205,9 +204,14 @@ export default function DropModal({
   const [roomFilter, setRoomFilter] = useState<string>(ALL_ROOMS);
   const [slotMeeting, setSlotMeeting] = useState<"first" | "second">("first");
   const [slotRequestKey, setSlotRequestKey] = useState<string | null>(null);
+  useModalScrollLock(Boolean(dropContext && dropSubject));
 
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const viewAlternativesButtonRef = useRef<HTMLButtonElement>(null);
+  const closeAlternatives = useCallback(() => {
+    setAlternativesFor(null);
+    viewAlternativesButtonRef.current?.focus();
+  }, []);
   const canUseRecommendations = canGenerateSchedule;
   const hasConflict = !!modalConflict;
   const hasSaveError = !!modalValidationError;
@@ -423,17 +427,21 @@ export default function DropModal({
   useEffect(() => {
     if (!dropContext || !dropSubject) return;
 
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const frameId = window.requestAnimationFrame(() => {
       closeButtonRef.current?.focus();
     });
-    return () => window.cancelAnimationFrame(frameId);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      if (opener?.isConnected) opener.focus();
+    };
   }, [dropContext, dropSubject]);
 
   useEffect(() => {
     if (!dropContext || !dropSubject) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || isModalLoading) return;
       if (isAlternativesOpen) {
         setAlternativesFor(null);
         viewAlternativesButtonRef.current?.focus();
@@ -444,16 +452,22 @@ export default function DropModal({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [dropContext, dropSubject, isAlternativesOpen, setDropContext]);
+  }, [dropContext, dropSubject, isAlternativesOpen, isModalLoading, setDropContext]);
 
   useEffect(() => {
-    if (!dropSubject || modalIsHybrid || !hasLaboratoryUnits || modalClassMode !== "online") return;
-
-    setModalClassMode("on-site");
-    setModalRoomId(
-      rooms.find((room) => isLabMeetingRoomType(room.roomType) && room.status === "available")?.id
-        ?? ROOM_TBA
-    );
+    if (!dropSubject || isFieldSchedulingEligible(dropSubject)) return;
+    if (modalClassMode === "field" || (!modalIsHybrid && hasLaboratoryUnits && modalClassMode === "online")) {
+      setModalClassMode("on-site");
+      setModalRoomId(
+        rooms.find((room) => isLabMeetingRoomType(room.roomType) && room.status === "available")?.id
+          ?? ROOM_TBA
+      );
+    }
+    if (modalDay2ClassMode === "field") {
+      setModalDay2ClassMode("on-site");
+      setModalDay2RoomId(rooms.find((room) => room.roomType === (modalIsHybrid ? "lecture" : "laboratory") && room.status === "available")?.id
+        ?? (modalIsHybrid ? "" : ROOM_TBA));
+    }
   }, [
     dropSubject,
     hasLaboratoryUnits,
@@ -462,6 +476,9 @@ export default function DropModal({
     rooms,
     setModalClassMode,
     setModalRoomId,
+    modalDay2ClassMode,
+    setModalDay2ClassMode,
+    setModalDay2RoomId,
   ]);
 
   const isSecondSlotMeeting = slotMeeting === "second" && isTwoMeetingPattern && modalDay2Duration > 0;
@@ -472,10 +489,8 @@ export default function DropModal({
   if (!dropContext || !dropSubject) return null;
 
   const totalSlots = getSubjectTotalSlots(dropSubject);
-  const hybridEligible = isHybridSchedulingEligible(
-    dropSubject,
-    Boolean(manualSchedulingSettings?.lecture_lab_schedule_override_enabled),
-  );
+  // Lecture + laboratory units always offer the linked pair, for every course category.
+  const hybridEligible = hasLectureAndLaboratoryComponents(dropSubject);
   const splitEligible = isBalancedSplitSchedulingEligible(
     dropSubject,
     balancedSplitSettingsOf(manualSchedulingSettings),
@@ -483,8 +498,8 @@ export default function DropModal({
   const offersHybridSplit = isHybridSplitEligible(dropSubject) || splitDelivery === "hybrid";
   const offersOnlineSplit = (!modalFieldEnabled && isOnlineSplitEligible(dropSubject))
     || splitDelivery === "online";
-  const fieldEligible = dropSubjectIsField || isFieldSchedulingEligible(dropSubject);
-  const fieldRequired = dropSubject.roomTypeRequired === "field";
+  const fieldEligible = isFieldSchedulingEligible(dropSubject);
+  const fieldRequired = fieldEligible && dropSubject.roomTypeRequired === "field";
   const patternLabel = isTwoMeetingPattern
     ? `${DAYS[modalDay1Index]} + ${DAYS[modalDay2Index]}`
     : currentRun
@@ -528,7 +543,7 @@ export default function DropModal({
     const requiredRoomType = modalClassMode === "field" ? "field" : requiredRoomTypeForMeeting(dropSubject);
     if (requiredRoomType === "laboratory") return isLabMeetingRoomType(r.roomType);
 
-    return !requiredRoomType || r.roomType === requiredRoomType || laboratoryServesLecture(dropSubject, r);
+    return !requiredRoomType || r.roomType === requiredRoomType;
   });
 
   const secondMeetingRoomOptions = isIntegrated
@@ -568,7 +583,7 @@ export default function DropModal({
     setModalDay1StartSlot(timeToSlotUnclamped(first.start_time));
     setModalDay1Duration(timeToSlotUnclamped(first.end_time) - timeToSlotUnclamped(first.start_time));
     setModalClassMode(first.mode ?? "on-site");
-    setModalRoomId(first.room_id == null ? first.mode ?? "online" : String(first.room_id));
+    setModalRoomId(first.room_id == null ? (first.mode === "on-site" ? ROOM_TBA : first.mode ?? "online") : String(first.room_id));
     setModalPreferredPattern(first.preferred_pattern ?? null);
     if (!modalRun && rows[1]) {
       const second = rows[1];
@@ -576,7 +591,7 @@ export default function DropModal({
       setModalDay2StartSlot(timeToSlotUnclamped(second.start_time));
       setModalDay2Duration(timeToSlotUnclamped(second.end_time) - timeToSlotUnclamped(second.start_time));
       setModalDay2ClassMode(second.mode ?? "on-site");
-      setModalDay2RoomId(second.room_id == null ? second.mode ?? "online" : String(second.room_id));
+      setModalDay2RoomId(second.room_id == null ? (second.mode === "on-site" ? ROOM_TBA : second.mode ?? "online") : String(second.room_id));
       setIsDay2ModifiedByUser(true);
     }
     setModalValidationError("");
@@ -602,8 +617,9 @@ export default function DropModal({
       setModalDay2Duration(lectureSlots);
       setModalClassMode("on-site");
       setModalRoomId(rooms.find((room) => isLabMeetingRoomType(room.roomType) && room.status === "available")?.id ?? ROOM_TBA);
-      setModalDay2ClassMode("online");
-      setModalDay2RoomId("online");
+      // The lecture meets on-site in a lecture room; online stays an explicit choice.
+      setModalDay2ClassMode("on-site");
+      setModalDay2RoomId(rooms.find((room) => room.roomType === "lecture" && room.status === "available")?.id ?? "");
       setModalIsHybrid(true);
     } else {
       setModalIsHybrid(false);
@@ -626,17 +642,14 @@ export default function DropModal({
     setModalPreferredPattern(null);
     setIsDay2ModifiedByUser(false);
     setModalDay2Duration(0);
-    // The days share the Total Hours equally; a count that cannot split it evenly is refused.
-    const share = consecutiveMeetingSlots(dropSubject, dayCount);
-    setModalDay1Duration(share ?? totalSlots);
+    // Every day of the run repeats the course's full Total Hours, whatever the day count.
+    setModalDay1Duration(consecutiveMeetingSlots(dropSubject, dayCount) ?? totalSlots);
     setModalDay1Index(runStartForDay(
       { dayCount, preferredStartDay: null, runs: consecutiveDayRuns(dayCount, sundayEnabled) },
       modalDay1Index,
     ));
     setModalConsecutiveDays(dayCount);
-    setModalValidationError(share === null
-      ? `${dropSubject.code}'s ${slotsToHours(totalSlots)} hours a week cannot be shared equally by ${dayCount} days. Choose a number of days that divides its Total Hours evenly.`
-      : "");
+    setModalValidationError("");
   };
 
   type MeetingShape = "single" | "integrated" | "split" | "consecutive";
@@ -648,7 +661,13 @@ export default function DropModal({
         ? "split"
         : "single";
   const meetingShapeOptions: Array<{ value: MeetingShape; label: string; hint: string }> = [
-    { value: "single", label: "Single", hint: "One meeting on one day." },
+    {
+      value: "single",
+      label: "Single",
+      hint: hasLaboratoryUnits
+        ? "One meeting of the full duration, in a laboratory room (Room TBA when none is free)."
+        : "One meeting on one day.",
+    },
     ...(hybridEligible || meetingShape === "integrated"
       ? [{ value: "integrated" as const, label: "Integrated", hint: "Lecture and laboratory as two separate meetings." }]
       : []),
@@ -725,6 +744,7 @@ export default function DropModal({
   };
 
   const handleModeSelect = (mode: ClassMode, isSecondMeeting: boolean) => {
+    if (mode === "field" && !fieldEligible) return;
     const currentRoomId = isSecondMeeting ? modalDay2RoomId : modalRoomId;
     const setMode = isSecondMeeting ? setModalDay2ClassMode : setModalClassMode;
     const setRoom = isSecondMeeting ? setModalDay2RoomId : setModalRoomId;
@@ -745,7 +765,9 @@ export default function DropModal({
   const secondMeetingTitle = modalIsHybrid ? "Lecture Meeting" : "Second Meeting";
   const scheduleTimeLabel = modalPreferredPattern
     ? `${slotToTimeStr(modalDay1StartSlot)} · ${slotsToHours(modalDay1Duration + modalDay2Duration)} contact hrs total`
-    : `${slotToTimeStr(modalDay1StartSlot)} – ${slotToTimeStr(modalDay1StartSlot + modalDay1Duration)}${modalRun ? " each day" : ""}`;
+    : `${slotToTimeStr(modalDay1StartSlot)} – ${slotToTimeStr(modalDay1StartSlot + modalDay1Duration)}${modalRun
+      ? ` each day · ${slotsToHours(modalDay1Duration)} hrs/day × ${modalRun.dayCount} days = ${slotsToHours(modalDay1Duration * modalRun.dayCount)} hrs`
+      : ""}`;
 
   const plannedMeetings: PlannedMeeting[] = currentRun ? currentRun.map((day) => ({
     dayIndex: getDayIndex(day),
@@ -813,34 +835,31 @@ export default function DropModal({
       ? "View Alternatives, suggestions unavailable"
       : `View Alternatives, ${alternativesCountLabel} valid ${alternativesCount === 1 ? "option" : "options"}`;
 
-  const closeAlternatives = () => {
-    setAlternativesFor(null);
-    viewAlternativesButtonRef.current?.focus();
-  };
-
   return (
     <>
     <div
-      className="fixed inset-0 z-50 flex min-h-screen items-center justify-center bg-slate-950/55 p-2 sm:p-4"
-      onClick={(e) => { if (e.target === e.currentTarget) setDropContext(null); }}
+      className="scheduler-dialog-overlay fixed inset-0 z-50 flex items-center justify-center overflow-y-auto"
+      onClick={(e) => { if (e.target === e.currentTarget && !isModalLoading) setDropContext(null); }}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="placement-modal-title"
         aria-describedby="placement-modal-desc"
-        className={`flex max-h-[94vh] w-full flex-col overflow-hidden rounded-2xl bg-[#F7F4F0] shadow-2xl animate-in fade-in zoom-in-95 duration-200 ${
+        aria-busy={isModalLoading}
+        className={`scheduler-dialog flex w-full flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
           isTwoMeetingPattern ? "max-w-6xl" : "max-w-4xl"
         }`}
       >
-        <div className="flex shrink-0 items-start justify-between gap-3 bg-[#5A1220] px-5 py-4 text-white">
+        <div className="scheduler-dialog-header flex shrink-0 items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white">
+            <span className="scheduler-dialog-icon">
               <HeaderIcon className="h-5 w-5" />
             </span>
             <div className="min-w-0">
-              <h3 id="placement-modal-title" className="text-base font-black leading-tight">{dialogTitle}</h3>
-              <p id="placement-modal-desc" className="mt-0.5 text-xs text-white/75">
+              <p className="scheduler-dialog-eyebrow">Schedule placement</p>
+              <h3 id="placement-modal-title" className="scheduler-dialog-title">{dialogTitle}</h3>
+              <p id="placement-modal-desc" className="scheduler-dialog-description">
                 {dialogDescription}
               </p>
             </div>
@@ -849,8 +868,9 @@ export default function DropModal({
             ref={closeButtonRef}
             type="button"
             onClick={() => setDropContext(null)}
+            disabled={isModalLoading}
             aria-label="Close placement dialog"
-            className="rounded-lg p-1.5 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+            className="scheduler-dialog-close"
           >
             <X className="h-4 w-4" />
           </button>
@@ -873,7 +893,7 @@ export default function DropModal({
 
         <form
           onSubmit={handleModalConfirm}
-          className="flex-1 space-y-4 overflow-y-auto px-5 py-4"
+          className="scheduler-dialog-body min-h-0 flex-1 space-y-4 overflow-y-auto"
         >
           <section className="overflow-hidden rounded-xl border border-[#E2D9D0] bg-white shadow-sm">
             <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-center">
@@ -935,8 +955,8 @@ export default function DropModal({
                     aria-checked={checked}
                     title={option.hint}
                     onClick={() => handleMeetingShapeChange(option.value)}
-                    className={`min-w-[7rem] flex-1 rounded-md px-3 py-1.5 text-xs font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220]/40 ${
-                      checked ? "bg-[#5A1220] text-white shadow-sm" : "text-slate-600 hover:bg-white hover:text-slate-900"
+                    className={`selection-indicator min-w-[7rem] flex-1 rounded-md px-3 py-1.5 text-xs font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220]/40 ${
+                      checked ? "shadow-sm" : "text-slate-600 hover:bg-white hover:text-slate-900"
                     }`}
                   >
                     {option.label}
@@ -984,7 +1004,10 @@ export default function DropModal({
                       className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-[#5A1220] focus:ring-2 focus:ring-[#5A1220]/15"
                     >
                       <option value="onsite">On-Site — lecture and laboratory on campus</option>
-                      <option value="hybrid">Hybrid — online lecture, on-site laboratory</option>
+                      {/* An online lecture stays a Major-only choice. */}
+                      {(dropSubject.category === "major" || !isIntegratedOnSite) && (
+                        <option value="hybrid">Hybrid — online lecture, on-site laboratory</option>
+                      )}
                     </select>
                   </label>
                 )}
@@ -1024,6 +1047,7 @@ export default function DropModal({
 
           <div className={`grid grid-cols-1 gap-4 ${isTwoMeetingPattern ? "lg:grid-cols-2" : ""}`}>
             <MeetingCard
+              showFieldMode={fieldEligible}
               title={modalRun ? `Each day of the run (${modalRun.dayCount} days)` : firstMeetingTitle}
               mode={modalClassMode}
               isModeDisabled={(mode) =>
@@ -1065,6 +1089,7 @@ export default function DropModal({
 
             {isTwoMeetingPattern && (
               <MeetingCard
+                showFieldMode={fieldEligible}
                 title={secondMeetingTitle}
                 mode={modalDay2ClassMode}
                 isModeDisabled={(mode) =>
@@ -1164,8 +1189,8 @@ export default function DropModal({
           )}
         </form>
 
-        <div className="flex shrink-0 flex-col gap-3 border-t border-[#E2D9D0] bg-white px-5 py-3.5 md:flex-row md:items-center md:justify-between">
-          <p className={`flex items-center gap-2 text-sm font-bold ${hasConflict || hasSaveError ? "text-red-700" : "text-emerald-700"}`}>
+        <div className="scheduler-dialog-footer flex shrink-0 flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <p className={`flex flex-1 items-center gap-2 text-sm font-bold ${hasConflict || hasSaveError ? "text-red-700" : "text-emerald-700"}`}>
             {hasConflict || hasSaveError ? <AlertTriangle className="h-4 w-4 shrink-0" /> : <CheckCircle2 className="h-4 w-4 shrink-0" />}
             {hasConflict
               ? "Resolve the schedule issue to continue"
@@ -1175,7 +1200,7 @@ export default function DropModal({
               ? <><span className="rounded-md bg-emerald-600 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white">Resolved</span> Conflict cleared. {readyLabel}</>
               : readyLabel}
           </p>
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2 max-sm:w-full max-sm:[&>button]:w-full">
             {shouldShowAlternatives && (
               <button
                 ref={viewAlternativesButtonRef}
@@ -1184,7 +1209,9 @@ export default function DropModal({
                 aria-haspopup="dialog"
                 aria-expanded={isAlternativesOpen}
                 aria-label={alternativesAriaLabel}
-                className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#c9952a]/50 bg-[#fff8e8] px-3.5 text-sm font-bold text-[#7a4c08] transition-colors hover:bg-[#fdf0d2]"
+                disabled={isModalLoading}
+                data-variant="secondary"
+                className="scheduler-dialog-button"
               >
                 <Lightbulb className="h-4 w-4" />
                 View Alternatives
@@ -1198,7 +1225,9 @@ export default function DropModal({
             <button
               type="button"
               onClick={() => setDropContext(null)}
-              className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50"
+              disabled={isModalLoading}
+              data-variant="secondary"
+              className="scheduler-dialog-button"
             >
               Cancel
             </button>
@@ -1206,7 +1235,8 @@ export default function DropModal({
               type="button"
               onClick={(e) => handleModalConfirm(e as unknown as React.FormEvent)}
               disabled={isDisabled}
-              className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#5A1220] px-5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#4a0f1a] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
+              data-variant="primary"
+              className="scheduler-dialog-button"
             >
               {isModalLoading ? (
                 <><LoadingSpinner className="h-4 w-4" /> {isEditing ? "Saving..." : "Placing..."}</>

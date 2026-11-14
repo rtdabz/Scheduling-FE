@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ScheduleItem, Section } from "./SchedulerPanel/types";
+import { clearDataCache } from "../../lib/dataCache";
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -19,21 +20,22 @@ vi.mock("./SchedulerPanel/hooks/initialDataMapper", () => ({
   mapInitialData: mocks.mapInitialData,
 }));
 
-interface GridProbeProps {
-  selectedSectionId: string;
-  sectionSchedules: ScheduleItem[];
-  isReadOnlyViewer?: boolean;
+interface GanttProbeProps {
+  days: Array<{ rows: Array<{ blocks: Array<{ schedule: { section_id?: number | null } }> }> }>;
 }
 
-vi.mock("./SchedulerPanel/TimetableGrid", () => ({
-  default: ({ selectedSectionId, sectionSchedules, isReadOnlyViewer }: GridProbeProps) => (
-    <div
-      data-testid="grid-probe"
-      data-section={selectedSectionId}
-      data-count={sectionSchedules.length}
-      data-read-only={String(isReadOnlyViewer)}
-    />
-  ),
+// The page renders the shared Gantt chart; the probe reports what it was given.
+vi.mock("../vpaa/calendar/MasterGantt", () => ({
+  default: ({ days }: GanttProbeProps) => {
+    const blocks = days.flatMap((day) => day.rows.flatMap((row) => row.blocks));
+    return (
+      <div
+        data-testid="gantt-probe"
+        data-sections={[...new Set(blocks.map((block) => block.schedule.section_id))].join(",")}
+        data-count={blocks.length}
+      />
+    );
+  },
 }));
 
 import SectionTimetables from "./SectionTimetables";
@@ -68,7 +70,7 @@ const schedule = (id: string, sectionId: string, mode: ScheduleItem["mode"]): Sc
   mode,
   facultyName: null,
   facultyId: null,
-  status: "draft",
+  status: "approved",
   dayIndex: 0,
   startSlot: 0,
   durationSlots: 2,
@@ -77,7 +79,9 @@ const schedule = (id: string, sectionId: string, mode: ScheduleItem["mode"]): Sc
 });
 
 describe("SectionTimetables", () => {
+  afterEach(cleanup);
   beforeEach(() => {
+    clearDataCache();
     mocks.get.mockReset();
     mocks.mapInitialData.mockReset();
     mocks.get.mockResolvedValue({ data: {} });
@@ -95,21 +99,31 @@ describe("SectionTimetables", () => {
     });
   });
 
-  it("loads the authorized data and switches the shared read-only grid by section and mode", async () => {
+  it("loads the authorized data and switches the shared Gantt chart by section and mode", async () => {
     render(<SectionTimetables />);
 
-    const grid = await screen.findByTestId("grid-probe");
-    expect(grid.getAttribute("data-section")).toBe("1");
-    expect(grid.getAttribute("data-count")).toBe("1");
-    expect(grid.getAttribute("data-read-only")).toBe("true");
+    const gantt = await screen.findByTestId("gantt-probe");
+    expect(gantt.getAttribute("data-sections")).toBe("1");
+    expect(gantt.getAttribute("data-count")).toBe("1");
     expect(mocks.get).toHaveBeenCalledWith("/initial-data", expect.objectContaining({
-      params: { schedule_limit: 2000 },
+      params: { schedule_limit: 2000, view: "gantt" },
     }));
 
     fireEvent.change(screen.getByLabelText("Section"), { target: { value: "2" } });
-    await waitFor(() => expect(grid.getAttribute("data-section")).toBe("2"));
+    await waitFor(() => expect(screen.getByTestId("gantt-probe").getAttribute("data-sections")).toBe("2"));
 
     fireEvent.change(screen.getByLabelText("Mode"), { target: { value: "on-site" } });
-    await waitFor(() => expect(grid.getAttribute("data-count")).toBe("0"));
+    await waitFor(() => expect(screen.getByTestId("gantt-probe").getAttribute("data-count")).toBe("0"));
+  });
+
+  it("excludes unapproved schedules from blocks and placement counts", async () => {
+    const data = mocks.mapInitialData();
+    mocks.mapInitialData.mockReturnValue({ ...data,
+      subjects: [{ id: "10", yearLevel: 1, semester: "1st" }, { id: "11", yearLevel: 1, semester: "1st" }],
+      schedules: [schedule("10", "1", "on-site"), { ...schedule("11", "1", "on-site"), status: "approved_by_dean" }],
+    });
+    render(<SectionTimetables />);
+    await waitFor(() => expect(screen.getByTestId("gantt-probe").getAttribute("data-count")).toBe("1"));
+    expect(screen.getByRole("progressbar", { name: "Courses placed" }).getAttribute("aria-valuenow")).toBe("1");
   });
 });

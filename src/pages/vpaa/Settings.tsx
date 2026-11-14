@@ -1,48 +1,21 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Link, useBeforeUnload, useBlocker, useLocation, useSearchParams } from 'react-router-dom';
+import { CalendarRange, CheckCircle2, Clock3, History, Save, Signature, TriangleAlert, type LucideIcon } from 'lucide-react';
+import { useReactTable, getCoreRowModel, getSortedRowModel, getPaginationRowModel, type ColumnDef, type SortingState } from '@tanstack/react-table';
 import { useToast } from '../../context/ToastContext';
-import Skeleton from '../../components/ui/Skeleton';
-import {
-  ArrowRight,
-  CalendarRange,
-  CheckCircle2,
-  Clock3,
-  FileText,
-  History,
-  Save,
-  Signature,
-  TriangleAlert,
-  type LucideIcon,
-} from 'lucide-react';
-import {
-  useReactTable,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getSortedRowModel,
-  getPaginationRowModel,
-} from '@tanstack/react-table';
-import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import DataTable from '../../components/ui/DataTable';
-import api from '../../lib/api';
+import Skeleton from '../../components/ui/Skeleton';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
+import api from '../../lib/api';
 import { clearDataCache, getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { publishLiveTopics } from '../../lib/liveUpdates';
 import { operatingHoursError, timeInputMinutes, toApiTime, toTimeInputValue } from '../../lib/operatingHours';
-import {
-  academicYearError,
-  followingYear,
-  isValidAcademicYear,
-  joinAcademicYear,
-  sanitizeYearInput,
-  splitAcademicYear,
-  type AcademicYearParts,
-} from '../../lib/academicYear';
-import {
-  DEFAULT_INSTITUTION_SETTINGS,
-  fetchInstitutionSettings,
-  normalizeInstitutionSettings,
-  setCachedInstitutionSettings,
-  type InstitutionSettings,
-} from '../../lib/institutionSettings';
+import { academicYearError, joinAcademicYear, splitAcademicYear } from '../../lib/academicYear';
+import { normalizeInstitutionSettings, setCachedInstitutionSettings, type InstitutionSettings } from '../../lib/institutionSettings';
+import { getStoredUserRole } from '../../lib/storedUser';
+import { ARCHIVE_PARAM_PREFIX, ARCHIVED_VIEW_PARAM } from './archive/archiveTypes';
+
+const ArchivePanel = lazy(() => import('./archive/ArchivePanel'));
 
 interface Semester {
   id: number;
@@ -50,39 +23,18 @@ interface Semester {
   semester: '1st' | '2nd' | 'summer';
   is_active: boolean;
   is_enabled: boolean;
+  can_edit_academic_year?: boolean;
 }
-
-interface ApiSemester {
-  id: number;
-  academic_year: string;
-  semester: '1st' | '2nd' | 'summer';
-  is_active: boolean;
-  is_enabled: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
+type SemesterPeriod = Semester['semester'];
 interface ActivationHistoryEntry {
-  id: number;
-  semester: '1st' | '2nd' | 'summer';
-  academic_year: string;
-  is_active: boolean;
-  activatedAt: string;
+  id: string | number;
+  semester: Semester['semester'] | null;
+  academic_year: string | null;
+  action: 'Activated' | 'Ended';
+  changed_by: string | null;
+  occurred_at: string | null;
+  identity_recorded: boolean;
 }
-
-interface ApiActivationHistoryEntry {
-  id: number;
-  semester_id: number;
-  semester: Semester['semester'];
-  academic_year: string;
-  is_active: boolean;
-  activated_at: string;
-}
-
-interface SettingsPageData {
-  semesters: Semester[];
-}
-
 interface TimeslotSettings {
   opening_time: string;
   closing_time: string;
@@ -90,809 +42,464 @@ interface TimeslotSettings {
   slot_interval: number;
 }
 
-interface TimeslotResponse {
-  settings: TimeslotSettings;
-}
-
-const operatingHoursDraftOf = (settings: TimeslotSettings) => ({
-  opening_time: toTimeInputValue(settings.opening_time),
-  closing_time: toTimeInputValue(settings.closing_time),
-  field_end_time: settings.field_end_time ? toTimeInputValue(settings.field_end_time) : '',
+const SEMESTER_LABELS: Record<Semester['semester'], string> = { '1st': '1st Semester', '2nd': '2nd Semester', summer: 'Summer' };
+const SECTIONS = [
+  { id: 'academic-semesters', label: 'Academic Semesters', icon: CalendarRange },
+  { id: 'operating-hours', label: 'Operating Hours', icon: Clock3 },
+  { id: 'document-signatories', label: 'Document Signatories', icon: Signature },
+  { id: 'activation-history', label: 'Activation History', icon: History },
+] as const;
+const INPUT = 'h-11 w-full rounded-xl border border-border bg-white px-3 text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:bg-parchment disabled:text-muted';
+const PRIMARY = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50';
+const SECONDARY = 'inline-flex min-h-11 items-center justify-center rounded-xl border border-border px-3 py-2 text-sm font-semibold text-primary hover:bg-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50';
+const apiMessage = (error: unknown, fallback: string) => (error as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback;
+const yearError = (value: string) => /^\d{4}-\d{4}$/.test(value) ? academicYearError(splitAcademicYear(value)) : 'Enter two consecutive years, for example 2026-2027.';
+const hoursDraftOf = (settings: TimeslotSettings) => ({
+  opening_time: toTimeInputValue(settings.opening_time), closing_time: toTimeInputValue(settings.closing_time),
+  field_end_time: toTimeInputValue(settings.field_end_time || settings.closing_time),
 });
 
-const SEMESTER_LABELS: Record<Semester['semester'], string> = {
-  '1st': '1st Semester',
-  '2nd': '2nd Semester',
-  summer: 'Summer',
-};
-
-const mapApiSemester = (t: ApiSemester): Semester => ({
-  id: t.id,
-  academic_year: t.academic_year,
-  semester: t.semester,
-  is_active: !!t.is_active,
-  is_enabled: t.is_enabled !== undefined ? !!t.is_enabled : true
-});
-
-const apiMessage = (error: unknown, fallback: string): string => {
-  const data = (error as { response?: { data?: { message?: string } } })?.response?.data;
-  return typeof data?.message === 'string' && data.message ? data.message : fallback;
-};
-
-function SectionCard({
-  id,
-  icon: Icon,
-  title,
-  description,
-  aside,
-  children,
-}: {
-  id: string;
-  icon: LucideIcon;
-  title: string;
-  description: string;
-  aside?: ReactNode;
-  children: ReactNode;
+function SectionCard({ id, icon: Icon, title, description, children }: {
+  id: string; icon: LucideIcon; title: string; description: string; children: ReactNode;
 }) {
-  return (
-    <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm target:border-[#C9952A]">
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#4e0a10]/10 text-[#4e0a10]">
-            <Icon className="h-4 w-4" />
-          </span>
-          <div className="min-w-0">
-            <h2 id={`${id}-title`} className="font-sans text-sm font-bold text-slate-800">{title}</h2>
-            <p className="mt-0.5 text-xs leading-relaxed text-gray-500">{description}</p>
-          </div>
-        </div>
-        {aside}
-      </header>
-      {children}
-    </section>
-  );
+  return <section id={id} aria-labelledby={`${id}-title`} className="min-w-0 overflow-hidden rounded-2xl border border-border bg-surface">
+    <header className="flex items-start gap-3 border-b border-border px-5 py-4">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Icon size={18} aria-hidden="true" /></span>
+      <div><h2 id={`${id}-title`} className="font-sans text-base font-bold text-text">{title}</h2><p className="mt-1 text-sm text-muted">{description}</p></div>
+    </header>{children}
+  </section>;
+}
+function LoadError({ message, retry }: { message: string; retry: () => void }) {
+  return <div role="alert" className="m-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+    <p>{message}</p><button type="button" className={SECONDARY} onClick={retry}>Retry</button>
+  </div>;
+}
+function SaveFooter({ dirty, saving, disabled, label, discard, save }: {
+  dirty: boolean; saving: boolean; disabled: boolean; label: string; discard: () => void; save: () => void;
+}) {
+  return <footer className="flex flex-wrap items-center justify-end gap-3 border-t border-border px-5 py-4">
+    <span role="status" className="mr-auto text-sm text-muted">{dirty ? 'Unsaved changes' : 'No unsaved changes'}</span>
+    {dirty && <button type="button" className={SECONDARY} disabled={saving} onClick={discard}>Discard changes</button>}
+    <button type="button" className={PRIMARY} disabled={!dirty || disabled || saving} onClick={save}>
+      {saving ? <LoadingSpinner className="h-4 w-4" /> : <Save size={16} aria-hidden="true" />}{saving ? 'Saving…' : label}
+    </button>
+  </footer>;
 }
 
 export default function Settings() {
   const { toast, confirm } = useToast();
-  const settingsCacheKey = 'page:settings';
-  const cachedSettingsData = getCachedData<SettingsPageData>(settingsCacheKey);
-  const [semesters, setSemesters] = useState<Semester[]>(cachedSettingsData?.semesters ?? []);
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const requestedSection = searchParams.get('section') || location.hash.slice(1);
+  const section = SECTIONS.find(item => item.id === requestedSection)?.id || 'academic-semesters';
+  const isVpaa = getStoredUserRole() === 'vpaa';
+  const showArchived = isVpaa && searchParams.get(ARCHIVED_VIEW_PARAM) === '1' && section === 'academic-semesters';
+  const cacheKey = 'page:settings';
+  const cached = getCachedData<{ semesters: Semester[] }>(cacheKey);
+  const [semesters, setSemesters] = useState<Semester[]>(cached?.semesters || []);
+  const [yearDrafts, setYearDrafts] = useState<Record<number, string>>({});
+  const [selectedPeriods, setSelectedPeriods] = useState<Partial<Record<SemesterPeriod, number>>>({});
+  const [newYearDrafts, setNewYearDrafts] = useState<Partial<Record<SemesterPeriod, string>>>({});
+  const [loadingSemesters, setLoadingSemesters] = useState(!hasCachedData(cacheKey));
+  const [semesterError, setSemesterError] = useState<string | null>(null);
+  const [semesterSaveError, setSemesterSaveError] = useState<string | null>(null);
+  const [busySemester, setBusySemester] = useState<number | null>(null);
+  const semesterWriteRef = useRef(false);
+  const [hours, setHours] = useState<TimeslotSettings | null>(null);
+  const [hoursDraft, setHoursDraft] = useState({ opening_time: '', closing_time: '', field_end_time: '' });
+  const [loadingHours, setLoadingHours] = useState(true);
+  const [hoursError, setHoursError] = useState<string | null>(null);
+  const [hoursSaveError, setHoursSaveError] = useState<string | null>(null);
+  const [savingHours, setSavingHours] = useState(false);
+  const hoursWriteRef = useRef(false);
+  const [signatories, setSignatories] = useState<InstitutionSettings | null>(null);
+  const [signatoryDraft, setSignatoryDraft] = useState<InstitutionSettings>({ president_name: '', president_title: '' });
+  const [loadingSignatories, setLoadingSignatories] = useState(true);
+  const [signatoryError, setSignatoryError] = useState<string | null>(null);
+  const [signatorySaveError, setSignatorySaveError] = useState<string | null>(null);
+  const [savingSignatory, setSavingSignatory] = useState(false);
+  const signatoryWriteRef = useRef(false);
   const [history, setHistory] = useState<ActivationHistoryEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(!hasCachedData(settingsCacheKey));
-
-  const [yearDrafts, setYearDrafts] = useState<Record<number, AcademicYearParts>>({});
-  const [savingYearId, setSavingYearId] = useState<number | null>(null);
-  const [togglingId, setTogglingId] = useState<number | null>(null);
-
-  const [signatories, setSignatories] = useState<InstitutionSettings>(DEFAULT_INSTITUTION_SETTINGS);
-  const [signatoryDraft, setSignatoryDraft] = useState<InstitutionSettings>(DEFAULT_INSTITUTION_SETTINGS);
-  const [isSavingSignatory, setIsSavingSignatory] = useState(false);
-  const [operatingHours, setOperatingHours] = useState<TimeslotSettings | null>(null);
-  const [operatingHoursDraft, setOperatingHoursDraft] = useState({ opening_time: '', closing_time: '', field_end_time: '' });
-  const [isLoadingOperatingHours, setIsLoadingOperatingHours] = useState(true);
-  const [isSavingOperatingHours, setIsSavingOperatingHours] = useState(false);
-  const savingYearIdsRef = useRef(new Set<number>());
-  const togglingIdsRef = useRef(new Set<number>());
-  const activatingRef = useRef(false);
-  const savingSignatoryRef = useRef(false);
-  const savingOperatingHoursRef = useRef(false);
-
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [timeZone, setTimeZone] = useState('UTC');
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [pagination, setPagination] = useState({
-    pageIndex: 0,
-    pageSize: 10
-  });
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
+  const loadGeneration = useRef({ semesters: 0, hours: 0, signatories: 0, history: 0 });
 
-  const rememberSemesters = useCallback((next: Semester[]) => {
-    setCachedData<SettingsPageData>(settingsCacheKey, { semesters: next });
-    return next;
-  }, [settingsCacheKey]);
-
-  const fetchSemesters = useCallback(async (forceRefresh = false) => {
-    setIsLoading(forceRefresh || !hasCachedData(settingsCacheKey));
-    try {
-      const data = await loadCachedData<SettingsPageData>(settingsCacheKey, async () => {
-        const semestersRes = await api.get<ApiSemester[]>('/semesters');
-        return {
-          semesters: semestersRes.data ? semestersRes.data.map(mapApiSemester) : [],
-        };
-      }, forceRefresh);
-      setSemesters(data.semesters);
-      setYearDrafts(Object.fromEntries(data.semesters.map(t => [t.id, splitAcademicYear(t.academic_year)])));
-    } catch {
-      toast.error('Error', 'Failed to load settings data.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [settingsCacheKey, toast]);
-
-  const fetchActivationHistory = useCallback(async () => {
-    try {
-      const { data } = await api.get<ApiActivationHistoryEntry[]>('/semesters/activation-history');
-      setHistory((data ?? []).map(entry => ({
-        id: entry.id,
-        semester: entry.semester,
-        academic_year: entry.academic_year,
-        is_active: entry.is_active,
-        activatedAt: new Date(entry.activated_at).toLocaleString(),
-      })));
-    } catch {
-      setHistory([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchSemesters();
-    fetchActivationHistory();
-  }, [fetchSemesters, fetchActivationHistory]);
-
-  useEffect(() => {
-    let active = true;
-    fetchInstitutionSettings().then(loaded => {
-      if (!active) return;
-      setSignatories(loaded);
-      setSignatoryDraft(loaded);
-    });
-    return () => { active = false; };
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-
-    api.get<TimeslotResponse>('/timeslots')
-      .then(({ data }) => {
-        if (!active) return;
-        setOperatingHours(data.settings);
-        setOperatingHoursDraft(operatingHoursDraftOf(data.settings));
-      })
-      .catch((error) => toast.error('Error', apiMessage(error, 'Failed to load operating hours.')))
-      .finally(() => {
-        if (active) setIsLoadingOperatingHours(false);
-      });
-
-    return () => { active = false; };
-  }, [toast]);
-
-  const activePeriod = useMemo(() => semesters.find(t => t.is_active)?.semester, [semesters]);
-  const isSummerToggleEnabled = activePeriod === '2nd';
-
-  useEffect(() => {
-    if (activePeriod !== '1st') return;
-    setSemesters(prev => {
-      if (!prev.some(t => t.semester === 'summer' && t.is_enabled)) return prev;
-      return rememberSemesters(prev.map(t => (
-        t.semester === 'summer' && t.is_enabled ? { ...t, is_enabled: false } : t
-      )));
-    });
-  }, [activePeriod, rememberSemesters]);
-
-  const draftFor = useCallback(
-    (semester: Semester): AcademicYearParts => yearDrafts[semester.id] ?? splitAcademicYear(semester.academic_year),
-    [yearDrafts],
-  );
-
-  const handleStartYearChange = (semester: Semester, value: string) => {
-    const start = sanitizeYearInput(value);
-    setYearDrafts(prev => {
-      const current = prev[semester.id] ?? splitAcademicYear(semester.academic_year);
-      const next = followingYear(start);
-      return { ...prev, [semester.id]: { start, end: next || (start ? current.end : '') } };
-    });
+  const sectionSearch = (id: string, archived = false) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('section', id);
+    next.delete(ARCHIVED_VIEW_PARAM);
+    [...next.keys()].filter(key => key.startsWith(ARCHIVE_PARAM_PREFIX)).forEach(key => next.delete(key));
+    if (archived) next.set(ARCHIVED_VIEW_PARAM, '1');
+    return `?${next.toString()}`;
   };
+  const rememberSemesters = useCallback((next: Semester[]) => {
+    setSemesters(next);
+    setCachedData(cacheKey, { semesters: next });
+  }, []);
+  const fetchSemesters = useCallback(async (refresh = false) => {
+    const generation = ++loadGeneration.current.semesters;
+    setLoadingSemesters(true);
+    setSemesterError(null);
+    try {
+      const data = await loadCachedData<{ semesters: Semester[] }>(cacheKey, async () => {
+        const response = await api.get<Semester[]>('/semesters');
+        return { semesters: response.data };
+      }, refresh);
+      if (generation === loadGeneration.current.semesters) setSemesters(data.semesters);
+    } catch (error) { if (generation === loadGeneration.current.semesters) setSemesterError(apiMessage(error, 'Academic semesters could not be loaded.')); }
+    finally { if (generation === loadGeneration.current.semesters) setLoadingSemesters(false); }
+  }, []);
+  const fetchHours = useCallback(async () => {
+    const generation = ++loadGeneration.current.hours;
+    setLoadingHours(true); setHoursError(null);
+    try {
+      const { data } = await api.get<{ settings: TimeslotSettings }>('/timeslots');
+      if (generation !== loadGeneration.current.hours) return;
+      setHours(data.settings); setHoursDraft(hoursDraftOf(data.settings));
+    } catch (error) { if (generation === loadGeneration.current.hours) setHoursError(apiMessage(error, 'Operating hours could not be loaded.')); }
+    finally { if (generation === loadGeneration.current.hours) setLoadingHours(false); }
+  }, []);
+  const fetchSignatories = useCallback(async () => {
+    const generation = ++loadGeneration.current.signatories;
+    setLoadingSignatories(true); setSignatoryError(null);
+    try {
+      // The print helper falls back to defaults; editable settings must report load failures.
+      const { data } = await api.get<InstitutionSettings>('/institution-settings');
+      if (generation !== loadGeneration.current.signatories) return;
+      if (!data?.president_name?.trim() || !data?.president_title?.trim()) throw new Error('Missing signatory settings');
+      const saved = normalizeInstitutionSettings(data);
+      setSignatories(saved); setSignatoryDraft(saved); setCachedInstitutionSettings(saved);
+    } catch (error) { if (generation === loadGeneration.current.signatories) setSignatoryError(apiMessage(error, 'Document signatories could not be loaded.')); }
+    finally { if (generation === loadGeneration.current.signatories) setLoadingSignatories(false); }
+  }, []);
+  const fetchHistory = useCallback(async () => {
+    const generation = ++loadGeneration.current.history;
+    setLoadingHistory(true); setHistoryError(null);
+    try {
+      const response = await api.get<ActivationHistoryEntry[]>('/semesters/activation-history');
+      if (generation !== loadGeneration.current.history) return;
+      setHistory(response.data);
+      setPagination(current => ({ ...current, pageIndex: 0 }));
+      const configuredZone = response.headers?.['x-timezone'] || 'UTC';
+      try { new Intl.DateTimeFormat('en', { timeZone: configuredZone }); setTimeZone(configuredZone); }
+      catch { setTimeZone('UTC'); }
+    } catch (error) { if (generation === loadGeneration.current.history) setHistoryError(apiMessage(error, 'Activation history could not be loaded.')); }
+    finally { if (generation === loadGeneration.current.history) setLoadingHistory(false); }
+  }, []);
+  useEffect(() => {
+    void fetchSemesters(); void fetchHours(); void fetchSignatories(); void fetchHistory();
+    const generation = loadGeneration.current;
+    return () => { generation.semesters++; generation.hours++; generation.signatories++; generation.history++; };
+  }, [fetchSemesters, fetchHours, fetchSignatories, fetchHistory]);
 
-  const handleEndYearChange = (semester: Semester, value: string) => {
-    setYearDrafts(prev => {
-      const current = prev[semester.id] ?? splitAcademicYear(semester.academic_year);
-      return { ...prev, [semester.id]: { ...current, end: sanitizeYearInput(value) } };
+  const activeSemester = semesters.find(item => item.is_active);
+  const semesterCards = useMemo(() => (['1st', '2nd', 'summer'] as const).map(period => {
+    const records = semesters.filter(item => item.semester === period).sort((a, b) => b.academic_year.localeCompare(a.academic_year));
+    const semester = records.find(item => item.id === selectedPeriods[period]) || records.find(item => item.is_active) || records[0];
+    return { period, records, semester };
+  }), [semesters, selectedPeriods]);
+  const yearsDirty = Object.keys(newYearDrafts).length > 0 || semesters.some(item => yearDrafts[item.id] !== undefined && yearDrafts[item.id] !== item.academic_year);
+  const savedHoursDraft = hours ? hoursDraftOf(hours) : null;
+  const hoursDirty = savedHoursDraft !== null && (Object.keys(hoursDraft) as (keyof typeof hoursDraft)[]).some(key => hoursDraft[key] !== savedHoursDraft[key]);
+  const signatoryDirty = signatories !== null && (signatoryDraft.president_name.trim() !== signatories.president_name || signatoryDraft.president_title.trim() !== signatories.president_title);
+  const signatoryComplete = !!signatoryDraft.president_name.trim() && !!signatoryDraft.president_title.trim();
+  const dirty = yearsDirty || hoursDirty || signatoryDirty;
+  const { state: blockerState, proceed, reset } = useBlocker(({ currentLocation, nextLocation }) => dirty && currentLocation.pathname !== nextLocation.pathname);
+  useEffect(() => {
+    if (blockerState !== 'blocked') return;
+    let current = true;
+    void confirm({ title: 'Discard unsaved changes?', message: 'You have unsaved Settings changes. Discard them to leave this page?', confirmLabel: 'Discard changes', cancelLabel: 'Keep editing', variant: 'warning' }).then(discard => {
+      if (current) { if (discard) proceed(); else reset(); }
     });
+    return () => { current = false; };
+  }, [blockerState, proceed, reset, confirm]);
+  useBeforeUnload(useCallback(event => {
+    if (dirty) { event.preventDefault(); event.returnValue = ''; }
+  }, [dirty]));
+
+  const cancelNewYear = (period: SemesterPeriod) => setNewYearDrafts(current => {
+    const next = { ...current }; delete next[period]; return next;
+  });
+  const prepareYear = (period: SemesterPeriod, semester?: Semester) => {
+    const previous = semester?.academic_year || activeSemester?.academic_year;
+    let start = previous ? Number(previous.slice(0, 4)) + 1 : new Date().getFullYear();
+    while (semesters.some(item => item.semester === period && item.academic_year === `${start}-${start + 1}`)) start++;
+    setNewYearDrafts(current => ({ ...current, [period]: `${start}-${start + 1}` }));
+  };
+  const createPeriod = async (period: SemesterPeriod) => {
+    const academicYear = newYearDrafts[period] || '';
+    if (semesterWriteRef.current || yearError(academicYear)) return;
+    semesterWriteRef.current = true; setBusySemester(-1); setSemesterSaveError(null);
+    try {
+      const { data } = await api.post<{ semester: Semester }>('/semesters', { semester: period, academic_year: academicYear });
+      clearDataCache();
+      rememberSemesters([...semesters, data.semester]);
+      setSelectedPeriods(current => ({ ...current, [period]: data.semester.id }));
+      cancelNewYear(period);
+      publishLiveTopics(['settings']);
+      toast.success('Academic period created', `${SEMESTER_LABELS[period]} · AY ${academicYear}. The active semester has not changed.`);
+    } catch (error) { setSemesterSaveError(apiMessage(error, 'The academic period could not be created.')); }
+    finally { semesterWriteRef.current = false; setBusySemester(null); }
   };
 
   const saveAcademicYear = async (semester: Semester) => {
-    const draft = draftFor(semester);
-    const joined = joinAcademicYear(draft);
-    if (!isValidAcademicYear(draft) || !joined) return;
-    if (savingYearIdsRef.current.has(semester.id)) return;
-
-    savingYearIdsRef.current.add(semester.id);
-    setSavingYearId(semester.id);
+    const draft = yearDrafts[semester.id] ?? semester.academic_year;
+    if (semesterWriteRef.current || yearError(draft) || draft === semester.academic_year) return;
+    semesterWriteRef.current = true; setBusySemester(semester.id); setSemesterSaveError(null);
     try {
-      const { data } = await api.patch<{ semester: ApiSemester }>(`/semesters/${semester.id}`, { academic_year: joined });
-      const saved = data?.semester ? mapApiSemester(data.semester) : { ...semester, academic_year: joined };
-      setSemesters(prev => rememberSemesters(prev.map(t => (t.id === semester.id ? { ...t, ...saved } : t))));
-      setYearDrafts(prev => ({ ...prev, [semester.id]: splitAcademicYear(saved.academic_year) }));
-      toast.success('Saved', `${SEMESTER_LABELS[semester.semester]} now covers ${joined}.`);
-    } catch (error) {
-      toast.error('Not saved', apiMessage(error, 'Failed to update the academic year.'));
-    } finally {
-      savingYearIdsRef.current.delete(semester.id);
-      setSavingYearId(null);
-    }
-  };
-
-  const handleToggleEnabled = async (semester: Semester, enabled: boolean) => {
-    if (togglingIdsRef.current.has(semester.id)) return;
-    togglingIdsRef.current.add(semester.id);
-    setTogglingId(semester.id);
-    try {
-      await api.patch(`/semesters/${semester.id}`, { is_enabled: enabled });
-      setSemesters(prev => rememberSemesters(prev.map(t => (t.id === semester.id ? { ...t, is_enabled: enabled } : t))));
-      toast.success(enabled ? 'Summer enabled' : 'Summer disabled', enabled
-        ? 'Summer semester is now offered this academic year.'
-        : 'Summer semester will not be offered this academic year.');
-    } catch (error) {
-      toast.error('Not saved', apiMessage(error, 'Failed to update the summer semester.'));
-    } finally {
-      togglingIdsRef.current.delete(semester.id);
-      setTogglingId(null);
-    }
-  };
-
-  const handleActivateClick = async (id: number) => {
-    const confirmed = await confirm({
-      title: 'Activate Academic Semester',
-      message: 'Are you sure you want to activate this academic semester? This will set all other semesters to inactive and apply this semester system-wide.',
-      eyebrow: 'Confirmation Required',
-      confirmLabel: 'Confirm Activate',
-      variant: 'maroon',
-    });
-    if (!confirmed) return;
-
-    if (activatingRef.current) return;
-    activatingRef.current = true;
-    try {
-      await api.patch<{ semester: ApiSemester }>(`/semesters/${id}/activate`);
-
-      clearDataCache();
+      const { data } = await api.patch<{ semester: Semester }>(`/semesters/${semester.id}`, { academic_year: joinAcademicYear(splitAcademicYear(draft)) });
+      const saved = data.semester;
+      rememberSemesters(semesters.map(item => item.id === saved.id ? saved : item));
+      setYearDrafts(current => ({ ...current, [saved.id]: saved.academic_year }));
       publishLiveTopics(['settings']);
-      setSemesters(prev => rememberSemesters(prev.map(t => ({ ...t, is_active: t.id === id }))));
-
-      await fetchActivationHistory();
-
-      toast.success('Activated', 'Academic semester is now active');
-    } catch (error) {
-      toast.error('Error', apiMessage(error, 'Failed to activate academic semester'));
-    } finally {
-      activatingRef.current = false;
-    }
+      toast.success('Academic year saved', `${SEMESTER_LABELS[saved.semester]} · AY ${saved.academic_year}`);
+    } catch (error) { setSemesterSaveError(apiMessage(error, 'The academic year could not be saved.')); }
+    finally { semesterWriteRef.current = false; setBusySemester(null); }
   };
-
-  const signatoryDirty =
-    signatoryDraft.president_name.trim() !== signatories.president_name ||
-    signatoryDraft.president_title.trim() !== signatories.president_title;
-  const signatoryComplete =
-    signatoryDraft.president_name.trim().length > 0 && signatoryDraft.president_title.trim().length > 0;
-
-  const saveSignatories = async () => {
-    if (!signatoryDirty || !signatoryComplete) return;
-    if (savingSignatoryRef.current) return;
-
-    savingSignatoryRef.current = true;
-    setIsSavingSignatory(true);
+  const toggleSummer = async (semester: Semester) => {
+    if (semesterWriteRef.current || semester.is_active || activeSemester?.semester !== '2nd') return;
+    semesterWriteRef.current = true; setBusySemester(semester.id); setSemesterSaveError(null);
     try {
-      const payload = {
-        president_name: signatoryDraft.president_name.trim(),
-        president_title: signatoryDraft.president_title.trim(),
-      };
-      const { data } = await api.patch<{ settings: InstitutionSettings }>('/institution-settings', payload);
-      const saved = normalizeInstitutionSettings(data?.settings ?? payload);
-      setSignatories(saved);
-      setSignatoryDraft(saved);
-      setCachedInstitutionSettings(saved);
-      toast.success('Saved', 'Printed schedules and teaching loads will use the new name.');
-    } catch (error) {
-      toast.error('Not saved', apiMessage(error, 'Failed to update the signatory.'));
-    } finally {
-      savingSignatoryRef.current = false;
-      setIsSavingSignatory(false);
-    }
+      const { data } = await api.patch<{ semester: Semester }>(`/semesters/${semester.id}`, { is_enabled: !semester.is_enabled });
+      rememberSemesters(semesters.map(item => item.id === semester.id ? data.semester : item));
+      publishLiveTopics(['settings']);
+      toast.success(data.semester.is_enabled ? 'Summer enabled' : 'Summer disabled', 'The active semester has not changed.');
+    } catch (error) { setSemesterSaveError(apiMessage(error, 'Summer availability could not be saved.')); }
+    finally { semesterWriteRef.current = false; setBusySemester(null); }
   };
-
-  const saveOperatingHours = async () => {
-    if (!operatingHours) return;
-    if (savingOperatingHoursRef.current) return;
-
-    const validationError = operatingHoursError(
-      operatingHoursDraft.opening_time,
-      operatingHoursDraft.closing_time,
-      operatingHoursDraft.field_end_time,
-    );
-    if (validationError) {
-      toast.error('Invalid operating hours', validationError);
-      return;
-    }
-
-    savingOperatingHoursRef.current = true;
-    setIsSavingOperatingHours(true);
+  const activate = async (semester: Semester) => {
+    if (semesterWriteRef.current || semester.is_active || (semester.semester === 'summer' && !semester.is_enabled)) return;
+    semesterWriteRef.current = true; setBusySemester(semester.id); setSemesterSaveError(null);
     try {
-      const { data } = await api.patch<TimeslotResponse>('/timeslots/settings', {
-        opening_time: toApiTime(operatingHoursDraft.opening_time),
-        closing_time: toApiTime(operatingHoursDraft.closing_time),
-        ...(operatingHoursDraft.field_end_time
-          ? { field_end_time: toApiTime(operatingHoursDraft.field_end_time) }
-          : {}),
-        slot_interval: operatingHours.slot_interval,
+      const from = activeSemester ? `${SEMESTER_LABELS[activeSemester.semester]} · AY ${activeSemester.academic_year}` : 'No active semester';
+      const to = `${SEMESTER_LABELS[semester.semester]} · AY ${semester.academic_year}`;
+      if (!await confirm({ title: 'Change active semester?', message: `From: ${from}\nTo: ${to}\n\nThis changes the current scheduling context. Existing schedules, sections, submissions, and Schedule History are retained.`, confirmLabel: 'Activate semester', cancelLabel: 'Cancel', variant: 'maroon' })) return;
+      const { data } = await api.patch<{ semester: Semester }>(`/semesters/${semester.id}/activate`, {
+        expected_active_semester_id: activeSemester?.id ?? null, expected_academic_year: semester.academic_year,
       });
-      setOperatingHours(data.settings);
-      setOperatingHoursDraft(operatingHoursDraftOf(data.settings));
-      toast.success('Operating hours saved', 'Schedule generation now uses the updated daily time range.');
+      clearDataCache();
+      rememberSemesters(semesters.map(item => item.id === semester.id ? data.semester : { ...item, is_active: false }));
+      publishLiveTopics(['settings']);
+      await Promise.all([fetchSemesters(true), fetchHistory()]);
+      toast.success('Semester activated', `${to} is now active.`);
     } catch (error) {
-      toast.error('Not saved', apiMessage(error, 'Failed to update operating hours.'));
-    } finally {
-      savingOperatingHoursRef.current = false;
-      setIsSavingOperatingHours(false);
-    }
+      setSemesterSaveError(apiMessage(error, 'The semester could not be activated.'));
+      if ((error as { response?: { status?: number } })?.response?.status === 409) await fetchSemesters(true);
+    } finally { semesterWriteRef.current = false; setBusySemester(null); }
   };
 
-  const savedOperatingHoursDraft = operatingHours ? operatingHoursDraftOf(operatingHours) : null;
-  const operatingHoursDirty = savedOperatingHoursDraft !== null && (
-    operatingHoursDraft.opening_time !== savedOperatingHoursDraft.opening_time
-    || operatingHoursDraft.closing_time !== savedOperatingHoursDraft.closing_time
-    || operatingHoursDraft.field_end_time !== savedOperatingHoursDraft.field_end_time
-  );
-  const operatingHoursValidationError = operatingHoursError(
-    operatingHoursDraft.opening_time,
-    operatingHoursDraft.closing_time,
-    operatingHoursDraft.field_end_time,
-  );
+  const hoursValidation = operatingHoursError(hoursDraft.opening_time, hoursDraft.closing_time, hoursDraft.field_end_time)
+    || (!hoursDraft.field_end_time ? 'Choose a valid field class cutoff.' : null);
+  const saveHours = async () => {
+    if (!hours || !hoursDirty || hoursValidation || hoursWriteRef.current) return;
+    hoursWriteRef.current = true; setSavingHours(true); setHoursSaveError(null);
+    try {
+      const { data } = await api.patch<{ settings: TimeslotSettings }>('/timeslots/settings', {
+        opening_time: toApiTime(hoursDraft.opening_time), closing_time: toApiTime(hoursDraft.closing_time),
+        field_end_time: toApiTime(hoursDraft.field_end_time), slot_interval: hours.slot_interval,
+      });
+      setHours(data.settings); setHoursDraft(hoursDraftOf(data.settings));
+      publishLiveTopics(['settings']);
+      toast.success('Operating hours saved', 'Schedule generation now uses the updated daily time range.');
+    } catch (error) { setHoursSaveError(apiMessage(error, 'Operating hours could not be saved.')); }
+    finally { hoursWriteRef.current = false; setSavingHours(false); }
+  };
+  const saveSignatories = async () => {
+    if (!signatories || !signatoryDirty || !signatoryComplete || signatoryWriteRef.current) return;
+    signatoryWriteRef.current = true; setSavingSignatory(true); setSignatorySaveError(null);
+    try {
+      const payload = { president_name: signatoryDraft.president_name.trim(), president_title: signatoryDraft.president_title.trim() };
+      const { data } = await api.patch<{ settings: InstitutionSettings }>('/institution-settings', payload);
+      const saved = normalizeInstitutionSettings(data.settings);
+      setSignatories(saved); setSignatoryDraft(saved); setCachedInstitutionSettings(saved);
+      toast.success('Signatory saved', 'New documents will use these details. Recorded signatories are unchanged.');
+    } catch (error) { setSignatorySaveError(apiMessage(error, 'The signatory could not be saved.')); }
+    finally { signatoryWriteRef.current = false; setSavingSignatory(false); }
+  };
 
-  const sortedSemesters = useMemo(() => {
-    const semesterOrder = { '1st': 1, '2nd': 2, 'summer': 3 };
-    return [...semesters].sort((a, b) => semesterOrder[a.semester] - semesterOrder[b.semester]);
-  }, [semesters]);
+  const columns = useMemo<ColumnDef<ActivationHistoryEntry>[]>(() => [
+    { accessorKey: 'semester', header: 'Semester', cell: info => <span className="font-semibold">{SEMESTER_LABELS[info.getValue() as Semester['semester']] || 'Not recorded'}</span> },
+    { accessorKey: 'academic_year', header: 'Academic Year', cell: info => info.getValue() as string || 'Not recorded' },
+    { accessorKey: 'action', header: 'Action', cell: info => <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${info.getValue() === 'Activated' ? 'bg-primary/10 text-primary' : 'bg-parchment text-muted'}`}>{info.getValue() as string}</span> },
+    { accessorKey: 'changed_by', header: 'Changed By', cell: info => info.getValue() as string || 'Not recorded' },
+    { accessorKey: 'occurred_at', header: 'Date & Time', cell: info => {
+      const value = info.getValue() as string;
+      if (!value || Number.isNaN(Date.parse(value))) return 'Not recorded';
+      return <time dateTime={value}>{new Date(value).toLocaleString('en-US', { timeZone, year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' })}</time>;
+    } },
+  ], [timeZone]);
+  // TanStack owns a mutable table instance; keep this call outside compiler memoization.
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const table = useReactTable({ data: history, columns, state: { sorting, pagination }, onSortingChange: setSorting,
+    onPaginationChange: setPagination, getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel(), getPaginationRowModel: getPaginationRowModel() });
+  const opening = timeInputMinutes(hoursDraft.opening_time);
+  const closing = timeInputMinutes(hoursDraft.closing_time);
+  const cutoff = timeInputMinutes(hoursDraft.field_end_time);
+  const previewValid = !!hours && !hoursValidation;
+  const duration = previewValid ? closing! - opening! : 0;
+  const durationLabel = `${Math.floor(duration / 60)}h${duration % 60 ? ` ${duration % 60}m` : ''}`;
 
-  const activeSemester = semesters.find(semester => semester.is_active);
-  const openingMinutes = timeInputMinutes(operatingHoursDraft.opening_time);
-  const closingMinutes = timeInputMinutes(operatingHoursDraft.closing_time);
-  const hoursPreviewValid = !isLoadingOperatingHours && operatingHours !== null && !operatingHoursValidationError;
-  const dailyMinutes = hoursPreviewValid ? closingMinutes! - openingMinutes! : 0;
-  const durationLabel = `${Math.floor(dailyMinutes / 60)}h${dailyMinutes % 60 ? ` ${dailyMinutes % 60}m` : ''}`;
-  const settingsSections = [
-    { id: 'academic-semesters', label: 'Academic semesters', icon: CalendarRange, detail: activeSemester ? SEMESTER_LABELS[activeSemester.semester] : isLoading ? 'Loading semesters' : 'No active semester' },
-    { id: 'operating-hours', label: 'Operating hours', icon: Clock3, detail: 'Daily scheduling window' },
-    { id: 'document-signatories', label: 'Document signatories', icon: Signature, detail: 'Printed approval details' },
-    { id: 'activation-history', label: 'Activation history', icon: History, detail: 'Semester changes' },
-  ];
+  return <div id="settings-page" className="min-w-0 space-y-5 font-sans">
+    <nav aria-label="Settings sections" className="grid grid-cols-2 gap-1 rounded-2xl border border-border bg-surface p-1.5 lg:grid-cols-4">
+      {SECTIONS.map(({ id, label, icon: Icon }) => {
+        const unsaved = id === 'academic-semesters' ? yearsDirty : id === 'operating-hours' ? hoursDirty : id === 'document-signatories' && signatoryDirty;
+        return <Link key={id} to={sectionSearch(id)} aria-current={section === id ? 'page' : undefined}
+          className={`selection-indicator flex min-h-12 min-w-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${section === id ? '' : 'border-transparent text-muted hover:bg-parchment hover:text-primary'}`}>
+          <Icon size={17} className="shrink-0" aria-hidden="true" /><span>{label}{unsaved && <span className="block text-xs font-normal text-stage-warnText">Unsaved changes</span>}</span>
+        </Link>;
+      })}
+    </nav>
 
-  const columns = useMemo<ColumnDef<ActivationHistoryEntry>[]>(
-    () => [
-      {
-        accessorKey: 'semester',
-        header: 'Semester',
-        cell: info => (
-          <span className="font-semibold text-gray-700">{SEMESTER_LABELS[info.getValue() as Semester['semester']]}</span>
-        )
-      },
-      {
-        accessorKey: 'academic_year',
-        header: 'Academic Year',
-        cell: info => <span className="font-mono text-sm font-bold text-gray-800">{info.getValue() as string}</span>
-      },
-      {
-        accessorKey: 'is_active',
-        header: 'Status',
-        cell: info => (info.getValue() as boolean) ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-bold text-green-700">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
-            Active
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-bold text-gray-500">
-            End
-          </span>
-        )
-      },
-      {
-        accessorKey: 'activatedAt',
-        header: 'Date Activated',
-        cell: info => <span className="text-sm text-gray-600">{info.getValue() as string}</span>
-      }
-    ],
-    []
-  );
-
-  const table = useReactTable<ActivationHistoryEntry>({
-    data: history,
-    columns,
-    state: {
-      sorting,
-      pagination
-    },
-    onSortingChange: setSorting,
-    onPaginationChange: setPagination,
-    autoResetPageIndex: false,
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel()
-  });
-
-  return (
-    <div id="settings-page" className="grid items-start gap-4 font-sans xl:grid-cols-[200px_minmax(0,1fr)]">
-      <nav aria-label="Settings sections" className="grid grid-cols-2 gap-1 rounded-2xl border border-slate-200 bg-white p-2 sm:grid-cols-4 xl:sticky xl:top-4 xl:grid-cols-1">
-        {settingsSections.map(({ id, label, icon: Icon, detail }) => (
-          <a key={id} href={`#${id}`} className="group flex min-w-0 items-start gap-2.5 rounded-xl p-2.5 transition-colors hover:bg-[#5A1220]/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A]">
-            <Icon className="mt-0.5 h-4 w-4 shrink-0 text-[#5A1220]" aria-hidden="true" />
-            <span className="min-w-0"><span className="block text-xs font-bold text-slate-700 group-hover:text-[#5A1220]">{label}</span><span className="mt-1 hidden text-[11px] leading-snug text-slate-500 xl:block">{detail}</span></span>
-          </a>
-        ))}
-      </nav>
-      <div className="min-w-0 space-y-4">
-      <SectionCard
-        id="academic-semesters"
-        icon={CalendarRange}
-        title="Academic Semesters"
-        description="Manage academic years and the semester used across the institution."
-        aside={
-          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${activeSemester ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-            {activeSemester && <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />}
-            {activeSemester ? `AY ${activeSemester.academic_year}` : isLoading ? 'Loading…' : 'No active semester'}
-          </span>
-        }
-      >
-        <div className="grid grid-cols-1 gap-3 p-4 md:grid-cols-3">
-          {isLoading && semesters.length === 0 ? (
-            Array.from({ length: 3 }).map((_, index) => (
-              <Skeleton key={`card-skeleton-${index}`} className="h-64 rounded-2xl" />
-            ))
-          ) : sortedSemesters.length === 0 ? (
-            <p className="col-span-full rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">No academic semesters available.</p>
-          ) : sortedSemesters.map(semester => {
-            const isSummer = semester.semester === 'summer';
-            const isCardDisabled = isSummer && !semester.is_enabled;
-            const draft = draftFor(semester);
-            const error = academicYearError(draft);
-            const joined = joinAcademicYear(draft);
-            const isDirty = joined !== semester.academic_year;
-            const canSave = isDirty && isValidAcademicYear(draft);
-            const isSaving = savingYearId === semester.id;
-
-            return (
-              <article
-                key={semester.id}
-                className={`relative flex flex-col justify-between rounded-xl border border-t-4 p-4 transition-colors ${
-                  isCardDisabled
-                    ? 'border-gray-200/60 bg-gray-50/80'
-                    : semester.is_active
-                    ? 'border-[#5A1220]/20 border-t-[#5A1220] bg-[#5A1220]/[0.03]'
-                    : 'border-slate-200 border-t-[#C9952A]/60 bg-white'
-                }`}
-              >
-                <div className="space-y-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <h3 className="font-sans text-base font-bold text-slate-800">{SEMESTER_LABELS[semester.semester]}</h3>
-                      <div className="mt-1 flex items-center gap-1.5">
-                        <span className={`h-2 w-2 rounded-full ${semester.is_active && !isCardDisabled ? 'bg-green-500' : 'bg-gray-300'}`} />
-                        <span className={`text-[11px] font-bold ${semester.is_active && !isCardDisabled ? 'text-green-700' : 'text-gray-400'}`}>
-                          {semester.is_active && !isCardDisabled ? 'Active' : isCardDisabled ? 'Not offered' : 'Inactive'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {isSummer && (
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={semester.is_enabled}
-                        aria-label="Offer Summer semester"
-                        onClick={() => handleToggleEnabled(semester, !semester.is_enabled)}
-                        disabled={!isSummerToggleEnabled || togglingId === semester.id}
-                        className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                          !isSummerToggleEnabled || togglingId === semester.id
-                            ? 'cursor-not-allowed bg-gray-200 opacity-50'
-                            : semester.is_enabled
-                            ? 'cursor-pointer bg-[#4e0a10]'
-                            : 'cursor-pointer bg-gray-300'
-                        }`}
-                        title={
-                          !isSummerToggleEnabled
-                            ? 'Summer semester can only be managed when 2nd Semester is active'
-                            : semester.is_enabled
-                            ? 'Disable Summer'
-                            : 'Enable Summer'
-                        }
-                      >
-                        <span
-                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                            semester.is_enabled ? 'translate-x-4' : 'translate-x-0'
-                          }`}
-                        />
-                      </button>
-                    )}
-                  </div>
-
-                  <div>
-                    <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                      Academic Year
-                    </span>
-                    <div className="flex items-end gap-2">
-                      <label className="min-w-0 flex-1">
-                        <span className="mb-1 block text-[10px] font-semibold text-gray-400">Starting year</span>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          maxLength={4}
-                          value={draft.start}
-                          onChange={e => handleStartYearChange(semester, e.target.value)}
-                          disabled={isCardDisabled}
-                          placeholder="2026"
-                          aria-label={`${SEMESTER_LABELS[semester.semester]} starting year`}
-                          className={`w-full rounded-xl border bg-white px-3 py-2 text-center font-mono text-sm outline-none transition-all ${
-                            isCardDisabled
-                              ? 'cursor-not-allowed border-gray-200 bg-gray-100/50 text-gray-400'
-                              : error
-                              ? 'border-red-400 text-red-700 focus:ring-2 focus:ring-red-400'
-                              : 'border-gray-200 focus:ring-2 focus:ring-[#C9952A]'
-                          }`}
-                        />
-                      </label>
-                      <ArrowRight className="mb-2.5 h-3.5 w-3.5 shrink-0 text-gray-300" />
-                      <label className="min-w-0 flex-1">
-                        <span className="mb-1 block text-[10px] font-semibold text-gray-400">End year</span>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          maxLength={4}
-                          value={draft.end}
-                          onChange={e => handleEndYearChange(semester, e.target.value)}
-                          disabled={isCardDisabled}
-                          placeholder="2027"
-                          aria-label={`${SEMESTER_LABELS[semester.semester]} end year`}
-                          className={`w-full rounded-xl border bg-white px-3 py-2 text-center font-mono text-sm outline-none transition-all ${
-                            isCardDisabled
-                              ? 'cursor-not-allowed border-gray-200 bg-gray-100/50 text-gray-400'
-                              : error
-                              ? 'border-red-400 text-red-700 focus:ring-2 focus:ring-red-400'
-                              : 'border-gray-200 focus:ring-2 focus:ring-[#C9952A]'
-                          }`}
-                        />
-                      </label>
-                    </div>
-                    {error ? (
-                      <p className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-red-500">
-                        <TriangleAlert className="h-3 w-3" />{error}
-                      </p>
-                    ) : (
-                      <p className="mt-1.5 text-[10px] text-gray-400">
-                        {isDirty ? 'Unsaved change.' : 'Two consecutive years, e.g. 2026 → 2027.'}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-4 space-y-2 border-t border-gray-200/70 pt-3">
-                  {canSave && (
-                    <button
-                      type="button"
-                      onClick={() => saveAcademicYear(semester)}
-                      disabled={isSaving}
-                      className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#4e0a10] py-2 text-xs font-semibold text-white transition-colors hover:bg-[#C9952A] disabled:opacity-60"
-                    >
-                      {isSaving ? <LoadingSpinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
-                      {isSaving ? 'Saving' : 'Save academic year'}
-                    </button>
-                  )}
-
-                  {isCardDisabled ? (
-                    <p className="py-2 text-xs italic text-gray-500">Summer semester not offered this year</p>
-                  ) : semester.is_active ? (
-                    <button
-                      type="button"
-                      disabled
-                      className="w-full cursor-not-allowed rounded-xl border border-[#4e0a10]/30 bg-[#4e0a10]/10 py-2 text-xs font-semibold text-[#4e0a10]"
-                    >
-                      Currently Active
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={!isValidAcademicYear(draft) || isDirty}
-                      onClick={() => { void handleActivateClick(semester.id); }}
-                      title={isDirty ? 'Save the academic year before activating this semester' : undefined}
-                      className={`w-full rounded-xl border border-gray-300 bg-white py-2 text-xs font-semibold text-gray-700 transition-colors ${
-                        !isValidAcademicYear(draft) || isDirty
-                          ? 'cursor-not-allowed opacity-50'
-                          : 'cursor-pointer hover:bg-gray-50'
-                      }`}
-                    >
-                      Set as Active
-                    </button>
-                  )}
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      </SectionCard>
-
-      <SectionCard
-        id="operating-hours"
-        icon={Clock3}
-        title="Institution Operating Hours"
-        description="Define when classes can run during the day."
-        aside={operatingHours && (
-          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${operatingHoursDirty ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
-            {operatingHoursDirty ? 'Unsaved changes' : 'Saved'}
-          </span>
-        )}
-      >
-        <div className="mx-4 mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs font-bold text-slate-700">Daily hours preview</p>
-            <span className="text-xs font-semibold text-[#5A1220]">{hoursPreviewValid ? `${durationLabel} scheduling window` : isLoadingOperatingHours ? 'Loading hours…' : 'Choose valid hours to preview'}</span>
+    {section === 'academic-semesters' && <SectionCard id="academic-semesters" icon={CalendarRange} title="Academic Semesters" description="Manage academic years and choose the current scheduling context.">
+      {showArchived ? <div className="space-y-4 p-5">
+        <Link className={SECONDARY} to={sectionSearch('academic-semesters')}>Back to academic semesters</Link>
+        <Suspense fallback={<p role="status">Loading archived semesters…</p>}><ArchivePanel module="semesters" onRestored={() => void fetchSemesters(true)} /></Suspense>
+      </div> : <>
+        <div className="mx-5 mt-5 flex items-start gap-3 rounded-xl border border-primary/15 bg-primary/5 p-4">
+          <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-primary" aria-hidden="true" />
+          <div><p className="text-xs font-semibold uppercase tracking-wider text-muted">Current active semester</p>
+            <p className="mt-1 text-base font-bold text-primary">{loadingSemesters ? 'Loading semesters…' : semesterError ? 'Semester status unavailable' : activeSemester ? `${SEMESTER_LABELS[activeSemester.semester]} · AY ${activeSemester.academic_year}` : 'No active semester'}</p>
+            <p className="mt-1 text-sm text-muted">Changing the active semester retains existing schedules and Schedule History.</p>
           </div>
-          <div role="img" aria-label={hoursPreviewValid ? `Daily scheduling window: ${toApiTime(operatingHoursDraft.opening_time)} to ${toApiTime(operatingHoursDraft.closing_time)}` : 'Daily scheduling window unavailable'}>
-            <div className="relative h-10 overflow-hidden rounded-lg bg-slate-200/80">
-              {hoursPreviewValid && <div className="absolute inset-y-0 rounded-lg bg-[#5A1220]" style={{ left: `${openingMinutes! / 1440 * 100}%`, width: `${dailyMinutes / 1440 * 100}%` }} />}
-              {[6, 12, 18].map(hour => <span key={hour} className="absolute inset-y-0 border-l border-white/50" style={{ left: `${hour / 24 * 100}%` }} />)}
-            </div>
-            <div className="mt-2 flex justify-between text-[10px] font-semibold text-slate-500"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>12 AM</span></div>
-          </div>
-          {hoursPreviewValid && <p className="mt-3 flex items-center gap-2 text-xs text-slate-600"><span className="h-2 w-2 rounded-full bg-[#5A1220]" />{toApiTime(operatingHoursDraft.opening_time)} – {toApiTime(operatingHoursDraft.closing_time)}<span className="ml-auto text-[11px] text-slate-500">{operatingHoursDirty ? 'Preview of unsaved hours' : 'Current operating hours'}</span></p>}
         </div>
-        <div className="grid gap-4 p-4 sm:grid-cols-2 sm:items-end">
-          <label className="block">
-            <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-gray-500">Opening time</span>
-            <input
-              type="time"
-              step={1800}
-              value={operatingHoursDraft.opening_time}
-              onChange={event => setOperatingHoursDraft(current => ({ ...current, opening_time: event.target.value }))}
-              disabled={isLoadingOperatingHours || isSavingOperatingHours}
-              className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800 outline-none transition-all focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-gray-500">Closing time</span>
-            <input
-              type="time"
-              step={1800}
-              value={operatingHoursDraft.closing_time}
-              onChange={event => setOperatingHoursDraft(current => ({ ...current, closing_time: event.target.value }))}
-              disabled={isLoadingOperatingHours || isSavingOperatingHours}
-              className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800 outline-none transition-all focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100"
-            />
-          </label>
-          <label className="block sm:col-span-2">
-            <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-gray-500">Field classes end by</span>
-            <input
-              type="time"
-              step={1800}
-              value={operatingHoursDraft.field_end_time}
-              onChange={event => setOperatingHoursDraft(current => ({ ...current, field_end_time: event.target.value }))}
-              disabled={isLoadingOperatingHours || isSavingOperatingHours}
-              className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800 outline-none transition-all focus:ring-2 focus:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-gray-100 sm:w-1/2"
-            />
-            <span className="mt-1 block text-xs text-gray-500">
-              Classes held on the field must finish by this time. Set it to the closing time to allow evening field classes.
-            </span>
-          </label>
-          <p className="text-xs leading-5 text-gray-500 sm:col-span-2">
-            Changes apply to schedule generation, conflict checks, and faculty availability.
-          </p>
-          {operatingHoursValidationError && !isLoadingOperatingHours && (
-            <p className="flex items-center gap-1 text-xs font-semibold text-red-600 sm:col-span-2">
-              <TriangleAlert className="h-3.5 w-3.5" />
-              {operatingHoursValidationError}
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={saveOperatingHours}
-            disabled={!operatingHoursDirty || !!operatingHoursValidationError || isLoadingOperatingHours || isSavingOperatingHours}
-            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#4e0a10] px-4 text-xs font-semibold text-white transition-colors hover:bg-[#C9952A] disabled:cursor-not-allowed disabled:opacity-50 sm:col-start-2 sm:justify-self-end"
-          >
-            {isSavingOperatingHours ? <LoadingSpinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
-            {isSavingOperatingHours ? 'Saving' : 'Save operating hours'}
-          </button>
-        </div>
-      </SectionCard>
-
-      <SectionCard
-        id="document-signatories"
-        icon={Signature}
-        title="Document Signatories"
-        description="Set the approval name and designation used on printed documents."
-        aside={<span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${signatoryDirty ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>{signatoryDirty ? 'Unsaved changes' : 'Print settings'}</span>}
-      >
-        <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
-          <div className="space-y-4">
-            <label className="block">
-              <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                President's name
-              </span>
-              <input
-                type="text"
-                value={signatoryDraft.president_name}
-                onChange={e => setSignatoryDraft(prev => ({ ...prev, president_name: e.target.value }))}
-                maxLength={150}
-                placeholder="e.g. DR. JUAN DELA CRUZ"
-                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm uppercase outline-none transition-all focus:ring-2 focus:ring-[#C9952A]"
-              />
-              <span className="mt-1 block text-[10px] text-gray-400">
-                Printed above the signature line, exactly as typed.
-              </span>
-            </label>
-
-            <label className="block">
-              <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                Designation
-              </span>
-              <input
-                type="text"
-                value={signatoryDraft.president_title}
-                onChange={e => setSignatoryDraft(prev => ({ ...prev, president_title: e.target.value }))}
-                maxLength={150}
-                placeholder="OIC-College President"
-                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none transition-all focus:ring-2 focus:ring-[#C9952A]"
-              />
-              <span className="mt-1 block text-[10px] text-gray-400">
-                Drop "OIC-" once the appointment is permanent.
-              </span>
-            </label>
-
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={saveSignatories}
-                disabled={!signatoryDirty || !signatoryComplete || isSavingSignatory}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-[#4e0a10] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#C9952A] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isSavingSignatory ? <LoadingSpinner className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
-                {isSavingSignatory ? 'Saving' : 'Save signatory'}
-              </button>
-              {signatoryDirty && !isSavingSignatory && (
-                <button
-                  type="button"
-                  onClick={() => setSignatoryDraft(signatories)}
-                  className="text-[11px] font-semibold text-gray-500 transition-colors hover:text-[#4e0a10]"
-                >
-                  Discard
+        {semesterError ? <LoadError message={semesterError} retry={() => void fetchSemesters(true)} /> : <div className="grid gap-4 p-5 xl:grid-cols-3">
+          {loadingSemesters ? Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-72 rounded-xl" />) : semesterCards.map(({ period, records, semester }) => {
+            const label = SEMESTER_LABELS[period];
+            const creating = newYearDrafts[period] !== undefined || !semester;
+            const busy = busySemester !== null;
+            if (creating) {
+              const draft = newYearDrafts[period] || '';
+              const duplicate = records.some(item => item.academic_year === draft);
+              const error = duplicate ? 'This academic period already exists. Choose it from the saved academic years.' : yearError(draft);
+              return <article key={period} aria-label={label} className="flex min-w-0 flex-col rounded-xl border border-t-4 border-border border-t-accent/60 p-4">
+                <h3 className="font-sans text-base font-bold">{label}</h3><p className="mt-2 text-sm text-muted">Prepare a new academic period</p>
+                <label htmlFor={`new-${period}-year`} className="mb-2 mt-4 text-sm font-semibold">Academic year</label>
+                <input id={`new-${period}-year`} className={INPUT} aria-label={`${label} new academic year`} aria-describedby={`new-${period}-help`} aria-invalid={!!draft && !!error} value={draft} maxLength={9} placeholder="2026-2027" disabled={busy} onChange={event => setNewYearDrafts(current => ({ ...current, [period]: event.target.value.replace(/[–—]/g, '-') }))} />
+                <p id={`new-${period}-help`} className={`mt-2 text-xs leading-5 ${draft && error ? 'text-red-700' : 'text-muted'}`}>{draft && error ? error : 'Existing academic periods and their schedules remain unchanged. The new period starts inactive.'}</p>
+                {period === 'summer' && <p className="mt-2 text-xs leading-5 text-muted">New Summer periods start disabled. Enable Summer separately while 2nd Semester is active.</p>}
+                <div className="mt-auto flex flex-wrap justify-end gap-2 pt-5">
+                  {semester && <button type="button" className={SECONDARY} disabled={busy} onClick={() => cancelNewYear(period)}>Cancel</button>}
+                  <button type="button" className={PRIMARY} disabled={!!error || busy} onClick={() => void createPeriod(period)}>{busy ? 'Creating…' : 'Create academic period'}</button>
+                </div>
+              </article>;
+            }
+            const draft = yearDrafts[semester.id] ?? semester.academic_year;
+            const changed = draft !== semester.academic_year;
+            const error = yearError(draft);
+            const summer = semester.semester === 'summer';
+            const editable = !semester.is_active && semester.can_edit_academic_year !== false;
+            const offered = !summer || semester.is_enabled;
+            const yearId = `semester-${semester.id}-year`;
+            return <article key={period} aria-label={label} className={`flex min-w-0 flex-col rounded-xl border border-t-4 p-4 ${semester.is_active ? 'border-primary/20 border-t-primary bg-primary/[0.025]' : 'border-border border-t-accent/60 bg-white'}`}>
+              <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-sans text-base font-bold">{label}</h3><span className={`rounded-full px-2 py-1 text-xs font-semibold ${semester.is_active ? 'bg-primary/10 text-primary' : 'bg-parchment text-muted'}`}>{semester.is_active ? 'Active' : 'Inactive'}</span></div>
+              <p className="mt-2 text-sm text-muted">AY {semester.academic_year}</p>
+              {records.length > 1 && <label className="mt-4 block text-xs font-semibold text-muted">Saved academic years
+                <select className={`${INPUT} mt-2`} aria-label={`${label} saved academic year`} value={semester.id} disabled={busy} onChange={event => setSelectedPeriods(current => ({ ...current, [period]: Number(event.target.value) }))}>
+                  {records.map(item => <option key={item.id} value={item.id}>{item.academic_year}{item.is_active ? ' · Active' : ''}{yearDrafts[item.id] !== undefined && yearDrafts[item.id] !== item.academic_year ? ' · Unsaved changes' : ''}</option>)}
+                </select>
+              </label>}
+              <label htmlFor={yearId} className="mb-1.5 mt-4 text-sm font-semibold">Academic year</label>
+              <input id={yearId} type="text" value={draft} placeholder="2026-2027" maxLength={9} aria-label={`${label} academic year`} aria-invalid={changed && !!error} aria-describedby={`${yearId}-help`} disabled={!editable || busy}
+                className={INPUT} onChange={event => setYearDrafts(current => ({ ...current, [semester.id]: event.target.value.replace(/[–—]/g, '-') }))} />
+              <p id={`${yearId}-help`} className={`mt-2 text-xs leading-5 ${changed && error ? 'text-red-700' : 'text-muted'}`}>
+                {!editable ? 'The academic year is locked to preserve this semester’s records.' : changed && error ? error : 'Two consecutive years, for example 2026-2027.'}
+              </p>
+              {changed && <div className="mt-3 flex flex-wrap justify-end gap-2">
+                <button type="button" disabled={busy} className={SECONDARY} onClick={() => setYearDrafts(current => ({ ...current, [semester.id]: semester.academic_year }))}>Discard changes</button>
+                <button type="button" className={PRIMARY} disabled={!!error || busy || !editable} onClick={() => void saveAcademicYear(semester)}>Save academic year</button>
+              </div>}
+              {summer && <div className="mt-4 space-y-2 border-t border-border pt-4">
+                <div className="flex items-center justify-between gap-3"><span className="text-sm font-semibold">Enable Summer</span>
+                  <button type="button" role="switch" aria-label="Enable Summer" aria-checked={semester.is_enabled} aria-describedby="summer-help" disabled={busy || semester.is_active || activeSemester?.semester !== '2nd'} onClick={() => void toggleSummer(semester)}
+                    className={`flex h-11 w-14 shrink-0 items-center rounded-xl px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${semester.is_enabled ? 'bg-primary' : 'bg-border'}`}>
+                    <span className={`h-6 w-6 rounded-full bg-white transition-transform ${semester.is_enabled ? 'translate-x-6' : ''}`} />
+                  </button>
+                </div>
+                <p className="text-xs font-semibold text-muted">{semester.is_enabled ? 'Offered' : 'Not offered'}</p>
+                <p id="summer-help" className="text-xs leading-5 text-muted">Enabling Summer makes it available for scheduling; it does not make it active. {semester.is_active ? 'Activate another semester before disabling Summer.' : activeSemester?.semester !== '2nd' ? 'Summer availability can be changed while 2nd Semester is active.' : ''}</p>
+                {semester.is_active && !semester.is_enabled && <p role="alert" className="text-xs text-red-700">Summer is active but not enabled. Review this configuration.</p>}
+              </div>}
+              <div className="mt-auto pt-5">
+                <button type="button" className={`${semester.is_active ? SECONDARY : PRIMARY} w-full`} disabled={semester.is_active || !offered || changed || !!error || busy} onClick={() => void activate(semester)}>
+                  {busySemester === semester.id ? <LoadingSpinner className="h-4 w-4" /> : null}{semester.is_active ? 'Currently Active' : 'Set as Active'}
                 </button>
-              )}
-              {!signatoryComplete && (
-                <span className="text-[10px] font-semibold text-red-500">Both fields are required.</span>
-              )}
-            </div>
-          </div>
+                {!semester.is_active && (changed || !offered) && <p className="mt-2 text-xs text-muted">{changed ? 'Save the academic year before activating this semester.' : 'Enable Summer before setting it as active.'}</p>}
+              </div>
+              <button type="button" className="mt-3 min-h-11 rounded-lg px-2 py-2 text-sm font-semibold text-primary underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50" disabled={busy} onClick={() => prepareYear(period, semester)}>Prepare another academic year</button>
+            </article>;
+          })}
+        </div>}
+        {semesterSaveError && <p role="alert" className="mx-5 mb-5 text-sm text-red-700">{semesterSaveError}</p>}
+        {isVpaa && <div className="border-t border-border px-5 py-3 text-right"><Link to={sectionSearch('academic-semesters', true)} className="rounded text-sm font-semibold text-muted underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">View archived semesters</Link></div>}
+      </>}
+    </SectionCard>}
 
-          <figure aria-label="Document signature preview" className="m-0 rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <figcaption className="flex items-center gap-2 text-[11px] font-semibold text-slate-500"><FileText className="h-4 w-4" />Preview on printed documents</figcaption>
-            <div className="mt-3 rounded-lg border border-slate-200 bg-white p-5">
-            <div aria-hidden="true" className="mb-8 space-y-2"><div className="h-1.5 w-2/3 rounded bg-slate-100" /><div className="h-1.5 w-full rounded bg-slate-100" /><div className="h-1.5 w-4/5 rounded bg-slate-100" /></div>
-            <div className="text-center">
-              <p className="text-xs font-semibold text-gray-500">Approved by:</p>
-              <p className="mt-4 border-t border-gray-400 pt-1.5 text-sm font-bold uppercase tracking-wide text-gray-800">
-                {signatoryDraft.president_name.trim() || 'President’s name'}
-              </p>
-              <p className="text-[11px] font-semibold text-gray-500">
-                {signatoryDraft.president_title.trim() || 'Designation'}
-              </p>
+    {section === 'operating-hours' && <SectionCard id="operating-hours" icon={Clock3} title="Institution Operating Hours" description="Define the daily scheduling window and the limit for field classes.">
+      {loadingHours ? <div className="p-5" role="status"><Skeleton className="h-48 rounded-xl" /><span className="sr-only">Loading operating hours</span></div> : hoursError ? <LoadError message={hoursError} retry={() => void fetchHours()} /> : hours && <>
+        <div className="space-y-5 p-5">
+          <div className="grid gap-4 lg:grid-cols-3">
+            {([
+              ['opening_time', 'Opening time', 'Earliest time classes may begin.'],
+              ['closing_time', 'Closing time', 'Latest time classes may finish.'],
+              ['field_end_time', 'Field Class Cutoff', 'Only classes held on the field must finish by this time.'],
+            ] as const).map(([key, label, help]) => {
+              const invalid = !!hoursValidation && (key === 'field_end_time' ? /[Ff]ield/.test(hoursValidation) : !/[Ff]ield/.test(hoursValidation));
+              return <div key={key}><label htmlFor={key} className="mb-2 block text-sm font-semibold">{label}</label>
+                <input id={key} type="time" step={1800} value={hoursDraft[key]} disabled={savingHours} className={INPUT} aria-invalid={invalid} aria-describedby={`${key}-help${invalid ? ' hours-validation' : ''}`}
+                  onChange={event => setHoursDraft(current => ({ ...current, [key]: event.target.value }))} />
+                <p id={`${key}-help`} className="mt-2 text-xs leading-5 text-muted">{help}</p>
+              </div>;
+            })}
+          </div>
+          {hoursValidation && <p id="hours-validation" role="alert" className="flex items-center gap-2 text-sm text-red-700"><TriangleAlert size={16} aria-hidden="true" />{hoursValidation}</p>}
+          <div className="rounded-xl border border-border bg-parchment/60 p-4">
+            <div className="mb-3 flex flex-wrap justify-between gap-2 text-sm"><p className="font-semibold text-primary">{previewValid ? `${durationLabel} scheduling window` : 'Choose valid hours to preview'}</p><span className="text-muted">{hoursDirty ? 'Unsaved preview' : 'Saved operating hours'}</span></div>
+            <div role="img" aria-label={previewValid ? `Daily scheduling window: ${toApiTime(hoursDraft.opening_time)} to ${toApiTime(hoursDraft.closing_time)}` : 'Daily scheduling window unavailable'}>
+              <div className="relative h-3 overflow-hidden rounded-full bg-border">
+                {previewValid && <><div className="absolute inset-y-0 bg-primary" style={{ left: `${opening! / 1440 * 100}%`, width: `${duration / 1440 * 100}%` }} /><span className="absolute inset-y-0 w-1 bg-accent" style={{ left: `${cutoff! / 1440 * 100}%` }} /></>}
+              </div>
             </div>
+            {previewValid && <div className="mt-3 space-y-1 text-sm text-muted"><p>Classes: {toApiTime(hoursDraft.opening_time)}–{toApiTime(hoursDraft.closing_time)}.</p><p>Field classes: {toApiTime(hoursDraft.opening_time)}–{toApiTime(hoursDraft.field_end_time)}. <span className="font-semibold text-primary">Field cutoff: {toApiTime(hoursDraft.field_end_time)}</span></p>{cutoff === closing && <p>Field classes share the full operating window.</p>}</div>}
+          </div>
+          <p className="text-sm leading-6 text-muted">Updates apply to scheduling rules, conflict checks, and faculty availability. Existing classes are not automatically moved.</p>
+          {hoursSaveError && <p role="alert" className="text-sm text-red-700">{hoursSaveError}</p>}
+        </div>
+        <SaveFooter dirty={hoursDirty} saving={savingHours} disabled={!!hoursValidation} label="Save operating hours" discard={() => { setHoursDraft(hoursDraftOf(hours)); setHoursSaveError(null); }} save={() => void saveHours()} />
+      </>}
+    </SectionCard>}
+
+    {section === 'document-signatories' && <SectionCard id="document-signatories" icon={Signature} title="Document Signatories" description="Set the President’s details used on future documents.">
+      {loadingSignatories ? <div className="p-5" role="status"><Skeleton className="h-48 rounded-xl" /><span className="sr-only">Loading document signatories</span></div> : signatoryError ? <LoadError message={signatoryError} retry={() => void fetchSignatories()} /> : signatories && <>
+        <div className="grid gap-5 p-5 lg:grid-cols-2">
+          <div className="space-y-4">
+            {([['president_name', "President's Name"], ['president_title', 'Designation']] as const).map(([key, label]) => <div key={key}>
+              <label htmlFor={key} className="mb-2 block text-sm font-semibold">{label}</label>
+              <input id={key} value={signatoryDraft[key]} maxLength={150} disabled={savingSignatory} className={INPUT} aria-invalid={!signatoryDraft[key].trim()} aria-describedby={!signatoryDraft[key].trim() ? `${key}-error` : undefined} onChange={event => setSignatoryDraft(current => ({ ...current, [key]: event.target.value }))} />
+              {!signatoryDraft[key].trim() && <p id={`${key}-error`} className="mt-2 text-xs text-red-700">{label} is required.</p>}
+            </div>)}
+            <p className="text-sm leading-6 text-muted">Updates apply to future documents that have not recorded a signatory. Previously recorded signatories remain unchanged.</p>
+            {signatorySaveError && <p role="alert" className="text-sm text-red-700">{signatorySaveError}</p>}
+          </div>
+          <figure aria-label="Document signature preview" className="m-0 min-w-0 rounded-xl border border-border bg-parchment/60 p-4">
+            <figcaption className="flex flex-wrap justify-between gap-2 text-sm text-muted"><span className="font-semibold">Document preview</span><span>{signatoryDirty ? 'Unsaved preview' : 'Saved signatory'}</span></figcaption>
+            <div className="mt-4 rounded-lg border border-border bg-white px-5 py-6 text-center">
+              <p className="text-sm text-muted">Approved by:</p><div className="mx-auto mt-8 max-w-sm border-t border-muted pt-2">
+                <p className="break-words text-sm font-bold text-text">{signatoryDraft.president_name.trim() || "President's name"}</p>
+                <p className="mt-1 break-words text-sm text-muted">{signatoryDraft.president_title.trim() || 'Designation'}</p>
+              </div>
             </div>
           </figure>
         </div>
-      </SectionCard>
+        <SaveFooter dirty={signatoryDirty} saving={savingSignatory} disabled={!signatoryComplete} label="Save signatory" discard={() => { setSignatoryDraft(signatories); setSignatorySaveError(null); }} save={() => void saveSignatories()} />
+      </>}
+    </SectionCard>}
 
-      <SectionCard
-        id="activation-history"
-        icon={History}
-        title="Semester Activation History"
-        description="A record of semester changes across the institution."
-        aside={
-          <span className="text-xs font-semibold text-gray-500">{history.length} logged</span>
-        }
-      >
-        <DataTable
-          table={table}
-          emptyTitle="No activations yet."
-          emptyDescription="Setting a semester as active records it here."
-          totalLabel="entries"
-          cellClassName={columnId => columnId === 'academic_year' ? 'whitespace-nowrap' : ''}
-        />
-      </SectionCard>
-      </div>
-    </div>
-  );
+    {section === 'activation-history' && <SectionCard id="activation-history" icon={History} title="Semester Activation History" description="A record of changes to the active academic semester.">
+      <div className="space-y-2 px-5 py-4 text-sm text-muted"><p>“Ended” means the semester stopped being the active context. Its schedules are retained.</p><p>Times shown in {timeZone}. Missing legacy details are shown as “Not recorded”.</p></div>
+      {historyError ? <LoadError message={historyError} retry={() => void fetchHistory()} /> : <DataTable table={table} isLoading={loadingHistory} ariaLabel="Semester activation history" scrollAriaLabel="Activation history table" scrollClassName="overflow-x-auto" tableClassName="min-w-[640px]" variant="embedded" density="compact" emptyTitle="No activation events recorded." emptyDescription="Setting a semester as active records the transition here." totalLabel="events" cellClassName={id => id === 'occurred_at' ? 'whitespace-nowrap' : ''} />}
+    </SectionCard>}
+  </div>;
 }

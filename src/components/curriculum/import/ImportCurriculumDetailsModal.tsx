@@ -5,7 +5,7 @@ import { noteScopeLabel } from '../../../lib/curriculumImport/notes';
 import { programLabel } from '../../../lib/programLabel';
 import type { DraftMetadata, ExtractedMetadata, PlacementTerm, SourceNote, UnreadRegion } from '../../../lib/curriculumImport/types';
 import type { Program } from '../../../types/curriculum';
-import { IMPORT_HEADER_GRADIENT } from './importTheme';
+import { ModalButton } from '../../ui/ModalForm';
 
 export type MetadataField = 'name' | 'program_id' | 'effective_school_year' | 'cmo_number' | 'cmo_series';
 
@@ -90,11 +90,10 @@ export default function ImportCurriculumDetailsModal({ metadata, detected, progr
       title="Curriculum details"
       description="Applies to the curriculum this import creates."
       size="lg"
-      headerClassName={IMPORT_HEADER_GRADIENT}
       footer={(
         <>
           <p className="mr-auto text-xs text-muted">Changes are kept in this draft as you type. The curriculum is created only when you import.</p>
-          <button type="button" onClick={onClose} className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-5 text-[13px] font-bold text-white hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2">Done</button>
+          <ModalButton variant="primary" onClick={onClose}>Done</ModalButton>
         </>
       )}
     >

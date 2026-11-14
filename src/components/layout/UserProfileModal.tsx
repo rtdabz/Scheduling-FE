@@ -1,21 +1,26 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { BookOpen, Camera, Clock, Loader2, MapPin, Trash2, UserRound } from 'lucide-react';
+import { AtSign, BookOpen, Building2, CalendarDays, Camera, Clock, GraduationCap, Link2, Loader2, Lock, LogIn, Mail, MapPin, Trash2, UserRound, type LucideIcon } from 'lucide-react';
 import Modal from '../ui/Modal';
 import ProfileAvatar from '../ui/ProfileAvatar';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
 import { formatTime12h } from '../../lib/timeGrid';
+import { CREDENTIALS_MAX_LENGTH, titleOptions } from '../../lib/personName';
 import { useToast } from '../../context/ToastContext';
+import { ModalButton } from '../ui/ModalForm';
 
 interface Unit { name?: string | null; code?: string | null; department_name?: string | null; department_code?: string | null }
 
 export interface ProfileUser {
+  account_version?: string;
   id?: number;
   name?: string;
   first_name?: string | null;
   middle_initial?: string | null;
   last_name?: string | null;
   suffix?: string | null;
+  honorific_prefix?: string | null;
+  credentials?: string | null;
   username?: string;
   email?: string | null;
   role?: string;
@@ -44,7 +49,7 @@ interface Teaching {
   tier_label: string;
   classes: TeachingClass[];
 }
-interface ProfileResponse { user: ProfileUser; suffixes: string[]; teaching: Teaching | null }
+interface ProfileResponse { user: ProfileUser; suffixes: string[]; honorific_prefixes?: string[]; teaching: Teaching | null }
 
 interface UserProfileModalProps {
   onClose: () => void;
@@ -53,7 +58,7 @@ interface UserProfileModalProps {
   onSaved: (user: ProfileUser) => void;
 }
 
-interface NameForm { first_name: string; middle_initial: string; last_name: string; suffix: string }
+interface NameForm { honorific_prefix: string; first_name: string; middle_initial: string; last_name: string; suffix: string; credentials: string }
 
 const AVATAR_SIZE = 300;
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -71,6 +76,8 @@ const unitLabel = (unit?: Unit | null) => {
 };
 
 const nameFormFrom = (user: ProfileUser | null): NameForm => ({
+  honorific_prefix: user?.honorific_prefix ?? '',
+  credentials: user?.credentials ?? '',
   first_name: user?.first_name ?? '',
   middle_initial: user?.middle_initial ?? '',
   last_name: user?.last_name ?? '',
@@ -98,16 +105,31 @@ const toAvatarDataUrl = (file: File) => new Promise<string>((resolve, reject) =>
   img.src = url;
 });
 
-const inputClass = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-[#4e0a10]/40 focus:ring-2 focus:ring-[#C9952A]/40 disabled:bg-slate-50';
+const inputClass = 'h-9 w-full rounded-lg border border-[#E2D9D0] bg-white px-3 text-sm text-[#1A1410] outline-none transition focus:border-[#4e0a10]/40 focus:ring-2 focus:ring-[#C9952A]/40 disabled:bg-[#F7F4F0]';
+const cardClass = 'rounded-xl border border-[#E2D9D0] bg-white';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="block"><span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</span>{children}</label>;
+  return <label className="block"><span className="mb-1 block text-xs font-medium text-[#7A6E67]">{label}</span>{children}</label>;
 }
 
-function Detail({ label, value }: { label: string; value?: string | null }) {
-  return <div className="min-w-0 rounded-lg border border-black/5 bg-white px-3 py-2">
-    <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</dt>
-    <dd className="mt-0.5 break-words text-sm font-medium text-slate-800">{value || '—'}</dd>
+function InfoCard({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
+  return <section className={`${cardClass} flex flex-col`}>
+    <div className="flex items-center justify-between gap-2 border-b border-[#E2D9D0]/70 px-4 py-2.5">
+      <h3 className="text-sm font-bold text-[#1A1410]">{title}</h3>
+      {note && <span className="inline-flex items-center gap-1 rounded-full bg-[#F7F4F0] px-2 py-0.5 text-[11px] font-semibold text-[#7A6E67]"><Lock size={11} /> Read-only</span>}
+    </div>
+    <dl className="divide-y divide-[#E2D9D0]/60">{children}</dl>
+    {note && <p className="mt-auto border-t border-[#E2D9D0]/60 px-4 py-2 text-xs text-[#7A6E67]">{note}</p>}
+  </section>;
+}
+
+function InfoRow({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value?: string | null }) {
+  return <div className="relative min-w-0 py-2 pl-[3.75rem] pr-4">
+    <dt className="text-xs text-[#7A6E67]">
+      <span aria-hidden="true" className="absolute left-4 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg bg-[#F7F4F0] text-[#4e0a10]"><Icon size={15} /></span>
+      {label}
+    </dt>
+    <dd className="break-words text-sm font-medium text-[#1A1410]">{value || '—'}</dd>
   </div>;
 }
 
@@ -158,7 +180,7 @@ function TeachingLoad({ teaching }: { teaching: Teaching }) {
       <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-800"><BookOpen size={15} className="text-[#4e0a10]" /> Assigned classes <span className="font-medium text-slate-400">({teaching.classes.length})</span></h3>
       {teaching.classes.length === 0
         ? <p className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-500">No classes assigned to you this semester yet.</p>
-        : <ul className="space-y-2">
+        : <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
           {teaching.classes.map((item) => <li key={`${item.section_id}:${item.course_id}`} className="rounded-xl border border-black/5 bg-white p-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -226,10 +248,13 @@ export default function UserProfileModal({ onClose, user, roleLabel, onSaved }: 
     setErrors({});
     try {
       const { data } = await api.patch<{ message: string; data: ProfileResponse }>('/profile', {
+        expected_version: profile?.user.account_version,
         first_name: form.first_name.trim(),
         middle_initial: form.middle_initial.trim() || null,
         last_name: form.last_name.trim(),
         suffix: form.suffix || null,
+        honorific_prefix: form.honorific_prefix || null,
+        credentials: form.credentials.trim() || null,
         profile_picture: picture,
       });
       setProfile(data.data);
@@ -249,83 +274,108 @@ export default function UserProfileModal({ onClose, user, roleLabel, onSaved }: 
   const teaching = profile?.teaching ?? null;
   const setField = (key: keyof NameForm) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((prev) => ({ ...prev, [key]: event.target.value }));
 
+  const tabs: Array<['profile' | 'teaching', string, LucideIcon]> = [['profile', 'Profile', UserRound], ...(teaching ? [['teaching', 'Teaching Load', BookOpen] as ['teaching', string, LucideIcon]] : [])];
+  const department = unitLabel(current?.department);
+
   const footer = tab === 'profile' ? <>
-    <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-black/5">Close</button>
-    <button type="submit" form="profile-form" disabled={!dirty || saving || loading} className="inline-flex items-center gap-2 rounded-lg bg-[#4e0a10] px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#6b0f17] disabled:cursor-not-allowed disabled:opacity-50">
-      {saving && <Loader2 size={14} className="animate-spin" />} {saving ? 'Saving…' : 'Save changes'}
-    </button>
+    <ModalButton onClick={onClose}>Close</ModalButton>
+    <ModalButton variant="primary" type="submit" form="profile-form" disabled={!dirty || saving || loading}>
+      {saving && <Loader2 size={14} className="animate-spin" />} {saving ? 'Saving…' : 'Save Changes'}
+    </ModalButton>
   </> : undefined;
 
-  return <Modal isOpen onClose={onClose} title="My Profile" description="Your account details and teaching load" size="lg" footer={footer}>
-    <div className="border-b border-black/5 bg-gradient-to-b from-[#4e0a10]/[0.06] to-transparent px-4 pb-0 pt-5 sm:px-5">
-      <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
-        <div className="relative shrink-0">
-          <ProfileAvatar src={picture} alt={current?.name || 'User'} className="h-24 w-24 rounded-full ring-4 ring-white shadow-md" />
-          <button type="button" onClick={() => fileInput.current?.click()} disabled={loading} aria-label="Change photo" className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full bg-[#4e0a10] text-white shadow ring-2 ring-white transition hover:bg-[#6b0f17] disabled:opacity-50">
-            <Camera size={15} />
-          </button>
-          <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={choosePhoto} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-lg font-bold text-slate-800">{current?.name || 'Administrator'}</p>
-          <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5 sm:justify-start">
-            <span className="rounded-full bg-[#4e0a10] px-2.5 py-0.5 text-[11px] font-bold text-white">{roleLabel}</span>
-            {teaching && <span className="rounded-full bg-[#C9952A]/15 px-2.5 py-0.5 text-[11px] font-bold text-[#8a6419]">Instructor</span>}
-            {unitLabel(current?.department) && <span className="text-xs text-slate-500">{unitLabel(current?.department)}</span>}
-          </div>
-          {picture && <button type="button" onClick={() => setPicture(null)} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-red-600 hover:underline"><Trash2 size={12} /> Remove photo</button>}
-          {errors.profile_picture && <p className="mt-1 text-xs text-red-600">{errors.profile_picture}</p>}
-        </div>
+  return <Modal isOpen onClose={onClose} title="My Profile" description="Your account details and teaching load" size="lg" className="!max-w-[900px]" footer={footer}>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-[#E2D9D0] bg-white px-4 py-3 sm:px-5">
+      <div className="relative shrink-0">
+        <ProfileAvatar src={picture} alt={current?.name || 'User'} className="h-16 w-16 rounded-full ring-2 ring-[#C9952A]/40" />
+        <button type="button" onClick={() => fileInput.current?.click()} disabled={loading} aria-label="Change photo" title="Change photo" className="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-[#4e0a10] text-white ring-2 ring-white transition hover:bg-[#640d14] focus:outline-none focus-visible:ring-[#C9952A] disabled:opacity-50">
+          <Camera size={12} />
+        </button>
+        <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={choosePhoto} />
       </div>
-      <div className="mt-4 flex gap-1" role="tablist">
-        {([['profile', 'Profile', UserRound], ...(teaching ? [['teaching', 'Teaching Load', BookOpen]] : [])] as Array<['profile' | 'teaching', string, typeof UserRound]>).map(([key, label, Icon]) => (
-          <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={`inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold transition ${tab === key ? 'border-[#4e0a10] text-[#4e0a10]' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+      <div className="min-w-[11rem] flex-1">
+        <p className="truncate text-lg font-bold leading-6 text-[#1A1410]">{current?.name || 'Administrator'}</p>
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="rounded-full bg-[#4e0a10] px-2.5 py-0.5 text-[11px] font-bold text-white">{roleLabel}</span>
+          {teaching && <span className="rounded-full bg-[#C9952A]/15 px-2.5 py-0.5 text-[11px] font-bold text-[#8a6419]">Instructor</span>}
+          {department && <span className="inline-flex min-w-0 items-center gap-1 text-xs text-[#7A6E67]"><Building2 size={12} className="shrink-0" /> {department}</span>}
+        </div>
+        {picture && <button type="button" onClick={() => setPicture(null)} className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-red-700 hover:underline"><Trash2 size={12} /> Remove photo</button>}
+        {errors.profile_picture && <p className="mt-1 text-xs text-red-600">{errors.profile_picture}</p>}
+      </div>
+      {tabs.length > 1 && <div className="flex w-full rounded-lg bg-[#F7F4F0] p-1 ring-1 ring-inset ring-[#E2D9D0] sm:w-auto" role="tablist" aria-label="Profile sections">
+        {tabs.map(([key, label, Icon]) => (
+          <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] ${tab === key ? 'bg-[#4e0a10] text-white shadow-sm' : 'text-[#7A6E67] hover:text-[#4e0a10]'}`}>
             <Icon size={14} /> {label}
           </button>
         ))}
-      </div>
+      </div>}
     </div>
 
     {loading && !profile
       ? <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading profile…</div>
       : tab === 'teaching' && teaching
         ? <TeachingLoad teaching={teaching} />
-        : <form id="profile-form" onSubmit={save} className="space-y-5 p-4 sm:p-5">
-          <section>
-            <h3 className="mb-2 text-sm font-bold text-slate-800">Name</h3>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_5rem_1fr_7rem]">
-              <Field label="First name">
-                <input required maxLength={100} value={form.first_name} onChange={setField('first_name')} className={inputClass} />
-                {errors.first_name && <span className="mt-1 block text-xs text-red-600">{errors.first_name}</span>}
-              </Field>
-              <Field label="M.I.">
-                <input maxLength={1} value={form.middle_initial} onChange={(event) => setForm((prev) => ({ ...prev, middle_initial: event.target.value.replace(/[^a-z]/gi, '').toUpperCase() }))} className={inputClass} />
-              </Field>
-              <Field label="Last name">
-                <input required maxLength={100} value={form.last_name} onChange={setField('last_name')} className={inputClass} />
-                {errors.last_name && <span className="mt-1 block text-xs text-red-600">{errors.last_name}</span>}
-              </Field>
-              <Field label="Suffix">
-                <select value={form.suffix} onChange={setField('suffix')} className={inputClass}>
-                  <option value="">None</option>
-                  {(profile?.suffixes ?? []).map((suffix) => <option key={suffix} value={suffix}>{suffix}</option>)}
-                </select>
-              </Field>
+        : <form id="profile-form" onSubmit={save} className="space-y-4 p-4 sm:p-5">
+          <section className={cardClass}>
+            <h3 className="border-b border-[#E2D9D0]/70 px-4 py-2.5 text-sm font-bold text-[#1A1410]">Profile information</h3>
+            <div className="grid grid-cols-6 gap-3 p-4 sm:grid-cols-12">
+              <div className="col-span-6 sm:col-span-4">
+                <Field label="First name">
+                  <input required maxLength={100} value={form.first_name} onChange={setField('first_name')} className={inputClass} />
+                  {errors.first_name && <span className="mt-1 block text-xs text-red-600">{errors.first_name}</span>}
+                </Field>
+              </div>
+              <div className="col-span-2">
+                <Field label="M.I.">
+                  <input maxLength={1} value={form.middle_initial} onChange={(event) => setForm((prev) => ({ ...prev, middle_initial: event.target.value.replace(/[^a-z]/gi, '').toUpperCase() }))} className={inputClass} />
+                </Field>
+              </div>
+              <div className="col-span-4">
+                <Field label="Last name">
+                  <input required maxLength={100} value={form.last_name} onChange={setField('last_name')} className={inputClass} />
+                  {errors.last_name && <span className="mt-1 block text-xs text-red-600">{errors.last_name}</span>}
+                </Field>
+              </div>
+              <div className="col-span-3 sm:col-span-2">
+                <Field label="Suffix">
+                  <select value={form.suffix} onChange={setField('suffix')} className={inputClass}>
+                    <option value="">None</option>
+                    {(profile?.suffixes ?? []).map((suffix) => <option key={suffix} value={suffix}>{suffix}</option>)}
+                  </select>
+                </Field>
+              </div>
+              <div className="col-span-3 sm:col-span-4">
+                <Field label="Title">
+                  <select value={form.honorific_prefix} onChange={setField('honorific_prefix')} className={inputClass}>
+                    <option value="">None</option>
+                    {titleOptions(profile?.honorific_prefixes ?? [], form.honorific_prefix).map((title) => <option key={title} value={title}>{title}</option>)}
+                  </select>
+                  {errors.honorific_prefix && <span className="mt-1 block text-xs text-red-600">{errors.honorific_prefix}</span>}
+                </Field>
+              </div>
+              <div className="col-span-6 sm:col-span-8">
+                <Field label="Credentials / Degrees">
+                  <input maxLength={CREDENTIALS_MAX_LENGTH} value={form.credentials} onChange={setField('credentials')} placeholder="e.g. PhD, EdD" className={inputClass} />
+                  {errors.credentials && <span className="mt-1 block text-xs text-red-600">{errors.credentials}</span>}
+                </Field>
+              </div>
             </div>
           </section>
-          <section>
-            <h3 className="mb-1 text-sm font-bold text-slate-800">Account</h3>
-            <p className="mb-2 text-xs text-slate-500">Managed by the VPAA. Ask them to change your username, email, role or department.</p>
-            <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <Detail label="Username" value={current?.username} />
-              <Detail label="Email" value={current?.email} />
-              <Detail label="Department" value={unitLabel(current?.department)} />
-              <Detail label="Program" value={unitLabel(current?.program)} />
-              <Detail label="Google account" value={current?.google_linked_at ? current.google_email || 'Linked' : 'Not linked'} />
-              <Detail label="Last login" value={formatDate(current?.last_login_at)} />
-              <Detail label="Member since" value={formatDate(current?.created_at)} />
-            </dl>
-          </section>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <InfoCard title="Account details" note="Managed by the VPAA. Ask them to change your username, email, role or department.">
+              <InfoRow icon={AtSign} label="Username" value={current?.username} />
+              <InfoRow icon={Mail} label="Email" value={current?.email} />
+              <InfoRow icon={Building2} label="Department" value={department} />
+              <InfoRow icon={GraduationCap} label="Program" value={unitLabel(current?.program)} />
+            </InfoCard>
+            <InfoCard title="Account activity">
+              <InfoRow icon={Link2} label="Google account" value={current?.google_linked_at ? current.google_email || 'Linked' : 'Not linked'} />
+              <InfoRow icon={LogIn} label="Last login" value={formatDate(current?.last_login_at)} />
+              <InfoRow icon={CalendarDays} label="Member since" value={formatDate(current?.created_at)} />
+            </InfoCard>
+          </div>
         </form>}
   </Modal>;
 }

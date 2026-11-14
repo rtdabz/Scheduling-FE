@@ -1,28 +1,29 @@
 import type { LucideIcon } from 'lucide-react';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
+import Skeleton from '../ui/Skeleton';
 
 export type DashboardMetricTone = 'brand' | 'info' | 'good' | 'warn' | 'alert' | 'accent';
 
 const TONES: Record<DashboardMetricTone, string> = {
   brand: 'bg-primary/10 text-primary',
-  info: 'bg-slate-100 text-slate-600',
-  good: 'bg-emerald-50 text-emerald-600',
-  warn: 'bg-amber-50 text-amber-700',
-  alert: 'bg-rose-50 text-rose-600',
-  accent: 'bg-violet-50 text-violet-600',
+  info: 'bg-stage-idle/60 text-muted',
+  good: 'bg-stage-done/10 text-stage-done',
+  warn: 'bg-accent/15 text-stage-warnText',
+  alert: 'bg-stage-returned/10 text-stage-returned',
+  accent: 'bg-accent/15 text-stage-warnText',
 };
 
 const VALUE_TONES: Record<DashboardMetricTone, string> = {
   brand: 'text-primary',
   info: 'text-primary',
   accent: 'text-primary',
-  good: 'text-emerald-700',
-  warn: 'text-amber-700',
-  alert: 'text-rose-700',
+  good: 'text-stage-done',
+  warn: 'text-stage-warnText',
+  alert: 'text-stage-returned',
 };
 
 const CARD_BASE =
-  'flex h-full min-h-[90px] min-w-0 gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left';
+  'flex h-full min-h-[90px] min-w-0 items-start gap-2 rounded-xl border border-border bg-white p-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
 
 interface DashboardMetricCardProps {
   label: string;
@@ -33,6 +34,7 @@ interface DashboardMetricCardProps {
   tone?: DashboardMetricTone;
   onClick?: () => void;
   className?: string;
+  loading?: boolean;
 }
 
 function ProgressRing({ progress }: { progress: number }) {
@@ -40,16 +42,16 @@ function ProgressRing({ progress }: { progress: number }) {
   const circumference = 2 * Math.PI * radius;
   const clamped = Math.min(100, Math.max(0, progress));
   return (
-    <svg viewBox="0 0 36 36" className="h-9 w-9 shrink-0 -rotate-90" aria-hidden="true">
-      <circle cx="18" cy="18" r={radius} fill="none" stroke="#e2e8f0" strokeWidth="4" />
+    <svg viewBox="0 0 36 36" className="h-8 w-8 shrink-0 -rotate-90" aria-hidden="true">
+      <circle cx="18" cy="18" r={radius} fill="none" stroke="#E6DED5" strokeWidth="3.5" />
       {clamped > 0 && (
         <circle
           cx="18"
           cy="18"
           r={radius}
           fill="none"
-          stroke="#16a36a"
-          strokeWidth="4"
+          stroke="#3F7D58"
+          strokeWidth="3.5"
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={circumference * (1 - clamped / 100)}
@@ -68,21 +70,35 @@ export default function DashboardMetricCard({
   tone = 'brand',
   onClick,
   className = '',
+  loading = false,
 }: DashboardMetricCardProps) {
   const content = (
     <>
-      {progress !== undefined ? <ProgressRing progress={progress} /> : (
-        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${TONES[tone]}`}>
+      <span className="flex min-w-0 flex-1 flex-col self-stretch text-left">
+        <span className="relative break-words text-xs font-medium leading-tight text-muted">
+          <span className={loading ? 'invisible' : undefined}>{label}</span>
+          {loading && <span className="skeleton-shimmer absolute inset-x-0 top-1/2 h-2.5 w-4/5 -translate-y-1/2 animate-pulse rounded" />}
+        </span>
+        <span className={`relative mt-1.5 text-[26px] font-bold leading-7 tracking-tight tabular-nums ${VALUE_TONES[tone]}`}>
+          <span className={loading ? 'invisible' : undefined}>{value}</span>
+          {loading && <span className="skeleton-shimmer absolute inset-y-0 left-0 w-12 max-w-full animate-pulse rounded" />}
+        </span>
+        <span className="relative mt-auto break-words pt-1.5 text-[11px] leading-tight text-muted">
+          <span className={loading ? 'invisible' : undefined}>{detail}</span>
+          {loading && <span className="skeleton-shimmer absolute left-0 top-[calc(50%+3px)] h-2 w-3/5 -translate-y-1/2 animate-pulse rounded" />}
+        </span>
+      </span>
+      {progress !== undefined ? <ProgressRing progress={loading ? 0 : progress} /> : loading ? <Skeleton className="h-8 w-8 shrink-0 rounded-lg" /> : (
+        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${TONES[tone]}`}>
           {Icon && <Icon className="h-4 w-4" />}
         </span>
       )}
-      <span className="flex min-w-0 flex-1 flex-col text-left">
-        <span className={`text-lg font-bold leading-5 ${VALUE_TONES[tone]}`}>{value}</span>
-        <span className="mt-1 break-words text-[11px] font-bold leading-tight">{label}</span>
-        <span className="mt-auto break-words pt-0.5 text-[10px] leading-tight text-slate-500">{detail}</span>
-      </span>
     </>
   );
+
+  if (loading) {
+    return <div aria-hidden="true" className={`${CARD_BASE} ${className}`}>{content}</div>;
+  }
 
   if (onClick) {
     return <button type="button" onClick={onClick} className={`relative ${CARD_BASE} ${GRID_CARD_HOVER} ${className}`}>{content}</button>;

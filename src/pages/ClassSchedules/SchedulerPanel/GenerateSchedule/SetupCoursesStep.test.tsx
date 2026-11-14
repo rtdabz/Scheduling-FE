@@ -114,35 +114,6 @@ describe("SetupCoursesStep", () => {
     expect(screen.getByText(/of 2 Courses included/).textContent).toContain("1");
   });
 
-  it("shows the LAB room default only when an included course needs a lab", () => {
-    const props = {
-      courses: mockCourses,
-      sections: mockSections,
-      configs: mockConfigs,
-      onConfigChange: vi.fn(),
-      settings: null,
-      defaultsOpen: true,
-      actionsDisabled: false,
-    };
-    const { rerender } = render(<SetupCoursesStep {...props} />);
-    expect(screen.getByLabelText("Default LAB Room Requirement")).toBeTruthy();
-    // Default Settings no longer set class lengths.
-    expect(screen.queryByLabelText("Lecture Duration")).toBeNull();
-    expect(screen.queryByLabelText("Laboratory Duration")).toBeNull();
-
-    rerender(<SetupCoursesStep {...props} excludedCourseIds={["c2"]} />);
-    expect(screen.queryByLabelText("Default LAB Room Requirement")).toBeNull();
-  });
-
-  it("recognizes a required laboratory room even without lab hours", () => {
-    render(<SetupCoursesStep
-      courses={[{ ...mockCourses[0], roomTypeRequired: "laboratory" }]}
-      sections={mockSections} configs={mockConfigs} onConfigChange={vi.fn()}
-      settings={null} defaultsOpen actionsDisabled={false}
-    />);
-    expect(screen.getByLabelText("Default LAB Room Requirement")).toBeTruthy();
-  });
-
   it("renders the table with Regular, Split, Integrated checkboxes and Delivery Mode dropdown", () => {
     render(
       <SetupCoursesStep
@@ -181,11 +152,16 @@ describe("SetupCoursesStep", () => {
     expect(regularCheckboxes[0].getAttribute("aria-checked")).toBe("true");
     expect(splitCheckboxes[0].getAttribute("aria-checked")).toBe("false");
 
-    // IT 103 (lecture + lab) starts as the one Regular meeting the Generator
-    // places; Integrated is offered but not chosen.
+    // IT 103 (lecture + lab) starts Regular: one full-length meeting in a laboratory
+    // room. Integrated is optional. Split is never offered.
     expect(regularCheckboxes[1].getAttribute("aria-checked")).toBe("true");
     expect(integratedCheckboxes[1].getAttribute("aria-checked")).toBe("false");
     expect(integratedCheckboxes[1].hasAttribute("disabled")).toBe(false);
+    expect(splitCheckboxes[1].hasAttribute("disabled")).toBe(true);
+    // The Duration column shows the course's Total Hours, as before.
+    expect(screen.queryByText("2h lecture + 1h laboratory")).toBeNull();
+    // A laboratory session never meets online.
+    expect(screen.getByRole("combobox", { name: "Delivery mode for IT 103" }).textContent).not.toContain("Online");
 
     // Delivery Mode dropdown options for Regular course IT 101
     const it101Select = screen.getByRole("combobox", { name: "Delivery mode for IT 101" });
@@ -331,20 +307,32 @@ describe("SetupCoursesStep", () => {
     expect(screen.getByText("Total 3h / week")).toBeDefined();
     expect(screen.getByText(/From the course's Total Hours \(3h lecture\)/)).toBeDefined();
 
-    // Select Selected Sections Only radio
-    const selectedRadio = screen.getByLabelText(/Selected Sections Only/i);
-    fireEvent.click(selectedRadio);
-
-    // Exception section list should be visible
-    expect(screen.getByText(/Sections \(2\/2\)/)).toBeDefined();
-    expect(screen.getAllByText("BSIT 1A").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("BSIT 1B").length).toBeGreaterThan(0);
+    // Configure applies to the course's existing sections; there is no Apply To choice.
+    expect(screen.queryByText("Apply To")).toBeNull();
+    expect(screen.queryByLabelText(/Selected Sections Only/i)).toBeNull();
   });
 
   const roomOptions = [
     { id: 7, room_code: "LEC 7", room_type: "lecture", building: "Main" },
     { id: 8, room_code: "LAB 8", room_type: "laboratory", allow_lecture_usage: false },
   ];
+
+  it.each([false, true])("never offers Field rooms to a laboratory course (Integrated: %s)", (integrated) => {
+    const lab = mockCourses.find((course) => course.labHours > 0)!;
+    const onFieldCourseChange = vi.fn();
+    render(<SetupCoursesStep courses={[lab]} sections={mockSections}
+      configs={Object.fromEntries(mockSections.map((section) => [section.id, {
+        ...mockConfigs.s1, splitCourseIds: integrated ? [lab.id] : [], modesByCourseId: { [lab.id]: "on-site" },
+      }]))}
+      settings={{ field_course_codes: [lab.code], preferred_room_options: [...roomOptions, { id: 9, room_code: "FIELD", room_type: "field" }] }}
+      onConfigChange={vi.fn()} onFieldCourseChange={onFieldCourseChange} actionsDisabled={false} />);
+    fireEvent.click(screen.getByRole("button", { name: /configure/i }));
+    const preference = screen.getByLabelText(/Preferred Room/i) as HTMLSelectElement;
+    expect([...preference.options].map((option) => option.textContent)).toContain("LAB 8");
+    expect(preference.textContent).not.toContain("FIELD");
+    fireEvent.click(screen.getByRole("button", { name: /Apply Configuration/i }));
+    expect(onFieldCourseChange).not.toHaveBeenCalled();
+  });
 
   it("applies an optional Required Day and Preferred Room from Configure", () => {
     const onConfigChange = vi.fn();
@@ -459,7 +447,7 @@ describe("SetupCoursesStep", () => {
 
     expect(screen.queryByLabelText(/Lecture duration in hours/i)).toBeNull();
     expect(screen.queryByLabelText(/Laboratory duration in hours/i)).toBeNull();
-    expect(screen.getByText("2h lecture Online + 1h laboratory F2F")).toBeDefined();
+    expect(screen.getByText("2h lecture Online + 1h laboratory Face to Face")).toBeDefined();
     expect(screen.getByText("Total 3h / week")).toBeDefined();
   });
 
@@ -481,11 +469,11 @@ describe("SetupCoursesStep", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /configure/i })[0]);
 
     expect(screen.queryByLabelText(/Duration in hours/i)).toBeNull();
-    expect(screen.getByText("Hybrid Split · 1.5h meeting 1 Online + 1.5h meeting 2 F2F")).toBeDefined();
+    expect(screen.getByText("Hybrid Split · 1.5h meeting 1 Online + 1.5h meeting 2 Face to Face")).toBeDefined();
   });
 
   describe("Consecutive Days", () => {
-    // Eight Total Hours, shared equally by the days it meets.
+    // Eight Total Hours, repeated in full on every day it meets.
     const clinical: Course = {
       id: "101",
       code: "NCM 101",
@@ -547,7 +535,7 @@ describe("SetupCoursesStep", () => {
       );
       expect(onRequiredDayChange).not.toHaveBeenCalled();
       expect(screen.getByText("2 days · Mon–Tue")).toBeDefined();
-      expect(screen.getByText("2 days × 4h")).toBeDefined();
+      expect(screen.getByText("8h/day × 2 days = 16h")).toBeDefined();
     });
 
     it("offers only the Preferred Days as meeting days and Required Days", () => {
@@ -579,7 +567,7 @@ describe("SetupCoursesStep", () => {
       }
     });
 
-    it("shares the Total Hours across the ticked days and refuses an uneven split", () => {
+    it("repeats the Total Hours on every ticked day, with no divisibility limit", () => {
       const onConsecutiveDaysChange = vi.fn();
       const onConfigChange = vi.fn();
       render(
@@ -600,17 +588,19 @@ describe("SetupCoursesStep", () => {
       // Sunday classes are off, so the week ends on Saturday.
       expect(screen.queryByRole("checkbox", { name: "Sunday" })).toBeNull();
 
-      // Eight hours cannot be shared equally by three days.
+      // Eight hours on three days, formerly refused as indivisible, is 8 hours on each day.
       for (const day of ["Thursday", "Friday", "Saturday"]) {
         fireEvent.click(screen.getByRole("checkbox", { name: day }));
       }
-      expect(screen.getByRole("alert").textContent).toContain("cannot be shared equally by 3 days");
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.getByText("8h/day × 3 days = 24h")).toBeDefined();
+      expect(screen.getByText("Total 24h / week")).toBeDefined();
       const apply = screen.getByRole("button", { name: /Apply Configuration/i }) as HTMLButtonElement;
-      expect(apply.disabled).toBe(true);
+      expect(apply.disabled).toBe(false);
 
       fireEvent.click(screen.getByRole("checkbox", { name: "Saturday" }));
       expect(screen.queryByRole("alert")).toBeNull();
-      expect(screen.getByText("4h on each of the 2 days")).toBeDefined();
+      expect(screen.getAllByText("8h/day × 2 days = 16h").length).toBeGreaterThan(0);
       fireEvent.click(apply);
 
       expect(onConsecutiveDaysChange).toHaveBeenCalledWith(
@@ -627,7 +617,7 @@ describe("SetupCoursesStep", () => {
       for (const [, change] of onConfigChange.mock.calls) {
         expect(change).not.toHaveProperty("durationMinutesByCourseId");
       }
-      expect(screen.getByText("2 days × 4h")).toBeDefined();
+      expect(screen.getByText("8h/day × 2 days = 16h")).toBeDefined();
       expect(screen.getByText("2 days · Thu–Fri")).toBeDefined();
     });
 
@@ -693,6 +683,135 @@ describe("SetupCoursesStep", () => {
 
       expect(onConsecutiveDaysChange).toHaveBeenCalledWith("101", [], null);
       expect(screen.queryByText(/consecutive days/)).toBeNull();
+    });
+  });
+
+  describe("Lecture and Laboratory Required Days", () => {
+    const integratedConfigs = (pins?: Record<string, string>) => ({
+      s1: {
+        ...mockConfigs.s1,
+        splitCourseIds: ["c2"],
+        modesByCourseId: { c2: "on-site" as const },
+        ...(pins ? { componentRequiredDaysByCourseId: { c2: pins } } : {}),
+      },
+      s2: {
+        ...mockConfigs.s2,
+        splitCourseIds: ["c2"],
+        modesByCourseId: { c2: "on-site" as const },
+        ...(pins ? { componentRequiredDaysByCourseId: { c2: pins } } : {}),
+      },
+    });
+
+    it("sets each component's day for an Integrated course and keeps it Integrated", () => {
+      const onConfigChange = vi.fn();
+      const onRequiredDayChange = vi.fn();
+      render(
+        <SetupCoursesStep
+          courses={mockCourses}
+          sections={mockSections}
+          configs={integratedConfigs()}
+          onConfigChange={onConfigChange}
+          settings={{}}
+          onRequiredDayChange={onRequiredDayChange}
+          actionsDisabled={false}
+        />,
+      );
+
+      fireEvent.click(screen.getAllByRole("button", { name: /configure/i })[1]);
+      expect(screen.queryByLabelText(/^Required Day/)).toBeNull();
+      fireEvent.change(screen.getByLabelText("Lecture Required Day"), { target: { value: "Monday" } });
+      fireEvent.change(screen.getByLabelText("Laboratory Required Day"), { target: { value: "Thursday" } });
+      fireEvent.click(screen.getByRole("button", { name: /Apply Configuration/i }));
+
+      expect(onRequiredDayChange).not.toHaveBeenCalled();
+      for (const sectionId of ["s1", "s2"]) {
+        const change = onConfigChange.mock.calls.find(([id]) => id === sectionId)?.[1];
+        expect(change).toMatchObject({
+          splitCourseIds: ["c2"],
+          modesByCourseId: { c2: "on-site" },
+          componentRequiredDaysByCourseId: { c2: { lecture: "Monday", laboratory: "Thursday" } },
+        });
+      }
+    });
+
+    it("explains same-day and Preferred Day conflicts beside the controls", () => {
+      render(
+        <SetupCoursesStep
+          courses={mockCourses}
+          sections={mockSections}
+          configs={integratedConfigs()}
+          onConfigChange={vi.fn()}
+          settings={{}}
+          preferredDays={["Monday", "Tuesday", "Wednesday"]}
+          actionsDisabled={false}
+        />,
+      );
+
+      fireEvent.click(screen.getAllByRole("button", { name: /configure/i })[1]);
+      const laboratory = screen.getByLabelText("Laboratory Required Day") as HTMLSelectElement;
+      const thursday = Array.from(laboratory.options).find((option) => option.value === "Thursday");
+      expect(thursday?.disabled).toBe(true);
+
+      fireEvent.change(screen.getByLabelText("Lecture Required Day"), { target: { value: "Monday" } });
+      fireEvent.change(laboratory, { target: { value: "Monday" } });
+      expect(screen.getByRole("alert").textContent).toMatch(/different days/);
+      expect((screen.getByRole("button", { name: /Apply Configuration/i }) as HTMLButtonElement).disabled).toBe(true);
+
+      fireEvent.change(laboratory, { target: { value: "Tuesday" } });
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+
+    it("shows the component days on the course and clears them visibly when it returns to Regular", () => {
+      const onConfigChange = vi.fn();
+      render(
+        <SetupCoursesStep
+          courses={mockCourses}
+          sections={mockSections}
+          configs={integratedConfigs({ lecture: "Monday", laboratory: "Thursday" })}
+          onConfigChange={onConfigChange}
+          settings={{}}
+          actionsDisabled={false}
+        />,
+      );
+
+      expect(screen.getByText("Lecture: Monday · Laboratory: Thursday")).toBeDefined();
+
+      fireEvent.click(screen.getByRole("checkbox", { name: "Regular for IT 103" }));
+
+      expect(screen.getByRole("status").textContent).toMatch(/IT 103's Lecture and Laboratory Required Days were cleared/);
+      for (const sectionId of ["s1", "s2"]) {
+        // Regular is one full-length on-site meeting in a laboratory room.
+        expect(onConfigChange).toHaveBeenCalledWith(
+          sectionId,
+          expect.objectContaining({ splitCourseIds: [], componentRequiredDaysByCourseId: {}, modesByCourseId: { c2: "on-site" } }),
+        );
+      }
+    });
+
+    it("keeps different section days unless a new day is chosen", () => {
+      const onConfigChange = vi.fn();
+      const configs = integratedConfigs();
+      configs.s1 = { ...configs.s1, componentRequiredDaysByCourseId: { c2: { lecture: "Monday" } } } as typeof configs.s1;
+      configs.s2 = { ...configs.s2, componentRequiredDaysByCourseId: { c2: { laboratory: "Friday" } } } as typeof configs.s2;
+      render(
+        <SetupCoursesStep
+          courses={mockCourses}
+          sections={mockSections}
+          configs={configs}
+          onConfigChange={onConfigChange}
+          settings={{}}
+          actionsDisabled={false}
+        />,
+      );
+
+      expect(screen.getByText("Lecture/Lab days vary by section")).toBeDefined();
+      fireEvent.click(screen.getAllByRole("button", { name: /configure/i })[1]);
+      expect(screen.getByText(/Sections use different days/)).toBeDefined();
+      fireEvent.click(screen.getByRole("button", { name: /Apply Configuration/i }));
+
+      for (const [, change] of onConfigChange.mock.calls) {
+        expect(change).not.toHaveProperty("componentRequiredDaysByCourseId");
+      }
     });
   });
 });

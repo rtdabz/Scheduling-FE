@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { BookOpen, Pencil, AlertTriangle, X } from 'lucide-react';
+import { BookOpen, Pencil, AlertTriangle, X, Clock } from 'lucide-react';
+import { legacyCourseHours, shortHours, hoursLabel } from '../../lib/curriculumHours';
 import DataTable from '../ui/DataTable';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import TableActionButton from '../ui/TableActionButton';
@@ -19,6 +20,7 @@ interface CourseTableProps {
   isRemoving: boolean;
   canEdit?: boolean;
   onInitiateEdit?: (course: CurriculumCourse) => void;
+  onEditHours?: (course: CurriculumCourse) => void;
   onInitiateRemove: (courseId: number) => void;
   onCancelRemove: () => void;
   onConfirmRemove: (courseId: number, courseCode: string) => void;
@@ -32,10 +34,16 @@ export default function CourseTable({
   isRemoving,
   canEdit = true,
   onInitiateEdit,
+  onEditHours,
   onInitiateRemove,
   onCancelRemove,
   onConfirmRemove,
 }: CourseTableProps) {
+  const totalWeeklyMinutes = useMemo(
+    () => courses.reduce((sum, course) => sum + (course.hours ?? legacyCourseHours(course)).total_minutes, 0),
+    [courses],
+  );
+
   const sortedCourses = useMemo(() => {
     return [...courses].sort((a, b) => {
       const catA = a.category?.toLowerCase() === 'major' ? 1 : 2;
@@ -91,10 +99,31 @@ export default function CourseTable({
       ),
       footer: () => <span className="font-black text-[#4e0a10]">{totals.tu} {totals.tu === 1 ? 'unit' : 'units'}</span>,
     },
+    {
+      id: 'weekly_hours',
+      header: 'Hours / Week',
+      size: 120,
+      enableSorting: false,
+      meta: { align: 'right' },
+      cell: ({ row }) => {
+        const hours = row.original.hours ?? legacyCourseHours(row.original);
+        const breakdown = `Lecture ${hoursLabel(hours.lecture_minutes)} (${hours.lecture_minutes_per_unit / 60} hr/unit) · Laboratory ${hoursLabel(hours.laboratory_minutes)} (${hours.laboratory_minutes_per_unit / 60} hr/unit)`;
+        return (
+          <span title={breakdown} className="inline-flex flex-col items-end leading-tight">
+            <span className="font-bold text-gray-800 tabular-nums">{shortHours(hours.total_minutes)}</span>
+            <span className="text-[10px] text-gray-500 tabular-nums">
+              {shortHours(hours.lecture_minutes)} lec · {shortHours(hours.laboratory_minutes)} lab
+              {hours.source === 'custom' && <span className="ml-1 rounded bg-[#C9952A]/15 px-1 font-bold text-[#8a6417]">custom</span>}
+            </span>
+          </span>
+        );
+      },
+      footer: () => <span className="font-bold tabular-nums">{shortHours(totalWeeklyMinutes)}</span>,
+    },
     ...(canEdit ? [{
       id: 'actions',
       header: 'Actions',
-      size: 112,
+      size: 144,
       enableSorting: false,
       meta: { align: 'right' as const },
       cell: ({ row }: { row: { original: CurriculumCourse } }) => {
@@ -125,6 +154,11 @@ export default function CourseTable({
                 <Pencil size={15} />
               </TableActionButton>
             )}
+            {onEditHours && (
+              <TableActionButton label="Edit hours per unit" variant="view" onClick={() => onEditHours(course)}>
+                <Clock size={15} />
+              </TableActionButton>
+            )}
             <TableActionButton label="Remove course" variant="remove" onClick={() => onInitiateRemove(course.id)}>
               <X size={15} />
             </TableActionButton>
@@ -132,7 +166,7 @@ export default function CourseTable({
         );
       },
     } satisfies ColumnDef<CurriculumCourse>] : []),
-  ], [canEdit, totals, removingCourseId, isRemoving, onConfirmRemove, onCancelRemove, onInitiateEdit, onInitiateRemove]);
+  ], [canEdit, totals, totalWeeklyMinutes, removingCourseId, isRemoving, onConfirmRemove, onCancelRemove, onInitiateEdit, onEditHours, onInitiateRemove]);
 
   const table = useDataTable({
     data: sortedCourses,

@@ -65,7 +65,8 @@ export default function FacultyListTable<T extends FacultyListRow>({
     {
       id: 'name',
       header: 'Instructor Name',
-      meta: { cellClassName: 'whitespace-nowrap font-bold text-gray-900' },
+      size: 260,
+      meta: { cellClassName: 'whitespace-normal font-bold text-gray-900' },
       cell: ({ row: { original: f } }) => {
         const name = formatFacultyListName(f);
         return (
@@ -77,10 +78,10 @@ export default function FacultyListTable<T extends FacultyListRow>({
                 <UserRound className="w-4 h-4" aria-hidden="true" />
               </div>
             )}
-            <div>
-              <div className="text-xs font-extrabold text-gray-900">{name}</div>
+            <div className="min-w-0">
+              <div className="text-xs font-extrabold text-gray-900 break-words">{name}</div>
               <div className="text-[10px] text-gray-400 font-medium">ID: #{f.id}</div>
-              <FacultyRoleBadge role={f.administrative_role} />
+              <FacultyRoleBadge role={f.administrative_role} wrap />
             </div>
           </div>
         );
@@ -89,7 +90,8 @@ export default function FacultyListTable<T extends FacultyListRow>({
     {
       id: 'designation',
       header: 'Designation',
-      meta: { cellClassName: 'whitespace-nowrap' },
+      size: 200,
+      meta: { cellClassName: 'whitespace-normal' },
       cell: ({ row: { original: f } }) => {
         const held = f.designations ?? [];
         return held.length === 0 ? (
@@ -102,6 +104,7 @@ export default function FacultyListTable<T extends FacultyListRow>({
                 label={designationLabel(d)}
                 tone="gold"
                 stacked
+                wrap
               />
             ))}
           </div>
@@ -111,7 +114,8 @@ export default function FacultyListTable<T extends FacultyListRow>({
     {
       id: 'department',
       header: 'Department',
-      meta: { cellClassName: 'whitespace-nowrap' },
+      size: 110,
+      meta: { cellClassName: 'whitespace-normal' },
       cell: ({ row: { original: f } }) => (f.department?.department_code ? (
         <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border shadow-2xs ${getDepartmentColor(f.department.department_code)}`}>
           {f.department.department_code}
@@ -123,9 +127,10 @@ export default function FacultyListTable<T extends FacultyListRow>({
     {
       id: 'employment',
       header: 'Employment',
-      meta: { cellClassName: 'whitespace-nowrap' },
+      size: 110,
+      meta: { hideBelow: 'md', cellClassName: 'whitespace-normal' },
       cell: ({ row: { original: f } }) => (
-        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold capitalize ${
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize whitespace-nowrap ${
           f.employment_type === 'full-time'
             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
             : 'bg-amber-50 text-amber-700 border border-amber-200'
@@ -137,7 +142,8 @@ export default function FacultyListTable<T extends FacultyListRow>({
     {
       id: 'workload',
       header: 'Workload Units',
-      meta: { cellClassName: 'whitespace-nowrap' },
+      size: 150,
+      meta: { cellClassName: 'whitespace-normal' },
       cell: ({ row: { original: f } }) => {
         const ceiling = Math.max(0, f.max_units - f.deload_units) + f.overload_units;
         return (
@@ -159,7 +165,8 @@ export default function FacultyListTable<T extends FacultyListRow>({
     {
       id: 'status',
       header: 'Status',
-      meta: { cellClassName: 'whitespace-nowrap' },
+      size: 140,
+      meta: { cellClassName: 'whitespace-normal' },
       cell: ({ row: { original: f } }) => {
         const status = workloadStatus(f);
         return (
@@ -173,6 +180,7 @@ export default function FacultyListTable<T extends FacultyListRow>({
     {
       id: 'actions',
       header: 'Actions',
+      size: canManage ? 180 : 110,
       meta: { align: 'right', cellClassName: 'whitespace-nowrap' },
       cell: ({ row: { original: f, index } }) => {
         const name = formatFacultyListName(f);
@@ -225,7 +233,9 @@ export default function FacultyListTable<T extends FacultyListRow>({
       isLoading={isLoading}
       loadingRows={5}
       className="font-sans"
+      tableClassName="table-fixed"
       ariaLabel="Instructors"
+      onRowClick={onView}
       emptyTitle="No instructors found."
       emptyDescription="Try adjusting search parameters or add a new record."
       rowClassName={(f) => `group ${f.id === highlightedId ? '!bg-[#C9952A]/15' : ''}`}

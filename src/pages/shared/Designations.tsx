@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import NumberInput from '../../components/ui/NumberInput';
-import { AlertTriangle, ArrowRight, Award, ChevronRight, CornerDownRight, Eye, FolderTree, LayoutGrid, List, Pencil, Plus, Search, TrendingDown, Users, X, Archive } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Award, CornerDownRight, Eye, FolderTree, LayoutGrid, List, Pencil, Plus, Search, TrendingDown, Users, X, Archive } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import Modal from '../../components/ui/Modal';
 import ConfirmModal from '../../components/ui/ConfirmModal';
@@ -25,6 +25,9 @@ import {
   type DesignationHolder,
   type DesignationInput,
 } from '../../lib/designations';
+import { formatPersonListName } from '../../lib/personName';
+import { modalControl, modalError, modalLabel } from '../../components/ui/modalStyles';
+import { ModalButton } from '../../components/ui/ModalForm';
 
 const MANAGE_CAPABILITY = 'faculty.manage_designations';
 
@@ -33,6 +36,21 @@ const REFERENCE_MAX_UNITS = 21;
 const unitsLabel = (units: number) => `${units} ${units === 1 ? 'unit' : 'units'}`;
 
 const DESIGNATIONS_CACHE_KEY = 'page:faculty:designations';
+
+interface SubDesignationRow {
+  id: string;
+  name: string;
+  deload_units: number;
+  error?: string;
+}
+
+const newSubRow = (deload_units = 0): SubDesignationRow => ({
+  id: `${Date.now()}${Math.random().toString().slice(2, 6)}`,
+  name: '',
+  deload_units,
+});
+
+const normalizeDesignationName = (name: string) => name.trim().split(/\s+/).filter(Boolean).join(' ').toLowerCase();
 
 const addSubBlockedReason = (d: Designation): string | null => {
   if (d.parent_id !== null) return `${d.name} is already a sub-designation. Sub-designations go one level deep.`;
@@ -49,13 +67,14 @@ export default function Designations() {
   const [isLoading, setIsLoading] = useState(() => !hasCachedData(DESIGNATIONS_CACHE_KEY));
   const [designationSearch, setDesignationSearch] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
-  const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
+  const [subsParentId, setSubsParentId] = useState<number | null>(null);
 
   const [editing, setEditing] = useState<Designation | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [form, setForm] = useState<DesignationInput>(emptyDesignation());
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [subRows, setSubRows] = useState<SubDesignationRow[]>(() => [newSubRow()]);
 
   const [pendingDelete, setPendingDelete] = useState<Designation | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -82,33 +101,24 @@ export default function Designations() {
     void load();
   }, [load]);
 
+  // Sub-designations live in their heading's modal, so the page lists top-level designations
+  // only (plus any sub-designation whose heading is missing, so it never disappears).
   const visible = useMemo(() => {
-    const ordered: Designation[] = [];
-    designations.filter((d) => d.parent_id === null).forEach((top) => {
-      ordered.push(top, ...designations.filter((d) => d.parent_id === top.id));
-    });
-    designations.forEach((d) => { if (!ordered.includes(d)) ordered.push(d); });
+    const ids = new Set(designations.map((d) => d.id));
+    const rows = designations.filter((d) => d.parent_id === null || !ids.has(d.parent_id));
 
     const needle = designationSearch.trim().toLowerCase();
-    if (!needle) return ordered;
-    const matches = new Set(ordered.filter((d) => designationLabel(d).toLowerCase().includes(needle)).map((d) => d.id));
-    return ordered.filter((d) => matches.has(d.id) || designations.some((child) => child.parent_id === d.id && matches.has(child.id)));
+    if (!needle) return rows;
+    const matches = (d: Designation) => designationLabel(d).toLowerCase().includes(needle);
+    return rows.filter((d) => matches(d) || designations.some((child) => child.parent_id === d.id && matches(child)));
   }, [designations, designationSearch]);
 
   const isSearching = designationSearch.trim() !== '';
-  const listRows = useMemo(
-    () => (isSearching ? visible : visible.filter((d) => d.parent_id === null || expanded.has(d.parent_id) || !visible.some((p) => p.id === d.parent_id))),
-    [visible, expanded, isSearching],
+  const subsParent = subsParentId === null ? null : designations.find((d) => d.id === subsParentId) ?? null;
+  const subsOfParent = useMemo(
+    () => (subsParentId === null ? [] : designations.filter((d) => d.parent_id === subsParentId)),
+    [designations, subsParentId],
   );
-
-  const toggleExpanded = useCallback((id: number) => {
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
 
   const parentOptions = useMemo(
     () => designations.filter((d) => d.parent_id === null && d.id !== editing?.id),
@@ -116,10 +126,35 @@ export default function Designations() {
   );
   const editingHasChildren = editing !== null && designations.some((d) => d.parent_id === editing.id);
 
+  // Creating under a heading takes several sub-designations at once, like adding sections.
+  const isBatchCreate = editing === null && form.parent_id !== null;
+  const siblingNames = useMemo(
+    () => new Set(designations.filter((d) => d.parent_id === form.parent_id).map((d) => normalizeDesignationName(d.name))),
+    [designations, form.parent_id],
+  );
+  const liveSubRowErrors = (() => {
+    const seen = new Set<string>();
+    return subRows.map((row) => {
+      const key = normalizeDesignationName(row.name);
+      if (!key) return '';
+      const message = siblingNames.has(key)
+        ? `${row.name.trim()} already exists under this heading.`
+        : seen.has(key) ? 'Duplicate name in this list' : '';
+      seen.add(key);
+      return message;
+    });
+  })();
+  const subDuplicateCount = isBatchCreate ? liveSubRowErrors.filter(Boolean).length : 0;
+
+  const addSubRow = () => setSubRows((prev) => [...prev, newSubRow(prev[prev.length - 1]?.deload_units ?? 0)]);
+  const updateSubRow = (id: string, patch: Partial<Pick<SubDesignationRow, 'name' | 'deload_units'>>) =>
+    setSubRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch, error: '' } : r)));
+  const removeSubRow = (id: string) => setSubRows((prev) => (prev.length <= 1 ? prev : prev.filter((r) => r.id !== id)));
+
   const openCreate = (parent: Designation | null = null) => {
     setEditing(null);
     setForm({ ...emptyDesignation(), parent_id: parent?.id ?? null });
-    if (parent) setExpanded((current) => new Set(current).add(parent.id));
+    setSubRows([newSubRow()]);
     setFieldErrors({});
     setIsFormOpen(true);
   };
@@ -161,7 +196,7 @@ export default function Designations() {
                   </span>
                 )}
                 {subCount > 0 && (
-                  <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-[#5A1220]/[0.07] px-2 py-px text-[10px] font-bold text-[#5A1220]">
+                  <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-[#5A1220]/[0.07] px-2 py-0.5 text-[11px] font-semibold text-[#5A1220] whitespace-nowrap">
                     <FolderTree size={10} /> Heading · {subCount} sub-designation{subCount === 1 ? '' : 's'}
                   </span>
                 )}
@@ -205,6 +240,7 @@ export default function Designations() {
     },
     {
       id: 'basic_load',
+      meta: { hideBelow: 'md' },
       accessorFn: (designation) => basicLoadAfterDeload(REFERENCE_MAX_UNITS, designation.deload_units),
       header: `Basic load (of ${REFERENCE_MAX_UNITS})`,
       cell: ({ getValue }) => {
@@ -241,7 +277,7 @@ export default function Designations() {
       cell: ({ row }) => {
         const active = row.original.status !== 'inactive';
         return (
-          <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-bold ${active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-gray-50 text-gray-500'}`}>
+          <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-gray-50 text-gray-500'}`}>
             <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-gray-400'}`} />
             {active ? 'Active' : 'Inactive'}
           </span>
@@ -255,37 +291,23 @@ export default function Designations() {
       meta: { align: 'right' as const },
       cell: ({ row }: { row: { original: Designation } }) => {
         const isHeadingRow = (row.original.children_count ?? 0) > 0;
-        const isOpen = isSearching || expanded.has(row.original.id);
         return (
         <div className="flex items-center justify-end gap-2">
-          {isHeadingRow ? (
-            <TableActionButton
-              label={`${isOpen ? 'Hide' : 'Show'} sub-designations under ${row.original.name}`}
-              variant="neutral"
-              aria-expanded={isOpen}
-              disabled={isSearching}
-              onClick={() => toggleExpanded(row.original.id)}
-            >
-              <ChevronRight size={15} className={`transition-transform ${isOpen ? 'rotate-90' : ''}`} />
-            </TableActionButton>
-          ) : (
+          {!isHeadingRow && (
             <TableActionButton label={`View instructors holding ${row.original.name}`} variant="view" onClick={() => setViewingHolders(row.original)}>
               <Eye size={15} />
             </TableActionButton>
           )}
-          {(() => {
-            const blocked = addSubBlockedReason(row.original);
-            return (
-              <TableActionButton
-                label={blocked ?? `Add a sub-designation under ${row.original.name}`}
-                variant="view"
-                disabled={blocked !== null}
-                onClick={() => openCreate(row.original)}
-              >
-                <Plus size={15} />
-              </TableActionButton>
-            );
-          })()}
+          {row.original.parent_id === null && (
+            <TableActionButton
+              label={`Sub-designations under ${row.original.name}`}
+              variant="neutral"
+              aria-haspopup="dialog"
+              onClick={() => setSubsParentId(row.original.id)}
+            >
+              <FolderTree size={15} />
+            </TableActionButton>
+          )}
           <TableActionButton label={`Edit ${row.original.name}`} variant="edit" onClick={() => openEdit(row.original)}>
             <Pencil size={15} />
           </TableActionButton>
@@ -296,9 +318,9 @@ export default function Designations() {
         );
       },
     } satisfies ColumnDef<Designation>] : []),
-  ], [canManage, openEdit, expanded, isSearching, toggleExpanded]);
+  ], [canManage, openEdit]);
 
-  const table = useDataTable({ data: listRows, columns, pageSize: 10, getRowId: (designation) => String(designation.id) });
+  const table = useDataTable({ data: visible, columns, pageSize: 10, getRowId: (designation) => String(designation.id) });
 
   const applySaved = (saved: Designation, previousParentId: number | null) => {
     setDesignations((current) => {
@@ -315,7 +337,64 @@ export default function Designations() {
     });
   };
 
+  const handleSaveBatch = async () => {
+    if (form.parent_id === null || subDuplicateCount > 0) return;
+    const parentId = form.parent_id;
+    const validated = subRows.map((row) => ({
+      ...row,
+      name: row.name.trim(),
+      error: row.name.trim() ? '' : 'A designation name is required.',
+    }));
+    setSubRows(validated);
+    if (validated.some((r) => r.error)) return;
+
+    setIsSaving(true);
+    setFieldErrors({});
+    const failed: SubDesignationRow[] = [];
+    let created = 0;
+    for (const row of validated) {
+      try {
+        const saved = await createDesignation({ ...emptyDesignation(), parent_id: parentId, name: row.name, deload_units: row.deload_units });
+        applySaved(saved, null);
+        created += 1;
+      } catch (error) {
+        const response = (error as { response?: { status?: number; data?: { errors?: Record<string, string[]>; message?: string } } }).response;
+        if (response?.status === 403) {
+          toast.error('Not permitted', 'You do not have the Manage Designations capability.');
+          setIsSaving(false);
+          return;
+        }
+        if (response?.status === 422 && response.data?.errors) {
+          if (response.data.errors.parent_id) setFieldErrors({ parent_id: response.data.errors.parent_id[0] });
+        }
+        const errors = response?.data?.errors;
+        failed.push({
+          ...row,
+          error: errors?.name?.[0] ?? errors?.deload_units?.[0] ?? errors?.parent_id?.[0] ?? response?.data?.message ?? 'Could not be saved.',
+        });
+      }
+    }
+    setIsSaving(false);
+
+    if (failed.length === 0) {
+      toast.success(
+        created === 1 ? 'Sub-designation created' : `${created} sub-designations created`,
+        'They can now be assigned to instructors.',
+      );
+      setIsFormOpen(false);
+      return;
+    }
+    setSubRows(failed);
+    if (created > 0) {
+      toast.error(`${created} saved, ${failed.length} not saved`, 'Fix the highlighted rows and try again.');
+    }
+  };
+
   const handleSave = async () => {
+    if (isBatchCreate) {
+      await handleSaveBatch();
+      return;
+    }
     if (!form.name.trim()) {
       setFieldErrors({ name: 'A designation name is required.' });
       return;
@@ -434,9 +513,10 @@ export default function Designations() {
             <button
               type="button"
               onClick={() => setViewMode('grid')}
-              className={`p-1.5 sm:p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+              aria-pressed={viewMode === 'grid'}
+              className={`selection-indicator p-1.5 sm:p-2 rounded-lg transition-all duration-200 cursor-pointer ${
                 viewMode === 'grid'
-                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                  ? 'shadow-sm font-bold'
                   : 'text-gray-500 hover:text-gray-800'
               }`}
               title="Grid View"
@@ -446,9 +526,10 @@ export default function Designations() {
             <button
               type="button"
               onClick={() => setViewMode('list')}
-              className={`p-1.5 sm:p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+              aria-pressed={viewMode === 'list'}
+              className={`selection-indicator p-1.5 sm:p-2 rounded-lg transition-all duration-200 cursor-pointer ${
                 viewMode === 'list'
-                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                  ? 'shadow-sm font-bold'
                   : 'text-gray-500 hover:text-gray-800'
               }`}
               title="List View"
@@ -551,7 +632,7 @@ export default function Designations() {
                           </div>
 
                           <span
-                            className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                            className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${
                               active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-gray-50 text-gray-500'
                             }`}
                           >
@@ -574,7 +655,7 @@ export default function Designations() {
                               </span>
                             )}
                             {subCount > 0 && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-[#5A1220]/[0.07] px-2 py-0.5 text-[10px] font-bold text-[#5A1220]">
+                              <span className="inline-flex items-center gap-1 rounded-full bg-[#5A1220]/[0.07] px-2 py-0.5 text-[11px] font-semibold text-[#5A1220] whitespace-nowrap">
                                 <FolderTree size={10} /> Heading ({subCount})
                               </span>
                             )}
@@ -597,14 +678,16 @@ export default function Designations() {
                                 <Eye size={14} />
                               </TableActionButton>
                             )}
-                            <TableActionButton
-                              label={addSubBlockedReason(d) ?? `Add sub-designation under ${d.name}`}
-                              variant="view"
-                              disabled={addSubBlockedReason(d) !== null}
-                              onClick={() => openCreate(d)}
-                            >
-                              <Plus size={14} />
-                            </TableActionButton>
+                            {!isSub && (
+                              <TableActionButton
+                                label={`Sub-designations under ${d.name}`}
+                                variant="neutral"
+                                aria-haspopup="dialog"
+                                onClick={() => setSubsParentId(d.id)}
+                              >
+                                <FolderTree size={14} />
+                              </TableActionButton>
+                            )}
                             <TableActionButton label={`Edit ${d.name}`} variant="edit" onClick={() => openEdit(d)}>
                               <Pencil size={14} />
                             </TableActionButton>
@@ -628,6 +711,7 @@ export default function Designations() {
             loadingRows={4}
             totalLabel="designations"
             ariaLabel="Designations"
+            onRowClick={canManage ? (designation) => ((designation.children_count ?? 0) > 0 ? setSubsParentId(designation.id) : setViewingHolders(designation)) : undefined}
             emptyState={
               <div className="mx-auto flex max-w-sm flex-col items-center py-8">
                 <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#C9952A]/10 text-[#C9952A]">
@@ -672,27 +756,37 @@ export default function Designations() {
         description="The deload is what this post takes off an instructor's maximum units."
         size="md"
         footer={
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
+          <>
+            {isBatchCreate && (
+              <p className={`mr-auto text-xs ${subDuplicateCount ? 'font-semibold text-red-600' : 'text-gray-500'}`}>
+                {subDuplicateCount
+                  ? `Rename ${subDuplicateCount === 1 ? 'the highlighted row' : `the ${subDuplicateCount} highlighted rows`} to continue.`
+                  : `${subRows.length} sub-designation${subRows.length === 1 ? '' : 's'} will be created.`}
+              </p>
+            )}
+            <ModalButton
               onClick={() => setIsFormOpen(false)}
-              className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-50"
             >
               Cancel
-            </button>
-            <button
-              type="button"
+            </ModalButton>
+            <ModalButton
+              variant="primary"
               onClick={handleSave}
-              disabled={isSaving}
-              className="rounded-xl bg-[#5A1220] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#4a0f1a] disabled:opacity-50"
+              disabled={isSaving || subDuplicateCount > 0}
             >
-              {isSaving ? 'Saving…' : editing ? 'Save Changes' : 'Create Designation'}
-            </button>
-          </div>
+              {isSaving
+                ? 'Saving…'
+                : editing
+                  ? 'Save Changes'
+                  : isBatchCreate && subRows.length > 1
+                    ? `Create ${subRows.length} Sub-designations`
+                    : 'Create Designation'}
+            </ModalButton>
+          </>
         }
       >
         <div className="space-y-4 p-5 sm:p-6">
-          {(editing || form.name.trim()) && (
+          {!isBatchCreate && (editing || form.name.trim()) && (
             <div className="rounded-xl border border-gray-200/90 bg-gray-50/70 p-3 flex items-center gap-3">
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-bold text-gray-900 whitespace-nowrap truncate" title={form.name.trim() || editing?.name}>
@@ -724,6 +818,76 @@ export default function Designations() {
             </span>
           </Field>
 
+          {isBatchCreate ? (
+            <div>
+              <span className={modalLabel}>Sub-designations</span>
+              <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                <div className="max-h-[min(20rem,42dvh)] overflow-y-auto [scrollbar-width:thin]">
+                  <div className="sticky top-0 z-10 hidden grid-cols-[1.5rem_minmax(0,1fr)_7rem_2.5rem] gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-gray-500 sm:grid">
+                    <span>#</span>
+                    <span>Designation name <span className="text-red-500">*</span></span>
+                    <span>Deload units <span className="text-red-500">*</span></span>
+                    <span className="sr-only">Actions</span>
+                  </div>
+                  <ul className="divide-y divide-gray-100">
+                    {subRows.map((row, index) => {
+                      const rowError = row.error || liveSubRowErrors[index];
+                      return (
+                        <li
+                          key={row.id}
+                          className="grid grid-cols-[1.5rem_minmax(0,1fr)_2.5rem] items-start gap-x-3 gap-y-2 px-3 py-2.5 sm:grid-cols-[1.5rem_minmax(0,1fr)_7rem_2.5rem]"
+                        >
+                          <span className="flex h-10 items-center text-xs font-bold tabular-nums text-gray-400">{index + 1}</span>
+                          <div className="min-w-0">
+                            <input
+                              type="text"
+                              aria-label={`Sub-designation ${index + 1} name`}
+                              value={row.name}
+                              onChange={(event) => updateSubRow(row.id, { name: event.target.value })}
+                              placeholder={index === 0 ? "e.g. Networking Dev't" : 'Another sub-designation'}
+                              aria-invalid={Boolean(rowError)}
+                              className={inputClass(rowError)}
+                            />
+                            {rowError && <span role="alert" className={`block ${modalError}`}>{rowError}</span>}
+                          </div>
+                          <NumberInput
+                            min={0}
+                            aria-label={`Sub-designation ${index + 1} deload units`}
+                            value={row.deload_units}
+                            onChange={(event) => updateSubRow(row.id, { deload_units: Number(event.target.value) || 0 })}
+                            className={`${inputClass()} col-start-2 row-start-2 sm:col-start-auto sm:row-start-auto`}
+                          />
+                          <div className="col-start-3 row-start-1 flex h-10 items-center justify-end sm:col-start-auto sm:row-start-auto">
+                            <TableActionButton
+                              label="Remove"
+                              aria-label={`Remove sub-designation ${index + 1}`}
+                              variant="remove"
+                              onClick={() => removeSubRow(row.id)}
+                              disabled={subRows.length <= 1}
+                            >
+                              <X size={15} />
+                            </TableActionButton>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+                <button
+                  type="button"
+                  onClick={addSubRow}
+                  className="flex w-full items-center justify-center gap-1.5 border-t border-dashed border-gray-200 bg-gray-50/60 px-3 py-2.5 text-sm font-semibold text-[#8a5a12] transition hover:bg-amber-50"
+                >
+                  <Plus size={16} />
+                  Add another sub-designation
+                </button>
+              </div>
+              <span className="mt-1 block text-[11px] text-gray-500">
+                With a {REFERENCE_MAX_UNITS}-unit maximum, an instructor's Basic Load is {REFERENCE_MAX_UNITS} minus the deload.
+              </span>
+            </div>
+          ) : (
+          <>
           <div className="grid gap-4 sm:grid-cols-[1fr_9rem]">
             <Field label="Designation Name" error={fieldErrors.name} required>
               <input
@@ -752,6 +916,8 @@ export default function Designations() {
               <strong>{Math.max(0, 21 - form.deload_units)} units</strong>.
             </p>
           )}
+          </>
+          )}
 
           {editing && (editing.faculties_count ?? 0) > 0 && form.deload_units !== editing.deload_units && (
             <p className="flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -764,6 +930,18 @@ export default function Designations() {
           )}
         </div>
       </Modal>
+
+      <SubDesignationsModal
+        parent={subsParent}
+        subs={subsOfParent}
+        canManage={canManage}
+        highlight={designationSearch.trim().toLowerCase()}
+        onClose={() => setSubsParentId(null)}
+        onAdd={() => { if (subsParent) openCreate(subsParent); }}
+        onEdit={openEdit}
+        onArchive={setPendingDelete}
+        onViewHolders={setViewingHolders}
+      />
 
       <ConfirmModal
         isOpen={pendingDelete !== null}
@@ -785,8 +963,128 @@ export default function Designations() {
   );
 }
 
-const holderName = (h: DesignationHolder): string =>
-  [`${h.last_name},`, h.first_name, h.middle_name ? `${h.middle_name[0]}.` : '', h.suffix ?? ''].filter(Boolean).join(' ');
+function SubDesignationsModal({
+  parent,
+  subs,
+  canManage,
+  highlight,
+  onClose,
+  onAdd,
+  onEdit,
+  onArchive,
+  onViewHolders,
+}: {
+  parent: Designation | null;
+  subs: Designation[];
+  canManage: boolean;
+  highlight: string;
+  onClose: () => void;
+  onAdd: () => void;
+  onEdit: (designation: Designation) => void;
+  onArchive: (designation: Designation) => void;
+  onViewHolders: (designation: Designation) => void;
+}) {
+  const blocked = parent ? addSubBlockedReason(parent) : null;
+
+  return (
+    <Modal
+      isOpen={parent !== null}
+      onClose={onClose}
+      title={parent ? `Sub-designations under ${parent.name}` : ''}
+      description="A heading with sub-designations cannot itself be assigned; instructors hold one of its sub-designations."
+      size="lg"
+    >
+      <div className="space-y-3 p-4 sm:p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
+            {subs.length} sub-designation{subs.length === 1 ? '' : 's'}
+          </p>
+          {canManage && (
+            <ModalButton
+              variant="primary"
+              onClick={onAdd}
+              disabled={blocked !== null}
+              title={blocked ?? undefined}
+            >
+              <Plus size={14} /> Add Sub-designation
+            </ModalButton>
+          )}
+        </div>
+
+        {canManage && blocked && (
+          <p className="flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+            <span>{blocked}</span>
+          </p>
+        )}
+
+        {subs.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-gray-200 bg-white py-10 text-center">
+            <span className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-[#C9952A]/10 text-[#C9952A]">
+              <FolderTree size={20} />
+            </span>
+            <p className="text-sm font-bold text-gray-800">No sub-designations yet.</p>
+            <p className="mt-1 px-4 text-xs text-gray-500">
+              {canManage && !blocked
+                ? `Add one to turn ${parent?.name ?? 'this designation'} into a heading, e.g. Director · Networking Dev't.`
+                : 'Sub-designations added under this heading will appear here.'}
+            </p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-gray-100 overflow-hidden rounded-2xl border border-gray-200 bg-white">
+            {subs.map((sub) => {
+              const holders = sub.faculties_count ?? 0;
+              const active = sub.status !== 'inactive';
+              const isMatch = highlight !== '' && sub.name.toLowerCase().includes(highlight);
+              return (
+                <li key={sub.id} className={`flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center ${isMatch ? 'bg-[#C9952A]/[0.06]' : ''}`}>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate text-sm font-bold text-gray-900" title={sub.name}>{sub.name}</span>
+                      {sub.code && (
+                        <span className="shrink-0 rounded border border-gray-200 bg-gray-50 px-1.5 py-px font-mono text-[10px] font-bold uppercase text-gray-500">
+                          {sub.code}
+                        </span>
+                      )}
+                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-gray-50 text-gray-500'}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+                        {active ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+                      <span className="font-semibold text-[#8a6412]">{unitsLabel(sub.deload_units)} deload</span>
+                      <span className="inline-flex items-center gap-1 text-gray-500">
+                        <Users size={12} className="text-gray-400" />
+                        {holders > 0 ? `${holders} ${holders === 1 ? 'instructor' : 'instructors'}` : 'Not assigned yet'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <TableActionButton label={`View instructors holding ${sub.name}`} variant="view" onClick={() => onViewHolders(sub)}>
+                      <Eye size={15} />
+                    </TableActionButton>
+                    {canManage && (
+                      <>
+                        <TableActionButton label={`Edit ${sub.name}`} variant="edit" onClick={() => onEdit(sub)}>
+                          <Pencil size={15} />
+                        </TableActionButton>
+                        <TableActionButton label={`Archive ${sub.name}`} variant="archive" onClick={() => onArchive(sub)}>
+                          <Archive size={15} />
+                        </TableActionButton>
+                      </>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+const holderName = (h: DesignationHolder): string => formatPersonListName(h);
 
 const holderColumns: ColumnDef<DesignationHolder>[] = [
   {
@@ -861,12 +1159,7 @@ function DesignationHoldersModal({ designation, onClose }: { designation: Design
   );
 }
 
-const inputClass = (error?: string): string =>
-  `w-full rounded-xl border bg-white px-3 py-2 text-sm outline-none transition focus:ring-2 ${
-    error
-      ? 'border-red-300 focus:border-red-400 focus:ring-red-100'
-      : 'border-gray-200 focus:border-[#C9952A] focus:ring-[#C9952A]/20'
-  }`;
+const inputClass = (error?: string): string => modalControl(Boolean(error));
 
 function Field({
   label,
@@ -881,12 +1174,12 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-600">
+      <span className={modalLabel}>
         {label}
-        {required && <span className="ml-0.5 text-red-500">*</span>}
+        {required && <span className="text-red-500" aria-hidden="true"> *</span>}
       </span>
       {children}
-      {error && <span className="mt-1 block text-xs font-semibold text-red-600">{error}</span>}
+      {error && <span className={`block ${modalError}`}>{error}</span>}
     </label>
   );
 }

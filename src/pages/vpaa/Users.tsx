@@ -4,11 +4,12 @@ import { NAME_SUFFIXES, capitalizeNameInput } from '../../lib/formatters';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
+import Modal from '../../components/ui/Modal';
+import { ModalButton } from '../../components/ui/ModalForm';
+import { modalControl, modalError, modalHint, modalLabel, modalNotice } from '../../components/ui/modalStyles';
 import SearchInput from '../../components/ui/SearchInput';
 import {
   Pencil,
-  X,
-  Loader2,
   Camera,
   Plus,
   Link2Off,
@@ -17,6 +18,7 @@ import {
   List,
   Power,
   Archive,
+  Trash2,
 } from 'lucide-react';
 import {
   useReactTable,
@@ -30,6 +32,8 @@ import DataTable from '../../components/ui/DataTable';
 import TableActionButton from '../../components/ui/TableActionButton';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
+import { CREDENTIALS_MAX_LENGTH, formatPersonListName, formatPersonName, titleOptions, type PersonNameParts } from '../../lib/personName';
+import { useNameOptions } from '../../hooks/useNameOptions';
 import { photoDataUrl } from '../../lib/imageDataUrl';
 import { fetchDesignations, type Designation } from '../../lib/designations';
 import DesignationPicker from '../../components/faculty/DesignationPicker';
@@ -41,12 +45,15 @@ import { programLabel } from '../../lib/programLabel';
 import FilterBar from '../../components/ui/FilterBar';
 
 interface User {
+  accountVersion?: string;
   id: number;
   name: string;
   first_name: string;
   middle_initial: string;
   last_name: string;
   suffix: string;
+  honorific_prefix: string;
+  credentials: string;
   username: string;
   email: string;
   role: string;
@@ -68,7 +75,7 @@ type TeachingChoice = Exclude<FacultyMode, 'none'>;
 // account is explicitly marked as teaching.
 const TEACHING_ROLES = new Set(['Dean', 'Program Head']);
 
-interface LinkableFaculty {
+interface LinkableFaculty extends PersonNameParts {
   id: number;
   first_name: string;
   middle_name: string | null;
@@ -80,8 +87,7 @@ interface LinkableFaculty {
 }
 
 
-const linkableFacultyName = (f: LinkableFaculty) =>
-  [f.last_name && `${f.last_name},`, f.first_name, f.middle_name].filter(Boolean).join(' ');
+const linkableFacultyName = (f: LinkableFaculty) => formatPersonListName(f);
 
 interface Department {
   id: number;
@@ -106,12 +112,15 @@ interface Program {
 }
 
 interface ApiUser {
+  account_version?: string;
   id: number;
   name: string;
   first_name?: string | null;
   middle_initial?: string | null;
   last_name?: string | null;
   suffix?: string | null;
+  honorific_prefix?: string | null;
+  credentials?: string | null;
   username: string;
   email: string | null;
   role: string;
@@ -135,21 +144,29 @@ const DISPLAY_ROLE_MAP: Record<string, string> = {
   'dean': 'Dean',
   'program_head': 'Program Head',
   'secretary': 'Secretary',
+  'director': 'Director',
 };
 
 const API_ROLE_MAP: Record<string, string> = {
   'Dean': 'dean',
   'Program Head': 'program_head',
   'Secretary': 'secretary',
+  'Director': 'director',
 };
 
+// Secretary and Director share one department slot: one active holder of either role per department.
+const OFFICE_ROLE_LABELS = new Set(['Secretary', 'Director']);
+
 const mapApiUser = (u: ApiUser): User => ({
+  accountVersion: u.account_version,
   id: u.id,
   name: u.name,
   first_name: u.first_name ?? '',
   middle_initial: u.middle_initial ?? '',
   last_name: u.last_name ?? '',
   suffix: u.suffix ?? '',
+  honorific_prefix: u.honorific_prefix ?? '',
+  credentials: u.credentials ?? '',
   username: u.username,
   email: u.email || '',
   role: DISPLAY_ROLE_MAP[u.role] || u.role,
@@ -164,20 +181,33 @@ const mapApiUser = (u: ApiUser): User => ({
   createdAt: u.created_at,
 });
 
-const FORM_LABEL = 'block text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-1';
-const formInput = (hasError = false) =>
-  `w-full px-3 py-2 border rounded-lg focus:ring-2 outline-none text-sm bg-white transition-all disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 ${
-    hasError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
-  }`;
-const FieldError = ({ message }: { message: string }) =>
-  message ? <p className="text-[11px] text-red-500 mt-0.5 font-semibold">{message}</p> : null;
+const FORM_LABEL = modalLabel;
+const formInput = modalControl;
+const FieldError = ({ id, message }: { id?: string; message: string }) =>
+  message ? <p id={id ? `${id}-error` : undefined} className={modalError}>{message}</p> : null;
 
-const FormSection = ({ title, aside, children }: { title: string; aside?: React.ReactNode; children: React.ReactNode }) => (
-  <section className="space-y-3">
-    <div className="flex items-center justify-between gap-2 border-b border-gray-200 pb-1.5">
-      <h3 className="text-xs font-bold uppercase tracking-wider text-[#4e0a10]">{title}</h3>
-      {aside}
-    </div>
+/** Marks a control invalid and points screen readers at its error (or its hint when valid). */
+const invalidProps = (id: string, message: string, hintId?: string) => ({
+  'aria-invalid': message ? true : undefined,
+  'aria-describedby': message ? `${id}-error` : hintId,
+});
+
+const ROLE_HINTS: Record<string, string> = {
+  'Dean': 'Deans carry a teaching load and need an instructor record.',
+  'Program Head': 'Program heads are assigned to one program and carry a teaching load.',
+  'Secretary': 'A department has one active Secretary or Director.',
+  'Director': 'A department has one active Secretary or Director.',
+};
+
+const FormSection = ({ title, description, aside, children }: { title: string; description?: string; aside?: React.ReactNode; children: React.ReactNode }) => (
+  <section aria-label={title} className="space-y-4 rounded-xl border border-slate-200/80 bg-white p-4 sm:p-5">
+    <header className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+        {description && <p className="mt-0.5 text-xs leading-5 text-slate-500">{description}</p>}
+      </div>
+      {aside && <div className="shrink-0 pt-0.5">{aside}</div>}
+    </header>
     {children}
   </section>
 );
@@ -194,7 +224,7 @@ type FieldErrors = Partial<Record<string, string[]>>;
 
 export default function VpaaUsers() {
   const { toast, confirm } = useToast();
-  const usersCacheKey = 'page:users';
+  const usersCacheKey = 'page:users:actor-integrity-v1';
   const cachedUsersData = getCachedData<UsersPageData>(usersCacheKey);
   const [users, setUsers] = useState<User[]>(cachedUsersData?.users ?? []);
   const [departments, setDepartments] = useState<Department[]>(cachedUsersData?.departments ?? []);
@@ -219,6 +249,8 @@ export default function VpaaUsers() {
     middle_initial: '',
     last_name: '',
     suffix: '',
+    honorific_prefix: '',
+    credentials: '',
     username: '',
     email: '',
     role: 'Secretary',
@@ -230,10 +262,14 @@ export default function VpaaUsers() {
   const [firstNameError, setFirstNameError] = useState('');
   const [lastNameError, setLastNameError] = useState('');
   const [middleInitialError, setMiddleInitialError] = useState('');
+  const [honorificPrefixError, setHonorificPrefixError] = useState('');
+  const [credentialsError, setCredentialsError] = useState('');
+  const nameOptions = useNameOptions();
   const [emailError, setEmailError] = useState('');
   const [deptError, setDeptError] = useState('');
   const [programError, setProgramError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingVersion, setEditingVersion] = useState('');
 
   const [facultyMode, setFacultyMode] = useState<TeachingChoice>('create');
   const [facultyModeTouched, setFacultyModeTouched] = useState(false);
@@ -257,6 +293,36 @@ export default function VpaaUsers() {
 
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // After validation renders its errors, move focus to the first invalid field so it is never hidden below the fold.
+  const focusFirstInvalid = () => {
+    window.setTimeout(() => {
+      formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+    }, 0);
+  };
+
+  const previewName = formatPersonName(formData);
+  const previewInitials = `${formData.first_name.trim().charAt(0)}${formData.last_name.trim().charAt(0)}`.toUpperCase();
+
+  const openCreateModal = () => {
+    setIsEditMode(false);
+    setEditingId(null);
+    setIsDetailModalOpen(false);
+    setFormData({ first_name: '', middle_initial: '', last_name: '', suffix: '', honorific_prefix: '', credentials: '', username: '', email: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active' });
+    setProfilePicture(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    setFirstNameError('');
+    setLastNameError('');
+    setMiddleInitialError('');
+    setHonorificPrefixError('');
+    setCredentialsError('');
+    setEmailError('');
+    setDeptError('');
+    setProgramError('');
+    resetTeachingProfile();
+    setIsModalOpen(true);
+  };
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -387,6 +453,14 @@ export default function VpaaUsers() {
   }, [isCreatingAccount, facultyModeTouched, matchingInstructor]);
 
   const isProgramHeadRole = formData.role === 'Program Head';
+  // Early notice only; the API and database decide (another VPAA may change accounts meanwhile).
+  const officeSlotHolder = useMemo(() => {
+    if (formData.status !== 'Active' || !formData.department_id || !OFFICE_ROLE_LABELS.has(formData.role)) return null;
+    return users.find((u) => u.id !== editingId
+      && u.status === 'Active'
+      && OFFICE_ROLE_LABELS.has(u.role)
+      && String(u.department_id) === String(formData.department_id)) ?? null;
+  }, [users, editingId, formData.status, formData.department_id, formData.role]);
   const selectedDepartmentPrograms = useMemo(
     () => programs.filter((program) => String(program.department_id) === String(formData.department_id)),
     [programs, formData.department_id]
@@ -483,7 +557,10 @@ export default function VpaaUsers() {
       setFacultyLinkError('');
     }
 
-    if (hasError) return;
+    if (hasError) {
+      focusFirstInvalid();
+      return;
+    }
 
     setIsSubmitting(true);
 
@@ -492,10 +569,13 @@ export default function VpaaUsers() {
 
       if (isEditMode && editingId !== null) {
         const res = await api.put<{ message: string; data: ApiUser }>(`/user/${editingId}`, {
+          expected_version: editingVersion,
           first_name: formData.first_name.trim(),
           middle_initial: formData.middle_initial.trim() || null,
           last_name: formData.last_name.trim(),
           suffix: formData.suffix || null,
+          honorific_prefix: formData.honorific_prefix || null,
+          credentials: formData.credentials.trim() || null,
           email: formData.email.trim(),
           role: apiRole,
           department_id: parseInt(formData.department_id),
@@ -516,6 +596,8 @@ export default function VpaaUsers() {
           middle_initial: formData.middle_initial.trim() || null,
           last_name: formData.last_name.trim(),
           suffix: formData.suffix || null,
+          honorific_prefix: formData.honorific_prefix || null,
+          credentials: formData.credentials.trim() || null,
           username: formData.username,
           email: formData.email.trim(),
           role: apiRole,
@@ -536,7 +618,7 @@ export default function VpaaUsers() {
         toast.success('Success', `Account @${createdUser.username} created. A setup link was emailed to ${createdUser.email}.`);
       }
 
-      setFormData({ first_name: '', middle_initial: '', last_name: '', suffix: '', username: '', email: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active' });
+      setFormData({ first_name: '', middle_initial: '', last_name: '', suffix: '', honorific_prefix: '', credentials: '', username: '', email: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active' });
       resetTeachingProfile();
       setIsModalOpen(false);
       setIsEditMode(false);
@@ -544,7 +626,8 @@ export default function VpaaUsers() {
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string; errors?: FieldErrors } } };
       const message = err?.response?.data?.message || 'Failed to save user account';
-      if (!showServerFieldErrors(err?.response?.data?.errors)) toast.error('Error', message);
+      if (showServerFieldErrors(err?.response?.data?.errors)) focusFirstInvalid();
+      else toast.error('Error', message);
     } finally {
       setIsSubmitting(false);
     }
@@ -560,6 +643,8 @@ export default function VpaaUsers() {
       [['first_name'], setFirstNameError],
       [['last_name'], setLastNameError],
       [['middle_initial'], setMiddleInitialError],
+      [['honorific_prefix'], setHonorificPrefixError],
+      [['credentials'], setCredentialsError],
       [['department_id'], setDeptError],
       [['program_id'], setProgramError],
       [['faculty_id', 'faculty_mode', 'designation_ids'], setFacultyLinkError],
@@ -576,12 +661,15 @@ export default function VpaaUsers() {
   };
 
   const handleEditClick = (user: User) => {
+    setEditingVersion(user.accountVersion ?? '');
     setIsDetailModalOpen(false);
     setFormData({
       first_name: user.first_name,
       middle_initial: user.middle_initial,
       last_name: user.last_name,
       suffix: user.suffix,
+      honorific_prefix: user.honorific_prefix,
+      credentials: user.credentials,
       username: user.username,
       email: user.email,
       role: user.role,
@@ -593,6 +681,8 @@ export default function VpaaUsers() {
     setFirstNameError('');
     setLastNameError('');
     setMiddleInitialError('');
+    setHonorificPrefixError('');
+    setCredentialsError('');
     setEmailError('');
     setDeptError('');
     setProgramError('');
@@ -641,15 +731,7 @@ export default function VpaaUsers() {
     if (!confirmed) return;
 
     try {
-      const res = await api.put<{ data: ApiUser }>(`/user/${user.id}`, {
-        first_name: user.first_name,
-        middle_initial: user.middle_initial || null,
-        last_name: user.last_name,
-        suffix: user.suffix || null,
-        email: user.email,
-        role: API_ROLE_MAP[user.role] || user.role.toLowerCase(),
-        department_id: user.department_id,
-        program_id: user.program_id,
+      const res = await api.patch<{ data: ApiUser }>(`/user/${user.id}/status`, {
         is_active: activate,
       });
       const updatedUser = mapApiUser(res.data.data);
@@ -746,7 +828,7 @@ export default function VpaaUsers() {
         cell: info => {
           const roleStr = info.getValue() as string;
           let badgeColor = 'bg-blue-100 text-blue-800 border border-blue-200/50';
-          if (roleStr.toLowerCase() === 'secretary') {
+          if (roleStr.toLowerCase() === 'secretary' || roleStr.toLowerCase() === 'director') {
             badgeColor = 'bg-green-100 text-green-800 border border-green-200/50';
           } else if (roleStr.toLowerCase() === 'program head') {
             badgeColor = 'bg-purple-100 text-purple-800 border border-purple-200/50';
@@ -773,6 +855,7 @@ export default function VpaaUsers() {
       },
       {
         id: 'program',
+        meta: { hideBelow: 'md' },
         accessorFn: row => programs.find(pr => String(pr.id) === String(row.program_id)) ?? null,
         header: 'Program / Major',
         cell: info => {
@@ -807,7 +890,7 @@ export default function VpaaUsers() {
       {
         accessorKey: 'createdAt',
         header: 'Created At',
-        meta: { cellClassName: 'whitespace-nowrap' },
+        meta: { hideBelow: 'lg', cellClassName: 'whitespace-nowrap' },
         cell: info => {
           const val = info.getValue() as string;
           if (!val) return '—';
@@ -905,9 +988,10 @@ export default function VpaaUsers() {
             <button
               type="button"
               onClick={() => setViewMode('grid')}
-              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+              aria-pressed={viewMode === 'grid'}
+              className={`selection-indicator p-2 rounded-lg transition-all duration-200 cursor-pointer ${
                 viewMode === 'grid'
-                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                  ? 'shadow-sm font-bold'
                   : 'text-gray-500 hover:text-gray-800'
               }`}
               title="Grid View"
@@ -917,9 +1001,10 @@ export default function VpaaUsers() {
             <button
               type="button"
               onClick={() => setViewMode('list')}
-              className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+              aria-pressed={viewMode === 'list'}
+              className={`selection-indicator p-2 rounded-lg transition-all duration-200 cursor-pointer ${
                 viewMode === 'list'
-                  ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+                  ? 'shadow-sm font-bold'
                   : 'text-gray-500 hover:text-gray-800'
               }`}
               title="List View"
@@ -929,20 +1014,7 @@ export default function VpaaUsers() {
           </div>
 
           <button
-            onClick={() => {
-              setIsEditMode(false);
-              setEditingId(null);
-              setIsDetailModalOpen(false);
-              setFormData({ first_name: '', middle_initial: '', last_name: '', suffix: '', username: '', email: '', role: 'Secretary', department_id: '', program_id: '', status: 'Active' });
-              setFirstNameError('');
-              setLastNameError('');
-              setMiddleInitialError('');
-              setEmailError('');
-              setDeptError('');
-              setProgramError('');
-              resetTeachingProfile();
-              setIsModalOpen(true);
-            }}
+            onClick={openCreateModal}
             className="bg-[#5A1220] text-white px-5 py-2.5 rounded-xl hover:bg-[#410b15] hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
           >
             <Plus size={15} />
@@ -978,7 +1050,7 @@ export default function VpaaUsers() {
               const deptLogo = u.department_logo || departments.find(d => d.id === u.department_id)?.logo || null;
               const program = programs.find(pr => String(pr.id) === String(u.program_id)) ?? null;
               let badgeColor = 'bg-blue-100 text-blue-800 border border-blue-200/50';
-              if (u.role.toLowerCase() === 'secretary') {
+              if (u.role.toLowerCase() === 'secretary' || u.role.toLowerCase() === 'director') {
                 badgeColor = 'bg-green-100 text-green-800 border border-green-200/50';
               } else if (u.role.toLowerCase() === 'program head') {
                 badgeColor = 'bg-purple-100 text-purple-800 border border-purple-200/50';
@@ -1103,569 +1175,605 @@ export default function VpaaUsers() {
       )}
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="user-form-title"
-            className={`bg-[#F7F4F0] rounded-2xl w-full ${isEditMode ? 'max-w-2xl' : 'max-w-4xl'} max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200`}
-          >
-            <div className="px-5 py-3.5 flex justify-between items-center bg-[#4e0a10] shrink-0">
-              <h2 id="user-form-title" className="text-lg font-bold text-white font-display">
-                {isEditMode ? 'Edit User Account' : 'Create New Account'}
-              </h2>
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                disabled={isSubmitting}
-                aria-label="Close"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <form onSubmit={handleSubmit} noValidate className="flex flex-col min-h-0 flex-1">
-              <div className={`min-h-0 flex-1 overflow-y-auto px-5 py-4 grid gap-x-6 gap-y-5 ${isEditMode ? '' : 'lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]'}`}>
-                <div className="min-w-0 space-y-5">
-                  <FormSection title="Personal Information">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                      <div className="relative shrink-0 self-center sm:self-start">
+        <Modal
+          isOpen
+          onClose={() => setIsModalOpen(false)}
+          title={isEditMode ? 'Edit User Account' : 'Create New Account'}
+          description={isEditMode ? 'Update the account holder, role, and department.' : 'Add the account holder, assign their role, and set up teaching if it applies.'}
+          size="form"
+          busy={isSubmitting}
+          closeLabel="Close"
+          closeOnOverlayClick={false}
+          bodyClassName="flex flex-col"
+        >
+            <form ref={formRef} onSubmit={handleSubmit} noValidate className="flex flex-col min-h-0 flex-1">
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3 sm:space-y-4 sm:px-5 sm:py-5">
+                <FormSection title="Personal information" description="How the name appears on schedules, reports, and signatories.">
+                  <div className="flex items-center gap-3.5 rounded-lg border border-slate-200 bg-[#FBF9F6] p-3">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="group relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-white text-slate-400 transition-colors hover:border-[#5A1220]/40 hover:text-[#5A1220] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] focus-visible:ring-offset-2 cursor-pointer"
+                      aria-label={profilePicture ? 'Change profile photo' : 'Upload profile photo'}
+                    >
+                      {profilePicture ? (
+                        <img src={profilePicture} alt="Profile preview" className="h-full w-full object-cover" />
+                      ) : previewInitials ? (
+                        <span className="text-base font-bold text-[#5A1220]">{previewInitials}</span>
+                      ) : (
+                        <Camera size={20} />
+                      )}
+                      <span className="absolute inset-0 flex items-center justify-center bg-black/45 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                        <Camera size={16} />
+                      </span>
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <p className={`truncate text-sm font-semibold ${previewName ? 'text-slate-900' : 'text-slate-400'}`}>
+                        {previewName || 'Name preview'}
+                      </p>
+                      <p className="truncate text-xs text-slate-500">
+                        {formData.username ? `@${formData.username}` : 'Username is generated from the department and role'}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
                         <button
                           type="button"
                           onClick={() => fileInputRef.current?.click()}
-                          className="w-16 h-16 rounded-full border-2 border-dashed border-gray-300 hover:border-[#5A1220] bg-white overflow-hidden flex items-center justify-center transition-colors cursor-pointer"
-                          title={profilePicture ? 'Change photo' : 'Upload profile photo'}
-                          aria-label={profilePicture ? 'Change profile photo' : 'Upload profile photo'}
+                          className="rounded font-semibold text-[#5A1220] hover:underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] cursor-pointer"
                         >
-                          {profilePicture ? (
-                            <img src={profilePicture} alt="Profile preview" className="w-full h-full object-cover" />
-                          ) : (
-                            <span className="flex flex-col items-center justify-center text-gray-400 hover:text-[#5A1220] transition-colors">
-                              <Camera size={18} />
-                              <span className="text-[9px] font-bold mt-0.5 uppercase tracking-wider">Photo</span>
-                            </span>
-                          )}
+                          {profilePicture ? 'Change photo' : 'Upload photo'}
                         </button>
-                        {profilePicture && (
+                        {profilePicture ? (
                           <button
                             type="button"
                             onClick={() => {
                               setProfilePicture(null);
                               if (fileInputRef.current) fileInputRef.current.value = '';
                             }}
-                            className="absolute -top-1 -right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-md cursor-pointer"
-                            title="Remove photo"
-                            aria-label="Remove photo"
+                            className="inline-flex items-center gap-1 rounded font-semibold text-slate-500 hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] cursor-pointer"
                           >
-                            <X size={10} />
+                            <Trash2 size={12} aria-hidden /> Remove
                           </button>
+                        ) : (
+                          <span className="text-slate-400">JPEG, PNG or WEBP</span>
                         )}
-                        <input
-                          type="file"
-                          ref={fileInputRef}
-                          accept="image/*"
-                          onChange={handlePhotoUpload}
-                          className="hidden"
-                        />
-                      </div>
-
-                      <div className="grid flex-1 min-w-0 gap-3 grid-cols-2 sm:grid-cols-[1fr_1fr_3.5rem_5.5rem]">
-                        <div>
-                          <label htmlFor="user-last-name" className={FORM_LABEL}>
-                            Last Name <span className="text-red-500">*</span>
-                          </label>
-                          <input
-                            id="user-last-name"
-                            type="text"
-                            value={formData.last_name}
-                            onChange={(e) => {
-                              setFormData({ ...formData, last_name: capitalizeNameInput(e.target.value) });
-                              setLastNameError('');
-                            }}
-                            placeholder="e.g. Dela Cruz"
-                            className={formInput(!!lastNameError)}
-                          />
-                          <FieldError message={lastNameError} />
-                        </div>
-                        <div>
-                          <label htmlFor="user-first-name" className={FORM_LABEL}>
-                            First Name <span className="text-red-500">*</span>
-                          </label>
-                          <input
-                            id="user-first-name"
-                            type="text"
-                            value={formData.first_name}
-                            onChange={(e) => {
-                              setFormData({ ...formData, first_name: capitalizeNameInput(e.target.value) });
-                              setFirstNameError('');
-                            }}
-                            placeholder="e.g. Juan"
-                            className={formInput(!!firstNameError)}
-                          />
-                          <FieldError message={firstNameError} />
-                        </div>
-                        <div>
-                          <label htmlFor="user-middle-initial" className={FORM_LABEL}>M.I.</label>
-                          <input
-                            id="user-middle-initial"
-                            type="text"
-                            maxLength={1}
-                            value={formData.middle_initial}
-                            onChange={(e) => {
-                              setFormData({ ...formData, middle_initial: e.target.value.toUpperCase() });
-                              setMiddleInitialError('');
-                            }}
-                            placeholder="D"
-                            className={`${formInput(!!middleInitialError)} uppercase text-center`}
-                          />
-                          <FieldError message={middleInitialError} />
-                        </div>
-                        <div>
-                          <label htmlFor="user-suffix" className={FORM_LABEL}>Suffix</label>
-                          <select
-                            id="user-suffix"
-                            value={formData.suffix}
-                            onChange={(e) => setFormData({ ...formData, suffix: e.target.value })}
-                            className={`${formInput()} cursor-pointer`}
-                          >
-                            <option value="">None</option>
-                            {NAME_SUFFIXES.map((option) => <option key={option} value={option}>{option}</option>)}
-                          </select>
-                        </div>
                       </div>
                     </div>
-                  </FormSection>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      accept="image/*"
+                      onChange={handlePhotoUpload}
+                      className="hidden"
+                    />
+                  </div>
 
-                  <FormSection title="Account Details">
-                    <div>
+                  <div className="grid grid-cols-6 gap-x-3 gap-y-3.5 sm:grid-cols-12">
+                    <div className="col-span-6 sm:col-span-5">
+                      <label htmlFor="user-last-name" className={FORM_LABEL}>
+                        Last Name <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        id="user-last-name"
+                        type="text"
+                        autoComplete="off"
+                        value={formData.last_name}
+                        onChange={(e) => {
+                          setFormData({ ...formData, last_name: capitalizeNameInput(e.target.value) });
+                          setLastNameError('');
+                        }}
+                        placeholder="e.g. Dela Cruz"
+                        className={formInput(!!lastNameError)}
+                        {...invalidProps('user-last-name', lastNameError)}
+                      />
+                      <FieldError id="user-last-name" message={lastNameError} />
+                    </div>
+                    <div className="col-span-4 sm:col-span-5">
+                      <label htmlFor="user-first-name" className={FORM_LABEL}>
+                        First Name <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        id="user-first-name"
+                        type="text"
+                        autoComplete="off"
+                        value={formData.first_name}
+                        onChange={(e) => {
+                          setFormData({ ...formData, first_name: capitalizeNameInput(e.target.value) });
+                          setFirstNameError('');
+                        }}
+                        placeholder="e.g. Juan"
+                        className={formInput(!!firstNameError)}
+                        {...invalidProps('user-first-name', firstNameError)}
+                      />
+                      <FieldError id="user-first-name" message={firstNameError} />
+                    </div>
+                    <div className="col-span-2 sm:col-span-2">
+                      <label htmlFor="user-middle-initial" className={FORM_LABEL}>M.I.</label>
+                      <input
+                        id="user-middle-initial"
+                        type="text"
+                        autoComplete="off"
+                        maxLength={1}
+                        value={formData.middle_initial}
+                        onChange={(e) => {
+                          setFormData({ ...formData, middle_initial: e.target.value.toUpperCase() });
+                          setMiddleInitialError('');
+                        }}
+                        placeholder="D"
+                        className={`${formInput(!!middleInitialError)} uppercase text-center`}
+                        {...invalidProps('user-middle-initial', middleInitialError)}
+                      />
+                      <FieldError id="user-middle-initial" message={middleInitialError} />
+                    </div>
+                    <div className="col-span-3 sm:col-span-3">
+                      <label htmlFor="user-suffix" className={FORM_LABEL}>Suffix</label>
+                      <select
+                        id="user-suffix"
+                        value={formData.suffix}
+                        onChange={(e) => setFormData({ ...formData, suffix: e.target.value })}
+                        className={`${formInput()} cursor-pointer`}
+                      >
+                        <option value="">None</option>
+                        {NAME_SUFFIXES.map((option) => <option key={option} value={option}>{option}</option>)}
+                      </select>
+                    </div>
+                    <div className="col-span-3 sm:col-span-3">
+                      <label htmlFor="user-honorific-prefix" className={FORM_LABEL}>Title</label>
+                      <select
+                        id="user-honorific-prefix"
+                        value={formData.honorific_prefix}
+                        onChange={(e) => {
+                          setFormData({ ...formData, honorific_prefix: e.target.value });
+                          setHonorificPrefixError('');
+                        }}
+                        className={`${formInput(!!honorificPrefixError)} cursor-pointer`}
+                        {...invalidProps('user-honorific-prefix', honorificPrefixError)}
+                      >
+                        <option value="">None</option>
+                        {titleOptions(nameOptions.honorific_prefixes, formData.honorific_prefix).map((option) => <option key={option} value={option}>{option}</option>)}
+                      </select>
+                      <FieldError id="user-honorific-prefix" message={honorificPrefixError} />
+                    </div>
+                    <div className="col-span-6 sm:col-span-6">
+                      <label htmlFor="user-credentials" className={FORM_LABEL}>Credentials / Degrees</label>
+                      <input
+                        id="user-credentials"
+                        type="text"
+                        autoComplete="off"
+                        maxLength={CREDENTIALS_MAX_LENGTH}
+                        value={formData.credentials}
+                        onChange={(e) => {
+                          setFormData({ ...formData, credentials: e.target.value });
+                          setCredentialsError('');
+                        }}
+                        placeholder="e.g. PhD, EdD"
+                        className={formInput(!!credentialsError)}
+                        {...invalidProps('user-credentials', credentialsError)}
+                      />
+                      <FieldError id="user-credentials" message={credentialsError} />
+                    </div>
+                    {!isEditMode && effectiveFacultyMode === 'link' && (
+                      <p className={`col-span-6 sm:col-span-12 -mt-2 ${modalHint}`}>
+                        Leave Title and Credentials blank to keep the linked instructor&rsquo;s saved values.
+                      </p>
+                    )}
+                  </div>
+                </FormSection>
+
+                <FormSection title="Account details" description="Sign-in email, role, and where this account works.">
+                  <div className="grid grid-cols-1 gap-x-3 gap-y-3.5 sm:grid-cols-2">
+                    <div className="sm:col-span-2">
                       <label htmlFor="user-email" className={FORM_LABEL}>
                         Institutional Email <span className="text-red-500">*</span>
                       </label>
-                      <input
-                        id="user-email"
-                        type="email"
-                        required
-                        value={formData.email}
+                      <div className="relative">
+                        <Mail size={15} aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          id="user-email"
+                          type="email"
+                          required
+                          autoComplete="off"
+                          value={formData.email}
+                          onChange={(e) => {
+                            setFormData({ ...formData, email: e.target.value });
+                            setEmailError('');
+                          }}
+                          placeholder="name@school.edu.ph"
+                          className={`${formInput(!!emailError)} pl-9`}
+                          {...invalidProps('user-email', emailError, 'user-email-hint')}
+                        />
+                      </div>
+                      <FieldError id="user-email" message={emailError} />
+                      {!emailError && (
+                        <p id="user-email-hint" className={modalHint}>Google sign-in links on first login and must match this email.</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label htmlFor="user-role" className={FORM_LABEL}>Role</label>
+                      <select
+                        id="user-role"
+                        value={formData.role}
                         onChange={(e) => {
-                          setFormData({ ...formData, email: e.target.value });
-                          setEmailError('');
+                          const nextRole = e.target.value;
+                          setFormData({
+                            ...formData,
+                            role: nextRole,
+                            program_id: nextRole === 'Program Head' ? formData.program_id : '',
+                          });
+                          setProgramError('');
+                          setFacultyLinkError('');
                         }}
-                        placeholder="name@school.edu.ph"
-                        className={formInput(!!emailError)}
-                      />
-                      <FieldError message={emailError} />
+                        className={`${formInput()} cursor-pointer`}
+                        aria-describedby={officeSlotHolder ? 'user-role-slot-notice' : 'user-role-hint'}
+                      >
+                        <option value="Dean">Dean</option>
+                        <option value="Program Head">Program Head</option>
+                        <option value="Secretary">Secretary</option>
+                        <option value="Director">Director</option>
+                      </select>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label htmlFor="user-role" className={FORM_LABEL}>Role</label>
-                        <select
-                          id="user-role"
-                          value={formData.role}
-                          onChange={(e) => {
-                            const nextRole = e.target.value;
-                            setFormData({
-                              ...formData,
-                              role: nextRole,
-                              program_id: nextRole === 'Program Head' ? formData.program_id : '',
-                            });
-                            setProgramError('');
-                            setFacultyLinkError('');
-                          }}
-                          className={`${formInput()} cursor-pointer`}
-                        >
-                          <option value="Dean">Dean</option>
-                          <option value="Program Head">Program Head</option>
-                          <option value="Secretary">Secretary</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label htmlFor="user-status" className={FORM_LABEL}>Status</label>
-                        <select
-                          id="user-status"
-                          value={formData.status}
-                          onChange={(e) => setFormData({ ...formData, status: e.target.value as 'Active' | 'Inactive' })}
-                          className={`${formInput()} cursor-pointer`}
-                        >
-                          <option value="Active">Active</option>
-                          <option value="Inactive">Inactive</option>
-                        </select>
-                      </div>
+                    <div>
+                      <label htmlFor="user-department" className={FORM_LABEL}>
+                        Assigned Department <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        id="user-department"
+                        value={formData.department_id}
+                        onChange={(e) => {
+                          setFormData({ ...formData, department_id: e.target.value, program_id: '' });
+                          setDeptError('');
+                          setProgramError('');
+                          setFacultyLinkError('');
+                        }}
+                        className={`${formInput(!!deptError)} cursor-pointer ${formData.department_id ? '' : 'text-slate-400'}`}
+                        {...invalidProps('user-department', deptError)}
+                      >
+                        <option value="">Select a department...</option>
+                        {departments.map((dept) => (
+                          <option key={dept.id} value={dept.id} className="text-slate-800">{dept.department_name}</option>
+                        ))}
+                      </select>
+                      <FieldError id="user-department" message={deptError} />
                     </div>
 
-                    <div className={`grid gap-3 ${isProgramHeadRole ? 'sm:grid-cols-2' : ''}`}>
-                      <div>
-                        <label htmlFor="user-department" className={FORM_LABEL}>
-                          Assigned Department <span className="text-red-500">*</span>
-                        </label>
-                        <select
-                          id="user-department"
-                          value={formData.department_id}
-                          onChange={(e) => {
-                            setFormData({ ...formData, department_id: e.target.value, program_id: '' });
-                            setDeptError('');
-                            setProgramError('');
-                            setFacultyLinkError('');
-                          }}
-                          className={`${formInput(!!deptError)} cursor-pointer`}
-                        >
-                          <option value="">Select a department...</option>
-                          {departments.map((dept) => (
-                            <option key={dept.id} value={dept.id}>{dept.department_name}</option>
-                          ))}
-                        </select>
-                        <FieldError message={deptError} />
-                      </div>
-
-                      {isProgramHeadRole && (
-                        <div>
-                          <label htmlFor="user-program" className={FORM_LABEL}>
-                            Program / Major <span className="text-red-500">*</span>
-                          </label>
-                          <select
-                            id="user-program"
-                            value={formData.program_id}
-                            disabled={!formData.department_id}
-                            onChange={(e) => {
-                              setFormData({ ...formData, program_id: e.target.value });
-                              setProgramError('');
-                            }}
-                            className={formInput(!!programError)}
-                          >
-                            <option value="">
-                              {formData.department_id ? 'Select a program or major...' : 'Select a department first'}
-                            </option>
-                            {selectedDepartmentPrograms.map((program) => (
-                              <option key={program.id} value={program.id}>
-                                {programLabel(program)}
-                              </option>
-                            ))}
-                          </select>
-                          <FieldError message={programError} />
-                          {formData.department_id && selectedDepartmentPrograms.length === 0 && !programError && (
-                            <p className="text-[11px] text-gray-500 mt-0.5 font-semibold">
-                              No programs yet. Add one in Department Management.
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <p className="text-[11px] text-gray-500">
-                      Google sign-in links on first login and must match this email.
-                    </p>
-                  </FormSection>
-                </div>
-
-                {!isEditMode && (
-                  <div className="min-w-0 lg:border-l lg:border-gray-200 lg:pl-6">
-                    <FormSection
-                      title="Teaching Profile"
-                      aside={(
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                          {isTeachingRole ? 'Required' : 'Optional'}
-                        </span>
-                      )}
-                    >
-                      {isTeachingRole ? (
-                        <p className="text-[11px] text-gray-500">
-                          {formData.role}s carry a teaching load, so this account needs an instructor record.
+                    <div className="sm:col-span-2 -mt-1.5">
+                      {officeSlotHolder ? (
+                        <p id="user-role-slot-notice" role="status" className={`rounded-lg border px-3 py-2 text-xs font-semibold leading-5 ${modalNotice.warning}`}>
+                          This department already has an active {officeSlotHolder.role} ({officeSlotHolder.name}). A department has one Secretary or one Director; deactivate that account first.
                         </p>
                       ) : (
-                        <label className="flex items-start gap-2.5 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={teachesClasses}
-                            onChange={(e) => {
-                              setTeachesClasses(e.target.checked);
-                              setFacultyLinkError('');
-                            }}
-                            className="mt-0.5 h-4 w-4 shrink-0 accent-[#5A1220] cursor-pointer"
-                          />
-                          <span>
-                            <span className="block text-sm font-semibold text-gray-800">This account also teaches classes</span>
-                            <span className="block text-[11px] text-gray-500">Leave unchecked if they have no teaching load.</span>
-                          </span>
+                        <p id="user-role-hint" className="text-xs leading-5 text-slate-500">{ROLE_HINTS[formData.role]}</p>
+                      )}
+                    </div>
+
+                    {isProgramHeadRole && (
+                      <div className="sm:col-span-2 form-reveal">
+                        <label htmlFor="user-program" className={FORM_LABEL}>
+                          Program / Major <span className="text-red-500">*</span>
                         </label>
-                      )}
+                        <select
+                          id="user-program"
+                          value={formData.program_id}
+                          disabled={!formData.department_id}
+                          onChange={(e) => {
+                            setFormData({ ...formData, program_id: e.target.value });
+                            setProgramError('');
+                          }}
+                          className={`${formInput(!!programError)} cursor-pointer`}
+                          {...invalidProps('user-program', programError)}
+                        >
+                          <option value="">
+                            {formData.department_id ? 'Select a program or major...' : 'Select a department first'}
+                          </option>
+                          {selectedDepartmentPrograms.map((program) => (
+                            <option key={program.id} value={program.id}>
+                              {programLabel(program)}
+                            </option>
+                          ))}
+                        </select>
+                        <FieldError id="user-program" message={programError} />
+                        {formData.department_id && selectedDepartmentPrograms.length === 0 && !programError && (
+                          <p className={modalHint}>
+                            No programs yet. Add one in Department Management.
+                          </p>
+                        )}
+                      </div>
+                    )}
 
-                      {!teachingApplies && matchingInstructor && (
-                        <p className="text-[11px] font-semibold text-[#8a6412]">
-                          {linkableFacultyName(matchingInstructor)} is on this department's roster. Check the box above to link them.
-                        </p>
-                      )}
-
-                      {teachingApplies && (
-                        <>
-                          <div role="radiogroup" aria-label="Instructor record" className="space-y-1">
-                            {([
-                              { mode: 'link', title: 'Link existing instructor', hint: 'Keeps their teaching load and schedule history.' },
-                              {
-                                mode: 'create',
-                                title: 'Create new instructor profile',
-                                hint: defaultMaxUnits !== null
-                                  ? `Adds a full-time instructor with a ${defaultMaxUnits}-unit load.`
-                                  : 'Adds a full-time instructor with the default load.',
-                              },
-                            ] as const).map((option) => {
-                              const isSelected = facultyMode === option.mode;
-                              return (
-                                <label
-                                  key={option.mode}
-                                  className={`flex items-start gap-2.5 rounded-lg px-2.5 py-2 cursor-pointer transition-colors ${
-                                    isSelected ? 'bg-[#5A1220]/[0.06]' : 'hover:bg-white/70'
-                                  }`}
-                                >
-                                  <input
-                                    type="radio"
-                                    name="faculty_mode"
-                                    value={option.mode}
-                                    checked={isSelected}
-                                    onChange={() => {
-                                      setFacultyModeTouched(true);
-                                      setFacultyMode(option.mode);
-                                      setFacultyLinkError('');
-                                    }}
-                                    className="mt-0.5 h-4 w-4 shrink-0 accent-[#5A1220] cursor-pointer"
-                                  />
-                                  <span className="min-w-0">
-                                    <span className={`block text-sm font-semibold ${isSelected ? 'text-[#5A1220]' : 'text-gray-800'}`}>{option.title}</span>
-                                    <span className="block text-[11px] text-gray-500">{option.hint}</span>
-                                  </span>
-                                </label>
-                              );
-                            })}
-                          </div>
-
-                          {facultyMode === 'link' && (
-                            <div>
-                              <span className={FORM_LABEL}>
-                                Instructor <span className="text-red-500">*</span>
-                              </span>
-                              <SearchableSelect
-                                aria-label="Instructor"
-                                options={instructorOptions}
-                                value={linkFacultyId}
-                                disabled={!formData.department_id || isLoadingLinkable}
-                                hasError={!!facultyLinkError}
-                                placeholder={!formData.department_id
-                                  ? 'Select a department first'
-                                  : isLoadingLinkable
-                                    ? 'Loading instructors...'
-                                    : 'Select an instructor...'}
-                                searchPlaceholder="Search by name"
-                                emptyText="No instructor matches that name"
-                                onChange={(value) => {
-                                  setFacultyModeTouched(true);
-                                  setLinkFacultyId(value);
-                                  setFacultyLinkError('');
-                                }}
+                    <fieldset className="sm:col-span-2">
+                      <legend className={FORM_LABEL}>Status</legend>
+                      <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                        {(['Active', 'Inactive'] as const).map((status) => {
+                          const isSelected = formData.status === status;
+                          return (
+                            <label
+                              key={status}
+                              className={`relative flex h-8 min-w-[6.5rem] items-center justify-center gap-1.5 rounded-md px-3 text-sm font-semibold transition-colors cursor-pointer has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[#C9952A] ${
+                                isSelected ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                name="user-status"
+                                value={status}
+                                checked={isSelected}
+                                onChange={() => setFormData({ ...formData, status })}
+                                className="sr-only"
                               />
-                              <FieldError message={facultyLinkError} />
-                              {matchingInstructor && String(matchingInstructor.id) === linkFacultyId && !facultyLinkError && (
-                                <p className="text-[11px] text-[#8a6412] mt-0.5 font-semibold">
-                                  Matched by name to an instructor on this department's roster.
-                                </p>
-                              )}
-                              {formData.department_id && !isLoadingLinkable && linkableFaculty.length === 0 && (
-                                <p className="text-[11px] text-gray-500 mt-0.5 font-semibold">
-                                  Every instructor in this department is already linked to an account.
-                                </p>
-                              )}
-                            </div>
-                          )}
-
-                          {facultyMode === 'create' && (
-                            <>
-                              {duplicatesRosterInstructor && matchingInstructor && (
-                                <p
-                                  role={facultyLinkError ? 'alert' : undefined}
-                                  className={`rounded-lg border px-3 py-2 text-[11px] ${
-                                    facultyLinkError ? 'border-red-300 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-900'
-                                  }`}
-                                >
-                                  <span className="font-semibold">{linkableFacultyName(matchingInstructor)}</span> is already on this department's roster.{' '}
-                                  <button
-                                    type="button"
-                                    onClick={switchToLinkMatch}
-                                    className="font-bold text-[#5A1220] underline underline-offset-2 cursor-pointer"
-                                  >
-                                    Link instead
-                                  </button>
-                                </p>
-                              )}
-                              {!duplicatesRosterInstructor && <FieldError message={facultyLinkError} />}
-                            </>
-                          )}
-
-                          {designations.length > 0 && (
-                            <div>
-                              <span className={FORM_LABEL}>Designations</span>
-                              <DesignationPicker designations={designations} value={designationIds} onChange={setDesignationIds} maxUnits={designationMaxUnits} />
-                              <p className="text-[11px] text-gray-500 mt-0.5">
-                                {facultyMode === 'link' && designationIds.length === 0
-                                  ? 'Leave empty to keep the instructor\'s current designations.'
-                                  : 'Deans and program heads usually carry a reduced load.'}
-                              </p>
-                            </div>
-                          )}
-                        </>
+                              <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${status === 'Active' ? 'bg-emerald-500' : 'bg-slate-400'} ${isSelected ? '' : 'opacity-50'}`} />
+                              {status}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      {formData.status === 'Inactive' && (
+                        <p className={modalHint}>Inactive accounts can&rsquo;t sign in until they are activated.</p>
                       )}
-                    </FormSection>
+                    </fieldset>
                   </div>
+                </FormSection>
+
+                {!isEditMode && (
+                  <FormSection
+                    title="Teaching profile"
+                    description={isTeachingRole
+                      ? `${formData.role}s carry a teaching load, so this account needs an instructor record.`
+                      : 'Connects the account to an instructor record for teaching assignments.'}
+                    aside={(
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${isTeachingRole ? 'bg-[#5A1220]/[0.08] text-[#5A1220]' : 'bg-slate-100 text-slate-500'}`}>
+                        {isTeachingRole ? 'Required' : 'Optional'}
+                      </span>
+                    )}
+                  >
+                    {!isTeachingRole && (
+                      <label className="relative flex items-center justify-between gap-4 rounded-lg border border-slate-200 px-3 py-2.5 transition-colors hover:border-slate-300 cursor-pointer has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[#C9952A]">
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold text-slate-800">This account also teaches classes</span>
+                          <span className="block text-xs text-slate-500">Leave off if they have no teaching load.</span>
+                        </span>
+                        <input
+                          type="checkbox"
+                          role="switch"
+                          checked={teachesClasses}
+                          onChange={(e) => {
+                            setTeachesClasses(e.target.checked);
+                            setFacultyLinkError('');
+                          }}
+                          className="peer sr-only"
+                        />
+                        <span aria-hidden className="relative h-5 w-9 shrink-0 rounded-full bg-slate-300 transition-colors peer-checked:bg-[#5A1220] after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:after:translate-x-4 motion-reduce:transition-none motion-reduce:after:transition-none" />
+                      </label>
+                    )}
+
+                    {!teachingApplies && matchingInstructor && (
+                      <p className={`rounded-lg border px-3 py-2 text-xs leading-5 ${modalNotice.warning}`}>
+                        <span className="font-semibold">{linkableFacultyName(matchingInstructor)}</span> is on this department's roster. Turn on teaching to link them.
+                      </p>
+                    )}
+
+                    {teachingApplies && (
+                      <div className="space-y-3.5 form-reveal">
+                        <div role="radiogroup" aria-label="Instructor record" className="grid gap-2 sm:grid-cols-2">
+                          {([
+                            { mode: 'link', title: 'Link existing instructor', hint: 'Keeps their teaching load and schedule history.' },
+                            {
+                              mode: 'create',
+                              title: 'Create new instructor profile',
+                              hint: defaultMaxUnits !== null
+                                ? `Adds a full-time instructor with a ${defaultMaxUnits}-unit load.`
+                                : 'Adds a full-time instructor with the default load.',
+                            },
+                          ] as const).map((option) => {
+                            const isSelected = facultyMode === option.mode;
+                            return (
+                              <label
+                                key={option.mode}
+                                className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 transition-colors cursor-pointer has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[#C9952A] ${
+                                  isSelected
+                                    ? 'border-[#5A1220]/50 bg-[#5A1220]/[0.04]'
+                                    : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                                }`}
+                              >
+                                <input
+                                  type="radio"
+                                  name="faculty_mode"
+                                  value={option.mode}
+                                  checked={isSelected}
+                                  onChange={() => {
+                                    setFacultyModeTouched(true);
+                                    setFacultyMode(option.mode);
+                                    setFacultyLinkError('');
+                                  }}
+                                  className="mt-0.5 h-4 w-4 shrink-0 accent-[#5A1220] cursor-pointer focus:outline-none"
+                                />
+                                <span className="min-w-0">
+                                  <span className={`block text-sm font-semibold ${isSelected ? 'text-[#5A1220]' : 'text-slate-800'}`}>{option.title}</span>
+                                  <span className="block text-xs leading-5 text-slate-500">{option.hint}</span>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+
+                        {facultyMode === 'link' && (
+                          <div>
+                            <span className={FORM_LABEL}>
+                              Instructor <span className="text-red-500">*</span>
+                            </span>
+                            <SearchableSelect
+                              aria-label="Instructor"
+                              options={instructorOptions}
+                              value={linkFacultyId}
+                              disabled={!formData.department_id || isLoadingLinkable}
+                              hasError={!!facultyLinkError}
+                              placeholder={!formData.department_id
+                                ? 'Select a department first'
+                                : isLoadingLinkable
+                                  ? 'Loading instructors...'
+                                  : 'Select an instructor...'}
+                              searchPlaceholder="Search by name"
+                              emptyText="No instructor matches that name"
+                              onChange={(value) => {
+                                setFacultyModeTouched(true);
+                                setLinkFacultyId(value);
+                                setFacultyLinkError('');
+                              }}
+                            />
+                            <FieldError message={facultyLinkError} />
+                            {matchingInstructor && String(matchingInstructor.id) === linkFacultyId && !facultyLinkError && (
+                              <p className="mt-1 text-xs font-semibold text-[#8a6412]">
+                                Matched by name to an instructor on this department's roster.
+                              </p>
+                            )}
+                            {formData.department_id && !isLoadingLinkable && linkableFaculty.length === 0 && (
+                              <p className={modalHint}>
+                                Every instructor in this department is already linked to an account.
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {facultyMode === 'create' && (
+                          <>
+                            {duplicatesRosterInstructor && matchingInstructor && (
+                              <p
+                                role={facultyLinkError ? 'alert' : undefined}
+                                className={`rounded-lg border px-3 py-2 text-xs leading-5 ${
+                                  facultyLinkError ? modalNotice.error : modalNotice.warning
+                                }`}
+                              >
+                                <span className="font-semibold">{linkableFacultyName(matchingInstructor)}</span> is already on this department's roster.{' '}
+                                <button
+                                  type="button"
+                                  onClick={switchToLinkMatch}
+                                  className="rounded font-bold text-[#5A1220] underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] cursor-pointer"
+                                >
+                                  Link instead
+                                </button>
+                              </p>
+                            )}
+                            {!duplicatesRosterInstructor && <FieldError message={facultyLinkError} />}
+                          </>
+                        )}
+
+                        {designations.length > 0 && (
+                          <div className="border-t border-slate-100 pt-3.5">
+                            <span className={FORM_LABEL}>Designations</span>
+                            <DesignationPicker designations={designations} value={designationIds} onChange={setDesignationIds} maxUnits={designationMaxUnits} />
+                            <p className={modalHint}>
+                              {facultyMode === 'link' && designationIds.length === 0
+                                ? 'Leave empty to keep the instructor\'s current designations.'
+                                : 'Deans and program heads usually carry a reduced load.'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </FormSection>
                 )}
               </div>
 
-              <div className="flex flex-wrap justify-end gap-3 px-5 py-3.5 border-t border-gray-200/80 bg-gray-50/50 shrink-0">
-                {isEditMode && editingUser && (
-                  <button
-                    type="button"
+              <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2.5 border-t border-black/5 bg-[#F7F4F0] px-4 py-3 sm:px-5">
+                {isEditMode && editingUser ? (
+                  <ModalButton
+                    className="mr-auto"
                     disabled={isSendingSetupLink || editingUser.status !== 'Active' || formData.email.trim().toLowerCase() !== editingUser.email.toLowerCase()}
                     onClick={() => sendSetupLink(editingUser)}
                     title={formData.email.trim().toLowerCase() !== editingUser.email.toLowerCase()
                       ? 'Save the new email first; saving sends the setup link to it'
                       : `Email a one-time setup link to ${editingUser.email}`}
-                    className="mr-auto flex items-center gap-1.5 px-4 py-2 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    <Mail size={14} /> {isSendingSetupLink ? 'Sending...' : 'Send setup link'}
-                  </button>
+                    <Mail size={16} /> {isSendingSetupLink ? 'Sending...' : 'Send setup link'}
+                  </ModalButton>
+                ) : (
+                  <p className="mr-auto hidden text-xs text-slate-500 sm:block">
+                    A setup link is emailed once the account is created.
+                  </p>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  disabled={isSubmitting}
-                  className="min-w-[8rem] px-4 py-2 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  aria-busy={isSubmitting}
-                  className="min-w-[8rem] flex items-center justify-center gap-2 px-4 py-2 bg-[#4e0a10] text-white rounded-xl hover:bg-[#C9952A] transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold cursor-pointer"
-                >
-                  {isSubmitting && <Loader2 size={16} className="animate-spin" />}
+                <ModalButton onClick={() => setIsModalOpen(false)} disabled={isSubmitting}>Cancel</ModalButton>
+                <ModalButton type="submit" variant="primary" loading={isSubmitting} aria-busy={isSubmitting}>
                   {isSubmitting
                     ? (isEditMode ? 'Saving...' : 'Creating...')
                     : (isEditMode ? 'Save Changes' : 'Create Account')
                   }
-                </button>
-              </div>
+                </ModalButton>
+              </footer>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {isDetailModalOpen && selectedUserForDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] border border-slate-200/80 rounded-2xl max-w-lg w-full max-h-[calc(100dvh-2rem)] overflow-y-auto shadow-2xl relative group animate-in zoom-in-95 duration-200 font-sans">
-            <div className="p-5 border-b border-gray-200/80 flex justify-between items-center bg-gray-50/50">
-              <div className="flex items-center gap-3">
-                {selectedUserForDetail.profile_picture ? (
-                  <img
-                    src={selectedUserForDetail.profile_picture}
-                    alt={selectedUserForDetail.name}
-                    className="w-10 h-10 rounded-full object-cover border border-gray-200 shadow-sm shrink-0"
-                  />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#4e0a10] to-[#C9952A] flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-sm">
-                    {getInitials(selectedUserForDetail.name)}
-                  </div>
-                )}
-                <div>
-                  <h2 className="text-base font-bold text-[#1A1410] font-display">{selectedUserForDetail.name}</h2>
-                  <p className="text-xs text-gray-500 font-mono">@{selectedUserForDetail.username}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#C9952A] text-white shadow-2xs">
-                  {selectedUserForDetail.role}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsDetailModalOpen(false)}
-                  className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer transition-colors"
-                >
-                  <X size={20} />
-                </button>
-              </div>
+        <Modal
+          isOpen
+          onClose={() => setIsDetailModalOpen(false)}
+          title={selectedUserForDetail.name}
+          description={`@${selectedUserForDetail.username}`}
+          leading={selectedUserForDetail.profile_picture ? (
+            <img src={selectedUserForDetail.profile_picture} alt="" className="h-10 w-10 shrink-0 rounded-full border-2 border-white/20 object-cover" />
+          ) : (
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-bold text-white" aria-hidden="true">
+              {getInitials(selectedUserForDetail.name)}
+            </span>
+          )}
+          headerActions={<span className="rounded-full bg-[#C9952A] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">{selectedUserForDetail.role}</span>}
+          footer={<>
+            <ModalButton
+              disabled={isSendingSetupLink || selectedUserForDetail.status !== 'Active'}
+              onClick={() => sendSetupLink(selectedUserForDetail)}
+              title="Email a one-time link the user can open to choose a new password"
+            >
+              <Mail size={16} /> {isSendingSetupLink ? 'Sending...' : 'Send setup link'}
+            </ModalButton>
+            <ModalButton disabled={!selectedUserForDetail.googleLinked} onClick={() => unlinkGoogle(selectedUserForDetail)}>
+              <Link2Off size={16} /> Unlink Google
+            </ModalButton>
+            <ModalButton onClick={() => setIsDetailModalOpen(false)}>Close</ModalButton>
+            <ModalButton
+              variant="primary"
+              onClick={() => {
+                setIsDetailModalOpen(false);
+                handleEditClick(selectedUserForDetail);
+              }}
+            >
+              <Pencil size={16} /> Edit User
+            </ModalButton>
+          </>}
+        >
+          <dl className="m-4 grid grid-cols-2 gap-x-4 gap-y-4 rounded-xl border border-slate-200 bg-white p-4 sm:m-5">
+            <div className="col-span-2">
+              <dt className={`${modalLabel} mb-1`}>Email</dt>
+              <dd className="break-all text-sm font-semibold text-slate-800">{selectedUserForDetail.email || '—'}</dd>
             </div>
-
-            <div className="p-6 space-y-5">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs col-span-2">
-                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Email</p>
-                  <p className="text-xs font-bold text-gray-700 break-all">{selectedUserForDetail.email || '—'}</p>
-                </div>
-                <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">
-                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Department</p>
-                  <p className="text-xs font-bold text-gray-800 break-words leading-relaxed">{selectedUserForDetail.department || '—'}</p>
-                </div>
-
-                <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">
-                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Google login</p>
-                  <p className="text-xs font-bold text-gray-700">{selectedUserForDetail.googleLinked ? 'Linked' : 'Allowed, not linked yet'}</p>
-                </div>
-
-                <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">
-                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Status</p>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-xs font-bold text-emerald-700 capitalize">{selectedUserForDetail.status}</span>
-                  </div>
-                </div>
-
-                <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">
-                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">User ID</p>
-                  <p className="text-xs font-mono font-bold text-gray-700">#{selectedUserForDetail.id}</p>
-                </div>
-
-                <div className="bg-white p-4 rounded-2xl border border-gray-100 space-y-1 shadow-xs">
-                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Date Created</p>
-                  <p className="text-xs font-bold text-gray-700">
-                    {selectedUserForDetail.createdAt
-                      ? formatPhilippineDate(selectedUserForDetail.createdAt, { month: 'short', day: '2-digit', year: 'numeric' })
-                      : '—'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-gray-200/80 flex flex-wrap items-center justify-end gap-3">
-                <button
-                  disabled={isSendingSetupLink || selectedUserForDetail.status !== 'Active'}
-                  onClick={() => sendSetupLink(selectedUserForDetail)}
-                  title="Email a one-time link the user can open to choose a new password"
-                  className="px-5 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Mail size={14} /> {isSendingSetupLink ? 'Sending...' : 'Send setup link'}
-                </button>
-                <button
-                  disabled={!selectedUserForDetail.googleLinked}
-                  onClick={() => unlinkGoogle(selectedUserForDetail)}
-                  className="px-5 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Link2Off size={14} /> Unlink Google
-                </button>
-                <button
-                  onClick={() => setIsDetailModalOpen(false)}
-                  className="px-5 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all cursor-pointer"
-                >
-                  Close
-                </button>
-                <button
-                  onClick={() => {
-                    setIsDetailModalOpen(false);
-                    handleEditClick(selectedUserForDetail);
-                  }}
-                  className="px-5 py-2.5 rounded-xl bg-[#5A1220] hover:bg-[#410b15] text-white text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-1.5"
-                >
-                  <Pencil size={14} />
-                  <span>Edit User</span>
-                </button>
-              </div>
+            <div>
+              <dt className={`${modalLabel} mb-1`}>Department</dt>
+              <dd className="break-words text-sm font-semibold text-slate-800">{selectedUserForDetail.department || '—'}</dd>
             </div>
-          </div>
-        </div>
+            <div>
+              <dt className={`${modalLabel} mb-1`}>Google login</dt>
+              <dd className="text-sm font-semibold text-slate-800">{selectedUserForDetail.googleLinked ? 'Linked' : 'Allowed, not linked yet'}</dd>
+            </div>
+            <div>
+              <dt className={`${modalLabel} mb-1`}>Status</dt>
+              <dd className="flex items-center gap-1.5 text-sm font-semibold capitalize text-slate-800">
+                <span className={`h-2 w-2 rounded-full ${selectedUserForDetail.status === 'Active' ? 'bg-emerald-500' : 'bg-slate-400'}`} aria-hidden="true" />
+                {selectedUserForDetail.status}
+              </dd>
+            </div>
+            <div>
+              <dt className={`${modalLabel} mb-1`}>User ID</dt>
+              <dd className="font-mono text-sm font-semibold text-slate-800">#{selectedUserForDetail.id}</dd>
+            </div>
+            <div>
+              <dt className={`${modalLabel} mb-1`}>Date Created</dt>
+              <dd className="text-sm font-semibold text-slate-800">
+                {selectedUserForDetail.createdAt
+                  ? formatPhilippineDate(selectedUserForDetail.createdAt, { month: 'short', day: '2-digit', year: 'numeric' })
+                  : '—'}
+              </dd>
+            </div>
+          </dl>
+        </Modal>
       )}
 
     </div>

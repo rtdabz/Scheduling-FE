@@ -1,5 +1,44 @@
 import api from "../../../../lib/api";
 import type { ApiScheduleRecord } from "../types";
+import {
+  normalizeComponentRequiredDays,
+  type ComponentRequiredDays,
+} from "./courseClassConfig";
+
+/** Normalized pins a run was generated with: section id => course id => days. */
+export type ComponentRequiredDaysContext = Record<
+  string,
+  Record<string, { lecture?: string; laboratory?: string }>
+>;
+
+/** One section's map for a generation request; blank components are dropped. */
+export function componentRequiredDaysPayload(
+  byCourseId: Record<string, ComponentRequiredDays> | undefined,
+  include: (courseId: string) => boolean,
+): Record<number, Record<string, string>> {
+  const payload: Record<number, Record<string, string>> = {};
+  for (const [courseId, days] of Object.entries(byCourseId ?? {})) {
+    const pinned = normalizeComponentRequiredDays(days);
+    if (pinned && include(courseId)) payload[Number(courseId)] = pinned;
+  }
+  return payload;
+}
+
+/**
+ * Review and generated-save context: the server rebuilds and checks the
+ * pins; an empty context keeps the old request shape.
+ */
+export function componentRequiredDaysContext(
+  context: ComponentRequiredDaysContext | null | undefined,
+): { section_configs?: Array<{ section_id: number; component_required_days_by_course_id: Record<number, Record<string, string>> }> } {
+  const sectionConfigs = Object.entries(context ?? {})
+    .map(([sectionId, byCourseId]) => ({
+      section_id: Number(sectionId),
+      component_required_days_by_course_id: componentRequiredDaysPayload(byCourseId, () => true),
+    }))
+    .filter((config) => Object.keys(config.component_required_days_by_course_id).length > 0);
+  return sectionConfigs.length > 0 ? { section_configs: sectionConfigs } : {};
+}
 
 export type DraftMeeting = {
   meeting_type: "lecture" | "laboratory" | null;
@@ -55,6 +94,7 @@ export async function fetchDraftReview({
   rows,
   unplaced,
   preferredDays,
+  componentRequiredDays = null,
 }: {
   semesterId: number;
   departmentId: number;
@@ -62,6 +102,7 @@ export async function fetchDraftReview({
   rows: ApiScheduleRecord[];
   unplaced: UnplacedCourse[];
   preferredDays: string[] | null;
+  componentRequiredDays?: ComponentRequiredDaysContext | null;
 }): Promise<DraftIssue[]> {
   const response = await api.post<{ issues?: DraftIssue[] }>(
     "/schedule-recommendations/draft-review",
@@ -95,6 +136,7 @@ export async function fetchDraftReview({
         meetings: course.meetings,
         ...(course.consecutive_rule ? { consecutive_rule: course.consecutive_rule } : {}),
       })),
+      ...componentRequiredDaysContext(componentRequiredDays),
     },
   );
 
@@ -141,20 +183,16 @@ const rowsClash = (
   ) {
     return false;
   }
-  const leftOnline = left.mode === "online";
-  const rightOnline = right.mode === "online";
+  // Online needs no room and is shared, so only the section and instructor
+  // clash there; a room clashes only between two on-site rows.
   return (
     Number(left.section_id) === Number(right.section_id) ||
-    (!leftOnline &&
-      !rightOnline &&
+    (left.mode !== "online" &&
+      right.mode !== "online" &&
       Boolean(left.room_id) &&
       Number(left.room_id) === Number(right.room_id)) ||
     (Boolean(left.faculty_id) &&
-      Number(left.faculty_id) === Number(right.faculty_id)) ||
-    (leftOnline &&
-      rightOnline &&
-      Number(left.course_id ?? left.subject_id) ===
-        Number(right.course_id ?? right.subject_id))
+      Number(left.faculty_id) === Number(right.faculty_id))
   );
 };
 

@@ -1,7 +1,7 @@
 # VPAA Archive: problems and improvement plan
 
 Date: 2026-11-01  
-Status: **implemented 2026-11-01** (A01–A12 and the `/archive` redesign). Sections 1–6 below are the original review, kept for traceability; section 0 records what was built and verified.
+Status: **implemented 2026-11-01** (A01–A12 and the `/archive` redesign). **Superseded 2026-11-09:** the central `/archive` page was replaced by module Archived tabs that reuse the same API, list, dialog, and restore checks; see [Schedule Reset and module archives](schedule_reset_and_module_archives.md). Sections 1–6 below are the original review, kept for traceability; section 0 records what was built and verified.
 
 ## 0. Implementation status
 

@@ -1,13 +1,15 @@
 import { lazy, Suspense, type FC } from 'react';
 import RouteLoadingBar from '../components/ui/RouteLoadingBar';
 
-export type UserRole = 'vpaa' | 'dean' | 'program_head' | 'secretary';
+export type UserRole = 'vpaa' | 'dean' | 'program_head' | 'secretary' | 'director';
 
 const DashboardMap = {
   vpaa: lazy(() => import('./vpaa/VpaaDashboardPage')),
   dean: lazy(() => import('./dean/DeanDashboardPage')),
   program_head: lazy(() => import('./program_head/ProgramHeadDashboardPage')),
   secretary: lazy(() => import('./secretary/SecretaryDashboardPage')),
+  // The Director runs the department office with the Secretary's workspace.
+  director: lazy(() => import('./director/DirectorDashboardPage')),
 };
 
 interface DashboardProps {
@@ -15,7 +17,7 @@ interface DashboardProps {
 }
 
 const isUserRole = (role: string): role is UserRole => {
-  return role === 'vpaa' || role === 'dean' || role === 'program_head' || role === 'secretary';
+  return role === 'vpaa' || role === 'dean' || role === 'program_head' || role === 'secretary' || role === 'director';
 };
 
 const Dashboard: FC<DashboardProps> = ({ role }) => {

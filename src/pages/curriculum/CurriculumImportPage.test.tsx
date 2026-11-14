@@ -84,7 +84,7 @@ afterEach(() => {
 });
 
 describe('curriculum import page', () => {
-  it('reviews the validated outcome and imports with one confirmation and no reasons', async () => {
+  it.each(['Registrar Reyes', null])('reviews the validated outcome and imports with recorded confirmer %s', async (confirmer) => {
     render(<MemoryRouter><CurriculumImportPage /></MemoryRouter>);
     await screen.findByRole('button', { name: /import settings/i });
 
@@ -210,12 +210,13 @@ describe('curriculum import page', () => {
       curriculum: { id: 12, name: 'BSIT 2026', code: 'BSIT-2026', cmo_number: null, cmo_series: null, program_id: null, effective_school_year: '2026-2027', status: 'deactivated' },
       import_id: 3, created_count: 2, reused_count: 0, rows: [], groups: [],
       totals: { calculated: { lec: 4, lab: 1, tu: 5 }, reported_sum: null, row_count: 2, populated_groups: 1 },
-      confirmation: { user_id: 5, user_name: 'Registrar Reyes', confirmed_at: '2026-11-03T08:00:00+08:00', fingerprint: 'f'.repeat(64) },
+      confirmation: { user_id: 5, user_name: confirmer, confirmed_at: '2026-11-03T08:00:00+08:00', fingerprint: 'f'.repeat(64) },
       changes: validation(true).changes, notices: [], replayed: false,
     });
     fireEvent.click(confirm());
     await screen.findByText('Curriculum imported');
-    expect(screen.getByText(/Confirmed by Registrar Reyes/)).toBeDefined();
+    expect(screen.getByText(new RegExp(`Confirmed by ${confirmer ?? 'Actor unavailable'}`))).toBeDefined();
+    expect(screen.queryByText(/Confirmed by you/)).toBeNull();
     expect(screen.queryByText(/Reasons recorded/)).toBeNull();
 
     const committed = service.commit.mock.calls[0][0];
@@ -637,7 +638,7 @@ describe('curriculum import page', () => {
     // Without management rights the same button opens the settings read-only.
     fireEvent.click(screen.getByRole('button', { name: /import settings/i }));
     expect(screen.getByRole('dialog', { name: 'Curriculum import settings' })).toBeDefined();
-    expect(screen.getByText('Only the department secretary can change these settings.')).toBeDefined();
+    expect(screen.getByText('Only the department Secretary or Director can change these settings.')).toBeDefined();
     expect(screen.queryByRole('button', { name: 'Save settings' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     unmount();

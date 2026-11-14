@@ -1,8 +1,16 @@
 import api from './api';
 
+export interface DefaultAvailabilityWindow {
+  day_index: number;
+  start_time: string;
+  end_time: string;
+}
+
 export interface InstitutionSettings {
   president_name: string;
   president_title: string;
+  /** Default teaching week per employment type, applied automatically. */
+  default_faculty_availability?: Partial<Record<'full-time' | 'part-time', DefaultAvailabilityWindow[]>>;
 }
 
 export const DEFAULT_INSTITUTION_SETTINGS: InstitutionSettings = {
@@ -20,6 +28,9 @@ export const normalizeInstitutionSettings = (raw: unknown): InstitutionSettings 
   return {
     president_name: clean(source.president_name, DEFAULT_INSTITUTION_SETTINGS.president_name),
     president_title: clean(source.president_title, DEFAULT_INSTITUTION_SETTINGS.president_title),
+    ...(source.default_faculty_availability && typeof source.default_faculty_availability === 'object'
+      ? { default_faculty_availability: source.default_faculty_availability }
+      : {}),
   };
 };
 

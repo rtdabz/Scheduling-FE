@@ -1,13 +1,17 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { createBrowserRouter, createRoutesFromElements, RouterProvider, Route, Navigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import LoginPage from './pages/LoginPage';
 import type { UserRole } from './pages/Dashboard';
 import AppLayout from './components/layout/AppLayout';
 import { fetchCurrentUser } from './lib/currentUser';
-import { getStoredUser, getStoredUserRole, requiresDepartmentProgram, type StoredUser } from './lib/storedUser';
+import { getStoredUser, getStoredUserRole, MULTIPLE_PROGRAMS_LOCK_MESSAGE, NO_PROGRAM_LOCK_MESSAGE, requiresDepartmentProgram, type StoredUser } from './lib/storedUser';
+import { useLiveRevision } from './hooks/useLiveRefresh';
 import LockedModuleView from './components/ui/LockedModuleView';
 import { CROSS_DEPARTMENT_LOCKED_MESSAGE, useDepartmentScheduleStatus } from './hooks/useDepartmentScheduleStatus';
 import { lazyPage, registerPagePrefetch } from './lib/pagePrefetch';
+import ModuleArchiveTabs from './pages/vpaa/archive/ModuleArchiveTabs';
+import ArchiveRedirect from './pages/vpaa/archive/ArchiveRedirect';
+import { dashboardPathForRole } from './lib/roles';
 
 const Dashboard = lazyPage(() => import('./pages/Dashboard'));
 const ScheduleApprovalPage = lazyPage(() => import('./pages/shared/ScheduleApprovalPage'));
@@ -19,8 +23,8 @@ const Departments = lazyPage(() => import('./pages/vpaa/Departments'));
 const Reports = lazyPage(() => import('./pages/shared/Reports'));
 const RoomRequests = lazyPage(() => import('./pages/shared/RoomRequests'));
 const VpaaActivityLog = lazyPage(() => import('./pages/vpaa/ActivityLog'));
+const VpaaLoginDetails = lazyPage(() => import('./pages/vpaa/LoginDetailsPage'));
 const VpaaScheduleHistory = lazyPage(() => import('./pages/vpaa/ScheduleHistory'));
-const VpaaArchive = lazyPage(() => import('./pages/vpaa/Archive'));
 const Settings = lazyPage(() => import('./pages/vpaa/Settings'));
 
 const DeanSchedules = lazyPage(() => import('./pages/dean/Schedules'));
@@ -45,28 +49,27 @@ const SecretarySections = lazyPage(() => import('./pages/secretary/Sections'));
 registerPagePrefetch([
   [ScheduleApprovalPage, ['/schedules/approval', '/dean/schedules/approval']],
   [VpaaCalendarPage, ['/calendar']],
-  [Faculty, ['/instructors', '/dean/instructors', '/secretary/instructors', '/program_head/instructors']],
+  [Faculty, ['/instructors', '/dean/instructors', '/secretary/instructors', '/director/instructors', '/program_head/instructors']],
   [Designations, ['/designations']],
-  [Rooms, ['/facilities', '/dean/facilities', '/secretary/facilities', '/program_head/facilities']],
-  [CurriculumListPage, ['/curriculum', '/dean/curriculum', '/secretary/curriculum', '/program_head/curriculum']],
+  [Rooms, ['/facilities', '/dean/facilities', '/secretary/facilities', '/director/facilities', '/program_head/facilities']],
+  [CurriculumListPage, ['/curriculum', '/dean/curriculum', '/secretary/curriculum', '/director/curriculum', '/program_head/curriculum']],
   [VpaaUsers, ['/users']],
-  [Departments, ['/departments', '/dean/departments', '/secretary/departments', '/program_head/departments']],
-  [Reports, ['/reports', '/dean/reports', '/secretary/reports', '/program_head/reports']],
-  [RoomRequests, ['/secretary/room-requests']],
+  [Departments, ['/departments', '/dean/departments', '/secretary/departments', '/director/departments', '/program_head/departments']],
+  [Reports, ['/reports', '/dean/reports', '/secretary/reports', '/director/reports', '/program_head/reports']],
+  [RoomRequests, ['/secretary/room-requests', '/director/room-requests']],
   [VpaaActivityLog, ['/activity-log']],
-  [VpaaScheduleHistory, ['/schedule-history', '/dean/schedule-history', '/secretary/schedule-history', '/program_head/schedule-history']],
-  [VpaaArchive, ['/archive']],
+  [VpaaScheduleHistory, ['/schedule-history', '/dean/schedule-history', '/secretary/schedule-history', '/director/schedule-history', '/program_head/schedule-history']],
   [Settings, ['/settings']],
   [DeanSchedules, ['/dean/schedules']],
-  [SecretaryScheduleBuilder, ['/secretary/schedule-management']],
-  [SecretarySchedules, ['/secretary/schedules']],
-  [SecretarySectionTimetables, ['/secretary/section-timetables']],
-  [SecretaryProgramRooms, ['/secretary/program-rooms']],
-  [SecretaryCourses, ['/secretary/courses', '/program_head/courses', '/dean/courses']],
-  [SecretarySections, ['/secretary/sections', '/program_head/sections', '/dean/sections']],
-  [InstructorAssignment, ['/secretary/instructor-assignment', '/program_head/instructor-assignment']],
-  [CrossDepartmentAssignments, ['/secretary/cross-department-assignments', '/program_head/cross-department-assignments']],
-  [CourseTeachingAssignments, ['/secretary/course-assignments', '/program_head/course-assignments']],
+  [SecretaryScheduleBuilder, ['/secretary/schedule-management', '/director/schedule-management']],
+  [SecretarySchedules, ['/secretary/schedules', '/director/schedules']],
+  [SecretarySectionTimetables, ['/secretary/section-timetables', '/director/section-timetables']],
+  [SecretaryProgramRooms, ['/secretary/program-rooms', '/director/program-rooms']],
+  [SecretaryCourses, ['/secretary/courses', '/director/courses', '/program_head/courses', '/dean/courses']],
+  [SecretarySections, ['/secretary/sections', '/director/sections', '/program_head/sections', '/dean/sections']],
+  [InstructorAssignment, ['/secretary/instructor-assignment', '/director/instructor-assignment', '/program_head/instructor-assignment']],
+  [CrossDepartmentAssignments, ['/secretary/cross-department-assignments', '/director/cross-department-assignments', '/program_head/cross-department-assignments']],
+  [CourseTeachingAssignments, ['/secretary/course-assignments', '/director/course-assignments', '/program_head/course-assignments']],
   [ProgramHeadScheduleBuilder, ['/program_head/schedule-management']],
   [ProgramHeadSchedules, ['/program_head/schedules']],
   [ProgramHeadSectionTimetables, ['/program_head/section-timetables']],
@@ -83,6 +86,11 @@ const LEGACY_REDIRECTS: ReadonlyArray<readonly [string, string]> = [
   ['/secretary/course-teaching-assignments', '/secretary/course-assignments'],
   ['/secretary/course-list', '/secretary/courses'],
   ['/secretary/subjects', '/secretary/courses'],
+  ['/director/rooms', '/director/facilities'],
+  ['/director/schedule-builder', '/director/schedule-management'],
+  ['/director/course-teaching-assignments', '/director/course-assignments'],
+  ['/director/course-list', '/director/courses'],
+  ['/director/subjects', '/director/courses'],
   ['/program_head/faculty', '/program_head/instructors'],
   ['/program_head/rooms', '/program_head/facilities'],
   ['/program_head/schedule-builder', '/program_head/schedule-management'],
@@ -90,7 +98,7 @@ const LEGACY_REDIRECTS: ReadonlyArray<readonly [string, string]> = [
   ['/program_head/course-list', '/program_head/courses'],
 ];
 
-type CapabilityUser = Pick<StoredUser, 'permissions' | 'scheduling_ready' | 'capability_catalog'>;
+type CapabilityUser = Pick<StoredUser, 'permissions' | 'scheduling_ready' | 'capability_catalog' | 'department_program_count'>;
 
 const hasRequestedCapability = (user: CapabilityUser | null, capability: string | string[]): boolean => {
   if (!user) return false;
@@ -107,12 +115,7 @@ const getStoredRole = (): string => {
 
 const getDashboardRole = (): UserRole | string => getStoredRole();
 
-const getDashboardPath = (role: string): string => {
-  if (role === 'dean') return '/dean/dashboard';
-  if (role === 'secretary') return '/secretary/dashboard';
-  if (role === 'program_head') return '/program_head/dashboard';
-  return '/dashboard';
-};
+const getDashboardPath = (role: string): string => dashboardPathForRole(role);
 
 const DashboardRoute = () => <Dashboard role={getDashboardRole()} />;
 
@@ -122,41 +125,63 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+type RouteAccess = 'granted' | 'denied' | 'no_program' | 'single_program';
+
+const routeAccess = (user: CapabilityUser | null, capability: string | string[], requiresProgram: boolean, requiresMultiplePrograms: boolean): RouteAccess => {
+  if (!hasRequestedCapability(user, capability)) return 'denied';
+  // The department's program records decide program-bound modules (`scheduling_ready` on /me).
+  if (requiresProgram && user?.scheduling_ready === false) return 'no_program';
+  return requiresMultiplePrograms && (user?.department_program_count ?? 0) <= 1 ? 'single_program' : 'granted';
+};
+
 const CapabilityRoute = ({
   capability,
   moduleName,
+  requiresProgram = false,
+  requiresMultiplePrograms = false,
   children,
 }: {
   capability: string | string[];
   moduleName?: string;
+  /** Lock while the department has no program, even if the capability itself does not need one. */
+  requiresProgram?: boolean;
+  requiresMultiplePrograms?: boolean;
   children: React.ReactNode;
 }) => {
-  const [hasAccess, setHasAccess] = useState<boolean | null>(() => {
+  const [access, setAccess] = useState<RouteAccess | null>(() => {
     const storedUser = getStoredUser();
-    return storedUser ? hasRequestedCapability(storedUser, capability) : null;
+    return storedUser ? routeAccess(storedUser, capability, requiresProgram, requiresMultiplePrograms) : null;
   });
+  // Adding or removing a program publishes `departments`; recheck so an open page relocks or unlocks.
+  const departmentsRevision = useLiveRevision(['departments']);
 
   useEffect(() => {
     let active = true;
 
-    fetchCurrentUser()
+    fetchCurrentUser({ force: departmentsRevision > 0 })
       .then((data) => {
-        if (active) setHasAccess(hasRequestedCapability(data, capability));
+        if (active) setAccess(routeAccess(data, capability, requiresProgram, requiresMultiplePrograms));
       })
       .catch(() => {
-        if (active) setHasAccess((current) => current ?? false);
+        if (active) setAccess((current) => current ?? 'denied');
       });
 
     return () => {
       active = false;
     };
-  }, [capability]);
+  }, [capability, requiresProgram, requiresMultiplePrograms, departmentsRevision]);
 
-  if (hasAccess === null) {
+  if (access === null) {
     return <div className="flex min-h-[60vh] items-center justify-center" aria-label="Checking access" />;
   }
 
-  if (!hasAccess) {
+  if (access === 'no_program') {
+    return <LockedModuleView moduleName={moduleName} message={NO_PROGRAM_LOCK_MESSAGE} />;
+  }
+  if (access === 'single_program') {
+    return <LockedModuleView moduleName={moduleName} message={MULTIPLE_PROGRAMS_LOCK_MESSAGE} />;
+  }
+  if (access === 'denied') {
     return <LockedModuleView moduleName={moduleName} requiredCapability={capability} />;
   }
   return <>{children}</>;
@@ -214,84 +239,99 @@ export default function App() {
       .catch(() => undefined);
   }, []);
 
-  return (
-    <BrowserRouter useTransitions={false}>
-      <Routes>
+  return <RouterProvider router={appRouter} useTransitions={false} />;
+}
+
+/**
+ * The department office workspace. A Secretary uses it under /secretary/* and a Director under
+ * /director/*: the same pages, guards and capabilities, with the account's own role identity.
+ */
+const departmentOfficeRoutes = (base: '/secretary' | '/director') => [
+    <Route key={`${base}/dashboard`} path={`${base}/dashboard`} element={<DashboardRoute />} />,
+    <Route key={`${base}/departments`} path={`${base}/departments`} element={<CapabilityRoute capability="schedule.view" moduleName="Department Management"><Departments /></CapabilityRoute>} />,
+    <Route key={`${base}/schedule-management`} path={`${base}/schedule-management`} element={<CapabilityRoute requiresProgram capability="schedule.create" moduleName="Schedule Management"><SecretaryScheduleBuilder /></CapabilityRoute>} />,
+    <Route key={`${base}/schedules`} path={`${base}/schedules`} element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Schedules"><SecretarySchedules /></CapabilityRoute>} />,
+    <Route key={`${base}/section-timetables`} path={`${base}/section-timetables`} element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Section Timetables"><SecretarySectionTimetables /></CapabilityRoute>} />,
+    <Route key={`${base}/facilities`} path={`${base}/facilities`} element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Facilities"><Rooms /></CapabilityRoute>} />,
+    <Route key={`${base}/room-requests`} path={`${base}/room-requests`} element={<CapabilityRoute capability="room.request" moduleName="Room Requests"><RoomRequests /></CapabilityRoute>} />,
+    <Route key={`${base}/program-rooms`} path={`${base}/program-rooms`} element={<CapabilityRoute requiresProgram requiresMultiplePrograms capability="room.assign_program" moduleName="Program Rooms"><SecretaryProgramRooms /></CapabilityRoute>} />,
+    <Route key={`${base}/courses`} path={`${base}/courses`} element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Courses"><SecretaryCourses /></CapabilityRoute>} />,
+    <Route key={`${base}/curriculum`} path={`${base}/curriculum`} element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Curriculum"><CurriculumListPage /></CapabilityRoute>} />,
+    <Route key={`${base}/curriculum/import`} path={`${base}/curriculum/import`} element={<CapabilityRoute requiresProgram capability="curriculum.manage" moduleName="Curriculum Import"><CurriculumImportPage /></CapabilityRoute>} />,
+    <Route key={`${base}/curriculum/:id`} path={`${base}/curriculum/:id`} element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Curriculum"><CurriculumDetailPage /></CapabilityRoute>} />,
+    <Route key={`${base}/sections`} path={`${base}/sections`} element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Sections"><SecretarySections /></CapabilityRoute>} />,
+    <Route key={`${base}/instructors`} path={`${base}/instructors`} element={<CapabilityRoute capability="schedule.view" moduleName="Instructors"><Faculty /></CapabilityRoute>} />,
+    <Route key={`${base}/instructor-assignment`} path={`${base}/instructor-assignment`} element={<CapabilityRoute capability="schedule.assign_instructor" moduleName="Instructor Assignment"><InstructorAssignment /></CapabilityRoute>} />,
+    <Route key={`${base}/reports`} path={`${base}/reports`} element={<CapabilityRoute capability="schedule.view" moduleName="Reports"><Reports /></CapabilityRoute>} />,
+    <Route key={`${base}/schedule-history`} path={`${base}/schedule-history`} element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Schedule History"><VpaaScheduleHistory /></CapabilityRoute>} />,
+    <Route key={`${base}/cross-department-assignments`} path={`${base}/cross-department-assignments`} element={<CapabilityRoute capability="schedule.assign_instructor" moduleName="Cross-Department"><CrossDepartmentAssignments /></CapabilityRoute>} />,
+    <Route key={`${base}/course-assignments`} path={`${base}/course-assignments`} element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Course Assignment"><CrossDepartmentApprovalRoute moduleName="Course Assignment"><CourseTeachingAssignments /></CrossDepartmentApprovalRoute></CapabilityRoute>} />,
+    <Route key={`${base}/settings`} path={`${base}/settings`} element={<Navigate to={`${base}/schedule-management`} replace />} />,
+];
+
+const appRouter = createBrowserRouter(createRoutesFromElements(
+      <>
           <Route path="/" element={<PublicRoute><LoginPage /></PublicRoute>} />
         
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route path="/dashboard" element={<DashboardRoute />} />
             <Route path="/schedules" element={<Navigate to="/schedules/approval" replace />} />
             <Route path="/schedules/approval" element={<CapabilityRoute capability="schedule.approve_vpaa" moduleName="Schedule Approval"><ScheduleApprovalPage stage="vpaa" /></CapabilityRoute>} />
+            {/* Schedules have no archive; deletes are permanent. Old links land on Schedule Approval. */}
+            <Route path="/schedules/archived" element={<Navigate to="/schedules/approval" replace />} />
             <Route path="/calendar" element={<CapabilityRoute capability="schedule.view" moduleName="Calendar"><VpaaCalendarPage /></CapabilityRoute>} />
-            <Route path="/instructors" element={<RoleRoute role="vpaa" moduleName="Instructor Management"><Faculty /></RoleRoute>} />
-            <Route path="/designations" element={<RoleRoute role="vpaa" moduleName="Instructor Designations"><Designations /></RoleRoute>} />
-            <Route path="/facilities" element={<RoleRoute role="vpaa" moduleName="Facilities"><Rooms /></RoleRoute>} />
+            <Route path="/instructors" element={<RoleRoute role="vpaa" moduleName="Instructor Management"><ModuleArchiveTabs module="instructors" activeLabel="Instructors"><Faculty /></ModuleArchiveTabs></RoleRoute>} />
+            <Route path="/designations" element={<RoleRoute role="vpaa" moduleName="Instructor Designations"><ModuleArchiveTabs module="designations" activeLabel="Designations"><Designations /></ModuleArchiveTabs></RoleRoute>} />
+            <Route path="/facilities" element={<RoleRoute role="vpaa" moduleName="Facilities"><ModuleArchiveTabs module="facilities" activeLabel="Buildings & rooms"><Rooms /></ModuleArchiveTabs></RoleRoute>} />
 
             <Route path="/curriculum" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumListPage /></CapabilityRoute>} />
+            <Route path="/curriculum/archived-courses" element={<RoleRoute role="vpaa" moduleName="Archived Courses"><ModuleArchiveTabs module="curriculum" activeLabel="Courses" archiveOnly>{null}</ModuleArchiveTabs></RoleRoute>} />
             <Route path="/curriculum/:id" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumDetailPage /></CapabilityRoute>} />
-            <Route path="/users" element={<RoleRoute role="vpaa" moduleName="User Management"><VpaaUsers /></RoleRoute>} />
-            <Route path="/departments" element={<RoleRoute role="vpaa" moduleName="Department Management"><Departments /></RoleRoute>} />
+            <Route path="/users" element={<RoleRoute role="vpaa" moduleName="User Management"><ModuleArchiveTabs module="users" activeLabel="Accounts"><VpaaUsers /></ModuleArchiveTabs></RoleRoute>} />
+            <Route path="/departments" element={<RoleRoute role="vpaa" moduleName="Department Management"><ModuleArchiveTabs module="departments" activeLabel="Departments & programs"><Departments /></ModuleArchiveTabs></RoleRoute>} />
             <Route path="/reports" element={<RoleRoute role="vpaa" moduleName="Reports"><Reports /></RoleRoute>} />
             <Route path="/activity-log" element={<RoleRoute role="vpaa" moduleName="Activity Log"><VpaaActivityLog /></RoleRoute>} />
+            <Route path="/activity-log/logins/:id" element={<RoleRoute role="vpaa" moduleName="Activity Log"><VpaaLoginDetails /></RoleRoute>} />
             <Route path="/schedule-history" element={<CapabilityRoute capability="schedule.view" moduleName="Schedule History"><VpaaScheduleHistory /></CapabilityRoute>} />
-            <Route path="/archive" element={<RoleRoute role="vpaa" moduleName="Archive"><VpaaArchive /></RoleRoute>} />
+            {/* The centralized Archive moved into each module; old links open the owning module's archive. */}
+            <Route path="/archive" element={<RoleRoute role="vpaa" moduleName="Archive"><ArchiveRedirect /></RoleRoute>} />
             <Route path="/settings" element={<RoleRoute role="vpaa" moduleName="Settings"><Settings /></RoleRoute>} />
 
             <Route path="/dean/dashboard" element={<DashboardRoute />} />
-            <Route path="/dean/schedules" element={<CapabilityRoute capability="schedule.view" moduleName="All Schedules"><DeanSchedules /></CapabilityRoute>} />
-            <Route path="/dean/schedules/approval" element={<CapabilityRoute capability="schedule.approve_dean" moduleName="Schedule Approval"><ScheduleApprovalPage stage="dean" /></CapabilityRoute>} />
+            <Route path="/dean/schedules" element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Schedules"><DeanSchedules /></CapabilityRoute>} />
+            <Route path="/dean/schedules/approval" element={<CapabilityRoute requiresProgram capability="schedule.approve_dean" moduleName="Schedule Approval"><ScheduleApprovalPage stage="dean" /></CapabilityRoute>} />
             <Route path="/dean/departments" element={<CapabilityRoute capability="schedule.view" moduleName="Department Management"><Departments /></CapabilityRoute>} />
-            <Route path="/dean/courses" element={<CapabilityRoute capability="schedule.view" moduleName="Courses"><SecretaryCourses /></CapabilityRoute>} />
-            <Route path="/dean/sections" element={<CapabilityRoute capability="schedule.view" moduleName="Sections"><SecretarySections /></CapabilityRoute>} />
+            <Route path="/dean/courses" element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Courses"><SecretaryCourses /></CapabilityRoute>} />
+            <Route path="/dean/sections" element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Sections"><SecretarySections /></CapabilityRoute>} />
             <Route path="/dean/instructors" element={<CapabilityRoute capability="schedule.view" moduleName="Instructors"><Faculty /></CapabilityRoute>} />
-            <Route path="/dean/facilities" element={<CapabilityRoute capability="schedule.view" moduleName="Facilities"><Rooms /></CapabilityRoute>} />
+            <Route path="/dean/facilities" element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Facilities"><Rooms /></CapabilityRoute>} />
 
-            <Route path="/dean/curriculum" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumListPage /></CapabilityRoute>} />
-            <Route path="/dean/curriculum/:id" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumDetailPage /></CapabilityRoute>} />
+            <Route path="/dean/curriculum" element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Curriculum"><CurriculumListPage /></CapabilityRoute>} />
+            <Route path="/dean/curriculum/:id" element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Curriculum"><CurriculumDetailPage /></CapabilityRoute>} />
             <Route path="/dean/reports" element={<CapabilityRoute capability="schedule.view" moduleName="Reports"><Reports /></CapabilityRoute>} />
-            <Route path="/dean/schedule-history" element={<CapabilityRoute capability="schedule.view" moduleName="Schedule History"><VpaaScheduleHistory /></CapabilityRoute>} />
+            <Route path="/dean/schedule-history" element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Schedule History"><VpaaScheduleHistory /></CapabilityRoute>} />
             <Route path="/dean/settings" element={<Navigate to="/dean/dashboard" replace />} />
 
-            <Route path="/secretary/dashboard" element={<DashboardRoute />} />
-            <Route path="/secretary/departments" element={<CapabilityRoute capability="schedule.view" moduleName="Department Management"><Departments /></CapabilityRoute>} />
-            <Route path="/secretary/schedule-management" element={<CapabilityRoute capability="schedule.create" moduleName="Schedule Management"><SecretaryScheduleBuilder /></CapabilityRoute>} />
-            <Route path="/secretary/schedules" element={<CapabilityRoute capability="schedule.view" moduleName="Schedules"><SecretarySchedules /></CapabilityRoute>} />
-            <Route path="/secretary/section-timetables" element={<CapabilityRoute capability="schedule.view" moduleName="Section Timetables"><SecretarySectionTimetables /></CapabilityRoute>} />
-            <Route path="/secretary/facilities" element={<CapabilityRoute capability="schedule.view" moduleName="Facilities"><Rooms /></CapabilityRoute>} />
-            <Route path="/secretary/room-requests" element={<CapabilityRoute capability="room.request" moduleName="Room Requests"><RoomRequests /></CapabilityRoute>} />
-            <Route path="/secretary/program-rooms" element={<CapabilityRoute capability="room.assign_program" moduleName="Program Rooms"><SecretaryProgramRooms /></CapabilityRoute>} />
+            {departmentOfficeRoutes('/secretary')}
+            {departmentOfficeRoutes('/director')}
 
-            <Route path="/secretary/courses" element={<CapabilityRoute capability="schedule.view" moduleName="Courses"><SecretaryCourses /></CapabilityRoute>} />
-            <Route path="/secretary/curriculum" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumListPage /></CapabilityRoute>} />
-            <Route path="/secretary/curriculum/import" element={<CapabilityRoute capability="curriculum.manage" moduleName="Curriculum Import"><CurriculumImportPage /></CapabilityRoute>} />
-            <Route path="/secretary/curriculum/:id" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumDetailPage /></CapabilityRoute>} />
-            <Route path="/secretary/sections" element={<CapabilityRoute capability="schedule.view" moduleName="Sections"><SecretarySections /></CapabilityRoute>} />
-            <Route path="/secretary/instructors" element={<CapabilityRoute capability="schedule.view" moduleName="Instructors"><Faculty /></CapabilityRoute>} />
-            <Route path="/secretary/instructor-assignment" element={<CapabilityRoute capability="schedule.assign_instructor" moduleName="Instructor Assignment"><InstructorAssignment /></CapabilityRoute>} />
-            <Route path="/secretary/reports" element={<CapabilityRoute capability="schedule.view" moduleName="Reports"><Reports /></CapabilityRoute>} />
-            <Route path="/secretary/schedule-history" element={<CapabilityRoute capability="schedule.view" moduleName="Schedule History"><VpaaScheduleHistory /></CapabilityRoute>} />
-            <Route path="/secretary/cross-department-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Cross-Department"><CrossDepartmentAssignments /></CapabilityRoute>} />
-            <Route path="/secretary/course-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Course Assignment"><CrossDepartmentApprovalRoute moduleName="Course Assignment"><CourseTeachingAssignments /></CrossDepartmentApprovalRoute></CapabilityRoute>} />
-            <Route path="/secretary/settings" element={<Navigate to="/secretary/schedule-management" replace />} />
-            
             <Route path="/program_head/dashboard" element={<DashboardRoute />} />
             <Route path="/program_head/departments" element={<CapabilityRoute capability="schedule.view" moduleName="Department Management"><Departments /></CapabilityRoute>} />
-            <Route path="/program_head/schedule-management" element={<CapabilityRoute capability="schedule.create" moduleName="Schedule Management"><ProgramHeadScheduleBuilder /></CapabilityRoute>} />
-            <Route path="/program_head/schedules" element={<CapabilityRoute capability="schedule.view" moduleName="Schedules"><ProgramHeadSchedules /></CapabilityRoute>} />
-            <Route path="/program_head/section-timetables" element={<CapabilityRoute capability="schedule.view" moduleName="Section Timetables"><ProgramHeadSectionTimetables /></CapabilityRoute>} />
+            <Route path="/program_head/schedule-management" element={<CapabilityRoute requiresProgram capability="schedule.create" moduleName="Schedule Management"><ProgramHeadScheduleBuilder /></CapabilityRoute>} />
+            <Route path="/program_head/schedules" element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Schedules"><ProgramHeadSchedules /></CapabilityRoute>} />
+            <Route path="/program_head/section-timetables" element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Section Timetables"><ProgramHeadSectionTimetables /></CapabilityRoute>} />
             <Route path="/program_head/instructors" element={<CapabilityRoute capability="schedule.view" moduleName="Instructors"><Faculty /></CapabilityRoute>} />
-            <Route path="/program_head/facilities" element={<CapabilityRoute capability="schedule.view" moduleName="Facilities"><Rooms /></CapabilityRoute>} />
+            <Route path="/program_head/facilities" element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Facilities"><Rooms /></CapabilityRoute>} />
 
-            <Route path="/program_head/courses" element={<CapabilityRoute capability="schedule.view" moduleName="Courses"><SecretaryCourses /></CapabilityRoute>} />
-            <Route path="/program_head/curriculum" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumListPage /></CapabilityRoute>} />
-            <Route path="/program_head/curriculum/import" element={<CapabilityRoute capability="curriculum.manage" moduleName="Curriculum Import"><CurriculumImportPage /></CapabilityRoute>} />
-            <Route path="/program_head/curriculum/:id" element={<CapabilityRoute capability="schedule.view" moduleName="Curriculum"><CurriculumDetailPage /></CapabilityRoute>} />
-            <Route path="/program_head/sections" element={<CapabilityRoute capability="schedule.view" moduleName="Sections"><SecretarySections /></CapabilityRoute>} />
+            <Route path="/program_head/courses" element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Courses"><SecretaryCourses /></CapabilityRoute>} />
+            <Route path="/program_head/curriculum" element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Curriculum"><CurriculumListPage /></CapabilityRoute>} />
+            <Route path="/program_head/curriculum/import" element={<CapabilityRoute requiresProgram capability="curriculum.manage" moduleName="Curriculum Import"><CurriculumImportPage /></CapabilityRoute>} />
+            <Route path="/program_head/curriculum/:id" element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Curriculum"><CurriculumDetailPage /></CapabilityRoute>} />
+            <Route path="/program_head/sections" element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Sections"><SecretarySections /></CapabilityRoute>} />
             <Route path="/program_head/instructor-assignment" element={<CapabilityRoute capability="schedule.assign_instructor" moduleName="Instructor Assignment"><InstructorAssignment /></CapabilityRoute>} />
             <Route path="/program_head/reports" element={<CapabilityRoute capability="schedule.view" moduleName="Reports"><Reports /></CapabilityRoute>} />
-            <Route path="/program_head/schedule-history" element={<CapabilityRoute capability="schedule.view" moduleName="Schedule History"><VpaaScheduleHistory /></CapabilityRoute>} />
-            <Route path="/program_head/cross-department-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Cross-Department"><CrossDepartmentAssignments /></CapabilityRoute>} />
+            <Route path="/program_head/schedule-history" element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Schedule History"><VpaaScheduleHistory /></CapabilityRoute>} />
+            <Route path="/program_head/cross-department-assignments" element={<CapabilityRoute capability="schedule.assign_instructor" moduleName="Cross-Department"><CrossDepartmentAssignments /></CapabilityRoute>} />
             <Route path="/program_head/course-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Course Assignment"><CrossDepartmentApprovalRoute moduleName="Course Assignment"><CourseTeachingAssignments /></CrossDepartmentApprovalRoute></CapabilityRoute>} />
             <Route path="/program_head/settings" element={<Navigate to="/program_head/schedule-management" replace />} />
 
@@ -301,7 +341,5 @@ export default function App() {
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
-  )
-}
+      </>
+));

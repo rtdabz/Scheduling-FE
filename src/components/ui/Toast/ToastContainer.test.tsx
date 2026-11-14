@@ -161,54 +161,150 @@ describe('ToastContainer confirmations', () => {
   })
 })
 
+function LoadingTrigger() {
+  const { toast } = useToast()
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          const id = toast.loading('Saving schedule', 'This can take a moment.')
+          window.setTimeout(() => toast.update(id, { type: 'success', title: 'Schedule saved', message: 'The schedule is ready for review.' }), 10_000)
+        }}
+      >
+        Trigger loading
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          const id = toast.loading('Saving schedule')
+          window.setTimeout(() => toast.update(id, { type: 'error', title: 'Schedule could not be saved', message: 'Room 204 is occupied.' }), 10_000)
+        }}
+      >
+        Trigger failing load
+      </button>
+    </>
+  )
+}
+
+const renderToasts = (children: React.ReactNode) => render(
+  <ToastProvider>
+    {children}
+    <ToastContainer />
+  </ToastProvider>,
+)
+
+const advance = (ms: number) => act(() => { vi.advanceTimersByTime(ms) })
+
 describe('ToastContainer notification presentation', () => {
   afterEach(() => {
     cleanup()
     vi.useRealTimers()
   })
 
-  it('shows success as a toast and opens errors directly in the shared modal', () => {
+  it('shows every kind as a toast and never opens a blocking dialog', () => {
     vi.useFakeTimers()
-
-    render(
-      <ToastProvider>
-        <NotificationTriggers />
-        <ToastContainer />
-      </ToastProvider>,
-    )
+    renderToasts(<NotificationTriggers />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Trigger success' }))
-    expect(screen.getByRole('status')).toBeTruthy()
-    expect(screen.getByText('Schedule saved')).toBeTruthy()
-    expect(screen.queryByRole('dialog')).toBeNull()
-
     fireEvent.click(screen.getByRole('button', { name: 'Trigger error' }))
-
-    expect(screen.getByRole('dialog')).toBeTruthy()
-    expect(screen.getByText('System Error')).toBeTruthy()
-    expect(screen.getByText('Schedule could not be saved')).toBeTruthy()
-    expect(screen.getByText('Room 204 is already occupied on Monday from 9:00 AM to 10:30 AM.')).toBeTruthy()
-    expect(screen.queryByRole('alert')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
-
-    fireEvent.click(screen.getByRole('button', { name: /^Close$/ }))
-    expect(screen.queryByRole('dialog')).toBeNull()
-  })
-
-  it('opens warnings directly in the shared modal', () => {
-    render(
-      <ToastProvider>
-        <NotificationTriggers />
-        <ToastContainer />
-      </ToastProvider>,
-    )
-
     fireEvent.click(screen.getByRole('button', { name: 'Trigger warning' }))
 
-    expect(screen.getByRole('dialog')).toBeTruthy()
-    expect(screen.getByText('System Warning')).toBeTruthy()
-    expect(screen.getByText('Conflict detected')).toBeTruthy()
-    expect(screen.getByText('The instructor has another class during this period.')).toBeTruthy()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByText('Schedule saved').closest('[data-type]')?.getAttribute('data-type')).toBe('success')
+    expect(screen.getByRole('alert').getAttribute('data-type')).toBe('error')
+    expect(screen.getByText('Room 204 is already occupied on Monday from 9:00 AM to 10:30 AM.')).toBeTruthy()
+    expect(screen.getByText('Conflict detected').closest('[data-type]')?.getAttribute('data-type')).toBe('warning')
+  })
+
+  it('keeps errors on screen longer than successes', () => {
+    vi.useFakeTimers()
+    renderToasts(<NotificationTriggers />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Trigger success' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Trigger error' }))
+
+    advance(4000)
+    expect(screen.queryByText('Schedule saved')).toBeNull()
+    expect(screen.getByText('Schedule could not be saved')).toBeTruthy()
+
+    advance(2500)
+    expect(screen.queryByText('Schedule could not be saved')).toBeNull()
+  })
+
+  it('dismisses a toast from its close button', () => {
+    vi.useFakeTimers()
+    renderToasts(<NotificationTriggers />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Trigger error' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss Schedule could not be saved' }))
+    advance(300)
+
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('holds a toast open while it is hovered', () => {
+    vi.useFakeTimers()
+    renderToasts(<NotificationTriggers />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Trigger success' }))
+    fireEvent.mouseEnter(screen.getByRole('status'))
+    advance(10_000)
+    expect(screen.getByText('Schedule saved')).toBeTruthy()
+
+    fireEvent.mouseLeave(screen.getByRole('status'))
+    advance(4000)
+    expect(screen.queryByText('Schedule saved')).toBeNull()
+  })
+
+  it('does not stack a copy of a toast that is already showing', () => {
+    vi.useFakeTimers()
+    renderToasts(<NotificationTriggers />)
+
+    const trigger = screen.getByRole('button', { name: 'Trigger error' })
+    fireEvent.click(trigger)
+    advance(4000)
+    fireEvent.click(trigger)
+
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+
+    // Raising it again restarted the countdown.
+    advance(4000)
+    expect(screen.getByRole('alert')).toBeTruthy()
+    advance(2500)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('keeps a loading toast until it turns into a success, which then auto-dismisses', () => {
+    vi.useFakeTimers()
+    renderToasts(<LoadingTrigger />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Trigger loading' }))
+    advance(9000)
+    expect(screen.getByRole('status').getAttribute('data-type')).toBe('loading')
+    expect(screen.getByRole('status').getAttribute('aria-busy')).toBe('true')
+    expect(screen.queryByRole('button', { name: 'Trigger loading' })).toBeTruthy()
+
+    advance(1000)
+    expect(screen.getAllByRole('status')).toHaveLength(1)
+    expect(screen.getByRole('status').getAttribute('data-type')).toBe('success')
+    expect(screen.getByText('Schedule saved')).toBeTruthy()
+    expect(screen.queryByText('Saving schedule')).toBeNull()
+
+    advance(4000)
     expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('turns a loading toast into an error', () => {
+    vi.useFakeTimers()
+    renderToasts(<LoadingTrigger />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Trigger failing load' }))
+    advance(10_000)
+
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.getByRole('alert').getAttribute('data-type')).toBe('error')
+    expect(screen.getByText('Room 204 is occupied.')).toBeTruthy()
   })
 })

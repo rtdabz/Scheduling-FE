@@ -29,6 +29,8 @@ export interface SchedulePdfInput {
    * officials in office now.
    */
   signatories?: ScheduleSignatories | null;
+  /** History must never substitute today's officials for missing recorded names. */
+  historicalDocument?: boolean;
 }
 
 export const getSchedulePdfFilename = (input: SchedulePdfInput): string => {
@@ -63,10 +65,7 @@ const PAGE_TOP_Y = 15;
 const PAGE_FOOTER_Y = 192;
 const CONTENT_BOTTOM_Y = 185;
 const MIN_SECTION_START_SPACE = 28;
-// Approvers sign their own slots, so an edit by them never makes them the schedule's preparer.
-const APPROVER_ROLES = new Set(["dean", "vpaa", "admin"]);
-
-const PREPARED_TITLE = "Program Head";
+const PREPARED_TITLE = "Schedule preparer";
 const REVIEWED_TITLE = "Dean";
 const RECOMMENDED_TITLE = "Vice-President for Academic Affairs";
 
@@ -95,7 +94,36 @@ const loadImgSafe = (url: string): Promise<HTMLImageElement | null> =>
     img.onerror = () => resolve(null);
   });
 
-export async function buildSchedulePdf({
+type AutoTable = typeof import("jspdf-autotable").default;
+type PdfFonts = { hasSans: boolean; hasDisplay: boolean };
+
+export async function buildSchedulePdf(input: SchedulePdfInput): Promise<Blob> {
+  return buildSchedulesPdf([input]);
+}
+
+/**
+ * Several schedule documents in one PDF, e.g. one per department. Each starts on a new page with its
+ * own letterhead, tables and signatories, and numbers its own pages ("Page 1 of 3" per department).
+ */
+export async function buildSchedulesPdf(inputs: SchedulePdfInput[]): Promise<Blob> {
+  const [{ default: PdfDocument }, { default: table }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
+  const doc = new PdfDocument({ orientation: "landscape", format: "a4" });
+  const fonts = registerSystemPdfFonts(doc);
+  const pageCount = () => (doc as JsPdfDocumentWithPageInfo).internal.getNumberOfPages();
+  const ranges: Array<[number, number]> = [];
+  for (const [index, input] of inputs.entries()) {
+    if (index > 0) doc.addPage();
+    const first = pageCount();
+    await drawSchedule(doc, table, fonts, input);
+    ranges.push([first, pageCount()]);
+  }
+  ranges.forEach(([first, last]) => {
+    for (let page = first; page <= last; page++) drawFooter(doc, fonts, page, page - first + 1, last - first + 1);
+  });
+  return doc.output("blob");
+}
+
+async function drawSchedule(doc: jsPDF, table: AutoTable, { hasSans, hasDisplay }: PdfFonts, {
   sections,
   allSchedules,
   selectedSectionId,
@@ -104,12 +132,13 @@ export async function buildSchedulePdf({
   activeSemester,
   printAllSections = false,
   signatories: recordedSignatories = null,
-}: SchedulePdfInput): Promise<Blob> {
+  historicalDocument = false,
+}: SchedulePdfInput): Promise<void> {
   const activeSection = sections.find((section) => section.id === selectedSectionId);
   const activeDepartment = departments.find((department) => Number(department.id) === Number(activeSection?.departmentId));
   const departmentId = activeSection?.departmentId?.toString();
   const byRole = (role: string) =>
-    users.find((user) => user.role?.toLowerCase() === role && user.department_id?.toString() === departmentId);
+    users.find((user) => user.is_active !== false && user.is_active !== 0 && user.role?.toLowerCase() === role && user.department_id?.toString() === departmentId);
 
   const activeSemesterSections = activeSemester
     ? sections.filter((section) => Number(section.semesterId) === Number(activeSemester.id))
@@ -147,28 +176,22 @@ export async function buildSchedulePdf({
   // Signatories of a submitted schedule are the officials recorded by the approval workflow, so replacing
   // an official or renaming their account never rewrites a past schedule. Only rows not yet submitted
   // (drafts, or a recalled schedule back in revision) sign with the officials in office now.
-  const usersById = new Map(users.map((user) => [Number(user.id), user]));
   const sectionProgramIds = new Map(targetSections.map((section) => [section.id, section.programId ?? null]));
   const printedSchedules = allSchedules.filter((schedule) => sectionProgramIds.has(schedule.sectionId));
   const recordedFor = (schedule: ScheduleItem): ScheduleSignatories | null => recordedSignatories ?? schedule.signatories ?? null;
-  const unsignedSchedules = printedSchedules.filter((schedule) => !recordedFor(schedule));
+  const unsignedSchedules = historicalDocument ? [] : printedSchedules.filter((schedule) => !recordedFor(schedule) && ["draft", "completed", "revision"].includes(schedule.status));
+  const missingHistory = printedSchedules.some((schedule) => !recordedFor(schedule) && !unsignedSchedules.includes(schedule));
+  const unknownSlot: SignatorySlot | null = missingHistory ? { name: "Not recorded", title: "" } : null;
   const signedSets = recordedSignatories
     ? [recordedSignatories]
     : [...new Set(printedSchedules.map(recordedFor).filter((set): set is ScheduleSignatories => Boolean(set)))];
   // Current officials stand in only when something printed has no recorded signatories.
-  const needsCurrentOfficials = signedSets.length === 0 || unsignedSchedules.length > 0;
-  // "Prepared by" is whoever entered each printed program's schedule (program head or secretary).
-  // Rows with no recorded creator fall back to that program's Program Head.
+  const needsCurrentOfficials = !historicalDocument && (printedSchedules.length === 0 || unsignedSchedules.length > 0);
+  // Creation snapshots remain usable after the creator is deactivated or changes roles.
   const currentPreparersOf = (programId: number | null): string[] => {
-    const creators = unsignedSchedules
+    return unsignedSchedules
       .filter((schedule) => sectionProgramIds.get(schedule.sectionId) === programId)
-      .map((schedule) => schedule.createdById != null ? usersById.get(Number(schedule.createdById)) : undefined)
-      .filter((user) => user && !APPROVER_ROLES.has(user.role?.toLowerCase() ?? ""))
-      .map((user) => user?.name?.trim() ?? "");
-    if (creators.some(Boolean)) return creators;
-    const head = programId === null ? undefined
-      : users.find((user) => user.role?.toLowerCase() === "program_head" && Number(user.program_id) === Number(programId));
-    return [head?.name?.trim() ?? ""];
+      .map((schedule) => schedule.creatorIdentity?.name?.trim() || "Not recorded");
   };
   const recordedPreparersOf = (programId: number | null): string[] => signedSets.flatMap((set) => {
     const forProgram = set.prepared.filter((entry) => (entry.program_id ?? null) === programId);
@@ -176,19 +199,23 @@ export async function buildSchedulePdf({
   });
   const preparedByName = joinNames(printedProgramIds.flatMap((programId) => {
     const recorded = recordedPreparersOf(programId);
+    if (printedSchedules.some((schedule) => sectionProgramIds.get(schedule.sectionId) === programId && !recordedFor(schedule) && !unsignedSchedules.includes(schedule))) recorded.push("Not recorded");
     const hasUnsigned = unsignedSchedules.some((schedule) => sectionProgramIds.get(schedule.sectionId) === programId);
-    return recorded.length && !hasUnsigned ? recorded : [...recorded, ...currentPreparersOf(programId)];
+    return hasUnsigned || (printedSchedules.length === 0 && needsCurrentOfficials)
+      ? [...recorded, ...currentPreparersOf(programId)] : recorded;
   }));
-  const preparedByTitle = signedSets.flatMap((set) => set.prepared).find((entry) => entry.title)?.title ?? PREPARED_TITLE;
+  const creatorTitles: Record<string, string> = { secretary: "Program Head/Secretary", director: "Director", program_head: "Program Head", dean: "Dean", vpaa: "Vice-President for Academic Affairs" };
+  const preparedByTitle = [...new Set([
+    ...signedSets.flatMap((set) => set.prepared).map((entry) => entry.title),
+    ...unsignedSchedules.map((schedule) => creatorTitles[schedule.creatorIdentity?.role ?? ""]),
+  ].filter(Boolean))].join(" / ") || PREPARED_TITLE;
   const departmentLogoUrl = activeDepartment?.logo || null;
   const departmentTitle = (() => {
     const name = printAllSections ? "ALL DEPARTMENTS" : (activeDepartment?.department_name?.trim() || "INFORMATION TECHNOLOGY");
     return /^college\s+of\s+/i.test(name) ? name.toUpperCase() : `COLLEGE OF ${name.toUpperCase()}`;
   })();
 
-  const [{ default: PdfDocument }, { default: table }, logoImg, muniImg, departmentImg, settings] = await Promise.all([
-    import("jspdf"),
-    import("jspdf-autotable"),
+  const [logoImg, muniImg, departmentImg, settings] = await Promise.all([
     loadImgSafe(absoluteAssetUrl(tccLogo)),
     loadImgSafe(absoluteAssetUrl(municipalLogo)),
     departmentLogoUrl ? loadImgSafe(departmentLogoUrl) : Promise.resolve(null),
@@ -196,14 +223,14 @@ export async function buildSchedulePdf({
   ]);
 
   const currentDean = byRole("dean")?.name?.trim();
-  const currentVpaa = users.find((user) => user.role?.toLowerCase() === "vpaa")?.name?.trim();
+  const currentVpaa = users.find((user) => user.is_active !== false && user.is_active !== 0 && user.role?.toLowerCase() === "vpaa")?.name?.trim();
   const current = (name: string | null | undefined, title: string): SignatorySlot | null =>
     needsCurrentOfficials && name ? { name, title } : null;
-  const reviewed = slotFrom([...signedSets.map((set) => set.reviewed), current(currentDean, REVIEWED_TITLE)], REVIEWED_TITLE);
-  const recommended = slotFrom([...signedSets.map((set) => set.recommended), current(currentVpaa, RECOMMENDED_TITLE)], RECOMMENDED_TITLE);
+  const reviewed = slotFrom([...signedSets.map((set) => set.reviewed), unknownSlot, current(currentDean, REVIEWED_TITLE)], REVIEWED_TITLE);
+  const recommended = slotFrom([...signedSets.map((set) => set.recommended), unknownSlot, current(currentVpaa, RECOMMENDED_TITLE)], RECOMMENDED_TITLE);
   const approved = slotFrom(
-    [...signedSets.map((set) => set.approved), settings ? { name: settings.president_name, title: settings.president_title } : null],
-    settings?.president_title ?? "",
+    [...signedSets.map((set) => set.approved), unknownSlot, needsCurrentOfficials && settings ? { name: settings.president_name, title: settings.president_title } : null],
+    signedSets.find((set) => set.approved?.title)?.approved?.title ?? (needsCurrentOfficials ? settings?.president_title ?? "" : "College President"),
     // The President is printed exactly as entered in Document Signatories.
     false,
   );
@@ -212,10 +239,7 @@ export async function buildSchedulePdf({
     { label: "Reviewed by:", name: reviewed.name, role: reviewed.title },
     { label: "Recommended by:", name: recommended.name, role: recommended.title },
     { label: "Approved by:", name: approved.name, role: approved.title },
-  ];
-  const doc = new PdfDocument({ orientation: "landscape", format: "a4" });
-  const { hasSans, hasDisplay } = registerSystemPdfFonts(doc);
-
+  ].map((slot) => ({ ...slot, name: slot.name || (needsCurrentOfficials ? "" : "Not recorded") }));
   const setFont = (style: "normal" | "bold" | "italic", family: "sans" | "display" = "sans") => {
     const target = family === "display" && hasDisplay
       ? "PlayfairDisplay"
@@ -529,8 +553,9 @@ export async function buildSchedulePdf({
         lineColor: [0, 0, 0]
       },
       columnStyles: {
-        0: { cellWidth: 267 * 0.11 },
-        1: { cellWidth: 267 * 0.295 },
+        // Course code and description wrap onto extra lines instead of being cut off with "...".
+        0: { cellWidth: 267 * 0.11, overflow: 'linebreak' },
+        1: { cellWidth: 267 * 0.295, overflow: 'linebreak' },
         2: { cellWidth: 267 * 0.045, halign: 'center' },
         3: { cellWidth: 267 * 0.045, halign: 'center' },
         4: { cellWidth: 267 * 0.06, halign: 'center' },
@@ -543,19 +568,41 @@ export async function buildSchedulePdf({
     currentY = (doc as AutoTableDocument).lastAutoTable.finalY + 4;
   });
 
-  const sigHeight = 22;
+  const sigWidth = 267 / 4;
+  // Names sit on the signature line, which is as wide as the text area. A long name is shrunk to
+  // stay on one line before it is ever wrapped, so "ATTY. NADYA B. EMANO-ELIPE" is not split.
+  const sigTextWidth = sigWidth - 12;
+  const NAME_MAX_SIZE = 11;
+  const NAME_MIN_SIZE = 8;
+  const lineHeightFor = (size: number) => size * 0.3528 * 1.15;
+  setFont("bold", "sans");
+  const nameLayouts = signatories.map((sig) => {
+    let size = NAME_MAX_SIZE;
+    doc.setFontSize(size);
+    while (size > NAME_MIN_SIZE && doc.getTextWidth(sig.name) > sigTextWidth) {
+      size -= 0.5;
+      doc.setFontSize(size);
+    }
+    return { size, lines: doc.splitTextToSize(sig.name, sigTextWidth) as string[] };
+  });
+  setFont("italic", "sans");
+  doc.setFontSize(11);
+  const roleLines = signatories.map((sig) => doc.splitTextToSize(sig.role, sigTextWidth) as string[]);
+  const lineHeight = 4.5;
+  const nameBlockHeight = Math.max(...nameLayouts.map(({ size, lines }) => (lines.length - 1) * lineHeightFor(size)), 0);
+  const signatureLineY = 15.5 + nameBlockHeight;
+  const sigHeight = signatureLineY + 3 + Math.max(1, ...roleLines.map((lines) => lines.length)) * lineHeight;
   if (currentY + sigHeight > CONTENT_BOTTOM_Y) {
     doc.addPage();
     currentY = PAGE_TOP_Y;
   }
 
-  const sigWidth = 267 / 4;
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.4);
-  doc.rect(15, currentY, 267, 22);
+  doc.rect(15, currentY, 267, sigHeight);
 
   for (let i = 1; i <= 3; i++) {
-    doc.line(15 + i * sigWidth, currentY, 15 + i * sigWidth, currentY + 22);
+    doc.line(15 + i * sigWidth, currentY, 15 + i * sigWidth, currentY + sigHeight);
   }
 
   signatories.forEach((sig, idx) => {
@@ -567,51 +614,58 @@ export async function buildSchedulePdf({
     doc.setTextColor(85, 85, 85);
     doc.text(sig.label, colLeft + 4, currentY + 5);
 
+    // Bottom-align every name just above its signature line, whatever its line count.
+    const { size, lines } = nameLayouts[idx];
     setFont("bold", "sans");
-    doc.setFontSize(11);
+    doc.setFontSize(size);
     doc.setTextColor(0, 0, 0);
-    doc.text(sig.name, colCenter, currentY + 13, { align: "center" });
+    const firstBaseline = currentY + signatureLineY - 2 - (lines.length - 1) * lineHeightFor(size);
+    doc.text(lines, colCenter, firstBaseline, { align: "center", lineHeightFactor: 1.15 });
 
-    doc.line(colLeft + 6, currentY + 14.5, colLeft + sigWidth - 6, currentY + 14.5);
+    doc.line(colLeft + 6, currentY + signatureLineY, colLeft + sigWidth - 6, currentY + signatureLineY);
 
     setFont("italic", "sans");
     doc.setFontSize(11);
     doc.setTextColor(68, 68, 68);
-    doc.text(sig.role, colCenter, currentY + 18.5, { align: "center" });
+    doc.text(roleLines[idx], colCenter, currentY + signatureLineY + 4, { align: "center", lineHeightFactor: 1.15 });
   });
-
-  const pageCount = (doc as JsPdfDocumentWithPageInfo).internal.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    
-    const footerY = PAGE_FOOTER_Y;
-    doc.setFillColor(123, 12, 23);
-    doc.rect(15, footerY, 267, 1.5, "F");
-
-    const tableStartY = footerY + 3.5;
-    doc.setDrawColor(120, 120, 120);
-    doc.setLineWidth(0.3);
-    doc.rect(15, tableStartY, 48, 8);
-    doc.line(15, tableStartY + 4, 15 + 48, tableStartY + 4);
-    doc.line(15 + 28, tableStartY, 15 + 28, tableStartY + 8);
-
-    setFont("bold", "sans");
-    doc.setFontSize(7);
-    doc.setTextColor(120, 120, 120);
-    doc.text("Document No.", 15 + 2, tableStartY + 3);
-    doc.text("Revision No.", 15 + 28 + 2, tableStartY + 3);
-
-    setFont("normal", "sans");
-    doc.setFontSize(8);
-    doc.setTextColor(51, 51, 51);
-    doc.text("TCC-VPAA-011", 15 + 2, tableStartY + 7);
-    doc.text("001", 15 + 28 + 2, tableStartY + 7);
-
-    setFont("italic", "sans");
-    doc.setFontSize(8.5);
-    doc.setTextColor(100, 100, 100);
-    doc.text(`Page No.  ${i} of ${pageCount}`, 282, tableStartY + 5, { align: "right" });
-  }
-
-  return doc.output("blob");
 }
+
+function drawFooter(doc: jsPDF, { hasSans }: PdfFonts, page: number, pageNumber: number, pageTotal: number): void {
+  doc.setPage(page);
+  const setFont = (style: "normal" | "bold" | "italic") => {
+    try {
+      doc.setFont(hasSans ? "DMSans" : "Helvetica", style);
+    } catch {
+      doc.setFont("Helvetica", style);
+    }
+  };
+
+  const footerY = PAGE_FOOTER_Y;
+  doc.setFillColor(123, 12, 23);
+  doc.rect(15, footerY, 267, 1.5, "F");
+
+  const tableStartY = footerY + 3.5;
+  doc.setDrawColor(120, 120, 120);
+  doc.setLineWidth(0.3);
+  doc.rect(15, tableStartY, 48, 8);
+  doc.line(15, tableStartY + 4, 15 + 48, tableStartY + 4);
+  doc.line(15 + 28, tableStartY, 15 + 28, tableStartY + 8);
+
+  setFont("bold");
+  doc.setFontSize(7);
+  doc.setTextColor(120, 120, 120);
+  doc.text("Document No.", 15 + 2, tableStartY + 3);
+  doc.text("Revision No.", 15 + 28 + 2, tableStartY + 3);
+
+  setFont("normal");
+  doc.setFontSize(8);
+  doc.setTextColor(51, 51, 51);
+  doc.text("TCC-VPAA-011", 15 + 2, tableStartY + 7);
+  doc.text("001", 15 + 28 + 2, tableStartY + 7);
+
+  setFont("italic");
+  doc.setFontSize(8.5);
+  doc.setTextColor(100, 100, 100);
+  doc.text(`Page No.  ${pageNumber} of ${pageTotal}`, 282, tableStartY + 5, { align: "right" });
+  }

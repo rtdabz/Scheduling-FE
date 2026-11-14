@@ -39,8 +39,8 @@ const toolbarProps = {
   canWithdrawSubmission: false, isWithdrawingSubmission: false, onPrint: vi.fn(),
   clearableSectionInstructorCount: 0, clearableDepartmentInstructorCount: 0, isClearingSectionInstructors: false,
   canUpdateSchedule: true, canSubmitSchedule: false, canAssignInstructor: false, isEditingSection: false,
-  isResubmittingSection: false, isFinalizing: false, handleEditSection: vi.fn().mockResolvedValue(undefined),
-  handleResubmit: vi.fn().mockResolvedValue(undefined), handleFinalize: vi.fn().mockResolvedValue(undefined), sectionSchedules: [],
+  isFinalizing: false, handleEditSection: vi.fn().mockResolvedValue(undefined),
+  handleFinalize: vi.fn().mockResolvedValue(undefined), sectionSchedules: [],
 } satisfies ComponentProps<typeof TopBar>;
 
 function ToolbarWithTransfers() {
@@ -69,6 +69,37 @@ describe('Room recovery workflow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Submit for approval' }));
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Submit room schedule reassignment' })).getByRole('button', { name: 'Cancel' }));
     expect(api.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers Apply changes for draft schedules and applies them after the same confirmation', async () => {
+    const transferred = vi.fn();
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { ...plan, groups: [{ ...plan.groups[0], workflow: 'apply' }] } });
+    render(<MemoryRouter initialEntries={['/?recovery=2&recovery_semester=1']}><RoomReassignmentPanel onTransferred={transferred} /></MemoryRouter>);
+    fireEvent.click(await screen.findByText('Find suitable rooms'));
+    expect(await screen.findByText('Draft schedule · Applies immediately')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Submit for approval' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Apply changes' }));
+    const confirmation = screen.getByRole('dialog', { name: 'Apply room schedule reassignment' });
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { message: 'Room schedule reassignment applied to the draft schedule.', applied: true, status: 'applied_draft' } });
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Apply changes' }));
+    expect(await screen.findByText('Room schedule reassignment applied to the draft schedule.')).toBeTruthy();
+    expect(api.post).toHaveBeenLastCalledWith('/room-recovery/plans/plan-1/submit', { group_keys: ['single-11'] });
+    expect(transferred).toHaveBeenCalledTimes(1);
+  });
+
+  it('separates a mixed selection into immediate draft changes and approval requests', async () => {
+    const draftRow = { ...row, id: 12 };
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { ...plan, groups: [
+      { ...plan.groups[0], workflow: 'approval' },
+      { key: 'single-12', before: [draftRow], after: [{ ...draftRow, room_id: 2 }], workflow: 'apply' },
+    ] } });
+    panel();
+    fireEvent.click(await screen.findByText('Find suitable rooms'));
+    expect(await screen.findByText('Submitted schedule · Requires Dean and VPAA approval')).toBeTruthy();
+    expect(screen.getByText('Draft schedule · Applies immediately')).toBeTruthy();
+    expect(screen.getByText('1 draft class is updated immediately. 1 submitted class stays unchanged until Dean and VPAA approval.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Apply and submit for approval' }));
+    expect(screen.getByRole('dialog', { name: 'Apply and submit room schedule reassignments' })).toBeTruthy();
   });
 
   it('submits only after confirmation and disables duplicate confirmation clicks', async () => {

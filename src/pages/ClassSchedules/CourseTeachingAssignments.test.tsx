@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearDataCache, getCachedData } from '../../lib/dataCache';
 import CourseTeachingAssignments from './CourseTeachingAssignments';
+import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 
 const { get, post, confirm } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), confirm: vi.fn() }));
 vi.mock('../../lib/api', () => ({ default: { get, post } }));
@@ -59,6 +60,19 @@ const openPage = async () => {
 };
 
 describe('Course Teaching program selection', () => {
+  it('explains the actual year, course and program controls without clearing or saving selections', async () => {
+    await openPage();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select GEC 2' }));
+    const guide = vi.mocked(useWorkflowGuide).mock.calls.at(-1)![0];
+    const steps = typeof guide.steps === 'function' ? guide.steps() : guide.steps;
+    expect(steps.find((step) => step.element === '#course-teaching-year')).toBeTruthy();
+    expect(steps.find((step) => step.element === '#course-teaching-course-filter')).toBeTruthy();
+    expect(steps.find((step) => step.element === '#course-teaching-program')).toBeTruthy();
+    expect(steps.every((step) => step.action === undefined || step.action === 'complete')).toBe(true);
+    steps.forEach((step) => expect(document.querySelector(step.element)).toBeTruthy());
+    expect((screen.getByRole('checkbox', { name: 'Select GEC 2' }) as HTMLInputElement).checked).toBe(true);
+    expect(post).not.toHaveBeenCalled();
+  });
   it('explains Any Program and scopes options to the selected teaching college, resetting on a college change', async () => {
     await openPage();
     const select = programSelect();
@@ -96,7 +110,7 @@ describe('Course Teaching program selection', () => {
     expect(within(courseRow('PATH FIT 2')).getByText('BPED')).toBeTruthy();
     expect(within(courseRow('PATH FIT 2')).getByText('Assigned')).toBeTruthy();
     expect((screen.getByRole('checkbox', { name: 'Select PATH FIT 2' }) as HTMLInputElement).disabled).toBe(true);
-    const cached = getCachedData<{ courses: Array<{ id: number; teaching_program_id: number | null }> }>('page:course-teaching-assignments:v11');
+    const cached = getCachedData<{ courses: Array<{ id: number; teaching_program_id: number | null }> }>('page:course-teaching-assignments:v12');
     expect(cached?.courses.find((course) => course.id === 101)?.teaching_program_id).toBe(programId);
     expect(cached?.courses.find((course) => course.id === 102)).toEqual(courses[1]);
   });

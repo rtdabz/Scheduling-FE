@@ -806,9 +806,9 @@ export default function CurriculumImportPage() {
                           if (filter !== 'all' && count === 0 && statusFilter !== filter) return null;
                           const active = statusFilter === filter;
                           return (
-                            <button key={filter} type="button" aria-pressed={active} onClick={() => filterStatus(filter)} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${active ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text hover:border-primary/50'}`}>
+                            <button key={filter} type="button" aria-pressed={active} onClick={() => filterStatus(filter)} className={`selection-indicator inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${active ? '' : 'border-border bg-white text-text hover:border-primary/50'}`}>
                               {filter === 'all' ? 'All' : CONFIGURE_STATUS_LABELS[filter]}
-                              <span className={`tabular-nums ${active ? 'text-white/80' : 'text-muted'}`}>{count}</span>
+                              <span className="selection-indicator-count rounded-full px-1.5 tabular-nums">{count}</span>
                             </button>
                           );
                         })}
@@ -979,7 +979,7 @@ export default function CurriculumImportPage() {
           </dl>
           {result.confirmation && (
             <p className="mt-3 text-[13px] text-muted">
-              Confirmed by {result.confirmation.user_name ?? 'you'} on {new Date(result.confirmation.confirmed_at).toLocaleString()}
+              Confirmed by {result.confirmation.user_name || 'Actor unavailable'} on {new Date(result.confirmation.confirmed_at).toLocaleString()}
               {result.changes ? `, with ${result.changes.filter((change) => !change.formatting).length} recorded changes from the document` : ''}.
             </p>
           )}

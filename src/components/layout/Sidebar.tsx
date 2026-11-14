@@ -13,6 +13,7 @@ import { CROSS_DEPARTMENT_LOCKED_MESSAGE, useDepartmentScheduleStatus } from '..
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import { programLabel, programName } from '../../lib/programLabel';
 import { prefetchPage } from '../../lib/pagePrefetch';
+import { isDepartmentOfficeRole } from '../../lib/roles';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -85,7 +86,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
   const { toast } = useToast();
   const [currentUser, setCurrentUser] = useState<StoredUser | null>(getStoredUser());
   const [departments, setDepartments] = useState<DepartmentInfo[]>([]);
-  const user = currentUser ?? getStoredUser();
+  const user = getStoredUser() ?? currentUser;
   const role = user?.role?.toLowerCase() ?? '';
   const userDepartment = user?.department || departments.find(d => d.id === user?.department_id) || null;
   const deptLogo = userDepartment?.logo || null;
@@ -94,15 +95,22 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
   const programTitle = user?.program ? programLabel(user.program, '') || undefined : undefined;
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
   const [isCountLoading, setIsCountLoading] = useState(false);
-  const [pendingCount, setPendingCount] = useState(0);
+  const badgeScope = `${user?.id}:${role}:${user?.department_id}`;
+  const [approvalBadge, setApprovalBadge] = useState({ scope: '', count: 0 });
+  const pendingCount = approvalBadge.scope === badgeScope ? approvalBadge.count : 0;
+  const usersRevision = useLiveRevision(['users']);
 
   useEffect(() => {
-    fetchCurrentUser<StoredUser>()
+    let active = true;
+    fetchCurrentUser<StoredUser>({ force: usersRevision > 0 })
       .then((data) => {
-        if (data) setCurrentUser(data);
+        if (data && active) setCurrentUser(data);
       })
       .catch(() => {});
+    return () => { active = false; };
+  }, [usersRevision]);
 
+  useEffect(() => {
     api.get<DepartmentInfo[]>('/departments')
       .then((res) => {
         if (res.data) setDepartments(res.data);
@@ -110,7 +118,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
       .catch(() => {});
   }, []);
 
-  const canAssignCrossDepartment = (role === 'secretary' || role === 'program_head')
+  const canAssignCrossDepartment = (isDepartmentOfficeRole(role) || role === 'program_head')
     && hasStoredCapability('schedule.assign_instructor_cross_department');
   const {
     crossDepartmentPending,
@@ -126,10 +134,12 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
 
   const approvalsRevision = useLiveRevision(['approvals']);
   const roomsRevision = useLiveRevision(['rooms']);
-  const [pendingRoomCount, setPendingRoomCount] = useState(0);
+  const [roomBadge, setRoomBadge] = useState({ scope: '', count: 0 });
+  const pendingRoomCount = roomBadge.scope === badgeScope ? roomBadge.count : 0;
 
   useEffect(() => {
-    if (role !== 'secretary') {
+    // Room-request badges belong to the department office (Secretary or Director).
+    if (!isDepartmentOfficeRole(role)) {
       return;
     }
 
@@ -146,19 +156,20 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
           params: { status: 'pending' },
           signal: controller.signal,
         });
+        if (controller.signal.aborted) return;
         const reqs = Array.isArray(response.data) ? response.data : [];
         if (user?.department_id) {
           const deptId = user.department_id;
           const incoming = reqs.filter(
             (r) => (r.owner_department?.id ?? r.room?.department_id) === deptId,
           );
-          setPendingRoomCount(incoming.length);
+          setRoomBadge({ scope: badgeScope, count: incoming.length });
         } else {
-          setPendingRoomCount(0);
+          setRoomBadge({ scope: badgeScope, count: 0 });
         }
       } catch {
         if (!controller.signal.aborted) {
-          setPendingRoomCount(0);
+          setRoomBadge({ scope: badgeScope, count: 0 });
         }
       }
     };
@@ -169,7 +180,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
       window.clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [role, user?.department_id, roomsRevision]);
+  }, [role, user?.department_id, roomsRevision, badgeScope]);
 
   useEffect(() => {
     if (role !== 'dean' && role !== 'vpaa') {
@@ -185,10 +196,10 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
           '/schedules/pending-department-count',
           { signal: controller.signal }
         );
-        setPendingCount(response.data.count);
+        if (!controller.signal.aborted) setApprovalBadge({ scope: badgeScope, count: response.data.count });
       } catch {
         if (!controller.signal.aborted) {
-          setPendingCount(0);
+          setApprovalBadge({ scope: badgeScope, count: 0 });
         }
       } finally {
         if (!controller.signal.aborted) {
@@ -203,7 +214,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
       window.clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [role, approvalsRevision]);
+  }, [role, approvalsRevision, badgeScope]);
 
   const getChildNotificationCount = (child: NavItem): number => {
     if (child.isLocked) return 0;
@@ -400,6 +411,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
                                 key={child.path}
                                 to={child.isLocked ? '#' : child.path || ''}
                                 id={child.id}
+                                aria-disabled={child.isLocked || undefined}
                                 onPointerEnter={() => { if (!child.isLocked) prefetchPage(child.path); }}
                                 onFocus={() => { if (!child.isLocked) prefetchPage(child.path); }}
                                 style={{ animationDelay: `${childIdx * 45}ms` }}
@@ -408,7 +420,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
                                   flex items-center h-9 rounded-lg pl-8 pr-3 gap-2.5
                                   transition-all duration-300 ease-in-out overflow-hidden
                                   ${isChildPathActive ? 'sidebar-item-active' : 'sidebar-item-hover text-[#E8D5C4]'}
-                                  ${child.isLocked ? 'opacity-50 cursor-not-allowed hover:bg-transparent' : 'cursor-pointer'}
+                                  ${child.isLocked ? 'sidebar-submenu-item-locked cursor-not-allowed hover:bg-transparent' : 'cursor-pointer'}
                                 `}
                                 onClick={(e) => {
                                   if (child.isLocked) {

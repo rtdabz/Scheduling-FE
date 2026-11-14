@@ -1,9 +1,13 @@
 import { getPhilippineNowParts } from '../../lib/philippineTime';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
+  AlertTriangle,
   ArrowLeftRight,
+  BookOpen,
   Calendar,
+  DoorOpen,
+  Landmark,
   Clock,
   Building2,
   CheckCircle2,
@@ -15,7 +19,17 @@ import {
 import Skeleton from './Skeleton';
 import WeeklyTimetableGrid from '../scheduling/WeeklyTimetableGrid';
 import ScheduleCard from '../../pages/ClassSchedules/SchedulerPanel/TimetableGrid/ScheduleCard';
-import { DAYS, GRID_HEADER_HEIGHT_PX, SLOT_HEIGHT_PX } from '../../pages/ClassSchedules/SchedulerPanel/constants';
+import { DAYS } from '../../pages/ClassSchedules/SchedulerPanel/constants';
+import { TimetableLegend, TimetableTitleBar } from '../scheduling/TimetablePanel';
+import {
+  TIMETABLE_BLOCK_BASE,
+  TIMETABLE_BLOCK_META,
+  TIMETABLE_BLOCK_STYLES,
+  TIMETABLE_BLOCK_TITLE,
+  TIMETABLE_HEADER_BUTTON,
+  TIMETABLE_HEADER_BUTTON_PRESSED,
+  TIMETABLE_SWATCH,
+} from '../scheduling/timetableStyles';
 import { gridOpeningMinutes, slotCount, slotMinutes, slotToTimeLabel, timeToSlot } from '../../lib/timeGrid';
 import {
   formatDuration,
@@ -28,6 +42,7 @@ import {
   type RoomRequestWindow,
 } from '../../lib/roomRequests';
 import { useRoomGrants } from '../../hooks/useRoomGrants';
+import { formatPersonName, type PersonNameParts } from '../../lib/personName';
 import type { LinkedSlot } from '../../lib/notificationLink';
 import type {
   Room as SchedulerRoom,
@@ -81,13 +96,18 @@ interface Schedule {
     lecture_hours?: number | string | null;
     lab_hours?: number | string | null;
   } | null;
-  faculty?: {
+  faculty?: (PersonNameParts & {
     id: number;
     first_name: string;
     last_name: string;
-    middle_name?: string | null;
-  } | null;
+  }) | null;
 }
+
+/** Total class time for the printed header, e.g. "16 hrs" or "7.5 hrs". */
+const formatPrintHours = (minutes: number) => {
+  const hours = Math.round((minutes / 60) * 10) / 10;
+  return `${hours} ${hours === 1 ? 'hr' : 'hrs'}`;
+};
 
 interface RoomDetailContentProps {
   room: Room | null;
@@ -109,7 +129,19 @@ interface RoomDetailContentProps {
    * time is offered for borrowing, and this message is shown instead.
    */
   borrowingClosedMessage?: string | null;
+  /** Rendered before the room identity in the header, e.g. a back button. */
+  leading?: ReactNode;
+  /** Rendered at the right end of the header, e.g. the Request Room button. */
+  actions?: ReactNode;
 }
+
+/** Restrained, low-saturation badge tones per room type. */
+const TYPE_BADGE: Record<Room['room_type'], string> = {
+  lecture: 'border-[#5A1220]/15 bg-[#5A1220]/[0.05] text-[#5A1220]',
+  laboratory: 'border-slate-200 bg-slate-50 text-slate-700',
+  online: 'border-sky-200 bg-sky-50 text-sky-700',
+  field: 'border-amber-200 bg-amber-50 text-amber-800',
+};
 
 const ALL_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -161,7 +193,7 @@ const noop = () => undefined;
 
 const NO_SLOTS: LinkedSlot[] = [];
 
-export default function RoomDetailContent({ room, schedules, isLoading, initialViewMode = 'list', highlightSlots = NO_SLOTS, semesterId, listMode = 'classes', onRequestSlot, borrowingClosedMessage = null }: RoomDetailContentProps) {
+export default function RoomDetailContent({ room, schedules, isLoading, initialViewMode = 'list', highlightSlots = NO_SLOTS, semesterId, listMode = 'classes', onRequestSlot, borrowingClosedMessage = null, leading, actions }: RoomDetailContentProps) {
   const [activeTabDay, setActiveTabDay] = useState<string>(() => {
     if (highlightSlots[0]) return highlightSlots[0].day;
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -229,9 +261,7 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
             startTime: formatTime(schedule.start_time),
             endTime: formatTime(schedule.end_time),
             mode: schedule.mode === 'online' || schedule.mode === 'field' ? schedule.mode : 'on-site',
-            facultyName: schedule.faculty
-              ? `${schedule.faculty.first_name} ${schedule.faculty.last_name}`.trim()
-              : null,
+            facultyName: schedule.faculty ? formatPersonName(schedule.faculty) : null,
             facultyId: schedule.faculty_id == null ? null : String(schedule.faculty_id),
             status: schedule.status as ScheduleItem['status'],
             dayIndex,
@@ -326,17 +356,21 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
 
   if (isLoading || !room || !grantsReady) {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center gap-3">
-          <Skeleton className="h-12 w-12 rounded-xl" />
-          <div className="space-y-2">
-            <Skeleton className="h-6 w-48" />
-            <Skeleton className="h-4 w-32" />
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            {leading}
+            <Skeleton className="h-10 w-10 rounded-xl" />
+            <div className="space-y-2">
+              <Skeleton className="h-5 w-40" />
+              <Skeleton className="h-3.5 w-32" />
+            </div>
           </div>
+          {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           {[1, 2, 3, 4].map(i => (
-            <Skeleton key={i} className="h-20 rounded-xl" />
+            <Skeleton key={i} className="h-[54px] rounded-xl" />
           ))}
         </div>
         <div className="space-y-4">
@@ -349,146 +383,165 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
     );
   }
 
-  let badgeColor = 'bg-blue-50 text-blue-755 border-blue-200';
-  if (room.room_type === 'laboratory') badgeColor = 'bg-purple-50 text-purple-700 border-purple-200';
-  else if (room.room_type === 'online') badgeColor = 'bg-green-50 text-green-700 border-green-200';
-  else if (room.room_type === 'field') badgeColor = 'bg-amber-50 text-amber-700 border-amber-200';
+  const isAvailable = room.status === 'available';
+  const typeBadge = TYPE_BADGE[room.room_type] ?? TYPE_BADGE.lecture;
+  const StatusIcon = isAvailable ? CheckCircle2 : room.status === 'not available' ? XCircle : HelpCircle;
 
-  const statusBadgeColor = room.status === 'not available'
-    ? 'bg-red-50 text-red-700 border-red-200'
-    : 'bg-green-50 text-green-700 border-green-200';
+  const infoCards: { label: string; icon: typeof Building2; value: ReactNode }[] = [
+    { label: 'Building', icon: Building2, value: room.building || 'N/A' },
+    { label: 'Type', icon: DoorOpen, value: <span className="capitalize">{room.room_type}</span> },
+    {
+      label: 'Status',
+      icon: StatusIcon,
+      value: <span className={`capitalize ${isAvailable ? 'text-emerald-700' : 'text-rose-700'}`}>{room.status}</span>,
+    },
+    { label: 'Department', icon: Landmark, value: room.department?.department_code || 'General' },
+  ];
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-      <div className="room-detail-print-info flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-sans border-b border-gray-150 pb-3">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-[#5A1220]/10 text-[#5A1220] flex items-center justify-center border border-[#5A1220]/25">
+      <div className="room-detail-print-info flex flex-col gap-3 font-sans sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          {leading}
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#5A1220]/15 bg-[#5A1220]/[0.06] text-[#5A1220]">
             <Building2 size={18} />
           </div>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-sm font-bold text-gray-800 font-mono uppercase leading-none">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h2 className="truncate text-base font-bold uppercase leading-tight tracking-tight text-gray-900 sm:text-lg">
                 {room.room_code}
               </h2>
-              <span className={`px-2 py-0.2 rounded-full text-[9px] font-bold uppercase tracking-wider border ${badgeColor}`}>
+              <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${typeBadge}`}>
                 {room.room_type}
               </span>
-              <span className={`px-2 py-0.2 rounded-full text-[9px] font-bold uppercase tracking-wider border ${statusBadgeColor}`}>
+              <span
+                className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                  isAvailable
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : 'border-rose-200 bg-rose-50 text-rose-700'
+                }`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${isAvailable ? 'bg-emerald-500' : 'bg-rose-500'}`} aria-hidden="true" />
                 {room.status}
               </span>
             </div>
-            <p className="text-[11px] text-gray-400 mt-0.5 font-semibold">
-              {room.building || 'No building assigned'} &bull; {room.department ? `${room.department.department_code} Department` : 'General / All'}
+            <p className="mt-0.5 truncate text-xs font-medium text-gray-500">
+              {room.building || 'No building assigned'}
+              <span className="mx-1.5 text-gray-300" aria-hidden="true">/</span>
+              {room.department ? `${room.department.department_code} Department` : 'General / All'}
             </p>
           </div>
         </div>
+        {actions && <div className="flex shrink-0 items-center gap-2 sm:self-center">{actions}</div>}
       </div>
 
-      <div className="room-detail-print-info grid grid-cols-2 sm:grid-cols-4 gap-2.5 font-sans mt-3">
-        <div className="bg-gray-50 rounded-lg py-2 px-3 border border-gray-100 shadow-sm">
-          <p className="text-[9px] font-bold uppercase tracking-wider text-gray-450 mb-0.5">Building</p>
-          <p className="text-xs font-bold text-gray-700">{room.building || 'N/A'}</p>
-        </div>
-        <div className="bg-gray-50 rounded-lg py-2 px-3 border border-gray-100 shadow-sm">
-          <p className="text-[9px] font-bold uppercase tracking-wider text-gray-455 mb-0.5">Type</p>
-          <p className="text-xs font-bold text-gray-700 capitalize">{room.room_type}</p>
-        </div>
-        <div className="bg-gray-50 rounded-lg py-2 px-3 border border-gray-100 shadow-sm">
-          <p className="text-[9px] font-bold uppercase tracking-wider text-gray-455 mb-0.5">Status</p>
-          <div className="flex items-center gap-1">
-            {room.status === 'available' ? (
-              <CheckCircle2 size={12} className="text-emerald-500" />
-            ) : room.status === 'not available' ? (
-              <XCircle size={12} className="text-red-500" />
-            ) : (
-              <HelpCircle size={12} className="text-gray-400" />
-            )}
-            <p className="text-xs font-bold text-gray-700 capitalize">{room.status}</p>
+      <div className="room-detail-print-info mt-4 grid grid-cols-2 gap-2.5 font-sans sm:grid-cols-4">
+        {infoCards.map(({ label, icon: Icon, value }) => (
+          <div key={label} className="flex min-w-0 items-center gap-2.5 rounded-xl border border-gray-200/80 bg-gray-50/70 px-3 py-2.5">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500">
+              <Icon size={14} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</p>
+              <p className="truncate text-[13px] font-semibold leading-tight text-gray-800">{value}</p>
+            </div>
           </div>
-        </div>
-        <div className="bg-gray-50 rounded-lg py-2 px-3 border border-gray-100 shadow-sm">
-          <p className="text-[9px] font-bold uppercase tracking-wider text-gray-455 mb-0.5">Department</p>
-          <p className="text-xs font-bold text-gray-700">{room.department?.department_code || 'General'}</p>
-        </div>
+        ))}
         {room.room_type === 'laboratory' && (
-          <div className="col-span-2 sm:col-span-4 bg-gray-50 rounded-lg py-2 px-3 border border-gray-100 shadow-sm">
-            <p className="text-[9px] font-bold uppercase tracking-wider text-gray-455 mb-0.5">Lecture Use</p>
-            <p className="text-xs font-bold text-gray-700">
-              {room.allow_lecture_usage
-                ? 'Allowed: major full-lecture courses may use this lab when it is vacant'
-                : 'Not allowed: laboratory classes only'}
-            </p>
+          <div className="col-span-2 flex items-center gap-2.5 rounded-xl border border-gray-200/80 bg-gray-50/70 px-3 py-2.5 sm:col-span-4">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500">
+              <BookOpen size={14} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Lecture Use</p>
+              <p className="text-[13px] font-semibold leading-tight text-gray-800">
+                {room.allow_lecture_usage
+                  ? 'Allowed: major full-lecture courses may use this lab when it is vacant'
+                  : 'Not allowed: laboratory classes only'}
+              </p>
+            </div>
           </div>
         )}
       </div>
 
       {(grantsError || grantsStale) && (
-        <div role="alert" className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 font-sans text-xs font-semibold text-amber-800">
-          <span>
+        <div role="alert" className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-2.5 font-sans text-xs font-medium text-amber-900">
+          <span className="flex items-center gap-2">
+            <AlertTriangle size={14} className="shrink-0 text-amber-600" />
             {grantsError
               ? 'Borrowed-room reservations could not be loaded, so lent time may be missing below.'
               : 'Borrowed-room reservations could not be refreshed; the ones shown may be out of date.'}
           </span>
-          <button type="button" onClick={retryGrants} className="rounded-md border border-amber-300 bg-white px-2.5 py-1 font-bold text-amber-800 hover:bg-amber-100 cursor-pointer">
+          <button type="button" onClick={retryGrants} className="rounded-lg border border-amber-300 bg-white px-2.5 py-1 font-semibold text-amber-800 transition hover:bg-amber-100 cursor-pointer">
             Retry
           </button>
         </div>
       )}
 
       {borrowingClosedMessage && (
-        <div role="status" className="mt-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 font-sans text-xs font-semibold text-amber-800">
-          <Lock size={14} className="shrink-0" />
-          <span>{borrowingClosedMessage}</span>
+        <div role="status" className="mt-3 flex items-start gap-3 rounded-xl border border-amber-200 border-l-[3px] border-l-[#C9952A] bg-amber-50/80 px-3.5 py-2.5 font-sans">
+          <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#C9952A]/15 text-[#8a6418]">
+            <Lock size={13} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-[#8a6418]">Borrowing closed</p>
+            <p className="mt-0.5 text-xs font-medium text-amber-900">{borrowingClosedMessage}</p>
+          </div>
         </div>
       )}
 
-      <div className="room-detail-print-grid flex-1 flex flex-col min-h-0 bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm font-sans mt-3">
-        <div className="room-print-title hidden px-2 pb-2 text-base font-bold uppercase text-slate-900">
-          {room.room_code} {room.building ? `- ${room.building}` : ''}
-        </div>
-        <div className="room-detail-print-toolbar flex items-center justify-between border-b border-gray-200 px-6 py-4 bg-gray-50/50 flex-wrap gap-3">
-          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Weekly Classroom Schedule</h3>
-          
-          <div className="bg-gray-100 p-1 rounded-xl flex items-center gap-1 border border-gray-200">
-            <button
-              onClick={() => setViewMode('list')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                viewMode === 'list'
-                  ? 'bg-[#5A1220] text-white shadow-sm'
-                  : 'text-gray-500 hover:text-gray-800'
-              }`}
-            >
-              List View
-            </button>
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                viewMode === 'grid'
-                  ? 'bg-[#5A1220] text-white shadow-sm'
-                  : 'text-gray-500 hover:text-gray-800'
-              }`}
-            >
-              Grid View
-            </button>
+      <div className="room-detail-print-grid mt-3 flex min-h-0 flex-1 flex-col overflow-clip rounded-xl border border-slate-200 bg-white font-sans">
+        <header className="room-print-title hidden">
+          <div className="flex items-end justify-between gap-6 border-b-2 border-[#4e0a10] pb-2.5">
+            <div className="min-w-0">
+              <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#9a6b14]">Weekly Classroom Schedule</p>
+              <h1 className="mt-0.5 text-[22px] font-extrabold leading-none tracking-tight text-[#4e0a10]">{room.room_code}</h1>
+              <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-[11px] font-medium text-slate-600">
+                <span>{room.building || 'No building assigned'}</span>
+                <span aria-hidden="true" className="text-slate-300">|</span>
+                <span className="capitalize">{room.room_type} room</span>
+                <span aria-hidden="true" className="text-slate-300">|</span>
+                <span>{room.department ? `${room.department.department_code} Department` : 'General / All Departments'}</span>
+              </p>
+            </div>
+            <dl className="flex shrink-0 items-stretch gap-0 text-right">
+              {[
+                { label: 'Classes', value: String(roomGridCards.length) },
+                { label: 'Weekly Hours', value: formatPrintHours(roomGridCards.reduce((total, { schedule }) => total + schedule.durationSlots * slotMinutes(), 0)) },              ].map(({ label, value }, index) => (
+                <div key={label} className={`px-3.5 ${index > 0 ? 'border-l border-slate-200' : ''} last:pr-0`}>
+                  <dt className="text-[8.5px] font-bold uppercase tracking-[0.14em] text-slate-400">{label}</dt>
+                  <dd className="mt-0.5 text-[13px] font-bold tabular-nums leading-tight text-slate-800">{value}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
-        </div>
+        </header>
+        <TimetableTitleBar
+          className="room-detail-print-toolbar"
+          title="Weekly Classroom Schedule"
+          highlight={room.room_code}
+          detail={room.building || undefined}
+          actions={(['list', 'grid'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setViewMode(mode)}
+              aria-pressed={viewMode === mode}
+              className={`${TIMETABLE_HEADER_BUTTON} ${viewMode === mode ? TIMETABLE_HEADER_BUTTON_PRESSED : ''}`}
+            >
+              {mode === 'list' ? 'List View' : 'Grid View'}
+            </button>
+          ))}
+        />
 
         {viewMode === 'grid' ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-auto p-4 sm:p-5">
-            <ul className="mb-3 flex flex-wrap items-center gap-4 text-[11px] font-bold text-gray-500" aria-label="Legend">
-              {!borrowingClosedMessage && (
-                <li className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border border-slate-200 bg-white" /> Available</li>
-              )}
-              <li className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border border-slate-300 bg-slate-100" /> Occupied</li>
-              <li className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border-2 border-dashed border-orange-300 bg-orange-50" /> Borrowed</li>
-            </ul>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="room-detail-print-scroll min-h-0 flex-1 overflow-auto">
             <WeeklyTimetableGrid
               days={DAYS}
               slotCount={Math.max(slotCount(), ...roomGridCards.map(({ schedule }) => schedule.startSlot + schedule.durationSlots))}
-              headerHeight={GRID_HEADER_HEIGHT_PX}
-              rowTemplate={`repeat(${Math.max(slotCount(), ...roomGridCards.map(({ schedule }) => schedule.startSlot + schedule.durationSlots))}, ${SLOT_HEIGHT_PX}px)`}
-              minWidth={900}
-              className="min-h-full shrink-0"
+              minWidth={760}
+              className="shrink-0"
               getTimeLabel={slotToTimeLabel}
               getDayCount={(dayIndex) => roomGridCards.filter(({ schedule }) => schedule.dayIndex === dayIndex).length}
             >
@@ -501,18 +554,14 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
                     key={band.key}
                     title={`${band.label} · ${range}`}
                     aria-label={`${band.label}, ${DAYS[band.dayIndex]} ${range}`}
-                    className={`m-0.5 select-none overflow-hidden rounded-lg px-2 py-1 ${
-                      band.kind === 'borrowed'
-                        ? 'border-2 border-dashed border-orange-300 bg-orange-50/80 text-orange-800'
-                        : 'border border-slate-300 bg-slate-100 bg-[repeating-linear-gradient(135deg,transparent,transparent_6px,rgba(100,116,139,0.08)_6px,rgba(100,116,139,0.08)_12px)] text-slate-600'
-                    }`}
+                    className={`${TIMETABLE_BLOCK_BASE} select-none p-1.5 px-2 ${TIMETABLE_BLOCK_STYLES[band.kind === 'borrowed' ? 'borrowed' : 'occupied']}`}
                     style={{ gridColumn: band.dayIndex + 2, gridRow: `${startSlot + 2} / span ${span}` }}
                   >
-                    <p className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wide">
-                      {band.kind === 'borrowed' ? <ArrowLeftRight size={11} /> : <Lock size={11} />}
+                    <p className={`flex items-center gap-1 ${TIMETABLE_BLOCK_TITLE}`}>
+                      {band.kind === 'borrowed' ? <ArrowLeftRight size={11} className="shrink-0" /> : <Lock size={11} className="shrink-0" />}
                       <span className="truncate">{band.label}</span>
                     </p>
-                    <p className="text-[10px] font-semibold">{range}</p>
+                    <p className={`mt-0.5 ${TIMETABLE_BLOCK_META}`}>{range}</p>
                   </div>
                 );
               })}
@@ -526,7 +575,7 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
                     key={`highlight-${slot.day}-${slot.start_time}-${index}`}
                     ref={index === 0 ? scrollToHighlight : undefined}
                     title={`Requested slot · ${formatTime(slot.start_time)} - ${formatTime(slot.end_time)}`}
-                    className="pointer-events-none relative z-30 m-0.5 rounded-lg border-2 border-[#C9952A] bg-[#C9952A]/10 ring-4 ring-[#C9952A]/25"
+                    className="pointer-events-none relative z-30 mx-[3px] my-px rounded-lg border-2 border-[#C9952A] bg-[#C9952A]/10 ring-4 ring-[#C9952A]/25"
                     style={{ gridColumn: dayIndex + 2, gridRow: `${startSlot + 2} / span ${span}` }}
                   >
                     <span className="absolute -top-2.5 right-1.5 rounded-full bg-[#C9952A] px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-white shadow-sm">
@@ -536,8 +585,24 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
                 );
               })}
               {roomGridCards.map(({ schedule, subject }) => (
+                // Print only: a plain card with just the course name and class time.
+                <div
+                  key={`print-${schedule.id}`}
+                  aria-hidden="true"
+                  className={`room-print-card ${TIMETABLE_BLOCK_BASE} hidden flex-col justify-between gap-1 border px-2 py-1.5 ${TIMETABLE_SWATCH[subject.category === 'minor' ? 'minor' : 'major']}`}
+                  style={{ gridColumn: schedule.dayIndex + 2, gridRow: `${schedule.startSlot + 2} / span ${schedule.durationSlots}` }}
+                >
+                  <p className={`truncate text-[15px] font-extrabold uppercase leading-tight tracking-tight ${subject.category === 'minor' ? 'text-[#7a5410]' : 'text-[#4e0a10]'}`}>
+                    {schedule.courseCode}
+                  </p>
+                  <p className="text-[11px] font-semibold tabular-nums leading-none text-slate-600">
+                    {schedule.startTime} – {schedule.endTime}
+                  </p>
+                </div>
+              ))}
+              {roomGridCards.map(({ schedule, subject }) => (
+                <div key={schedule.id} className="room-screen-card contents">
                 <ScheduleCard
-                  key={schedule.id}
                   rooms={schedulerRoom ? [schedulerRoom] : []}
                   schedule={schedule}
                   subject={subject}
@@ -554,8 +619,37 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
                   onCardClick={noop}
                   isReadOnlyViewer
                 />
+                </div>
               ))}
             </WeeklyTimetableGrid>
+            </div>
+            <TimetableLegend
+              className="room-print-legend"
+              groups={[
+                {
+                  label: 'Subjects',
+                  items: roomGridCards.length > 0
+                    ? [
+                        { label: 'Major', swatch: TIMETABLE_SWATCH.major },
+                        { label: 'Minor', swatch: TIMETABLE_SWATCH.minor },
+                      ]
+                    : [],
+                },
+                {
+                  label: 'Slots',
+                  items: [
+                    ...(borrowingClosedMessage ? [] : [{ label: 'Available', swatch: TIMETABLE_SWATCH.available }]),
+                    { label: 'Occupied', swatch: TIMETABLE_SWATCH.occupied },
+                    { label: 'Borrowed', swatch: TIMETABLE_SWATCH.borrowed },
+                    ...(highlightSlots.length > 0 ? [{ label: 'Requested slot', swatch: TIMETABLE_SWATCH.requested }] : []),
+                  ],
+                },
+              ]}
+            />
+            <footer className="room-print-footer hidden items-center justify-between pt-2 text-[9px] font-medium text-slate-400">
+              <span>{room.room_code}{room.building ? ` · ${room.building}` : ''} · Weekly Classroom Schedule</span>
+              <span>Generated by WICARS</span>
+            </footer>
           </div>
         ) : (
           <div className="flex-1 flex flex-col min-h-0">
@@ -569,9 +663,10 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
                   <button
                     key={day}
                     onClick={() => setActiveTabDay(day)}
-                    className={`flex-1 min-w-[90px] py-3 text-center border-b-2 font-bold text-xs transition-all uppercase tracking-wider cursor-pointer whitespace-nowrap px-4 ${
+                    aria-pressed={isActive}
+                    className={`selection-indicator flex-1 min-w-[90px] py-3 text-center border-b-2 font-bold text-xs transition-all uppercase tracking-wider cursor-pointer whitespace-nowrap px-4 ${
                       isActive
-                        ? 'border-[#5A1220] text-[#5A1220] bg-white'
+                        ? ''
                         : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50'
                     }`}
                   >
@@ -582,11 +677,7 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
                     {count > 0 && (
                       <span
                         title={showAvailability ? `${count} available time slot${count === 1 ? '' : 's'}` : undefined}
-                        className={`ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
-                          showAvailability
-                            ? (isActive ? 'bg-emerald-600 text-white' : 'bg-emerald-100 text-emerald-700')
-                            : (isActive ? 'bg-[#5A1220] text-white' : 'bg-gray-200 text-gray-600')
-                        }`}
+                        className="selection-indicator-count ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full font-bold"
                       >
                         {count}
                       </span>
@@ -757,7 +848,7 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
                               <span className="text-gray-400 font-bold">BY</span>
                               <span className="text-gray-655 font-semibold truncate">
                                 {sched.faculty
-                                  ? `${sched.faculty.first_name} ${sched.faculty.last_name}`
+                                  ? formatPersonName(sched.faculty)
                                   : 'No Instructor Assigned'
                                 }
                               </span>

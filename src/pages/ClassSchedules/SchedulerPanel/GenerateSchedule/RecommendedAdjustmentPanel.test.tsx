@@ -277,4 +277,27 @@ describe("ScheduleSummaryStep recommendations", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add Tuesday to Year level" }));
     expect(onApply).toHaveBeenCalledWith(addTuesday);
   });
+
+  it("starts as one collapsed line with the suggestion count, and opens on request", () => {
+    render(
+      <ScheduleSummaryStep
+        preview={[]}
+        sections={[]}
+        courses={[]}
+        roomCodeById={new Map()}
+        changes={null}
+        recommendations={[addTuesday]}
+        onApplyRecommendation={vi.fn()}
+      />,
+    );
+
+    const toggle = screen.getByRole("button", { name: /Suggestions/ });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.textContent).toContain("1");
+    expect(screen.getByRole("button", { name: "Add Tuesday to Year level" }).closest("[inert]")).not.toBeNull();
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: "Add Tuesday to Year level" }).closest("[inert]")).toBeNull();
+  });
 });

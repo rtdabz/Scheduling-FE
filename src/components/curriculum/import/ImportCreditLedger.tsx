@@ -1,5 +1,6 @@
 import type { GroupTotals } from '../../../lib/curriculumImport/draft';
 import { TERM_LABELS, YEAR_LABELS } from '../../../lib/curriculumImport/normalize';
+import { TABLE_FOOT, TABLE_HEAD, TABLE_HEAD_ROW } from '../../ui/tableStyles';
 
 interface ImportCreditLedgerProps {
   totals: GroupTotals[];
@@ -36,17 +37,17 @@ export default function ImportCreditLedger({ totals, rowCount }: ImportCreditLed
 
       <div className="overflow-x-auto rounded-xl border border-border">
         <table className="w-full min-w-[40rem] text-[13px]">
-          <thead className="bg-parchment text-left text-xs text-muted">
+          <thead className={`${TABLE_HEAD} ${TABLE_HEAD_ROW}`}>
             <tr>
-              <th scope="col" className="px-4 py-2 font-semibold">Term</th>
-              <th scope="col" className="px-3 py-2 text-right font-semibold">Courses</th>
-              <th scope="col" className="px-3 py-2 text-right font-semibold">Printed <span className="font-normal">lec / lab / TU</span></th>
-              <th scope="col" className="px-3 py-2 text-right font-semibold">Calculated <span className="font-normal">lec / lab / TU</span></th>
-              <th scope="col" className="px-4 py-2 text-right font-semibold">TU difference</th>
+              <th scope="col" className="px-4 py-2">Term</th>
+              <th scope="col" className="px-3 py-2 text-right">Courses</th>
+              <th scope="col" className="px-3 py-2 text-right">Printed <span className="font-normal normal-case tracking-normal">lec / lab / TU</span></th>
+              <th scope="col" className="px-3 py-2 text-right">Calculated <span className="font-normal normal-case tracking-normal">lec / lab / TU</span></th>
+              <th scope="col" className="px-4 py-2 text-right">TU difference</th>
             </tr>
           </thead>
           {years.map((year) => (
-            <tbody key={year} className="border-t border-border">
+            <tbody key={year} className="border-t border-gray-200">
               <tr>
                 <th scope="rowgroup" colSpan={5} className="bg-white px-4 pb-1 pt-3 text-left text-xs font-bold text-primary">{YEAR_LABELS[year]}</th>
               </tr>
@@ -54,7 +55,7 @@ export default function ImportCreditLedger({ totals, rowCount }: ImportCreditLed
                 const mismatch = differs(group);
                 const difference = group.reported?.tu == null ? null : group.calculated.tu - group.reported.tu;
                 return (
-                  <tr key={`${group.year_level}-${group.semester}`} className={mismatch ? 'bg-accent/10' : ''}>
+                  <tr key={`${group.year_level}-${group.semester}`} className={mismatch ? 'bg-accent/10' : 'transition-colors hover:bg-gray-50'}>
                     <th scope="row" className="px-4 py-1.5 text-left font-normal text-text">{TERM_LABELS[group.semester]}</th>
                     <td className="px-3 py-1.5 text-right tabular-nums">{group.row_count}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums text-muted">{triple(group.reported) ?? 'not printed'}</td>
@@ -73,7 +74,7 @@ export default function ImportCreditLedger({ totals, rowCount }: ImportCreditLed
               })}
             </tbody>
           ))}
-          <tfoot className="border-t-2 border-primary/30 bg-parchment font-bold">
+          <tfoot className={TABLE_FOOT}>
             <tr>
               <th scope="row" className="px-4 py-2 text-left">All terms</th>
               <td className="px-3 py-2 text-right tabular-nums">{rowCount}</td>

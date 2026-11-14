@@ -1,6 +1,7 @@
 import { Lock, ArrowLeft, ShieldAlert } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getStoredUser, lockedModuleMessage } from '../../lib/storedUser';
+import { dashboardPathForRole } from '../../lib/roles';
 
 interface LockedModuleViewProps {
   moduleName?: string;
@@ -14,12 +15,7 @@ export default function LockedModuleView({ moduleName = 'This Module', requiredC
   const user = getStoredUser();
   const role = user?.role?.toLowerCase() || '';
 
-  const getDashboardPath = () => {
-    if (role === 'dean') return '/dean/dashboard';
-    if (role === 'secretary') return '/secretary/dashboard';
-    if (role === 'program_head') return '/program_head/dashboard';
-    return '/dashboard';
-  };
+  const getDashboardPath = () => dashboardPathForRole(role);
 
   const capabilities = Array.isArray(requiredCapability)
     ? requiredCapability.join(', ')

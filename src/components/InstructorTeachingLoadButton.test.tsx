@@ -21,12 +21,34 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe('individual teaching-load print data', () => {
+  it('passes the recorded creator and officials to the printed load after account replacement', async () => {
+    const creator = { id: 17, name: 'Former Secretary', role: 'secretary' };
+    const signatories = {
+      prepared: [{ name: 'Former Secretary', title: 'Department Secretary' }],
+      reviewed: { name: 'Former Dean', title: 'Dean' }, recommended: null, approved: null, frozen: true,
+    };
+    vi.mocked(api.get).mockImplementation(async (url) => ({ data: url === '/initial-data'
+      ? { active_semester: null, departments: [], faculties: [], sections: [], schedules: [],
+        users: [{ id: 20, name: 'Replacement Secretary', role: 'secretary' }] }
+      : [{ id: 50, faculty_id: 7, course_id: 3, section_id: 2, room_id: 1, semester_id: 1, department_id: 4,
+        day: 'Monday', start_time: '07:00:00', end_time: '09:00:00', status: 'approved',
+        created_by: 17, creator_identity: creator, signatories }] }));
+
+    render(<InstructorTeachingLoadButton facultyId={7} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Print Load Sheet' }));
+
+    await waitFor(() => expect(printed).toHaveBeenCalled());
+    expect(printed.mock.calls[0][0].allSchedules[0]).toMatchObject({
+      createdById: 17, creatorIdentity: creator, signatories,
+    });
+  });
+
   it('uses the instructor schedule endpoint rather than a truncated department snapshot', async () => {
     render(<InstructorTeachingLoadButton facultyId={7} />);
     fireEvent.click(screen.getByRole('button', { name: 'Print Load Sheet' }));
     await waitFor(() => expect(printed).toHaveBeenCalled());
     expect(api.get).toHaveBeenCalledWith('/schedules', {
-      params: { faculty_id: 7, semester_id: 'active', per_page: 1000 },
+      params: { faculty_id: 7, semester_id: 'active', per_page: 1000, with_signatories: 1 },
     });
     expect(printed.mock.calls[0][0].allSchedules).toEqual([expect.objectContaining({ id: '50', courseCode: 'SHARED101' })]);
     expect(toast.warning).not.toHaveBeenCalled();

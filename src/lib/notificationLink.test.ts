@@ -2,6 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { notificationLink, parseLinkedSlots } from './notificationLink';
 
 describe('notificationLink', () => {
+  it('links department activity to each role\'s existing workspace', () => {
+    expect(notificationLink('program_rooms_updated', 'secretary')).toBe('/secretary/program-rooms');
+    expect(notificationLink('program_rooms_updated', 'director')).toBe('/director/program-rooms');
+    expect(notificationLink('program_rooms_updated', 'program_head')).toBe('/program_head/facilities');
+    expect(notificationLink('instructor_assignment_released', 'director')).toBe('/director/instructor-assignment');
+    expect(notificationLink('schedule_attention_required', 'dean', { approval_stage: 'dean' })).toBe('/dean/schedules/approval');
+    expect(notificationLink('schedule_attention_required', 'vpaa', { approval_stage: 'approved' })).toBe('/calendar');
+  });
+  it('routes a Director to its own office workspace like a Secretary', () => {
+    expect(notificationLink('incoming_cross_department_courses', 'director')).toBe('/director/cross-department-assignments');
+    expect(notificationLink('schedule_returned_by_dean', 'director')).toBe('/director/schedule-management');
+    expect(notificationLink('instructor_assigned', 'director')).toBe('/director/instructor-assignment');
+    expect(notificationLink('room_request_approved', 'director')).toBe('/director/room-requests');
+    expect(notificationLink('room_recovery', 'director', { recovery_case_id: 3 })).toBe('/director/facilities?recovery=3');
+    expect(notificationLink('room_transfer_approved', 'director', { plan_id: 'p1' })).toBe('/director/facilities?recovery=open&room_transfer=p1');
+  });
+
   it('sends each role to its own page for the same notification', () => {
     expect(notificationLink('incoming_cross_department_courses', 'secretary')).toBe('/secretary/cross-department-assignments');
     expect(notificationLink('incoming_cross_department_courses', 'program_head')).toBe('/program_head/cross-department-assignments');
@@ -61,7 +78,7 @@ describe('notificationLink', () => {
     expect(notificationLink('room_transfer_submitted', 'vpaa')).toBeUndefined();
     expect(notificationLink('room_transfer_dean_approved', 'dean')).toBeUndefined();
     expect(notificationLink('room_transfer_approved', 'secretary', { plan_id: 'plan-1' })).toBe('/secretary/facilities?recovery=open&room_transfer=plan-1');
-    expect(notificationLink('room_transfer_rejected', 'program_head', { plan_id: 'plan-2' })).toBe('/program_head/schedule-management?recovery=open&room_transfer=plan-2');
+    expect(notificationLink('room_transfer_rejected', 'program_head', { plan_id: 'plan-2' })).toBe('/program_head/facilities?recovery=open&room_transfer=plan-2');
     expect(notificationLink('room_transfer_submitted', 'secretary')).toBeUndefined();
     expect(notificationLink('room_transfer_approved', 'dean', { plan_id: 'plan-3' })).toBe('/dean/schedules/approval?room_transfer=plan-3#schedule-approval-list');
     expect(notificationLink('room_transfer_rejected', 'dean', { plan_id: 'plan-4' })).toBe('/dean/schedules/approval?room_transfer=plan-4#schedule-approval-list');

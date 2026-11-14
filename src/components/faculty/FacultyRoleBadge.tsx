@@ -6,6 +6,8 @@ interface FacultyRoleBadgeProps {
   tone?: 'maroon' | 'gold';
   hint?: string | null;
   stacked?: boolean;
+  /** Let long labels wrap onto more lines instead of being cut off. */
+  wrap?: boolean;
 }
 
 const TONES = {
@@ -25,7 +27,9 @@ export default function FacultyRoleBadge({
   tone = 'maroon',
   hint,
   stacked = false,
+  wrap = false,
 }: FacultyRoleBadgeProps) {
+  const overflowClass = wrap ? 'whitespace-normal break-words' : 'truncate whitespace-nowrap';
   const text = label?.trim() || (role ? humanise(role) : '');
   if (!text) return null;
 
@@ -33,7 +37,7 @@ export default function FacultyRoleBadge({
     return (
       <div className="flex flex-col items-start min-w-0 leading-tight">
         <span
-          className={`inline-block max-w-full truncate whitespace-nowrap rounded-md border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${TONES[tone]}`}
+          className={`inline-block max-w-full ${overflowClass} rounded-md border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${TONES[tone]}`}
           title={text}
         >
           {text}
@@ -47,7 +51,7 @@ export default function FacultyRoleBadge({
 
   return (
     <span
-      className={`inline-flex w-fit items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider whitespace-nowrap truncate max-w-full ${TONES[tone]}`}
+      className={`inline-flex w-fit items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${overflowClass} max-w-full ${TONES[tone]}`}
       title={text}
     >
       {text}

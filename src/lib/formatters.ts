@@ -1,4 +1,6 @@
-const MINOR_WORDS = new Set(['to', 'and', 'of', 'in', 'the', 'a', 'for', 'with', 'on', 'at', 'by', 'an', 'or', 'as', 'but']);
+import { formatPersonListName, type PersonNameParts } from './personName';
+
+const MINOR_WORDS =new Set(['to', 'and', 'of', 'in', 'the', 'a', 'for', 'with', 'on', 'at', 'by', 'an', 'or', 'as', 'but']);
 const ACRONYMS = new Set(['NSTP', 'GEC', 'GEE', 'OJT', 'IT', 'PE', 'ROTC', 'CWTS', 'LTS', 'SIA', 'HCI', 'OOP', 'CMO']);
 
 export const formatCourseName = (name: string): string => {
@@ -45,17 +47,5 @@ export const capitalizeNameInput = (value: string): string =>
 
 export const NAME_SUFFIXES = ['Jr.', 'Sr.', 'II', 'III', 'IV', 'V'] as const;
 
-export const formatFacultyListName = (faculty: {
-  last_name: string;
-  first_name: string;
-  middle_name?: string | null;
-  suffix?: string | null;
-}): string =>
-  [
-    `${faculty.last_name},`,
-    faculty.first_name,
-    faculty.middle_name ? `${faculty.middle_name.charAt(0)}.` : '',
-    faculty.suffix ?? '',
-  ]
-    .filter(Boolean)
-    .join(' ');
+export const formatFacultyListName = (faculty: PersonNameParts & { last_name: string; first_name: string }): string =>
+  formatPersonListName(faculty);

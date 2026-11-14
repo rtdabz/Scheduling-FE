@@ -4,13 +4,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // vi.mock factories are hoisted above the module body, so the spy has to be
 // hoisted with them rather than declared as a plain top-level const.
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
+const { buildPdf, preview } = vi.hoisted(() => ({
+  buildPdf: vi.fn<(inputs: unknown[]) => Promise<Blob>>(async () => new Blob()),
+  preview: { show: vi.fn(async () => {}), close: vi.fn() },
+}));
 vi.mock('../../lib/api', () => ({ default: { get, post: vi.fn(), patch: vi.fn() } }));
+vi.mock('../../lib/pdfPreview', () => ({ openPdfPreview: () => preview }));
+vi.mock('../ClassSchedules/SchedulerPanel/schedulePdf', () => ({
+  buildSchedulesPdf: buildPdf,
+  getSchedulePdfFilename: () => 'calendar.pdf',
+}));
 vi.mock('../../context/ToastContext', () => ({
   useToast: () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() } }),
 }));
 
 import VpaaCalendarPage from './CalendarPage';
 import { clearDataCache } from '../../lib/dataCache';
+import { LIVE_UPDATE_EVENT } from '../../lib/liveUpdates';
 
 afterEach(() => {
   cleanup();
@@ -18,6 +28,7 @@ afterEach(() => {
 });
 
 const schedule = (over: Record<string, unknown> & { id: number }) => ({
+  status: 'faculty_assignment',
   day: 'Monday',
   start_time: '08:00:00',
   end_time: '09:30:00',
@@ -78,6 +89,9 @@ const mockApi = (
 
 beforeEach(() => {
   get.mockReset();
+  buildPdf.mockClear();
+  preview.show.mockClear();
+  preview.close.mockClear();
   clearDataCache();
   sessionStorage.clear();
   localStorage.setItem('user', JSON.stringify({ id: 2, name: 'VPAA Office', role: 'vpaa' }));
@@ -93,6 +107,64 @@ const block = (code: string) => {
 const waitForChart = () => waitFor(() => expect(screen.getByRole('region', { name: 'Master calendar timeline' })).toBeTruthy());
 
 describe('VpaaCalendarPage Gantt timeline', () => {
+  it('removes a returned meeting from open details and hover cards after a live refresh', async () => {
+    render(<VpaaCalendarPage />);
+    await waitForChart();
+    fireEvent.click(screen.getByRole('button', { name: 'Full screen' }));
+    fireEvent.mouseEnter(block('IT 101'));
+    expect(screen.getByRole('tooltip')).toBeTruthy();
+    fireEvent.click(block('IT 101'));
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+
+    mockApi([schedule({ id: 1, status: 'rejected' })]);
+    await act(async () => { window.dispatchEvent(new CustomEvent(LIVE_UPDATE_EVENT, { detail: { topics: ['schedules'] } })); });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    expect(screen.getByRole('status').textContent).toBe('0 classes in view');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByRole('button', { name: 'Full screen' })).toBeTruthy();
+  });
+
+  it('prints only approved schedules even when the print response contains drafts', async () => {
+    const printRows = [schedule({ id: 1, semester_id: 1 }), schedule({ id: 10, semester_id: 1, status: 'approved_by_dean' }), schedule({ id: 11, semester_id: 1, status: 'draft' })];
+    get.mockImplementation((url: string) => {
+      if (url === '/initial-data') return Promise.resolve({ data: {
+        active_semester: { id: 1, academic_year: '2026-2027', semester: '1st' },
+        departments, schedules: printRows,
+        sections: [{ id: 1, section_name: 'BSIT 1A', department_id: 1, year_level: 1, semester: '1st', semester_id: 1, status: 'active' }],
+        rooms: [], courses: [], faculties: [], users: [],
+      } });
+      if (url === '/schedules') return Promise.resolve({ data: printRows });
+      if (url === '/departments') return Promise.resolve({ data: departments });
+      return Promise.resolve({ data: null });
+    });
+    render(<VpaaCalendarPage />);
+    await waitForChart();
+    fireEvent.click(screen.getByRole('button', { name: 'Print calendar' }));
+    await waitFor(() => expect(buildPdf).toHaveBeenCalledOnce());
+    expect(get).toHaveBeenCalledWith('/initial-data', { params: { view: 'gantt', schedule_limit: 2000 } });
+    expect(buildPdf.mock.calls[0][0]).toEqual([expect.objectContaining({ allSchedules: [expect.objectContaining({ id: '1', status: 'faculty_assignment' })] })]);
+    await waitFor(() => expect(preview.show).toHaveBeenCalled());
+  });
+
+  it('requests approved-only data and excludes unapproved rows from the timeline and details', async () => {
+    const unapproved = ['draft', 'completed', 'submitted', 'approved_by_dean', 'conditionally_approved', 'revision', 'rejected', 'rejected_by_dean', undefined];
+    mockApi([
+      schedule({ id: 1 }),
+      ...unapproved.map((status, index) => schedule({ id: index + 10, status, day: 'Wednesday', start_time: '05:00:00', end_time: '23:00:00' })),
+    ], { semester: { id: 5, academic_year: '2026-2027', semester: '1st' } });
+    render(<VpaaCalendarPage />);
+    await waitForChart();
+    expect(get).toHaveBeenCalledWith('/schedules', { params: { view: 'gantt', per_page: 1000, semester_id: 5 } });
+    expect(screen.getByRole('status').textContent).toBe('1 class in view');
+    expect(screen.queryByText('5 AM')).toBeNull();
+    expect(screen.queryByText('11 PM')).toBeNull();
+    fireEvent.click(block('IT 101'));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).queryByText('Weekly meetings of this lecture')).toBeNull();
+    expect(within(dialog).queryByText(/Overlapping classes/)).toBeNull();
+  });
+
   it('draws each meeting as a block with course, section, room, instructor and session type', async () => {
     render(<VpaaCalendarPage />);
     await waitForChart();
@@ -119,7 +191,6 @@ describe('VpaaCalendarPage Gantt timeline', () => {
     const style = block('IT 101').style;
     expect(Number.parseFloat(style.left)).toBeCloseTo((60 / 810) * 100, 3);
     expect(Number.parseFloat(style.width)).toBeCloseTo((90 / 810) * 100, 3);
-    fireEvent.click(screen.getByRole('button', { name: 'View options' }));
     expect(screen.getByText('Standard hours 7 AM – 8:30 PM')).toBeTruthy();
   });
 
@@ -129,7 +200,6 @@ describe('VpaaCalendarPage Gantt timeline', () => {
     await waitForChart();
 
     expect(Number.parseFloat(block('IT 101').style.left)).toBe(0);
-    fireEvent.click(screen.getByRole('button', { name: 'View options' }));
     expect(screen.getByText('Standard hours 8 AM – 6 PM')).toBeTruthy();
   });
 
@@ -140,7 +210,9 @@ describe('VpaaCalendarPage Gantt timeline', () => {
     const dayLabels = screen.getAllByRole('button', { expanded: true }).map((button) => button.textContent ?? '');
     expect(dayLabels[0]).toContain('Monday');
     expect(dayLabels[1]).toContain('Tuesday');
-    expect(dayLabels).toHaveLength(6);
+    expect(dayLabels[6]).toContain('Sunday');
+    expect(dayLabels).toHaveLength(7);
+    expect(within(screen.getByRole('group', { name: 'Days shown' })).getByRole('button', { name: 'Sun' })).toBeTruthy();
   });
 
   it('scopes schedules to the active semester when one exists', async () => {
@@ -157,7 +229,6 @@ describe('VpaaCalendarPage Gantt timeline', () => {
     render(<VpaaCalendarPage />);
     await waitForChart();
 
-    fireEvent.click(screen.getByRole('button', { name: 'View options' }));
     fireEvent.click(screen.getByRole('button', { name: 'Laboratory' }));
     await waitFor(() => expect(() => block('IT 101')).toThrow());
     expect(block('ACCT 1')).toBeTruthy();
@@ -181,7 +252,7 @@ describe('VpaaCalendarPage Gantt timeline', () => {
     await waitForChart();
 
     expect(block('IT 101').getAttribute('aria-label')).toContain('Overlaps 1 class on room');
-    expect(screen.getByRole('button', { name: 'Show only overlapping classes' }).textContent).toContain('(2)');
+    expect(screen.queryByRole('button', { name: 'Show only overlapping classes' })).toBeNull();
   });
 
   it('collapses a day from its row header', async () => {
@@ -226,34 +297,85 @@ describe('VpaaCalendarPage Gantt timeline', () => {
     expect(within(await screen.findByRole('dialog')).getByRole('img', { name: 'Information Technology logo' }).getAttribute('src')).toBe('/cit-logo.png');
   });
 
-  it('updates the summary and legend when days are hidden, and restores them on clear', async () => {
+  it('shows only the selected day, updates the summary and legend, and restores all days on clear', async () => {
+    mockApi([...defaultSchedules, schedule({ id: 3, day: 'Sunday', course: { course_code: 'IT 205', course_name: 'Networks' } })]);
     render(<VpaaCalendarPage />);
     await waitForChart();
 
-    expect(screen.getByRole('status').textContent).toBe('2 meetings in view');
-    fireEvent.click(within(screen.getByRole('group', { name: 'Days shown' })).getByRole('button', { name: 'Tue' }));
+    const days = within(screen.getByRole('group', { name: 'Days shown' }));
+    expect(screen.getByRole('status').textContent).toBe('3 classes in view');
+    fireEvent.click(days.getByRole('button', { name: 'Tue' }));
 
-    expect(screen.getByRole('status').textContent).toBe('1 meeting in view');
+    expect(screen.getByRole('status').textContent).toBe('1 class in view');
+    expect(screen.getByRole('button', { expanded: true }).textContent).toContain('Tuesday');
+    expect(screen.queryByTitle('Information Technology')).toBeNull();
+    expect(screen.getByTitle('Business Administration')).toBeTruthy();
+    expect(block('ACCT 1')).toBeTruthy();
+    expect(() => block('IT 101')).toThrow();
+
+    fireEvent.click(days.getByRole('button', { name: 'Tue' }));
+    expect(screen.getByRole('status').textContent).toBe('1 class in view');
+    expect(screen.getByRole('button', { expanded: true }).textContent).toContain('Tuesday');
+
+    fireEvent.click(days.getByRole('button', { name: 'Mon' }));
+    expect(screen.getByRole('button', { expanded: true }).textContent).toContain('Monday');
+    expect(screen.getByTitle('Information Technology')).toBeTruthy();
     expect(screen.queryByTitle('Business Administration')).toBeNull();
     expect(() => block('ACCT 1')).toThrow();
+    expect(block('IT 101')).toBeTruthy();
+
+    fireEvent.click(days.getByRole('button', { name: 'Sun' }));
+    expect(screen.getByRole('status').textContent).toBe('1 class in view');
+    expect(screen.getByRole('button', { expanded: true }).textContent).toContain('Sunday');
+    expect(block('IT 205')).toBeTruthy();
+    expect(() => block('IT 101')).toThrow();
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
-    expect(screen.getByRole('status').textContent).toBe('2 meetings in view');
+    expect(screen.getByRole('status').textContent).toBe('3 classes in view');
+    expect(screen.getAllByRole('button', { expanded: true })).toHaveLength(7);
     expect(screen.getByTitle('Business Administration')).toBeTruthy();
   });
 
-  it('keeps the selected session filter when view options are closed', async () => {
+  it('shows an empty Sunday and restores all days without clearing the session filter', async () => {
     render(<VpaaCalendarPage />);
     await waitForChart();
 
-    fireEvent.click(screen.getByRole('button', { name: 'View options' }));
     fireEvent.click(screen.getByRole('button', { name: 'Laboratory' }));
-    fireEvent.click(screen.getByRole('button', { name: 'View options' }));
+    const days = within(screen.getByRole('group', { name: 'Days shown' }));
+    fireEvent.click(days.getByRole('button', { name: 'Sun' }));
 
-    expect(screen.queryByRole('group', { name: 'Session type' })).toBeNull();
-    expect(screen.getByRole('status').textContent).toBe('1 meeting in view');
+    expect(screen.getByRole('status').textContent).toBe('0 classes in view');
+    expect(screen.getByRole('button', { expanded: true }).textContent).toContain('Sunday');
+    expect(screen.getAllByText('No classes in view').length).toBeGreaterThan(0);
+
+    fireEvent.click(days.getByRole('button', { name: 'All days' }));
+    expect(screen.getByRole('status').textContent).toBe('1 class in view');
+    expect(screen.getAllByRole('button', { expanded: true })).toHaveLength(7);
+    expect(screen.getByRole('button', { name: 'Laboratory' }).getAttribute('aria-pressed')).toBe('true');
     expect(block('ACCT 1')).toBeTruthy();
     expect(() => block('IT 101')).toThrow();
+  });
+
+  it('keeps display controls visible and clears the selected session filter', async () => {
+    render(<VpaaCalendarPage />);
+    await waitForChart();
+
+    expect(screen.queryByRole('button', { name: 'View options' })).toBeNull();
+    expect(screen.getByRole('group', { name: 'Session type' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Print calendar' })).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Density' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Collapse all days' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Refresh calendar' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Laboratory' }));
+    expect(screen.getByRole('status').textContent).toBe('1 class in view');
+    expect(block('ACCT 1')).toBeTruthy();
+    expect(() => block('IT 101')).toThrow();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(screen.getByRole('status').textContent).toBe('2 classes in view');
+    expect(block('IT 101')).toBeTruthy();
+    expect(block('ACCT 1')).toBeTruthy();
   });
 
   it('reduces time labels on a narrow viewport while keeping classes selectable', async () => {

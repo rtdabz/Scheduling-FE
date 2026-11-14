@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
@@ -222,6 +222,66 @@ describe("useGenerationRun", () => {
       "/schedule-recommendations/year-level-preview/queue",
     ]));
     await waitFor(() => expect(localStorage.getItem("wicars.generation-run.2.1")).toBe("run-2"));
+  });
+
+  it("cancels the active generation only when its own schedule is fully reset", async () => {
+    post.mockResolvedValue({ data: { run_id: 'old-run' } });
+    get.mockImplementation((url: string) => Promise.resolve({ data: url.endsWith('/old-run')
+      ? { run_id: 'old-run', status: 'running' } : { run: null } }));
+    render(<GenerationRunProvider departmentId={2} semesterId={1}><Starter /><Watcher /></GenerationRunProvider>);
+    fireEvent.click(screen.getByRole('button', { name: 'start' }));
+    await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('running'));
+    act(() => {
+      window.dispatchEvent(new CustomEvent('schedule-workspace-reset', { detail: { departmentId: 3, semesterId: 1, isEmpty: true } }));
+      window.dispatchEvent(new CustomEvent('schedule-workspace-reset', { detail: { departmentId: 2, semesterId: 1, isEmpty: false } }));
+    });
+    expect(screen.getByTestId('status').textContent).toBe('running');
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('schedule-workspace-reset', { detail: { departmentId: 2, semesterId: 1, isEmpty: true } }));
+    });
+    expect(screen.getByTestId('status').textContent).toBe('idle');
+    expect(post).toHaveBeenCalledWith('/schedule-recommendations/generation-runs/old-run/cancel');
+  });
+
+  it("discards a generation response queued before the whole schedule was reset", async () => {
+    let resolveQueue: (value: { data: { run_id: string } }) => void = () => {};
+    post.mockImplementation((url: string) => url.endsWith('/queue')
+      ? new Promise((resolve) => { resolveQueue = resolve; }) : Promise.resolve({ data: {} }));
+    render(<GenerationRunProvider departmentId={2} semesterId={1}><Starter /><Watcher /></GenerationRunProvider>);
+    fireEvent.click(screen.getByRole('button', { name: 'start' }));
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('schedule-workspace-reset', { detail: { departmentId: 2, semesterId: 1, isEmpty: true } }));
+      resolveQueue({ data: { run_id: 'obsolete' } });
+    });
+    expect(screen.getByTestId('status').textContent).toBe('idle');
+    expect(localStorage.getItem('wicars.generation-run.2.1')).toBeNull();
+    expect(post).toHaveBeenCalledWith('/schedule-recommendations/generation-runs/obsolete/cancel');
+  });
+
+  it("ignores a restored generation result that arrives after reset", async () => {
+    let resolveRestore: (value: unknown) => void = () => {};
+    get.mockImplementation(() => new Promise((resolve) => { resolveRestore = resolve; }));
+    render(<GenerationRunProvider departmentId={2} semesterId={1}><Watcher /></GenerationRunProvider>);
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('schedule-workspace-reset', { detail: { departmentId: 2, semesterId: 1, isEmpty: true } }));
+      resolveRestore({ data: { run: { run_id: 'obsolete', status: 'failed', message: 'Old warning' } } });
+    });
+    expect(screen.getByTestId('status').textContent).toBe('idle');
+    expect(screen.getByTestId('error').textContent).toBe('');
+  });
+
+  it("cancels a running generation discovered by a restore request after reset", async () => {
+    let resolveRestore: (value: unknown) => void = () => {};
+    get.mockImplementation(() => new Promise((resolve) => { resolveRestore = resolve; }));
+    post.mockResolvedValue({ data: {} });
+    render(<GenerationRunProvider departmentId={2} semesterId={1}><Watcher /></GenerationRunProvider>);
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('schedule-workspace-reset', { detail: { departmentId: 2, semesterId: 1, isEmpty: true } }));
+      resolveRestore({ data: { run: { run_id: 'obsolete', status: 'running' } } });
+    });
+    expect(screen.getByTestId('status').textContent).toBe('idle');
+    expect(post).toHaveBeenCalledWith('/schedule-recommendations/generation-runs/obsolete/cancel');
+    expect(localStorage.getItem('wicars.generation-run.2.1')).toBeNull();
   });
 
   it("reports a completed run that produced no timetable as a failure", async () => {

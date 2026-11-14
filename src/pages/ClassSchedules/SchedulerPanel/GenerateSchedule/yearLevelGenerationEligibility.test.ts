@@ -48,7 +48,7 @@ describe("year-level generation eligibility", () => {
     expect(canGenerateYearLevel(sections, [], 20)).toBe(true);
   });
 
-  it.each(["draft", "completed"] as const)("allows regeneration while schedules are still %s", (status) => {
+  it.each(["draft", "completed", "revision", "rejected", "rejected_by_dean"] as const)("allows regeneration while schedules are still %s", (status) => {
     expect(canGenerateYearLevel(sections, sections.map((section) => schedule(section.id, status)), 20)).toBe(true);
   });
 
@@ -71,12 +71,12 @@ describe("year-level generation eligibility", () => {
     expect(canGenerateYearLevel(sections, sections.map((section) => schedule(section.id, "revision")), 20)).toBe(true);
   });
 
-  it("does not treat mixed plotting and revision rows as a fully withdrawn year level", () => {
+  it("allows corrections across mixed editable states after a partial regeneration", () => {
     expect(canGenerateYearLevel(sections, [
       schedule("1", "revision"),
       schedule("2", "draft"),
       schedule("3", "completed"),
-    ], 20)).toBe(false);
+    ], 20)).toBe(true);
   });
 
   it("blocks protected workflow stages", () => {
@@ -110,7 +110,7 @@ describe("year-level generation eligibility", () => {
 
   it("uses the required blocked message", () => {
     expect(YEAR_LEVEL_GENERATION_BLOCKED_MESSAGE).toBe(
-      "Schedules for this year level have already been plotted. Generation is unavailable unless the entire year level is recalled.",
+      "This year level includes schedules under review or already approved. Only editable sections can be regenerated.",
     );
   });
 });

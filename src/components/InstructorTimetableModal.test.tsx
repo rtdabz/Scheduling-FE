@@ -17,6 +17,7 @@ vi.mock('../pages/vpaa/calendar/MasterGantt', () => ({ default: () => null }));
 vi.mock('../pages/vpaa/calendar/ScheduleDetailModal', () => ({ default: () => null }));
 
 const schedule = (facultyId: number) => ({ id: facultyId, faculty_id: facultyId, department_id: 1,
+  status: 'approved',
   semester_id: 1, section_id: 1, room_id: 1, day: 'Monday', start_time: '07:00:00', end_time: '09:00:00',
   course: { course_code: `C${facultyId}`, course_name: 'Course' } });
 const props = { facultyId: 1, facultyName: 'First Instructor', isOpen: true, onClose: vi.fn() };
@@ -31,6 +32,33 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe('instructor timetable printing', () => {
+  it('prints and counts only VPAA-approved meetings from a mixed response', async () => {
+    vi.mocked(api.get).mockImplementation(async (url) => ({ data: url === '/departments' ? [] : [
+      schedule(1), { ...schedule(1), id: 2, status: 'approved_by_dean' },
+      { ...schedule(1), id: 3, status: 'draft' }, { ...schedule(1), id: 4, status: undefined },
+    ] }));
+    render(<InstructorTimetableModal {...props} />);
+    await screen.findByText('1 Assigned Class');
+    expect(api.get).toHaveBeenCalledWith('/schedules', expect.objectContaining({
+      params: expect.objectContaining({ view: 'gantt' }),
+    }));
+    fireEvent.click(screen.getByRole('button', { name: 'Print Timetable' }));
+    await waitFor(() => expect(buildInstructorTimetablePdf).toHaveBeenCalledOnce());
+    expect(vi.mocked(buildInstructorTimetablePdf).mock.calls[0][0].schedules).toHaveLength(1);
+  });
+
+  it('passes the active semester so the printed timetable shows the academic year', async () => {
+    const semester = { id: 7, academic_year: '2026-2027', semester: '1st' };
+    vi.mocked(api.get).mockImplementation(async (url, config) => ({ data: url === '/departments'
+      ? [] : url === '/semesters/active' ? semester : [schedule(config?.params.faculty_id)] }));
+    render(<InstructorTimetableModal {...props} />);
+    await screen.findByText('1 Assigned Class');
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/semesters/active'));
+    fireEvent.click(screen.getByRole('button', { name: 'Print Timetable' }));
+    await waitFor(() => expect(buildInstructorTimetablePdf).toHaveBeenCalledOnce());
+    expect(vi.mocked(buildInstructorTimetablePdf).mock.calls[0][0].activeSemester).toEqual(semester);
+  });
+
   it('prevents stale printing while another instructor loads and after a load failure', async () => {
     setCachedData('global:schedules', []);
     const { rerender } = render(<InstructorTimetableModal {...props} />);

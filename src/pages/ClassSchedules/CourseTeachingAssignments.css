@@ -1,0 +1,113 @@
+.course-teaching-courses {
+  container-type: inline-size;
+}
+
+.course-teaching-table th,
+.course-teaching-table td {
+  padding-inline: 0.5rem;
+}
+
+.course-teaching-table td {
+  overflow-wrap: anywhere;
+}
+
+.course-teaching-table th button {
+  max-width: 100%;
+}
+
+.course-teaching-table th button svg {
+  flex-shrink: 0;
+}
+
+/* Fixed column widths (table-fixed); select, units and actions are sized in the column defs. */
+.course-teaching-table th.course-teaching-col-course { width: 28%; }
+.course-teaching-table th.course-teaching-col-program { width: 22%; }
+.course-teaching-table th.course-teaching-col-owner { width: 9%; }
+.course-teaching-table th.course-teaching-col-teacher { width: 13%; }
+.course-teaching-table th.course-teaching-col-status { width: 17%; }
+
+.course-teaching-table td {
+  padding-block: 0.625rem;
+  vertical-align: middle;
+}
+
+/* Selected rows: maroon tint plus an amber edge. The repeated class out-ranks the global
+   `table tbody > tr:...:hover` rule in index.css so the selection stays visible on hover. */
+table.course-teaching-table tbody > tr.course-teaching-row-selected.course-teaching-row-selected.course-teaching-row-selected {
+  background-color: rgba(78, 10, 16, 0.055) !important;
+}
+
+table.course-teaching-table tbody > tr.course-teaching-row-selected > td:first-child {
+  box-shadow: inset 3px 0 0 #C9952A;
+}
+
+@container (max-width: 767px) {
+  .course-teaching-table,
+  .course-teaching-table thead,
+  .course-teaching-table tbody {
+    display: block;
+  }
+
+  .course-teaching-table thead {
+    position: static;
+  }
+
+  .course-teaching-table thead tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .course-teaching-table th {
+    flex: 0 0 auto;
+    width: auto !important;
+  }
+
+  .course-teaching-table th button {
+    white-space: nowrap;
+  }
+
+  .course-teaching-table th:last-child {
+    display: none;
+  }
+
+  .course-teaching-table tbody > tr {
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr) 3rem 3rem;
+    padding-block: 0.5rem;
+  }
+
+  .course-teaching-table td {
+    min-width: 0;
+    padding-block: 0.25rem;
+  }
+
+  .course-teaching-table td:nth-child(1) { grid-area: 1 / 1; }
+  .course-teaching-table td:nth-child(2) { grid-area: 1 / 2; }
+  .course-teaching-table td:nth-child(6) { grid-area: 1 / 3; }
+  .course-teaching-table td:nth-child(8) { grid-area: 1 / 4; }
+
+  .course-teaching-table td:nth-child(3),
+  .course-teaching-table td:nth-child(4),
+  .course-teaching-table td:nth-child(5),
+  .course-teaching-table td:nth-child(7) {
+    grid-column: 2 / -1;
+  }
+
+  .course-teaching-table td::before {
+    display: block;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 600;
+  }
+
+  .course-teaching-table td:nth-child(3)::before { content: 'Program'; }
+  .course-teaching-table td:nth-child(4)::before { content: 'Origin'; }
+  .course-teaching-table td:nth-child(5)::before { content: 'Taught by'; }
+  .course-teaching-table td:nth-child(6)::before { content: 'Units'; }
+  .course-teaching-table td:nth-child(7)::before { content: 'Status'; }
+
+  .course-teaching-table td[colspan] {
+    grid-column: 1 / -1;
+  }
+}

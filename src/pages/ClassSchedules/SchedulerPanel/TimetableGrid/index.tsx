@@ -1,8 +1,7 @@
 import React from "react";
-import { AlertTriangle, BookOpen, Calendar, DoorOpen, Info, Loader2, MousePointerClick, X } from "lucide-react";
+import { AlertTriangle, BookOpen, CalendarDays, CalendarPlus, DoorOpen, Loader2, MousePointerClick, X } from "lucide-react";
 import {
   DAYS,
-  GRID_HEADER_HEIGHT_PX,
   SLOT_HEIGHT_PX,
   slotToTimeStr
 } from "../constants";
@@ -12,6 +11,13 @@ import ScheduleCard from "./ScheduleCard";
 import Skeleton from "../../../../components/ui/Skeleton";
 import WeeklyTimetableGrid from "../../../../components/scheduling/WeeklyTimetableGrid";
 import { slotCount } from "../../../../lib/timeGrid";
+import { TimetableLegend, TimetableTitleBar } from "../../../../components/scheduling/TimetablePanel";
+import {
+  endsTimeBand,
+  TIMETABLE_HEADER_BUTTON,
+  TIMETABLE_HEADER_BUTTON_PRESSED,
+  TIMETABLE_SWATCH,
+} from "../../../../components/scheduling/timetableStyles";
 import { buildSubjectIndex, resolveScheduleSubject } from "./subjectResolution";
 
 interface TimetableGridProps {
@@ -20,13 +26,12 @@ interface TimetableGridProps {
   subjects: Subject[];
   activeSemesterText: string;
   selectedSectionId: string;
-  totalScheduled: number;
-  totalSubjects: number;
   isEditable: boolean;
   isPhase2Active: boolean;
   currentStatus: ScheduleItem["status"];
   isFinalizedFacultyEditing?: boolean;
   schedules: ScheduleItem[];
+  dragSubjectId?: string | null;
   sectionSchedules: ScheduleItem[];
   hoveredCell: string | null;
   draggedScheduleId: string | null;
@@ -65,8 +70,6 @@ export default function TimetableGrid({
   subjects,
   activeSemesterText,
   selectedSectionId,
-  totalScheduled,
-  totalSubjects,
   isEditable,
   isPhase2Active,
   currentStatus,
@@ -74,6 +77,7 @@ export default function TimetableGrid({
   sectionSchedules,
   hoveredCell,
   draggedScheduleId,
+  dragSubjectId = null,
   deleteConfirmScheduleId,
   setDeleteConfirmScheduleId,
   conflictInfo,
@@ -115,99 +119,49 @@ export default function TimetableGrid({
   const selectedSectionName = selectedSectionId
     ? sections.find((s) => s.id === selectedSectionId)?.name ?? "No section"
     : "No section selected";
-  const unplacedSubjects = Math.max(0, totalSubjects - totalScheduled);
-  const placedPercent = totalSubjects > 0 ? Math.min(100, Math.round((totalScheduled / totalSubjects) * 100)) : 0;
-  const gridToolButtonClass = "inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold shadow-sm transition-colors cursor-pointer";
+  const canPlot = isEditable && !isPhase2Active;
+  const isDragging = Boolean(dragSubjectId || draggedScheduleId);
+  const showEmptyHint = !isLoading && Boolean(selectedSectionId) && sectionSchedules.length === 0 && !isPlacementMode && !isDragging;
   const placementLabel = placementSubjectId
     ? subjectsById.get(String(placementSubjectId))?.code ?? "subject"
     : "";
   return (
-    <div id="schedule-builder-timetable" className="flex min-h-[48rem] min-w-0 flex-1 flex-col overflow-visible rounded-2xl border border-slate-200/80 bg-white shadow-md lg:h-auto lg:min-h-0">
-      <div className="flex shrink-0 flex-col gap-3 border-b border-slate-200/80 px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#4e0a10]/[0.07] text-[#4e0a10]">
-            <Calendar className="h-4 w-4" />
-          </span>
-          <div className="min-w-0 leading-tight">
-            <h2 className="text-sm font-black text-slate-900">Timetable Grid</h2>
-            {isLoading ? (
-              <Skeleton className="mt-1 h-3 w-48" />
-            ) : (
-              <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-slate-500">
-                <span className="font-bold text-[#4e0a10]">{selectedSectionName}</span>
-                <span aria-hidden="true" className="text-slate-300">•</span>
-                <span className="font-medium">{activeSemesterText}</span>
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          {isLoading ? <Skeleton className="h-9 w-36 rounded-lg" /> : (
-            <div
-              className="flex h-9 items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 select-none"
-              title={`${totalScheduled} placed, ${unplacedSubjects} unplaced`}
-            >
-              <span className="text-xs font-bold text-slate-700">
-                {totalScheduled}<span className="text-slate-400">/{totalSubjects}</span> placed
-              </span>
-              <span
-                className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100"
-                role="progressbar"
-                aria-label="Subjects placed"
-                aria-valuemin={0}
-                aria-valuemax={totalSubjects}
-                aria-valuenow={totalScheduled}
+    <div id="schedule-builder-timetable" className="flex min-w-0 flex-1 flex-col overflow-clip rounded-xl border border-slate-200 bg-white">
+      <TimetableTitleBar
+        isLoading={isLoading}
+        highlight={selectedSectionName}
+        detail={activeSemesterText}
+        actions={!isReadOnlyViewer && (
+          <>
+            {!isFacultyAssignment && (isLoading ? <Skeleton className="h-9 w-32 rounded-lg" /> : (
+              <button
+                id="schedule-builder-course-bank-toggle"
+                type="button"
+                onClick={handleToggleWideView}
+                aria-pressed={!isWideView}
+                title={isWideView ? "Show the Manual Plotting panel" : "Hide the Manual Plotting panel"}
+                className={`${TIMETABLE_HEADER_BUTTON} ${isWideView ? "" : TIMETABLE_HEADER_BUTTON_PRESSED}`}
               >
-                <span
-                  className={`block h-full rounded-full transition-all duration-300 ${unplacedSubjects === 0 && totalSubjects > 0 ? "bg-emerald-500" : "bg-[#c9952a]"}`}
-                  style={{ width: `${placedPercent}%` }}
-                />
-              </span>
-              {unplacedSubjects > 0 && (
-                <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
-                  {unplacedSubjects} left
-                </span>
-              )}
-            </div>
-          )}
-
-          {!isReadOnlyViewer && (
-            <>
-              <span aria-hidden="true" className="mx-0.5 hidden h-6 w-px bg-slate-200 sm:block" />
-              {!isFacultyAssignment && (isLoading ? <Skeleton className="h-9 w-32 rounded-lg" /> : (
-                <button
-                  id="schedule-builder-course-bank-toggle"
-                  type="button"
-                  onClick={handleToggleWideView}
-                  aria-pressed={!isWideView}
-                  className={`${gridToolButtonClass} ${
-                    isWideView
-                      ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
-                      : "border-[#4e0a10]/20 bg-[#4e0a10]/[0.07] text-[#4e0a10] hover:bg-[#4e0a10]/10"
-                  }`}
-                >
-                  <BookOpen className="h-3.5 w-3.5" />
-                  Manual Plotting
-                </button>
-              ))}
-              {isLoading ? <Skeleton className="h-9 w-28 rounded-lg" /> : (
-                <button
-                  type="button"
-                  onClick={() => setIsRoomViewOpen(true)}
-                  className={`${gridToolButtonClass} border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50`}
-                >
-                  <DoorOpen className="h-3.5 w-3.5" />
-                  View Schedule
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      </div>
+                <BookOpen className={`h-3.5 w-3.5 ${isWideView ? "" : "text-[#F5C842]"}`} />
+                Manual Plotting
+              </button>
+            ))}
+            {isLoading ? <Skeleton className="h-9 w-28 rounded-lg" /> : (
+              <button
+                type="button"
+                onClick={() => setIsRoomViewOpen(true)}
+                className={TIMETABLE_HEADER_BUTTON}
+              >
+                <DoorOpen className="h-3.5 w-3.5" />
+                View Schedule
+              </button>
+            )}
+          </>
+        )}
+      />
 
       <div
-        className="relative flex min-h-[30rem] flex-1 flex-col overflow-hidden bg-slate-50/80 lg:min-h-0"
+        className="relative flex min-h-[24rem] flex-1 flex-col bg-white"
         aria-busy={savingMessage ? true : undefined}
       >
         {savingMessage && (
@@ -222,42 +176,42 @@ export default function TimetableGrid({
           </div>
         )}
         {placementSubjectId && !movingScheduleId && (
-          <div className="sticky top-0 z-40 mx-2 mt-1.5 mb-1 flex items-center gap-2 rounded-xl border border-blue-300 bg-blue-50 px-3 py-1.5 shadow-sm">
-            <MousePointerClick className="w-5 h-5 text-blue-700 shrink-0" />
-            <p className="text-sm font-semibold text-blue-900">
-              Placing <span className="font-extrabold">{placementLabel}</span>
-              {" "}— now click an empty time slot in the grid.
+          <div role="status" className="flex shrink-0 items-center gap-2 border-b border-[#c9952a]/40 bg-[#fdf6e7] px-4 py-1.5">
+            <MousePointerClick className="h-4 w-4 shrink-0 text-[#8a5a12]" />
+            <p className="min-w-0 text-xs font-medium text-[#5c3d0c]">
+              Plotting <span className="font-bold text-[#4e0a10]">{placementLabel}</span>
+              {" "}— click an available time slot in the grid.
             </p>
-            <div className="ml-auto flex items-center gap-2">
-              <button
-                type="button"
-                onClick={cancelPlacement}
-                className="flex items-center gap-1.5 rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-                Cancel
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={cancelPlacement}
+              className="ml-auto flex h-7 shrink-0 items-center gap-1 rounded-md border border-[#c9952a]/50 bg-white px-2.5 text-xs font-semibold text-[#5c3d0c] transition-colors hover:bg-[#c9952a]/10 cursor-pointer"
+            >
+              <X className="h-3.5 w-3.5" />
+              Cancel
+            </button>
           </div>
         )}
         {!selectedSectionId && !isLoading ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/90 z-20">
-            <AlertTriangle className="w-12 h-12 text-amber-500 mb-3 animate-bounce" />
-            <h3 className="text-sm font-bold text-slate-800">No Section Selected</h3>
-            <p className="text-xs text-slate-500 mt-1 max-w-xs text-center">
-              Please select a section from the top bar dropdown menu to load its timetable grid.
+          <div className="flex flex-1 flex-col items-center justify-center bg-[#faf7f3] px-6 py-16 text-center">
+            <CalendarDays className="h-8 w-8 text-slate-300" aria-hidden="true" />
+            <h3 className="mt-3 text-sm font-semibold text-slate-700">No section selected</h3>
+            <p className="mt-1 max-w-xs text-xs text-slate-500">
+              Choose a section in the workspace header to load its timetable.
             </p>
           </div>
         ) : (
-          <div className={`${isWideView ? "overflow-hidden" : "overflow-auto"} flex min-h-0 flex-1 flex-col p-2 sm:p-4`}>
+          // Desktop fits all seven days with no horizontal overflow. Below `lg` the grid keeps a
+          // readable minimum width and this body scrolls sideways instead of crushing the days.
+          <div className="flex flex-col max-lg:overflow-x-auto">
             <WeeklyTimetableGrid
               days={DAYS}
               slotCount={timetableSlotCount}
-              headerHeight={GRID_HEADER_HEIGHT_PX}
               rowTemplate={`repeat(${timetableSlotCount}, ${SLOT_HEIGHT_PX}px)`}
-              minWidth={isWideView ? 0 : 900}
-              className="shrink-0"
+              minWidth={0}
+              className="shrink-0 max-lg:!min-w-[760px]"
               isLoading={isLoading}
+              stickyHeader={false}
               getTimeLabel={slotToTimeStr}
               getDayCount={getClassesCountForDay}
               renderCell={isLoading ? undefined : (d, t) => {
@@ -275,6 +229,7 @@ export default function TimetableGrid({
                     isEditable={isEditable}
                     isPhase2Active={isPhase2Active}
                     isPlacementMode={isPlacementMode}
+                    endsBand={endsTimeBand(t)}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
@@ -291,7 +246,7 @@ export default function TimetableGrid({
                 ].map((sk) => (
                   <div
                     key={sk.id}
-                    className="z-10 rounded-xl border border-[#E2D9D0] bg-[#F7F4F0]/80 p-2 box-border overflow-hidden shadow-sm animate-pulse flex flex-col justify-between h-full"
+                    className="z-10 rounded-lg border border-[#E2D9D0] bg-[#F7F4F0]/80 p-2 box-border overflow-hidden animate-pulse flex flex-col justify-between h-full"
                     style={{
                       gridColumn: sk.dayIndex + 2,
                       gridRow: `${sk.startSlot + 2} / span ${sk.durationSlots}`
@@ -344,6 +299,21 @@ export default function TimetableGrid({
             </WeeklyTimetableGrid>
           </div>
         )}
+        {showEmptyHint && (
+          <div className="pointer-events-none absolute inset-x-0 top-28 z-10 flex justify-center px-4">
+            <div className="flex max-w-sm items-start gap-3 rounded-lg border border-slate-200 bg-white/95 px-4 py-3">
+              <CalendarPlus className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+              <div>
+                <p className="text-xs font-semibold text-slate-700">No subjects plotted yet</p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {canPlot
+                    ? "Select a subject in Manual Plotting, then click a time slot — or drag it onto the grid."
+                    : "This section has no classes on the timetable."}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {conflictInfo && (
@@ -362,21 +332,28 @@ export default function TimetableGrid({
         </div>
       )}
 
-      <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50/50 px-3 py-3 text-xs font-semibold text-slate-500 sm:gap-4 sm:px-6">
-        <span className="flex items-center gap-1.5">
-          <Info className="w-3.5 h-3.5 text-slate-400" />
-          Categories:
-        </span>
-        {[
-          { label: "Major", color: "bg-rose-50 border-[#4e0a10]" },
-          { label: "Minor", color: "bg-amber-50 border-[#c9952a]" }
-        ].map(({ label, color }) => (
-          <span key={label} className="flex items-center gap-1">
-            <span className={`w-2.5 h-2.5 rounded border ${color}`} />
-            {label}
-          </span>
-        ))}
-      </div>
+      <TimetableLegend
+        groups={[
+          {
+            label: "Subjects",
+            items: [
+              { label: "Major", swatch: TIMETABLE_SWATCH.major },
+              { label: "Minor", swatch: TIMETABLE_SWATCH.minor },
+            ],
+          },
+          {
+            label: "Slots",
+            items: canPlot
+              ? [
+                  { label: "Available", swatch: TIMETABLE_SWATCH.available },
+                  { label: "Placement target", swatch: TIMETABLE_SWATCH.target },
+                  { label: "Selected", swatch: TIMETABLE_SWATCH.selected },
+                  { label: "Conflict", swatch: TIMETABLE_SWATCH.conflict },
+                ]
+              : [],
+          },
+        ]}
+      />
     </div>
   );
 }

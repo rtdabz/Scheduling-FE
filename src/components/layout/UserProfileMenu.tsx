@@ -7,8 +7,9 @@ import { useToast } from '../../context/ToastContext';
 import { logoutCurrentSession } from '../../lib/authSession';
 import ProfileAvatar from '../ui/ProfileAvatar';
 import UserProfileModal, { type ProfileUser as StoredUser } from './UserProfileModal';
+import { roleLabel as formatRoleLabel } from '../../lib/roles';
 
-const roleLabel = (role?: string) => ({ vpaa: 'VPAA', dean: 'Dean', secretary: 'Secretary', program_head: 'Program Head' }[role?.toLowerCase() ?? ''] || role || 'User');
+const roleLabel = (role?: string) => formatRoleLabel(role);
 
 export default function UserProfileMenu() {
   const navigate = useNavigate();
@@ -65,21 +66,19 @@ export default function UserProfileMenu() {
         <ChevronDown className={`h-2.5 w-2.5 transition-transform ${open ? 'rotate-180' : ''}`} strokeWidth={3} />
       </span>
     </button>
-    {open && <div role="menu" className="absolute right-0 top-full z-[60] mt-2 max-h-[calc(100vh-5rem)] w-[min(22.5rem,calc(100vw-1rem))] overflow-y-auto rounded-xl bg-white p-4 text-slate-900 shadow-[0_12px_28px_rgba(0,0,0,0.2),0_2px_4px_rgba(0,0,0,0.1)]">
-      <div className="rounded-xl bg-white p-1 shadow-[0_2px_12px_rgba(0,0,0,0.15)]">
-        <button role="menuitem" type="button" onClick={() => { setMenuOpen(false); setProfileOpen(true); }} className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition hover:bg-slate-100">
-          <ProfileAvatar src={photo} className="h-10 w-10 rounded-full" />
-          <span className="min-w-0">
-            <span className="block truncate text-[15px] font-bold">{user?.name || 'Administrator'}</span>
-            <span className="block truncate text-xs text-slate-500">{roleLabel(user?.role)}{user?.email || user?.username ? ` · ${user?.email || user?.username}` : ''}</span>
-          </span>
-        </button>
-        <div className="mx-2 my-1 border-t border-slate-200" />
-        <button role="menuitem" type="button" onClick={() => { setMenuOpen(false); setProfileOpen(true); }} className="w-full rounded-lg px-2 py-2 text-left text-sm font-semibold text-[#4e0a10] transition hover:bg-slate-100">See your profile</button>
+    {open && <div role="menu" className="absolute right-0 top-full z-[60] mt-2 max-h-[calc(100vh-5rem)] w-[min(18rem,calc(100vw-1rem))] overflow-y-auto rounded-xl border border-[#4e0a10]/10 bg-white text-slate-900 shadow-[0_10px_24px_rgba(78,10,16,0.14),0_2px_4px_rgba(0,0,0,0.06)]">
+      <div className="flex items-center gap-2.5 px-3 py-2.5">
+        <ProfileAvatar src={photo} className="h-10 w-10 shrink-0 rounded-full" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold leading-5">{user?.name || 'Administrator'}</p>
+          <p className="truncate text-xs leading-4 text-[#4e0a10]/80">{roleLabel(user?.role)}</p>
+          {(user?.email || user?.username) && <p className="truncate text-xs leading-4 text-slate-500" title={user?.email || user?.username}>{user?.email || user?.username}</p>}
+          <button role="menuitem" type="button" onClick={() => { setMenuOpen(false); setProfileOpen(true); }} className="mt-0.5 text-xs font-semibold text-[#4e0a10] underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none">See your profile</button>
+        </div>
       </div>
-      <div className="mt-3 space-y-0.5">
-        {role === 'vpaa' && <MenuRow icon={<Settings size={20} />} label="Settings" onClick={() => { setMenuOpen(false); navigate('/settings'); }} chevron />}
-        <MenuRow icon={<LogOut size={20} />} label={loggingOut ? 'Signing out...' : 'Log Out'} onClick={logout} disabled={loggingOut} />
+      <div className="border-t border-[#4e0a10]/10 p-1">
+        {role === 'vpaa' && <MenuRow icon={<Settings size={16} />} label="Settings" onClick={() => { setMenuOpen(false); navigate('/settings'); }} chevron />}
+        <MenuRow icon={<LogOut size={16} />} label={loggingOut ? 'Signing out...' : 'Log Out'} onClick={logout} disabled={loggingOut} />
       </div>
     </div>}
     {profileOpen && <UserProfileModal onClose={() => setProfileOpen(false)} user={user} roleLabel={roleLabel(user?.role)} onSaved={handleProfileSaved} />}
@@ -87,9 +86,9 @@ export default function UserProfileMenu() {
 }
 
 function MenuRow({ icon, label, onClick, disabled = false, chevron = false }: { icon: ReactNode; label: string; onClick: () => void; disabled?: boolean; chevron?: boolean }) {
-  return <button role="menuitem" type="button" disabled={disabled} onClick={onClick} className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition hover:bg-slate-100 disabled:opacity-50">
-    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-900">{icon}</span>
-    <span className="flex-1 text-[15px] font-semibold">{label}</span>
-    {chevron && <ChevronRight size={22} className="text-slate-500" />}
+  return <button role="menuitem" type="button" disabled={disabled} onClick={onClick} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition hover:bg-[#F7F4F0] disabled:opacity-50">
+    <span className="flex shrink-0 text-[#4e0a10]">{icon}</span>
+    <span className="flex-1 text-[13px] font-semibold">{label}</span>
+    {chevron && <ChevronRight size={14} className="text-slate-400" />}
   </button>;
 }

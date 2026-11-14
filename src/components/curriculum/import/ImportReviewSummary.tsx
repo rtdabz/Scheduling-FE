@@ -4,6 +4,7 @@ import SourceNotes from '../SourceNotes';
 import ImportCoursesTable from './ImportCoursesTable';
 import { noteScopeLabel } from '../../../lib/curriculumImport/notes';
 import type { ImportChange, ImportDraft, ValidationResult } from '../../../lib/curriculumImport/types';
+import { TABLE_HEAD, TABLE_HEAD_ROW } from '../../ui/tableStyles';
 
 interface ImportReviewSummaryProps {
   draft: ImportDraft;
@@ -56,7 +57,7 @@ function ChangeTable({ changes, label }: { changes: ImportChange[]; label: strin
   return (
     <table className="w-full text-left text-[13px]" aria-label={label}>
       <thead className="max-sm:sr-only">
-        <tr className="border-b border-border text-[11px] font-bold uppercase tracking-wide text-muted">
+        <tr className={`${TABLE_HEAD} ${TABLE_HEAD_ROW}`}>
           <th scope="col" className="px-3 py-2">Course</th>
           <th scope="col" className="px-3 py-2">Field</th>
           <th scope="col" className="px-3 py-2">Original</th>
@@ -67,7 +68,7 @@ function ChangeTable({ changes, label }: { changes: ImportChange[]; label: strin
         {changes.map((change, index) => {
           const first = index === 0 || changes[index - 1].row_id !== change.row_id;
           return (
-            <tr key={`${change.row_id}-${change.field}-${change.kind}`} className={`max-sm:block max-sm:rounded-lg max-sm:border max-sm:border-border max-sm:px-3 max-sm:py-2 max-sm:mb-2 ${first ? 'sm:border-t sm:border-border' : ''}`}>
+            <tr key={`${change.row_id}-${change.field}-${change.kind}`} className={`max-sm:block max-sm:rounded-lg max-sm:border max-sm:border-border max-sm:px-3 max-sm:py-2 max-sm:mb-2 ${first ? 'sm:border-t sm:border-gray-100' : ''}`}>
               <th scope="row" data-label="Course:" className={`${cell} font-semibold text-text`}><span className={first ? '' : 'sm:sr-only'}>{change.code}</span></th>
               <td data-label="Field:" className={`${cell} text-text`}>{FIELD_LABELS[change.field] ?? change.field}</td>
               <td data-label="Original:" className={`${cell} text-muted`}>

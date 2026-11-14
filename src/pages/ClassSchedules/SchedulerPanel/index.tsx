@@ -13,7 +13,7 @@ import PrintSchedule from "./PrintSchedule";
 import AutoAssignModal from "./Modals/AutoAssignModal";
 import ResolveConflictModal from "./Modals/ResolveConflictModal";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useScheduler } from "./hooks/useScheduler";
 import { useWorkflowGuide } from "../../../hooks/useWorkflowGuide";
@@ -22,6 +22,12 @@ import YearLevelCurriculumSelector from "./GenerateSchedule/YearLevelCurriculumS
 import GenerationProgressDrawer from "./GenerateSchedule/GenerationProgressDrawer";
 import { GenerationRunProvider } from "./hooks/useGenerationRun";
 import { getStoredUser } from "../../../lib/storedUser";
+import WorkflowGuideButton from "../../../components/help/WorkflowGuideButton";
+import { builderGuideSteps } from "./workflowGuideContent";
+import { announceJoyrideStart } from "../../../onboarding/joyrideTour";
+import { useWorkflowDialog } from "./GenerateSchedule/useWorkflowDialog";
+import { reassignsRoomSchedulesFromFacilities } from "../../../lib/roles";
+import { EDITABLE_STATUSES } from "../../../lib/scheduleStatuses";
 
 interface SchedulerPanelProps {
   autoAssignOnOpen?: boolean;
@@ -30,43 +36,41 @@ interface SchedulerPanelProps {
 export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPanelProps) {
   const scheduler = useScheduler();
   const [, setSearchParams] = useSearchParams();
-  const plottingGuideSteps = useMemo(() => [
-    { element: '#schedule-builder-section button[aria-haspopup="listbox"]', action: "click" as const, taskHint: "Open the section picker and choose a section.", title: "Choose a section", description: "Select a section to load its courses and timetable.", side: "bottom" as const, align: "start" as const },
-    { element: "#schedule-builder-generate button", action: "click" as const, skipIfMissing: true, taskHint: "Click Generate to continue.", title: "Generate a schedule", description: "Open the generator to build a whole year level at once. It has its own step-by-step guide, and this one waits here until you close it.", side: "bottom" as const, align: "end" as const },
-    { element: "#schedule-builder-course-bank-toggle", action: "click" as const, taskHint: "Click the toggle to continue.", title: "Manual Plotting", description: "Show or hide the Manual Plotting panel.", side: "bottom" as const, align: "start" as const },
-    { element: "#schedule-builder-course-bank", title: "Place each course", description: "Select a course and click an empty time, or drag it onto the timetable.", side: "right" as const, align: "start" as const },
-    { element: "#schedule-builder-timetable", title: "Check the timetable", description: "Review times, rooms, and conflicts. Move or edit classes if needed.", side: "top" as const },
-    { element: "#schedule-builder-next-step", title: "Finish plotting", description: "When every section is fully plotted and checked, submit the department schedule to the Dean.", side: "bottom" as const },
-  ], []);
-  const facultyAssignmentGuideSteps = useMemo(() => [
-    { element: '#schedule-builder-section button[aria-haspopup="listbox"]', action: "click" as const, taskHint: "Open the section picker and choose a section.", title: "Choose an approved section", description: "Select a section with classes that need instructors.", side: "bottom" as const, align: "start" as const },
-    { element: "#schedule-builder-workflow", title: "Check the current step", description: "Instructor Assignment means the timetable is ready for instructors.", side: "bottom" as const },
-    { element: "#schedule-builder-auto-assign", action: "click" as const, skipIfMissing: true, taskHint: "Click Assign to continue.", title: "Assign instructors", description: "Review automatic instructor suggestions, then apply the ones you want.", side: "bottom" as const, align: "end" as const },
-    { element: '[data-tour="unassigned-class"]', waitFor: "#schedule-builder-timetable", action: "click" as const, skipIfMissing: true, taskHint: "Click a highlighted class that needs an instructor.", title: "Open an unassigned class", description: "Select a class without an instructor to see eligible faculty and conflicts.", side: "top" as const },
-  ], []);
-  const reviewGuideSteps = useMemo(() => [
-    { element: '#schedule-builder-section button[aria-haspopup="listbox"]', action: "click" as const, taskHint: "Open the section picker and choose a section.", title: "Choose a section", description: "Select a section to review its schedule and status.", side: "bottom" as const, align: "start" as const },
-    { element: "#schedule-builder-workflow", title: "Check the workflow", description: "See which scheduling steps are complete.", side: "bottom" as const },
-    { element: "#schedule-builder-timetable", title: "Review the timetable", description: "Check classes, times, rooms, instructors, and conflicts.", side: "top" as const },
-    { element: "#schedule-builder-next-step", title: "Check the next action", description: "See the section status and what you can do next.", side: "bottom" as const },
-  ], []);
-  const plottingActive = ["draft", "revision", "completed"].includes(scheduler.currentStatus);
+  const plottingActive = EDITABLE_STATUSES.includes(scheduler.currentStatus);
   const facultyAssignmentActive = ["approved", "faculty_assignment", "reassignment"].includes(scheduler.currentStatus);
   const reviewActive = !plottingActive && !facultyAssignmentActive;
-  useWorkflowGuide({ id: "schedule-builder-plotting", isReady: !scheduler.isLoading && plottingActive, steps: plottingGuideSteps, mission: "Plot the Timetable" });
-  useWorkflowGuide({ id: "schedule-builder-faculty-assignment", isReady: !scheduler.isLoading && facultyAssignmentActive, steps: facultyAssignmentGuideSteps, mission: "Assign Instructors" });
-  useWorkflowGuide({ id: "schedule-builder-review", isReady: !scheduler.isLoading && reviewActive, steps: reviewGuideSteps, mission: "Review the Schedule" });
-  // The Secretary reassigns room schedules from Facilities; other roles keep the entry here.
-  const reassignsFromFacilities = getStoredUser()?.role === "secretary";
+  // The department office (Secretary or Director) and the Program Head reassign room schedules from Facilities; other roles keep the entry here.
+  const reassignsFromFacilities = reassignsRoomSchedulesFromFacilities(getStoredUser()?.role);
   const [isAutoAssignOpen, setIsAutoAssignOpen] = useState(false);
   const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
+  const generatorDialogRef = useRef<HTMLDivElement>(null);
   const [isSavingGenerated, setIsSavingGenerated] = useState(false);
+  useWorkflowDialog(generatorDialogRef, isGeneratorOpen, () => setIsGeneratorOpen(false), isSavingGenerated);
   const [isClearInstructorConfirmOpen, setIsClearInstructorConfirmOpen] = useState(false);
   const [clearInstructorScope, setClearInstructorScope] = useState<"section" | "department">("section");
   const [isConflictsOpen, setIsConflictsOpen] = useState(false);
   // The class whose Conflict badge was clicked; null opens on the first conflict.
   const [conflictsFocusId, setConflictsFocusId] = useState<number | null>(null);
+  useEffect(() => {
+    const closePreviousSchedule = () => {
+      setIsGeneratorOpen(false);
+      setIsAutoAssignOpen(false);
+      setIsConflictsOpen(false);
+      setConflictsFocusId(null);
+      setIsClearInstructorConfirmOpen(false);
+    };
+    window.addEventListener("schedule-workspace-reset", closePreviousSchedule);
+    return () => window.removeEventListener("schedule-workspace-reset", closePreviousSchedule);
+  }, []);
   const [pendingRoomTransferCount, setPendingRoomTransferCount] = useState(0);
+  const openGenerator = () => {
+    announceJoyrideStart("workflow:generator-open");
+    setIsGeneratorOpen(true);
+  };
+  const openAutoAssign = () => {
+    announceJoyrideStart("workflow:autoassign-open");
+    setIsAutoAssignOpen(true);
+  };
 
   const autoAssignReady = autoAssignOnOpen && scheduler.schedules.length > 0;
   const [wasAutoAssignReady, setWasAutoAssignReady] = useState(false);
@@ -77,6 +81,20 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
 
   const isCourseBankOpen =
     !scheduler.isWideView && isCourseBankAvailable(scheduler.isPhase2Active, scheduler.currentStatus);
+
+  const guideContext = {
+    hasProgram: scheduler.schedulingReady,
+    hasSection: Boolean(scheduler.selectedSectionId),
+    hasSections: scheduler.sections.length > 0,
+    canPlot: scheduler.isEditable && isCourseBankAvailable(scheduler.isPhase2Active, scheduler.currentStatus),
+    manualPlottingOpen: isCourseBankOpen,
+    canGenerate: scheduler.canGenerateSchedule,
+    canAssign: scheduler.canAssignInstructor,
+  };
+  const guideVariant = `${scheduler.currentStatus}:${scheduler.isEditable ? "edit" : "view"}:${scheduler.selectedSectionId ? "section" : "no-section"}`;
+  useWorkflowGuide({ id: "schedule-builder-plotting", variant: guideVariant, isReady: !scheduler.isLoading && plottingActive, steps: () => builderGuideSteps("plotting", guideContext), mission: "Plot the Timetable" });
+  useWorkflowGuide({ id: "schedule-builder-faculty-assignment", variant: guideVariant, isReady: !scheduler.isLoading && facultyAssignmentActive, steps: () => builderGuideSteps("faculty-assignment", guideContext), mission: "Assign Instructors" });
+  useWorkflowGuide({ id: "schedule-builder-review", variant: guideVariant, isReady: !scheduler.isLoading && reviewActive, steps: () => builderGuideSteps("review", guideContext), mission: "Review the Schedule" });
 
   const selectedSection = scheduler.sections.find((s) => s.id === scheduler.selectedSectionId);
   const selectedYearLevelSections = useMemo(
@@ -112,25 +130,17 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
   useEffect(() => {
     if (!isGeneratorOpen) return;
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIsGeneratorOpen(false);
-    };
-    window.addEventListener("keydown", closeOnEscape);
-
     return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", closeOnEscape);
       reloadSchedulingSettings();
     };
   }, [isGeneratorOpen, reloadSchedulingSettings]);
 
   if (!scheduler.isLoading && !scheduler.schedulingReady) {
     return (
-      <div className="flex min-h-[280px] w-full items-center justify-center rounded-xl border border-amber-200 bg-amber-50 p-8 text-center">
+      <div id="schedule-builder-unavailable" className="flex min-h-[240px] w-full items-center justify-center rounded-xl border border-amber-200 bg-amber-50 p-8 text-center">
+        <WorkflowGuideButton guideId={plottingActive ? "schedule-builder-plotting" : facultyAssignmentActive ? "schedule-builder-faculty-assignment" : "schedule-builder-review"} />
         <div className="max-w-md">
-          <h2 className="text-base font-black text-amber-900">Create a Program before scheduling</h2>
+          <h2 className="text-base font-bold text-amber-900">Create a Program before scheduling</h2>
           <p className="mt-2 text-sm text-amber-800">
             This Department has no active Program yet. Add at least one Program under the Department, then return here to create sections and schedules.
           </p>
@@ -145,7 +155,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
       departmentId={generatorDepartmentId === null ? null : Number(generatorDepartmentId)}
       semesterId={scheduler.activeSemester ? Number(scheduler.activeSemester.id) : null}
     >
-    <div className="flex flex-col gap-4 w-full text-slate-800 antialiased">
+    <div className="flex w-full min-w-0 flex-col gap-3 text-slate-800 antialiased">
       <TopBar
         {...scheduler}
         pendingRoomTransferCount={pendingRoomTransferCount}
@@ -159,10 +169,10 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
             return next;
           });
         } : undefined}
-        onGenerateYearLevel={scheduler.canGenerateSchedule ? () => setIsGeneratorOpen(true) : undefined}
+        onGenerateYearLevel={scheduler.canGenerateSchedule ? openGenerator : undefined}
         onResetSchedules={scheduler.handleClearAll}
         canResetSchedules={scheduler.isEditable && scheduler.schedules.length > 0}
-        onAutoAssign={scheduler.canAssignInstructor ? () => setIsAutoAssignOpen(true) : undefined}
+        onAutoAssign={scheduler.canAssignInstructor ? openAutoAssign : undefined}
         onClearInstructors={scheduler.canAssignInstructor ? () => { setClearInstructorScope(scheduler.clearableSectionInstructorCount > 0 ? "section" : "department"); setIsClearInstructorConfirmOpen(true); } : undefined}
       />
       {!reassignsFromFacilities && <RoomReassignmentPanel semesterId={Number(scheduler.activeSemester?.id) || undefined} onPendingCountChange={setPendingRoomTransferCount} onTransferred={() => {
@@ -177,15 +187,17 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
       )}
 
       <div
-        className={`flex min-h-0 w-full flex-col overflow-visible transition-[grid-template-columns,gap] duration-300 ease-out motion-reduce:transition-none lg:grid lg:h-auto lg:min-h-0 lg:items-stretch ${
+        // The timetable shows every row at full height (no inner scrolling). The subject panel matches
+        // that height and scrolls its own list.
+        className={`flex min-h-0 w-full flex-col overflow-visible transition-[grid-template-columns,gap] duration-200 ease-out motion-reduce:transition-none lg:grid lg:items-stretch ${
           isCourseBankOpen
-            ? "gap-4 lg:grid-cols-[minmax(280px,1fr)_minmax(0,3fr)]"
-            : "gap-0 lg:grid-cols-[minmax(0px,0fr)_minmax(0,1fr)]"
+            ? "gap-3 lg:grid-cols-[304px_minmax(0,1fr)] 2xl:grid-cols-[336px_minmax(0,1fr)]"
+            : "gap-0 lg:grid-cols-[0px_minmax(0,1fr)]"
         }`}
       >
         <div
           inert={!isCourseBankOpen}
-          className={`min-w-0 overflow-hidden transition-[max-height,opacity] duration-300 ease-out motion-reduce:transition-none lg:h-0 lg:max-h-none lg:min-h-full ${
+          className={`min-h-0 min-w-0 overflow-hidden transition-[max-height,opacity] duration-200 ease-out motion-reduce:transition-none lg:h-0 lg:max-h-none lg:min-h-full ${
             isCourseBankOpen ? "max-h-[70vh] opacity-100" : "max-h-0 opacity-0"
           }`}
         >
@@ -219,8 +231,8 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
       </div>
 
       {scheduler.canGenerateSchedule && isGeneratorOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-2 sm:p-4" role="dialog" aria-modal="true" aria-label="Generate schedule">
-          <div className="flex max-h-[calc(100dvh-1rem)] max-w-full overflow-hidden bg-white shadow-2xl sm:rounded-lg">
+        <div data-workflow-guide-scope="schedule-generator" className="scheduler-dialog-overlay fixed inset-0 z-50 flex items-center justify-center">
+          <div ref={generatorDialogRef} role="dialog" aria-modal="true" aria-labelledby="schedule-generator-title" aria-describedby="schedule-generator-description" aria-busy={isSavingGenerated} tabIndex={-1} className="scheduler-dialog flex max-w-full overflow-hidden bg-white outline-none shadow-2xl" style={{ width: "fit-content" }}>
             <YearLevelGenerateScheduleWorkflow
               onClose={() => setIsGeneratorOpen(false)}
               sections={scheduler.sections.filter((section) => scheduler.ownsProgram(section.programId))}
@@ -304,6 +316,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
       <RoomViewModal {...scheduler} />
       <ClearAllModal {...scheduler} />
       <ConfirmModal
+        appearance="workflow"
         isOpen={isClearInstructorConfirmOpen}
         eyebrow="Section Instructor Assignment"
         title="Clear all instructors?"
@@ -352,7 +365,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
       {scheduler.canGenerateSchedule && (
         <GenerationProgressDrawer
           hidden={isGeneratorOpen}
-          onOpenGenerator={() => setIsGeneratorOpen(true)}
+          onOpenGenerator={openGenerator}
         />
       )}
     </div>

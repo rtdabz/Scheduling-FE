@@ -4,6 +4,7 @@ import {
   buildGanttDays,
   buildTimeWindow,
   dayIndexOf,
+  filterVpaaApprovedSchedules,
   findOverlaps,
   minutesToLabel,
   packLanes,
@@ -14,6 +15,7 @@ import {
 } from './ganttLayout';
 
 const meeting = (over: Partial<CalendarSchedule> & { id: number }): CalendarSchedule => ({
+  status: 'faculty_assignment',
   day: 'Monday',
   start_time: '08:00:00',
   end_time: '09:30:00',
@@ -105,6 +107,37 @@ describe('buildGanttDays', () => {
   it('skips meetings with an unreadable day instead of drawing them on Monday', () => {
     const total = buildGanttDays(schedules, 'none', [0, 1, 2, 3, 4, 5, 6]).reduce((sum, day) => sum + day.count, 0);
     expect(total).toBe(3);
+  });
+
+  it('publishes only VPAA-approved meetings in every grouping and derived view', () => {
+    const approved = ['approved', 'faculty_assignment', 'reassignment', 'finalized'].map((status, index) =>
+      meeting({ id: index + 1, status, start_time: '08:00:00', end_time: '09:30:00' }));
+    const unapproved = ['draft', 'completed', 'submitted', 'approved_by_dean', 'conditionally_approved', 'rejected', 'rejected_by_dean', 'revision', 'unknown', null, undefined].map((status, index) =>
+      meeting({ id: index + 10, status, start_time: '05:00:00', end_time: '23:00:00' }));
+    const mixed = [...approved, ...unapproved];
+    expect(filterVpaaApprovedSchedules(mixed).map((item) => item.id)).toEqual([1, 2, 3, 4]);
+    for (const grouping of ['none', 'room', 'instructor', 'section', 'department'] as const) {
+      const [monday] = buildGanttDays(mixed, grouping, [0]);
+      expect(monday.count).toBe(4);
+      expect(monday.rows.flatMap((row) => row.blocks.map((block) => block.schedule.id))).toEqual([1, 2, 3, 4]);
+      expect(monday.rows[0].laneCount).toBe(4);
+    }
+    expect(buildTimeWindow(DEFAULT_STANDARD_HOURS, mixed)).toEqual({ start: 420, end: 1230 });
+    expect([...findOverlaps(mixed).keys()]).toEqual([1, 2, 3, 4]);
+    expect(siblingMeetingsOf(approved[0], mixed).map((item) => item.id)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('includes drafts in the room planning layout, hours, overlaps and weekly meetings when requested', () => {
+    const draft = meeting({ id: -1, status: 'draft', start_time: '06:30:00', end_time: '08:30:00' });
+    const approved = meeting({ id: 2 });
+    const meetings = [draft, approved];
+
+    const [monday] = buildGanttDays(meetings, 'none', [0], true);
+    expect(monday.count).toBe(2);
+    expect(monday.rows[0].laneCount).toBe(2);
+    expect(buildTimeWindow(DEFAULT_STANDARD_HOURS, meetings, true)).toEqual({ start: 360, end: 1230 });
+    expect(findOverlaps(meetings, true).get(-1)).toEqual([{ otherId: 2, kinds: ['room', 'instructor', 'section'] }]);
+    expect(siblingMeetingsOf(draft, meetings, true).map((item) => item.id)).toEqual([-1, 2]);
   });
 });
 

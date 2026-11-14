@@ -1,5 +1,5 @@
 import api from '../../lib/api';
-import type { Curriculum, ApiCurriculum, CurriculumDetail } from '../../types/curriculum';
+import type { Curriculum, ApiCurriculum, CurriculumDetail, CurriculumCourseHours } from '../../types/curriculum';
 import { mapApiCurriculum } from '../../types/curriculum';
 
 export const curriculumService = {
@@ -85,6 +85,21 @@ export const curriculumService = {
     courses: Array<{ course_id: number; year_level: number; semester: number }>
   ): Promise<void> {
     await api.post(`/curriculum/${curriculumId}/courses/batch`, { courses });
+  },
+
+  /**
+   * Edit Hours per Unit for one course in this curriculum. Units are unchanged. A 409 with
+   * `requires_confirmation` means draft classes exist; resend with `confirm_draft_changes`.
+   */
+  async updateCourseHours(
+    curriculumId: number | string,
+    courseId: number,
+    payload:
+      | { use_department_default: true; confirm_draft_changes?: boolean }
+      | { lecture_minutes_per_unit: number; laboratory_minutes_per_unit: number; confirm_draft_changes?: boolean }
+  ): Promise<{ message: string; course_id: number; hours: CurriculumCourseHours }> {
+    const res = await api.put(`/curriculum/${curriculumId}/courses/${courseId}/hours`, payload);
+    return res.data;
   },
 
   async detachCourse(curriculumId: number | string, courseId: number): Promise<void> {

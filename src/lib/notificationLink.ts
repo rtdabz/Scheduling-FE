@@ -1,14 +1,16 @@
-type Role = 'vpaa' | 'dean' | 'secretary' | 'program_head';
+import { isDepartmentOfficeRole, reassignsRoomSchedulesFromFacilities } from './roles';
 
-/** The Secretary reassigns room schedules from Facilities; the Program Head still views them from Schedule Management. */
-export const roomReassignmentPage = (role: string) => role === 'secretary' ? '/secretary/facilities' : `/${role}/schedule-management`;
+type Role = 'vpaa' | 'dean' | 'secretary' | 'director' | 'program_head';
 
-const isDepartmentScheduler = (role: Role): boolean => role === 'secretary' || role === 'program_head';
+/** The department office (Secretary or Director) and the Program Head reassign room schedules from Facilities. */
+export const roomReassignmentPage = (role: string) => reassignsRoomSchedulesFromFacilities(role) ? `/${role}/facilities` : `/${role}/schedule-management`;
+
+const isDepartmentScheduler = (role: Role): boolean => isDepartmentOfficeRole(role) || role === 'program_head';
 
 const pageFor = (type: string, role: Role): string | null => {
   if (type.startsWith('room_request_')) {
     if (role === 'vpaa') return 'facilities';
-    return role === 'secretary' ? 'room-requests' : null;
+    return isDepartmentOfficeRole(role) ? 'room-requests' : null;
   }
 
   switch (type) {
@@ -27,11 +29,14 @@ const pageFor = (type: string, role: Role): string | null => {
     case 'schedule_withdrawn':
       return isDepartmentScheduler(role) ? 'schedule-management' : 'schedules';
     case 'instructor_assigned':
+    case 'instructor_assignment_released':
     case 'instructor_assignment_completed':
       return isDepartmentScheduler(role) ? 'instructor-assignment' : 'schedules';
     case 'schedule_approved_by_vpaa':
     case 'schedule_activity':
       return 'schedules';
+    case 'program_rooms_updated':
+      return isDepartmentOfficeRole(role) ? 'program-rooms' : role === 'program_head' ? 'facilities' : null;
     default:
       return null;
   }
@@ -76,22 +81,26 @@ export const notificationLink = (
   role: string,
   metadata?: Record<string, unknown> | null,
 ): string | undefined => {
+  if (type === 'schedule_attention_required' && (role === 'dean' || role === 'vpaa')) {
+    if (metadata?.approval_stage === 'approved') return role === 'dean' ? '/dean/schedules' : '/calendar';
+    return role === 'dean' ? '/dean/schedules/approval' : '/schedules/approval';
+  }
   if ((type === 'room_transfer_submitted' && role === 'dean') || (type === 'room_transfer_dean_approved' && role === 'vpaa')
     || ((type === 'room_transfer_approved' || type === 'room_transfer_rejected') && role === 'dean')) {
     const query = typeof metadata?.plan_id === 'string' ? `?room_transfer=${encodeURIComponent(metadata.plan_id)}` : '';
     return `${role === 'dean' ? '/dean' : ''}/schedules/approval${query}#schedule-approval-list`;
   }
-  if ((type === 'room_transfer_approved' || type === 'room_transfer_rejected') && (role === 'secretary' || role === 'program_head')) {
+  if ((type === 'room_transfer_approved' || type === 'room_transfer_rejected') && (isDepartmentOfficeRole(role) || role === 'program_head')) {
     const params = new URLSearchParams({ recovery: 'open' });
     if (typeof metadata?.plan_id === 'string') params.set('room_transfer', metadata.plan_id);
     return `${roomReassignmentPage(role)}?${params}`;
   }
-  if ((type === 'room_recovery' || type === 'room_recovery_applied') && (role === 'secretary' || role === 'program_head')) {
+  if ((type === 'room_recovery' || type === 'room_recovery_applied') && (isDepartmentOfficeRole(role) || role === 'program_head')) {
     const id = Number(metadata?.recovery_case_id);
     const semester = Number(metadata?.semester_id);
     return `${roomReassignmentPage(role)}?recovery=${Number.isInteger(id) && id > 0 ? id : 'open'}${Number.isInteger(semester) && semester > 0 ? `&recovery_semester=${semester}` : ''}`;
   }
-  if (role !== 'vpaa' && role !== 'dean' && role !== 'secretary' && role !== 'program_head') return undefined;
+  if (role !== 'vpaa' && role !== 'dean' && !isDepartmentOfficeRole(role) && role !== 'program_head') return undefined;
   const page = pageFor(type, role);
   if (!page) return undefined;
   const query = queryFor(type, metadata);

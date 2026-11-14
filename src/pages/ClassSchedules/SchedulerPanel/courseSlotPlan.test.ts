@@ -105,14 +105,24 @@ describe("courseInCurriculum", () => {
 });
 
 describe("consecutiveMeetingSlots", () => {
-  it("shares the Total Hours equally across the days", () => {
-    expect(consecutiveMeetingSlots({ lectureHours: 0, labHours: 8 }, 2)).toBe(8);
-    expect(consecutiveMeetingSlots({ lectureHours: 3, labHours: 0 }, 3)).toBe(2);
+  it("repeats the full Total Hours on every day of the run", () => {
+    expect(consecutiveMeetingSlots({ lectureHours: 0, labHours: 8 }, 2)).toBe(16);
+    expect(consecutiveMeetingSlots({ lectureHours: 3, labHours: 0 }, 3)).toBe(6);
   });
 
-  it("refuses a day count that cannot split the hours into equal half-hour meetings", () => {
-    expect(consecutiveMeetingSlots({ lectureHours: 0, labHours: 8 }, 3)).toBeNull();
+  it("gives PRAC 101 six hours on each of three days, 18 hours in all", () => {
+    const prac101 = { lectureHours: 0, labHours: 6 };
+    const perDay = consecutiveMeetingSlots(prac101, 3);
+    expect(perDay).toBe(12);
+    expect(slotsToHours((perDay ?? 0) * 3)).toBe(18);
+    // The course's own Total Hours are not multiplied.
+    expect(getCourseSlotPlan(prac101).totalSlots).toBe(12);
+  });
+
+  it("has no divisibility limit, but needs time and a real run", () => {
+    expect(consecutiveMeetingSlots({ lectureHours: 0, labHours: 8 }, 3)).toBe(16);
     expect(consecutiveMeetingSlots({ lectureHours: 0, labHours: 0 }, 2)).toBeNull();
+    expect(consecutiveMeetingSlots({ lectureHours: 0, labHours: 6 }, 1)).toBeNull();
   });
 });
 

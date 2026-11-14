@@ -4,6 +4,7 @@ import Modal from '../../ui/Modal';
 import SourceCropPreview from './SourceCropPreview';
 import { TERM_LABELS } from '../../../lib/curriculumImport/normalize';
 import type { DraftRow, ImportIssue, PlacementTerm } from '../../../lib/curriculumImport/types';
+import { ModalButton } from '../../ui/ModalForm';
 
 interface ImportRowDetailModalProps {
   row: DraftRow | null;
@@ -72,9 +73,9 @@ export default function ImportRowDetailModal({ row, issues, bytes, onClose, onCh
       footer={(
         <>
           <p className="mr-auto text-[13px] font-semibold" role="status">{footerStatus}</p>
-          <button type="button" onClick={onClose} className="inline-flex h-10 items-center rounded-lg bg-primary px-6 text-[13px] font-bold text-white hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2">
+          <ModalButton variant="primary" onClick={onClose}>
             Done
-          </button>
+          </ModalButton>
         </>
       )}
     >

@@ -1,6 +1,6 @@
 import type { StoredUser } from "./storedUser";
 
-export type HelperRole = "secretary" | "program_head" | "dean" | "vpaa" | "";
+export type HelperRole = "secretary" | "director" | "program_head" | "dean" | "vpaa" | "";
 
 export interface HelperContext {
   role: HelperRole;
@@ -21,14 +21,14 @@ const unsupportedPattern = /\b(code|coding|program|programming|javascript|typesc
 
 const schedulesPath = (role: HelperRole): string => {
   if (role === "program_head") return "/program_head/schedule-management";
-  if (role === "secretary") return "/secretary/schedule-management";
+  if (role === "secretary" || role === "director") return `/${role}/schedule-management`;
   if (role === "dean") return "/dean/schedules";
   return "/schedules/approval";
 };
 
 const roleOf = (user: StoredUser | null): HelperRole => {
   const role = user?.role?.toLowerCase();
-  return role === "secretary" || role === "program_head" || role === "dean" || role === "vpaa" ? role : "";
+  return role === "secretary" || role === "director" || role === "program_head" || role === "dean" || role === "vpaa" ? role : "";
 };
 
 export const buildHelperContext = (route: string, user: StoredUser | null, scheduleStatus?: string | null): HelperContext => ({
@@ -78,8 +78,8 @@ export function getHelperReply(prompt: string, context: HelperContext): HelperRe
   if (/next|continue|start|do i do|help/.test(normalized)) {
     if (context.role === "dean") return { intent: "next_step", text: "Your next step is to review pending department schedules and either approve them or return them for revision.", action: { label: "Review Approvals", path: "/dean/schedules/approval" } };
     if (context.role === "vpaa") return { intent: "next_step", text: "Your next step is to review schedules that have already been approved by the Dean.", action: { label: "Review Approvals", path: "/schedules/approval" } };
-    if (context.scheduleStatus === "approved") return { intent: "next_step", text: "The schedule is approved. Continue with instructor assignment before finalization.", action: { label: "Assign Instructors", path: context.role === "program_head" ? "/program_head/schedule-management" : "/secretary/schedule-management" } };
-    if (context.scheduleStatus === "faculty_assignment") return { intent: "next_step", text: "Complete the remaining instructor assignments, then continue to finalization.", action: { label: "Assign Instructors", path: context.role === "program_head" ? "/program_head/schedule-management" : "/secretary/schedule-management" } };
+    if (context.scheduleStatus === "approved") return { intent: "next_step", text: "The schedule is approved. Continue with instructor assignment before finalization.", action: { label: "Assign Instructors", path: schedulesPath(context.role === "program_head" || context.role === "director" ? context.role : "secretary") } };
+    if (context.scheduleStatus === "faculty_assignment") return { intent: "next_step", text: "Complete the remaining instructor assignments, then continue to finalization.", action: { label: "Assign Instructors", path: schedulesPath(context.role === "program_head" || context.role === "director" ? context.role : "secretary") } };
     return { intent: "next_step", text: context.draftCount ? `Complete the ${context.draftCount} remaining draft section${context.draftCount === 1 ? "" : "s"}, then check conflicts before submitting.` : "Open the Schedule Builder and complete the required sections before submitting for approval.", action: { label: "Open Schedule Builder", path: schedulesPath(context.role) } };
   }
 

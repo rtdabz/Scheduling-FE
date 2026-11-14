@@ -1,9 +1,31 @@
 import { useMemo } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Building2, Eye, Pencil, Printer, Archive, Ban, CheckCircle2 } from 'lucide-react';
+import { Eye, Pencil, Printer, Archive, Ban, CheckCircle2, ArrowLeftRight } from 'lucide-react';
 import DataTable from '../ui/DataTable';
 import { useDataTable } from '../ui/useDataTable';
 import TableActionButton from '../ui/TableActionButton';
+import type { RoomReassignmentActivity } from '../../lib/roomRecovery';
+
+const classCount = (count: number) => `${count} ${count === 1 ? 'class' : 'classes'}`;
+
+// Shown beside a room code while classes in that room are being reassigned.
+export function RoomReassignBadge({ activity }: { activity?: RoomReassignmentActivity }) {
+  if (!activity || (activity.needs === 0 && activity.pending === 0)) return null;
+  const detail = [
+    activity.needs > 0 && `${classCount(activity.needs)} need a replacement room`,
+    activity.pending > 0 && `${classCount(activity.pending)} awaiting Dean or VPAA approval`,
+  ].filter(Boolean).join(' · ');
+  return (
+    <span
+      title={detail}
+      aria-label={`Reassignment in progress: ${detail}`}
+      className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-semibold capitalize text-orange-700 whitespace-nowrap"
+    >
+      <ArrowLeftRight size={11} aria-hidden="true" />
+      Reassigning
+    </span>
+  );
+}
 
 export interface BuildingListRow {
   name: string;
@@ -37,14 +59,12 @@ export function BuildingsTable<T extends BuildingListRow>({
   onEdit,
   onArchive,
   rowTourId,
-  showBuildingIcon = true,
 }: {
   buildings: T[];
   onSelect: (building: T) => void;
   onEdit?: (building: T) => void;
   onArchive?: (building: T) => void;
   rowTourId?: string;
-  showBuildingIcon?: boolean;
 }) {
   const columns = useMemo<ColumnDef<T>[]>(() => [
     {
@@ -53,16 +73,9 @@ export function BuildingsTable<T extends BuildingListRow>({
       header: 'Building Name',
       meta: { cellClassName: 'whitespace-nowrap' },
       cell: ({ row }) => (
-        <div className="flex items-center gap-3">
-          {showBuildingIcon && (
-            <div className="w-8 h-8 rounded-lg bg-[#4e0a10]/5 text-[#4e0a10] flex items-center justify-center transition-colors">
-              <Building2 size={16} />
-            </div>
-          )}
-          <span className="text-sm font-bold text-gray-800">
-            {row.original.name}
-          </span>
-        </div>
+        <span className="text-sm font-bold text-gray-800">
+          {row.original.name}
+        </span>
       ),
     },
     { id: 'total', accessorKey: 'totalCount', header: 'Total Rooms', meta: { cellClassName: 'whitespace-nowrap text-gray-600' } },
@@ -96,7 +109,7 @@ export function BuildingsTable<T extends BuildingListRow>({
         </div>
       ),
     },
-  ], [onSelect, onEdit, onArchive, showBuildingIcon]);
+  ], [onSelect, onEdit, onArchive]);
 
   const table = useDataTable<T>({ data: buildings, columns, pageSize: 10, getRowId: (building) => building.name });
 
@@ -123,8 +136,10 @@ export function RoomsTable<T extends RoomListRow>({
   onEdit,
   onPrint,
   onAvailabilityChange,
+  reassignActivity,
 }: {
   rooms: T[];
+  reassignActivity?: Record<string, RoomReassignmentActivity>;
   getRoomStatusToday: (roomId: number) => RoomTodayStatus;
   canManage: boolean;
   onOpen: (room: T) => void;
@@ -140,16 +155,19 @@ export function RoomsTable<T extends RoomListRow>({
       header: 'Room Code',
       meta: { cellClassName: 'whitespace-nowrap' },
       cell: ({ row }) => (
-        <span className="text-xs font-mono font-bold bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-lg border border-[#C9952A]/20">
-          {row.original.room_code}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-mono font-bold bg-[#C9952A]/10 text-[#C9952A] px-2.5 py-1 rounded-lg border border-[#C9952A]/20">
+            {row.original.room_code}
+          </span>
+          <RoomReassignBadge activity={reassignActivity?.[row.original.room_code]} />
+        </div>
       ),
     },
     {
       id: 'department',
       accessorFn: (room) => room.department?.department_code || 'General / All',
       header: 'Department',
-      meta: { cellClassName: 'whitespace-nowrap text-gray-600' },
+      meta: { hideBelow: 'md', cellClassName: 'whitespace-nowrap text-gray-600' },
     },
     {
       id: 'room_type',
@@ -170,7 +188,7 @@ export function RoomsTable<T extends RoomListRow>({
       cell: ({ row }) => {
         if (row.original.status === 'not available') {
           return (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-700">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold capitalize text-red-700 whitespace-nowrap">
               <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
               Unavailable
             </span>

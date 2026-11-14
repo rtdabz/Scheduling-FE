@@ -22,6 +22,7 @@ export interface StoredUser {
     capabilities: Array<{ id: string; title: string; description: string; granted: boolean }>;
   }>;
   scheduling_ready?: boolean;
+  department_program_count?: number;
 }
 
 const readRawStoredUser = (): string | null => {
@@ -56,7 +57,9 @@ export const requiresDepartmentProgram = (
 ): boolean => {
   const definition = catalog?.find((entry) => entry.id === capability);
   if (definition?.requires_program !== undefined) return definition.requires_program;
-  return capability.startsWith('schedule.') && capability !== 'schedule.view';
+  // Fallback for a stored user without a catalog; matches `requires_program` in the backend config,
+  // where viewing and assigning instructors (the Cross-Department page) need no program.
+  return capability.startsWith('schedule.') && capability !== 'schedule.view' && capability !== 'schedule.assign_instructor';
 };
 
 export const hasStoredCapability = (capability: string | string[]): boolean => {
@@ -71,6 +74,8 @@ export const hasStoredCapability = (capability: string | string[]): boolean => {
 
 export const NO_PROGRAM_LOCK_MESSAGE =
   'Your department has no program yet, so this module is unavailable. Ask the VPAA to add a program to your department.';
+export const MULTIPLE_PROGRAMS_LOCK_MESSAGE =
+  'Program Rooms is available when your department has more than one program. Room allocation is unnecessary for a single program.';
 export const NOT_GRANTED_LOCK_MESSAGE = 'Your role does not include access to this module.';
 
 export const lockedModuleMessage = (capability?: string | string[]): string => {

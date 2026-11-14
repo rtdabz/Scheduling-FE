@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
+import Modal from '../ui/Modal';
+import { ModalButton } from '../ui/ModalForm';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import { curriculumService } from '../../services/curriculum/curriculumService';
 import { buildCurriculumPdf, getCurriculumPdfFilename } from '../../lib/curriculumPrintable';
@@ -84,35 +84,31 @@ export default function CurriculumDetailModal({ isOpen, curriculumId, programs =
   if (!isOpen) return null;
   const title = curriculum?.name ?? 'Curriculum';
 
-  return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-3">
-      <div className="flex h-[95vh] w-full max-w-7xl flex-col overflow-hidden rounded-xl border border-gray-300 bg-[#F7F4F0] shadow-2xl">
-        <div className="flex items-center justify-between border-b border-gray-300 bg-white px-5 py-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <h2 className="truncate font-serif text-lg font-bold text-[#1A1410]">{title}</h2>
-            {curriculum && (
-              <>
-                <span className="rounded-full border border-[#C9952A]/20 bg-[#C9952A]/10 px-2.5 py-1 font-mono text-[10px] font-bold uppercase text-[#C9952A]">{curriculum.code}</span>
-                <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase ${statusColors[curriculum.status] ?? statusColors.deactivated}`}>{curriculum.status}</span>
-              </>
-            )}
-          </div>
-          <button type="button" onClick={onClose} aria-label="Close preview" className="rounded-lg p-1 text-gray-500 hover:bg-gray-100"><X size={20} /></button>
-        </div>
-        <div className="flex min-h-0 flex-1 items-center justify-center bg-gray-100">
-          {pdf.error ? (
-            <p role="alert" className="max-w-md px-4 text-center text-sm text-red-600">{pdf.error}</p>
-          ) : pdf.url ? (
-            <iframe title={`${title} print preview`} src={pdf.url} className="h-full w-full border-0" />
-          ) : (
-            <div className="flex items-center gap-2 text-sm text-gray-500"><LoadingSpinner size={16} className="animate-spin" /> Preparing curriculum document…</div>
-          )}
-        </div>
-        <div className="flex items-center justify-end border-t border-gray-300 bg-white px-5 py-3">
-          <button type="button" onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50">Close</button>
-        </div>
+  return (
+    <Modal
+      id="curriculum-detail-preview"
+      isOpen
+      onClose={onClose}
+      title={title}
+      size="xl"
+      closeLabel="Close preview"
+      className="h-[95dvh]"
+      bodyClassName="flex flex-col"
+      headerActions={curriculum && <>
+        <span className="rounded-full border border-[#C9952A]/40 bg-[#C9952A]/15 px-2.5 py-1 font-mono text-[10px] font-bold uppercase text-[#F5C842]">{curriculum.code}</span>
+        <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase ${statusColors[curriculum.status] ?? statusColors.deactivated}`}>{curriculum.status}</span>
+      </>}
+      footer={<ModalButton onClick={onClose}>Close</ModalButton>}
+    >
+      <div className="flex min-h-0 flex-1 items-center justify-center bg-slate-100">
+        {pdf.error ? (
+          <p role="alert" className="max-w-md px-4 text-center text-sm font-medium text-red-600">{pdf.error}</p>
+        ) : pdf.url ? (
+          <iframe title={`${title} print preview`} src={pdf.url} className="h-full w-full border-0" />
+        ) : (
+          <div role="status" className="flex items-center gap-2 text-sm text-slate-500"><LoadingSpinner size={16} className="animate-spin" /> Preparing curriculum document…</div>
+        )}
       </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }

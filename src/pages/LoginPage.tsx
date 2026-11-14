@@ -6,10 +6,14 @@ import campusBg from '../assets/campus-bg.webp';
 import loginPattern from '../assets/login-pattern.jpg';
 import googleLogo from '../assets/google-logo.svg';
 import { useToast } from '../context/ToastContext';
+import Modal from '../components/ui/Modal';
+import { ModalButton, ModalField } from '../components/ui/ModalForm';
+import { modalBody, modalControl } from '../components/ui/modalStyles';
 import api from '../lib/api';
 import { clearDataCache } from '../lib/dataCache';
 import { writeLastActivity } from '../lib/sessionTimeout';
 import { AxiosError } from 'axios';
+import { dashboardPathForRole, isAccountRole, roleLabel } from '../lib/roles';
 
 interface LoginResponse {
   token: string;
@@ -43,14 +47,6 @@ export default function LoginPage() {
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [resetMismatch, setResetMismatch] = useState(false);
 
-  useEffect(() => {
-    if (!showForgot) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setShowForgot(false);
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [showForgot]);
 
   const leaveResetMode = () => {
     setIsResetMode(false);
@@ -61,9 +57,8 @@ export default function LoginPage() {
   };
 
   const navigateAfterLogin = (user: LoginResponse['user']) => {
-    const roleNames: Record<string, string> = { vpaa: 'VPAA', dean: 'Dean', secretary: 'Secretary', program_head: 'Program Head' };
-    toast.success('Login Successful', `Welcome back ${roleNames[user.role] || 'User'}!`);
-    navigate(user.role === 'dean' ? '/dean/dashboard' : user.role === 'secretary' ? '/secretary/dashboard' : user.role === 'program_head' ? '/program_head/dashboard' : '/dashboard');
+    toast.success('Login Successful', `Welcome back ${isAccountRole(user.role) ? roleLabel(user.role) : 'User'}!`);
+    navigate(dashboardPathForRole(user.role));
   };
 
   const storeLogin = (response: LoginResponse) => {
@@ -211,7 +206,7 @@ export default function LoginPage() {
             className="text-primary font-display text-2xl mb-2" 
             style={{ animationDelay: '0s' }}
           >
-            WICARS
+            TCC Scheduling
           </h2>
           <h3 
             className="text-text font-display text-3xl font-bold mb-2"
@@ -223,7 +218,7 @@ export default function LoginPage() {
             className="text-muted text-sm mb-8"
             style={{ animationDelay: '0.2s' }}
           >
-            {isInviteMode ? 'Choose a password for your new WICARS account' : isResetMode ? 'Choose a new password for your WICARS account' : 'Sign in to your administrator account'}
+            {isInviteMode ? 'Choose a password for your new TCC Scheduling account' : isResetMode ? 'Choose a new password for your TCC Scheduling account' : 'Sign in to your administrator account'}
           </p>
 
           {isResetMode ? (
@@ -385,7 +380,35 @@ export default function LoginPage() {
             <span>Authorized personnel only</span>
           </div>
         </div>
-        {showForgot && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={(event) => { if (event.target === event.currentTarget) setShowForgot(false); }}><form role="dialog" aria-modal="true" aria-labelledby="forgot-password-title" onSubmit={handleForgotPassword} className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl space-y-4"><h4 id="forgot-password-title" className="text-xl font-bold text-text">Reset password</h4><p className="text-sm text-muted">Enter the email assigned by VPAA.</p><input type="email" required autoFocus aria-label="Institutional email" value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} placeholder="Institutional email" className="w-full h-12 px-4 border border-gray-300 rounded-xl" /><div className="flex justify-end gap-2"><button type="button" onClick={() => setShowForgot(false)} className="px-4 py-2 text-sm">Cancel</button><button type="submit" disabled={isSendingResetLink} className="min-w-24 px-4 py-2 bg-primary text-white rounded-lg text-sm disabled:opacity-50 disabled:pointer-events-none">{isSendingResetLink ? 'Sending...' : 'Send link'}</button></div></form></div>}
+        <Modal
+          isOpen={showForgot}
+          onClose={() => setShowForgot(false)}
+          title="Reset password"
+          description="We will email a reset link to your institutional address."
+          size="sm"
+          closeOnEscape={!isSendingResetLink}
+          footer={<>
+            <ModalButton onClick={() => setShowForgot(false)} disabled={isSendingResetLink}>Cancel</ModalButton>
+            <ModalButton type="submit" form="forgot-password-form" variant="primary" disabled={isSendingResetLink}>
+              {isSendingResetLink ? 'Sending...' : 'Send link'}
+            </ModalButton>
+          </>}
+        >
+          <form id="forgot-password-form" onSubmit={handleForgotPassword} className={modalBody}>
+            <ModalField label="Institutional email" htmlFor="forgot-password-email" required hint="Enter the email assigned by VPAA.">
+              <input
+                id="forgot-password-email"
+                type="email"
+                required
+                data-autofocus
+                value={forgotEmail}
+                onChange={(e) => setForgotEmail(e.target.value)}
+                placeholder="name@school.edu.ph"
+                className={modalControl()}
+              />
+            </ModalField>
+          </form>
+        </Modal>
       </div>
     </div>
   );

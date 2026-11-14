@@ -19,7 +19,7 @@ export const deanNav: NavSection[] = [
     items: [
       { label: 'Dashboard', path: '/dean/dashboard', icon: LayoutDashboard, id: 'sidebar-dashboard' },
       { label: 'Department', path: '/dean/departments', icon: Building2, id: 'sidebar-departments', requiredCapability: 'schedule.view' },
-      { label: 'Facilities', path: '/dean/facilities', icon: DoorOpen, id: 'sidebar-rooms', requiredCapability: 'schedule.view' },
+      { label: 'Facilities', path: '/dean/facilities', icon: DoorOpen, id: 'sidebar-rooms', requiredCapability: 'schedule.view', requiresProgram: true },
       {
         label: 'Instructors',
         path: '/dean/instructors',
@@ -33,20 +33,23 @@ export const deanNav: NavSection[] = [
         icon: Users,
         id: 'sidebar-sections',
         requiredCapability: 'schedule.view',
+        requiresProgram: true,
       },
-      { label: 'Curriculum', path: '/dean/curriculum', icon: BookOpen, id: 'sidebar-curriculum', requiredCapability: 'schedule.view' },
+      { label: 'Curriculum', path: '/dean/curriculum', icon: BookOpen, id: 'sidebar-curriculum', requiredCapability: 'schedule.view', requiresProgram: true },
       {
         label: 'Courses',
         path: '/dean/courses',
         icon: BookOpen,
         id: 'sidebar-courses',
         requiredCapability: 'schedule.view',
+        requiresProgram: true,
       },
       {
         label: 'Academic Scheduling',
         icon: CalendarDays,
         id: 'sidebar-schedules',
         requiredCapability: ['schedule.view', 'schedule.approve_dean'],
+        requiresProgram: true,
         children: [
           {
             label: 'Schedule Approval',
@@ -56,7 +59,7 @@ export const deanNav: NavSection[] = [
             requiredCapability: 'schedule.approve_dean',
           },
           {
-            label: 'All Schedules',
+            label: 'Schedules',
             path: '/dean/schedules',
             icon: Calendar,
             id: 'sidebar-all-schedules',
@@ -71,7 +74,7 @@ export const deanNav: NavSection[] = [
     section: 'SYSTEM',
     items: [
       { label: 'Reports', path: '/dean/reports', icon: FileBarChart, id: 'sidebar-reports', requiredCapability: 'schedule.view' },
-      { label: 'Schedule History', path: '/dean/schedule-history', icon: History, id: 'sidebar-schedule-history', requiredCapability: 'schedule.view' },
+      { label: 'Schedule History', path: '/dean/schedule-history', icon: History, id: 'sidebar-schedule-history', requiredCapability: 'schedule.view', requiresProgram: true },
     ]
   }
 ]

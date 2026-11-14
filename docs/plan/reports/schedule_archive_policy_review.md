@@ -4,6 +4,8 @@ Date: 2026-11-01
 
 Status: review and recommendation only; application behavior and permissions were not changed.
 
+> **Superseded 2026-11-09.** The recommendation to archive Reset/Clear was not adopted. Reset now permanently deletes draft schedules only, through a dedicated endpoint that never touches Schedule History, and the destination-section stage guard (P1 above) was implemented for restores. See [Schedule Reset and module archives](../schedule_reset_and_module_archives.md).
+
 **Recommendation:** archive schedules removed through explicit Delete or Clear actions, and let the current authorized schedule author recover them within an editable workflow stage. Keep the institution-wide Archive under VPAA control. Automatic regeneration can remain a replacement of working data, with complete retained snapshots, rather than filling the recovery archive with every generated alternative.
 
 This deliberately reconsiders the documented exception that makes Clear schedules permanent. It is a proposed policy, not the policy currently implemented.

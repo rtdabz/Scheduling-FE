@@ -81,6 +81,8 @@ export default function HelperBuddyChat({ draftCount = 0 }: { draftCount?: numbe
   const [position, setPosition] = useState<BuddyPosition>(initialBuddyPosition);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; origin: BuddyPosition; moved: boolean } | null>(null);
   const suppressClickRef = useRef(false);
+  const replyTimerRef = useRef<number | null>(null);
+  const idleTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setAnimation("idle"), 900);
@@ -109,9 +111,23 @@ export default function HelperBuddyChat({ draftCount = 0 }: { draftCount?: numbe
     };
     window.addEventListener("show-helper-buddy", handleHelperEvent);
     window.addEventListener("helper-buddy-status", handleHelperEvent);
+    const resetScheduleContext = () => {
+      if (replyTimerRef.current !== null) window.clearTimeout(replyTimerRef.current);
+      if (idleTimerRef.current !== null) window.clearTimeout(idleTimerRef.current);
+      setOpen(false);
+      setInput("");
+      setScheduleStatus("draft");
+      setMessages([initialMessage]);
+      setThinking(false);
+      setAnimation("idle");
+    };
+    window.addEventListener("schedule-workspace-reset", resetScheduleContext);
     return () => {
       window.removeEventListener("show-helper-buddy", handleHelperEvent);
       window.removeEventListener("helper-buddy-status", handleHelperEvent);
+      window.removeEventListener("schedule-workspace-reset", resetScheduleContext);
+      if (replyTimerRef.current !== null) window.clearTimeout(replyTimerRef.current);
+      if (idleTimerRef.current !== null) window.clearTimeout(idleTimerRef.current);
     };
   }, []);
 
@@ -122,12 +138,12 @@ export default function HelperBuddyChat({ draftCount = 0 }: { draftCount?: numbe
     setInput("");
     setThinking(true);
     setAnimation("working");
-    window.setTimeout(() => {
+    replyTimerRef.current = window.setTimeout(() => {
       const reply = getHelperReply(trimmed, context);
       setMessages((current) => [...current.slice(-7), { id: crypto.randomUUID(), sender: "assistant", text: reply.text, reply }]);
       setThinking(false);
       setAnimation(reply.intent === "conflict" ? "warning" : reply.intent === "unsupported" ? "error" : "success");
-      window.setTimeout(() => setAnimation("idle"), 1400);
+      idleTimerRef.current = window.setTimeout(() => setAnimation("idle"), 1400);
     }, 250);
   };
 
@@ -182,14 +198,14 @@ export default function HelperBuddyChat({ draftCount = 0 }: { draftCount?: numbe
   return (
     <div className="fixed z-[9999]" style={{ left: position.x, top: position.y }}>
       {open && (
-        <section className={`absolute flex w-[min(360px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-[#C9952A]/40 bg-white shadow-2xl ${panelOpensBelow ? "top-[calc(100%+12px)]" : "bottom-[calc(100%+12px)]"} ${panelAlignsLeft ? "left-0" : "right-0"}`} aria-label="WICARS Buddy chat">
+        <section className={`absolute flex w-[min(360px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-[#C9952A]/40 bg-white shadow-2xl ${panelOpensBelow ? "top-[calc(100%+12px)]" : "bottom-[calc(100%+12px)]"} ${panelAlignsLeft ? "left-0" : "right-0"}`} aria-label="TCC Scheduling Buddy chat">
           <header className="flex items-center justify-between bg-[#4e0a10] px-4 py-3 text-white">
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4 text-[#f2c66d]" />
-              <span className="text-sm font-bold">WICARS Buddy</span>
+              <span className="text-sm font-bold">TCC Scheduling Buddy</span>
               <span className="rounded-full border border-[#f2c66d]/70 bg-[#C9952A]/25 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-[#fff3cf]">Beta</span>
             </div>
-            <button type="button" onClick={() => setOpen(false)} className="rounded p-1 text-white/70 hover:bg-white/10 hover:text-white" aria-label="Minimize WICARS Buddy"><ChevronDown className="h-4 w-4" /></button>
+            <button type="button" onClick={() => setOpen(false)} className="rounded p-1 text-white/70 hover:bg-white/10 hover:text-white" aria-label="Minimize TCC Scheduling Buddy"><ChevronDown className="h-4 w-4" /></button>
           </header>
           <div className="max-h-80 space-y-3 overflow-y-auto bg-slate-50 p-3" aria-live="polite">
             {messages.map((message) => (
@@ -198,18 +214,18 @@ export default function HelperBuddyChat({ draftCount = 0 }: { draftCount?: numbe
                 {message.reply?.action && <button type="button" onClick={() => { navigate(message.reply!.action!.path); setOpen(false); }} className="mt-1 text-xs font-bold text-[#8a5d0a] hover:text-[#4e0a10] hover:underline">{message.reply.action.label}</button>}
               </div>
             ))}
-            {thinking && <div className="text-xs text-slate-500">WICARS Buddy is checking the workflow...</div>}
+            {thinking && <div className="text-xs text-slate-500">TCC Scheduling Buddy is checking the workflow...</div>}
           </div>
           <div className="flex flex-wrap gap-1.5 border-t border-slate-200 bg-white p-3">
             {quickPrompts.map((prompt) => <button key={prompt} type="button" onClick={() => sendPrompt(prompt)} className="rounded-full border border-[#C9952A]/35 bg-[#fff8e8] px-2.5 py-1 text-xs font-semibold text-[#4e0a10] hover:border-[#C9952A] hover:bg-[#fff3cf]">{prompt}</button>)}
           </div>
           <form onSubmit={submit} className="flex items-center gap-2 border-t border-slate-200 bg-white p-3">
-            <input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Ask about the next step..." className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20" aria-label="Ask WICARS Buddy" />
+            <input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Ask about the next step..." className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20" aria-label="Ask TCC Scheduling Buddy" />
             <button type="submit" disabled={!input.trim() || thinking} className="rounded-lg bg-[#4e0a10] p-2 text-white transition-colors hover:bg-[#6b0e17] disabled:cursor-not-allowed disabled:opacity-40" aria-label="Send message"><Send className="h-4 w-4" /></button>
           </form>
         </section>
       )}
-      <button type="button" onClick={toggleBuddy} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={finishDrag} onPointerCancel={finishDrag} className="group relative h-24 w-[72px] touch-none cursor-grab select-none border-0 bg-transparent p-0 transition hover:scale-105 active:cursor-grabbing" aria-label={open ? "Move or close WICARS Buddy" : "Move or open WICARS Buddy"} title="Drag to move or click to open WICARS Buddy">
+      <button type="button" onClick={toggleBuddy} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={finishDrag} onPointerCancel={finishDrag} className="group relative h-24 w-[72px] touch-none cursor-grab select-none border-0 bg-transparent p-0 transition hover:scale-105 active:cursor-grabbing" aria-label={open ? "Move or close TCC Scheduling Buddy" : "Move or open TCC Scheduling Buddy"} title="Drag to move or click to open TCC Scheduling Buddy">
         <BuddySprite animation={animation} />
         <span className="absolute left-0 top-1 rounded-full border border-[#C9952A] bg-[#4e0a10] px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-[#fff3cf] shadow-md">Beta</span>
         {open && <span className="absolute right-0 top-0 rounded-md bg-[#4e0a10] p-1 text-white shadow"><X className="h-3 w-3" /></span>}

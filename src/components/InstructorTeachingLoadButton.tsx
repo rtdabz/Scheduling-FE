@@ -2,6 +2,7 @@ import { heldDesignation } from "../lib/designations";
 import { useState } from "react";
 import { Printer } from "lucide-react";
 import api from "../lib/api";
+import { formatPersonName, personSortName } from "../lib/personName";
 import { useToast } from "../context/ToastContext";
 import TeachingLoad from "../pages/ClassSchedules/SchedulerPanel/TeachingLoad";
 import type {
@@ -81,11 +82,14 @@ const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
   users: data.users,
   faculties: data.faculties.map((faculty) => ({
     id: String(faculty.id),
-    name: `${faculty.first_name} ${faculty.last_name}`,
+    name: formatPersonName(faculty),
+    sortName: personSortName(faculty),
+    honorificPrefix: faculty.honorific_prefix ?? null,
     firstName: faculty.first_name,
     middleName: faculty.middle_name ?? null,
     lastName: faculty.last_name,
     suffix: faculty.suffix ?? null,
+    credentials: faculty.credentials ?? null,
     employmentType: faculty.employment_type,
     administrativeRole: normalizeAdministrativePost(faculty.administrative_role),
     designations: (faculty.designations ?? []).map(heldDesignation),
@@ -150,9 +154,7 @@ const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
       startTime: schedule.start_time,
       endTime: schedule.end_time,
       mode: schedule.mode ?? "on-site",
-      facultyName: schedule.faculty
-        ? `${schedule.faculty.first_name ?? ""} ${schedule.faculty.last_name ?? ""}`.trim()
-        : null,
+      facultyName: schedule.faculty ? formatPersonName(schedule.faculty) : null,
       facultyId: schedule.faculty_id ? String(schedule.faculty_id) : null,
       status: schedule.status,
       dayIndex: dayIndexes[schedule.day] ?? 0,
@@ -162,6 +164,10 @@ const mapInitialData = (data: InitialTeachingLoadData): TeachingLoadData => ({
       roomId: String(schedule.room_id),
       isHybrid: Boolean(schedule.is_hybrid),
       preferredPattern: schedule.preferred_pattern ?? null,
+      // The officials recorded when the row was approved; the sheet never re-signs a past load.
+      signatories: schedule.signatories ?? null,
+      createdById: schedule.created_by != null ? Number(schedule.created_by) : null,
+      creatorIdentity: schedule.creator_identity ?? null,
     };
   }),
 });
@@ -175,7 +181,7 @@ export default function InstructorTeachingLoadButton({ facultyId }: InstructorTe
     const [response, scheduleResponse] = await Promise.all([
       api.get<InitialTeachingLoadData>("/initial-data", { params: { schedule_limit: 2000 } }),
       api.get<ApiScheduleRecord[]>("/schedules", {
-        params: { faculty_id: facultyId, semester_id: "active", per_page: 1000 },
+        params: { faculty_id: facultyId, semester_id: "active", per_page: 1000, with_signatories: 1 },
       }),
     ]);
     if (scheduleResponse.data.length >= 1000) {

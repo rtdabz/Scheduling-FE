@@ -1,6 +1,8 @@
 # Tour Guide repair plan
 
-Date: 2026-11-08. Status: proposed; application fixes have not been implemented.
+Planned: 2026-11-08. Implemented and verified: 2026-11-09.
+
+Status: repairs implemented for all 12 existing guide IDs. All 164 focused tests, 51 authenticated Chrome browser scenarios, production build, and scoped lint passed. Repository-wide test/lint checks remain unsuccessful for separate existing issues; native browser zoom and other browser engines were not verified. See the [verification record](../tour-guide-repair/README.md) for commands, evidence, and limits.
 
 User priority: fix **all** reported problem categories: guides that get stuck or advance incorrectly, highlights that target or block the wrong control, and instructions that do not match the workflow.
 
@@ -14,16 +16,25 @@ This plan covers the existing workflow tours and related generator help copy. Ad
 
 ## Evidence and current verification
 
-This is a source-based engineering review of the current working tree, not a completed browser or visual audit. Three parallel reviews examined the shared runner, page integrations, and coverage/accessibility. Findings below distinguish code defects from browser checks still needed.
+Three parallel reviews identified the original defects below. The shared runner and all page integrations have since been repaired. The original findings and implementation specification are retained below for traceability; old line references refer to the pre-repair source.
+
+- One manual runner now owns progress, cancellable waits, actual target identity, recovery, focus, and truthful completion. Help requested during loading starts when that requested page becomes ready; it never starts just because a page was visited.
+- Every guide builds its steps from current role, List/Grid view, open form, prerequisites, selected department/section, or generator stage/run state. Save, Submit, Apply, immediate assignments, and launching jobs are review-only.
+- Real browser checks exposed and fixed two additional integration problems: Floating UI accessing a clicked target after its removal, and nested scrolling clipping tooltips on short screens. The runner unmounts positioning for disconnected targets and fits guidance to the viewport.
+- [Page browser results](../tour-guide-repair/page-guides-final/results.json): **30/30 passed** across eight guide IDs, including read-only access, forms, empty/locked states, department deep links, keyboard navigation, and narrow screens.
+- [Builder/generator browser results](../tour-guide-repair/scheduler-guides/results.json): **21/21 passed** across the other four guide IDs, including all four generator stages and queued, running, blocked, failed, cancelled, complete, and partial outcomes. Run/status and editable-scope fixtures are explicitly identified in the verification record.
+- All browser scenarios reported **zero domain write attempts and zero page errors**. Temporary local verification tokens were revoked after the run. No backend source changes were needed for the tour repair.
+- Follow-up screenshot fix: the generator header's separate question-mark popup now positions within the full header instead of overflowing from its icon. All four stages passed isolated browser clipping/text/toggle checks at desktop, 390px, and 320px (**12/12 cases**); 25 generator tests and the production build passed again. See the [follow-up evidence](../tour-guide-repair/README.md#generator-header-help-popup-follow-up).
+- Automated checks: **13 files / 164 focused tests passed**, including **six installed-Joyride integration tests**; `npm run build` passed; shared guide/new-file ESLint passed; `git diff --check` passed. Repository-wide limitations are recorded separately in the verification record.
 
 - Entry and lifecycle: [useWorkflowGuide.ts](../../src/hooks/useWorkflowGuide.ts), [WorkflowGuideButton.tsx](../../src/components/help/WorkflowGuideButton.tsx).
 - Shared behavior: [TaskGuideRunner.tsx](../../src/onboarding/TaskGuideRunner.tsx), [taskGuide.ts](../../src/onboarding/taskGuide.ts), [joyrideTour.ts](../../src/onboarding/joyrideTour.ts).
 - Presentation: [TaskTooltip.tsx](../../src/onboarding/TaskTooltip.tsx), [onboarding.css](../../src/styles/onboarding.css), [tourDiagnostics.ts](../../src/onboarding/tourDiagnostics.ts).
 - Existing policy: [Task-based interactive guides](decisions.md), especially manual Help entry and review-only persistence actions.
-- Baseline command: `npm test -- src/onboarding/taskGuide.test.ts` — **1 file, 33 tests passed**. These are helper tests with stubbed jsdom layout; they do not verify the rendered runner, spotlight placement, or complete workflows.
+- Original baseline: **33 helper tests passed** before repair. The current helper suite has 49 tests and is supplemented by runner/hook regressions, real Joyride/modal integration, page contracts, and browser evidence.
 - Installed dependency source confirms the STOP/CLOSE event behavior described below. Dependency files are evidence, not files to modify.
 
-## Prioritized defects
+## Original prioritized defects (repaired)
 
 P1 blocks acceptance of the repair. P2 must be resolved or explicitly shown not to affect supported flows before sign-off.
 
@@ -52,7 +63,9 @@ P1 blocks acceptance of the repair. P2 must be resolved or explicitly shown not 
 7. **Help preserves user work.** Back never undoes saved data, submits a form, clears selections, or resets wizard drafts. Inside a form it moves among available fields. Crossing back to a covered page control shows a close-form/retry explanation without silently closing the form. Generator help stays within the current wizard stage and ends at that stage's normal Continue/Generate/Save explanation.
 8. **Nested workflows have explicit boundaries.** The builder explains the generator launch as a review step; generator Help is started from its own existing button. Opening a separate workflow ends or suspends the current presentation without falsely completing it. Do not promise automatic parent resume or maintain two active overlays.
 
-## Implementation sequence
+## Implemented design and acceptance specification
+
+The phases below describe the implemented design. The verification record distinguishes completed checks from remaining environment coverage: the whole repository is not green, and native 200% browser zoom, touch hardware, Firefox, and WebKit were not tested. These are not represented as passing checks.
 
 ### Phase 1 — Reproduce failures before changing behavior
 

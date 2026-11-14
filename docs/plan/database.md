@@ -174,6 +174,12 @@ See [[business_rules]] for course ownership and teaching-assignment rules.
 
 ## Scheduling Tables
 
+Schedules have no archive: Delete, group Delete, batch deletion, split deletion,
+and draft Reset (`POST /api/schedules/reset`) physically delete `schedules` rows
+and their `schedule_splits` (including soft-deleted splits). Rows soft-deleted
+before this rule stay hidden; the Archive no longer lists or restores them. `schedule_history_items.original_schedule_id` has no foreign key, so
+history rows are untouched and may reference schedules that no longer exist.
+
 ### `schedules`
 
 - Central persisted timetable row.
@@ -353,7 +359,11 @@ Before a production migration:
 - The canonical curriculum table is singular: `curriculum`.
 - Several models use plural class names: `Departments`, `Rooms`, and `Sections`.
 - Some workflow invariants, including one active semester, are enforced by application workflows rather than database constraints.
-- One live, active dean or secretary per department and one live, active program head per program is enforced by `AdministrativeRoleSlots` (writers lock the owning department/program row, then recheck the holder) with a database backstop: the MySQL/MariaDB generated column `users.active_role_slot` with unique key `users_active_role_slot_unique`, or partial unique indexes on SQLite. Accounts without a department/program scope are not covered by the backstop.
+- One live, active dean per department, one live, active **Secretary or Director** per department (the two roles share one slot), and one live, active program head per program is enforced by `AdministrativeRoleSlots` (writers lock the owning department/program row, then recheck the holder through `User::activeRoleHolder`, which treats Secretary and Director as one slot) with a database backstop:
+  - MySQL/MariaDB: generated column `users.active_role_slot` with unique key `users_active_role_slot_unique`. Keys are `dean|department|{id}`, `department_office|department|{id}` (both Secretary and Director), and `program_head|program|{id}`; inactive or archived rows produce `NULL` and never collide.
+  - SQLite: partial unique indexes `users_active_department_role_unique` (`role, department_id`, dean only), `users_active_department_office_unique` (`department_id`, `role IN ('secretary','director')`), and `users_active_program_head_unique`.
+  - Migration `2026_11_10_110000_add_director_role_with_shared_department_office_slot` introduced the shared slot; it refuses to run while a department has more than one active Secretary/Director and lists the conflicting accounts. Accounts without a department/program scope are not covered by the backstop.
+- Legacy Director accounts (rows with `users.role = 'director'` left by `2026_09_27_100002_remove_legacy_director_role`) are quarantined by `2026_11_10_110000`: deactivated, API tokens and pending setup/reset links revoked, Spatie assignment cleared, and a `legacy_director_quarantined` entry written to `authentication_audit_logs`. Archived state, history, and faculty links are preserved. The VPAA reviews and reactivates them from Users; activation passes the shared-slot check and reassigns the Spatie `director` role. A Director without that role assignment is refused at login and per request (`User::awaitingRoleReview`).
 - Schedule status evolution contains MySQL-specific enum SQL; portability must be considered when adding statuses.
 
 Do not correct these exceptions through isolated renames. Any normalization must be a coordinated migration across models, queries, APIs, tests, and frontend consumers.

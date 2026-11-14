@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   conflictTime,
   instructorConflictMessage,
-  onlineCourseConflictMessage,
   roomConflictMessage,
   sectionConflictMessage,
 } from "./conflictMessages";
@@ -29,9 +28,6 @@ describe("conflict messages", () => {
     );
     expect(sectionConflictMessage("BSIT 1I", { day: "Monday", start: "08:00", end: "09:00" }, booking)).toBe(
       "Section BSIT 1I is unavailable on Mon 08:00–09:00. It already has PATH FIT 2 from 07:00–09:00. Please choose another time."
-    );
-    expect(onlineCourseConflictMessage("PATH FIT 2", { day: "Monday", start: "08:00", end: "09:00" }, booking)).toBe(
-      "Online class PATH FIT 2 is unavailable on Mon 08:00–09:00. It is already running online for BSIT 1I (CIT) from 07:00–09:00. Please choose another time or delivery mode."
     );
   });
 

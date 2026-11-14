@@ -61,6 +61,35 @@ const fillAccount = ({ first = 'Ana', last = 'Reyes', role = 'Secretary' } = {})
 
 const submit = () => fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
 
+describe('Director accounts', () => {
+  it('creates a Director with department scope and no program', async () => {
+    await openCreateModal();
+    fillAccount({ role: 'Director' });
+    submit();
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post.mock.calls[0][1]).toMatchObject({ role: 'director', department_id: 1, program_id: null });
+  });
+
+  it('notes the shared Secretary/Director slot but leaves the decision to the API', async () => {
+    get.mockImplementation((url: string) => {
+      const data: Record<string, unknown> = {
+        '/user': [{ id: 3, name: 'Sam Sec', username: 'sam', email: 'sam@school.edu.ph', role: 'secretary', department_id: 1, department, is_active: true, created_at: '2026-11-01T00:00:00Z' }],
+        '/departments': [department],
+        '/programs': [program],
+      };
+      return Promise.resolve({ data: data[url] ?? [] });
+    });
+    await openCreateModal();
+    fillAccount({ role: 'Director' });
+
+    expect(await screen.findByText(/already has an active Secretary \(Sam Sec\)\. A department has one Secretary or one Director/)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Role'), { target: { value: 'Dean' } });
+    expect(screen.queryByText(/one Secretary or one Director/)).toBeNull();
+  });
+});
+
 describe('Create New Account teaching profile', () => {
   it('has no non-teaching option and lets a Secretary skip the instructor record', async () => {
     await openCreateModal();
@@ -154,5 +183,57 @@ describe('Create New Account teaching profile', () => {
     expect(await screen.findByText('The email has already been taken.')).toBeTruthy();
     expect(toastError).not.toHaveBeenCalled();
     expect(screen.getByText('Create New Account')).toBeTruthy();
+  });
+});
+
+describe('Create New Account layout', () => {
+  it('keeps instructor fields hidden until teaching is turned on, then hides them again', async () => {
+    await openCreateModal();
+    fillAccount();
+
+    const toggle = screen.getByRole('switch', { name: /also teaches classes/ });
+    expect(screen.queryByRole('radiogroup', { name: 'Instructor record' })).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(screen.getByRole('radiogroup', { name: 'Instructor record' })).toBeTruthy();
+
+    fireEvent.click(toggle);
+    expect(screen.queryByRole('radiogroup', { name: 'Instructor record' })).toBeNull();
+  });
+
+  it('shows the program field only for Program Heads', async () => {
+    await openCreateModal();
+    fillAccount();
+    const dialog = within(screen.getByRole('dialog'));
+
+    expect(dialog.queryByLabelText(/Program \/ Major/)).toBeNull();
+    fireEvent.change(screen.getByLabelText('Role'), { target: { value: 'Program Head' } });
+    expect(dialog.getByLabelText(/Program \/ Major/)).toBeTruthy();
+  });
+
+  it('marks invalid fields and focuses the first one', async () => {
+    await openCreateModal();
+    submit();
+
+    const lastName = await screen.findByLabelText(/Last Name/);
+    await waitFor(() => expect(document.activeElement).toBe(lastName));
+    expect(lastName.getAttribute('aria-invalid')).toBe('true');
+    expect(lastName.getAttribute('aria-describedby')).toBe('user-last-name-error');
+  });
+
+  it('previews the formatted name and generated username, and sends the chosen status', async () => {
+    await openCreateModal();
+    fillAccount();
+    fireEvent.change(screen.getByLabelText('Role'), { target: { value: 'Dean' } });
+
+    expect(screen.getByText('Ana Reyes')).toBeTruthy();
+    expect(screen.getByText('@ccsdean')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Inactive' }));
+    fireEvent.click(screen.getByLabelText(/Create new instructor profile/));
+    submit();
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post.mock.calls[0][1]).toMatchObject({ is_active: false, username: 'ccsdean', profile_picture: null });
   });
 });

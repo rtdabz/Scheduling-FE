@@ -12,7 +12,6 @@ import {
   Settings,
   Building2,
   BookOpen,
-  Archive,
 } from 'lucide-react'
 import type { NavSection } from './types'
 
@@ -24,13 +23,13 @@ export const vpaaNav: NavSection[] = [
       { label: 'Users', path: '/users', icon: Users, id: 'sidebar-users' },
       { label: 'Departments', path: '/departments', icon: Building2, id: 'sidebar-departments' },
       { label: 'Facilities', path: '/facilities', icon: DoorOpen, id: 'sidebar-rooms' },
+      { label: 'Designations', path: '/designations', icon: Award, id: 'sidebar-designations' },
       {
         label: 'Instructors',
         path: '/instructors',
         icon: GraduationCap,
         id: 'sidebar-faculty',
       },
-      { label: 'Designations', path: '/designations', icon: Award, id: 'sidebar-designations' },
       { label: 'Curriculums', path: '/curriculum', icon: BookOpen, id: 'sidebar-curriculum' },
       {
         label: 'Academic Scheduling',
@@ -58,7 +57,6 @@ export const vpaaNav: NavSection[] = [
       { label: 'Reports', path: '/reports', icon: FileBarChart, id: 'sidebar-reports' },
       { label: 'Activity Log', path: '/activity-log', icon: ClipboardList, id: 'sidebar-activity-log' },
       { label: 'Schedule History', path: '/schedule-history', icon: History, id: 'sidebar-schedule-history' },
-      { label: 'Archive', path: '/archive', icon: Archive, id: 'sidebar-archive' },
       { label: 'Settings', path: '/settings', icon: Settings, id: 'sidebar-settings' },
     ]
   }

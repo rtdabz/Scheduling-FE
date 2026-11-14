@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CalendarClock, ChevronDown, DoorOpen, MapPin, X } from "lucide-react";
 import {
   DAYS,
 } from "../constants";
 import type { Department, ScheduleItem, Room } from "../types";
 import { getStoredUserDepartmentId } from "../../../../lib/storedUser";
-import { gridOpeningMinutes, slotCount, slotMinutes, slotToTime24h } from "../../../../lib/timeGrid";
+import { gridOpeningMinutes, slotCount, slotMinutes } from "../../../../lib/timeGrid";
+import { scheduleItemToCalendar } from "../ganttAdapter";
 import MasterGantt, { type GanttReservation } from "../../../vpaa/calendar/MasterGantt";
 import { useRoomGrants } from "../../../../hooks/useRoomGrants";
+import { useModalScrollLock } from "../../../../hooks/useModalScrollLock";
 import { toMinutes } from "../../../../lib/roomRequests";
 import ScheduleDetailModal from "../../../vpaa/calendar/ScheduleDetailModal";
 import {
@@ -18,17 +20,6 @@ import {
   type CalendarSchedule,
   type StandardHours,
 } from "../../../vpaa/calendar/ganttLayout";
-
-const placeholderGanttId = (id: string): number => {
-  const hash = id.split("").reduce((acc, char) => ((acc << 5) - acc + char.charCodeAt(0)) | 0, 0);
-  return -(Math.abs(hash) + 1);
-};
-
-const splitFacultyName = (name: string): { first_name: string; last_name: string } => {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length < 2) return { first_name: parts[0] ?? "", last_name: "" };
-  return { first_name: parts[0], last_name: parts.slice(1).join(" ") };
-};
 
 interface RoomViewModalProps {
   rooms: Room[];
@@ -54,14 +45,24 @@ export default function RoomViewModal({
 }: RoomViewModalProps) {
   const SLOT_COUNT = slotCount();
   const [selectedSchedule, setSelectedSchedule] = useState<CalendarSchedule | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  useModalScrollLock(isRoomViewOpen);
+
   useEffect(() => {
     if (!isRoomViewOpen) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeButtonRef.current?.focus();
+    return () => { if (opener?.isConnected) opener.focus(); };
+  }, [isRoomViewOpen]);
+
+  useEffect(() => {
+    if (!isRoomViewOpen || selectedSchedule) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") setIsRoomViewOpen(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isRoomViewOpen, setIsRoomViewOpen]);
+  }, [isRoomViewOpen, selectedSchedule, setIsRoomViewOpen]);
 
   const room = useMemo(
     () => rooms.find((r) => r.id === roomViewRoomId),
@@ -100,44 +101,21 @@ export default function RoomViewModal({
     });
   }, [schedules, roomViewRoomId, room, currentDepartmentId]);
 
-  const ganttSchedules = useMemo<CalendarSchedule[]>(() => roomClasses.map((item) => {
-    const department = departments.find((candidate) => Number(candidate.id) === Number(item.departmentId));
-    const numericId = Number(item.id);
-    const faculty = item.facultyName ? splitFacultyName(item.facultyName) : null;
-    return {
-      id: Number.isFinite(numericId) ? numericId : placeholderGanttId(item.id),
-      day: CALENDAR_DAYS[item.dayIndex] ?? item.day,
-      start_time: slotToTime24h(item.startSlot),
-      end_time: slotToTime24h(item.startSlot + item.durationSlots),
-      meeting_type: item.meetingType ?? "lecture",
-      mode: item.mode,
-      course_id: Number(item.courseId) || null,
-      department_id: Number(item.departmentId) || null,
-      department: department ? {
-        id: Number(department.id),
-        department_name: department.department_name,
-        department_code: department.department_code,
-        logo: department.logo,
-      } : null,
-      room_id: item.mode === "on-site" && item.roomId && item.roomId !== "tba" ? Number(item.roomId) || null : null,
-      room: item.mode === "on-site" && item.roomName ? { id: Number(item.roomId) || 0, room_code: item.roomName } : null,
-      faculty_id: item.facultyId ? Number(item.facultyId) || null : null,
-      faculty: faculty ? { id: Number(item.facultyId) || 0, ...faculty } : null,
-      section_id: Number(item.sectionId) || null,
-      section: { id: Number(item.sectionId) || 0, section_name: item.sectionName, department_id: Number(item.departmentId) },
-      course: { course_code: item.courseCode, course_name: item.courseName, units: item.totalUnits },
-    };
-  }), [roomClasses, departments]);
-  const ganttDays = useMemo(() => buildGanttDays(ganttSchedules, "none", [0, 1, 2, 3, 4, 5, 6]), [ganttSchedules]);
+  const ganttSchedules = useMemo<CalendarSchedule[]>(
+    () => roomClasses.map((item) => scheduleItemToCalendar(item, departments)),
+    [roomClasses, departments],
+  );
+  // Room Schedule reviews the working timetable before approval; other Gantt views publish approved classes.
+  const ganttDays = useMemo(() => buildGanttDays(ganttSchedules, "none", [0, 1, 2, 3, 4, 5, 6], true), [ganttSchedules]);
   const ganttStandardHours = useMemo<StandardHours>(() => {
     const opening = gridOpeningMinutes();
     return { opening, closing: opening + SLOT_COUNT * slotMinutes(), slotMinutes: slotMinutes() };
   }, [SLOT_COUNT]);
   const ganttTimeWindow = useMemo(
-    () => buildTimeWindow(ganttStandardHours, ganttSchedules),
+    () => buildTimeWindow(ganttStandardHours, ganttSchedules, true),
     [ganttStandardHours, ganttSchedules],
   );
-  const ganttOverlaps = useMemo(() => findOverlaps(ganttSchedules), [ganttSchedules]);
+  const ganttOverlaps = useMemo(() => findOverlaps(ganttSchedules, true), [ganttSchedules]);
 
   const isSharedRoom = room?.roomType === "field" || room?.roomType === "online";
   const peakSharedOccupancy = useMemo(() => {
@@ -168,32 +146,47 @@ export default function RoomViewModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 min-h-screen p-2 sm:p-4"
+      className="scheduler-dialog-overlay fixed inset-0 z-50 flex items-center justify-center overflow-y-auto"
       onClick={(e) => { if (e.target === e.currentTarget) setIsRoomViewOpen(false); }}
     >
       <div
         role="dialog"
         aria-modal="true"
+        data-workflow-guide-scope="room-schedule"
         aria-labelledby="room-view-title"
-        className="bg-white rounded-2xl shadow-2xl h-[calc(100vh-1rem)] w-[calc(100vw-1rem)] sm:h-[calc(100vh-2rem)] sm:w-[calc(100vw-2rem)] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 motion-reduce:animate-none"
+        aria-describedby="room-view-description"
+        className="scheduler-dialog h-[calc(100dvh-1rem)] w-full sm:h-[calc(100dvh-2rem)] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 motion-reduce:animate-none"
       >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-3 border-b border-slate-200 bg-slate-50/50 shrink-0">
-          <div className="flex items-start gap-3">
-            <DoorOpen className="w-5 h-5 text-[#4e0a10] mt-0.5 shrink-0" />
-            <div>
-              <h3 id="room-view-title" className="text-lg font-bold text-slate-900 leading-tight">
+        <div className="scheduler-dialog-header flex items-start justify-between gap-3 shrink-0">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="scheduler-dialog-icon"><DoorOpen className="w-5 h-5" /></span>
+            <div className="min-w-0">
+              <p className="scheduler-dialog-eyebrow">Room occupancy</p>
+              <h3 id="room-view-title" className="scheduler-dialog-title">
                 Room Schedule
               </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Weekly occupancy for your department
+              <p id="room-view-description" className="scheduler-dialog-description">
+                Review weekly room schedules, including drafts
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="relative w-full sm:w-64">
+          <button
+            ref={closeButtonRef}
+            type="button"
+            onClick={() => setIsRoomViewOpen(false)}
+            aria-label="Close"
+            className="scheduler-dialog-close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="px-5 py-3 border-b border-slate-100 flex flex-wrap items-center gap-2 shrink-0">
+            <div className="relative w-full sm:mr-auto sm:w-64">
               <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
               <select
+                aria-label="Room schedule"
                 value={roomViewRoomId}
                 onChange={(e) => setRoomViewRoomId(e.target.value)}
                 className="w-full appearance-none border border-slate-300 rounded-lg pl-9 pr-9 py-2 text-sm font-semibold text-slate-700 bg-white outline-none focus:ring-2 focus:ring-[#4e0a10]/20 focus:border-[#4e0a10]"
@@ -209,18 +202,6 @@ export default function RoomViewModal({
               </select>
               <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
-            <button
-              type="button"
-              onClick={() => setIsRoomViewOpen(false)}
-              aria-label="Close"
-              className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full p-1.5 transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        <div className="px-6 py-2.5 border-b border-slate-100 flex flex-wrap items-center gap-2 shrink-0">
           <span className="flex items-center gap-1.5 bg-[#4e0a10]/10 text-[#4e0a10] border border-[#4e0a10]/10 px-2.5 py-1 rounded-lg text-xs font-bold">
             <DoorOpen className="w-3.5 h-3.5" />
             {room?.name ?? "Room"}
@@ -236,14 +217,21 @@ export default function RoomViewModal({
           )}
         </div>
 
-        <div className="flex flex-1 min-h-0 flex-col overflow-hidden p-3 bg-slate-50/30 [contain:layout_paint]">
+        <div className="flex flex-1 min-h-0 flex-col overflow-auto p-3 bg-slate-50/30 [contain:layout_paint]">
           {reservations.length > 0 ? (
             <div className="mb-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-2 text-xs font-semibold text-orange-800">
               Dashed windows mark time this room is lent to another department; only that department can schedule there.
             </div>
           ) : roomClasses.length === 0 && (
             <div className="mb-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-800">
-              This room is fully available - no classes are booked this week.
+              No classes are scheduled in this room this week.
+            </div>
+          )}
+          {roomClasses.length > 0 && (
+            <div role="status" className={`mb-2 rounded-xl border px-4 py-2 text-xs font-semibold ${ganttOverlaps.size > 0 ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
+              {ganttOverlaps.size > 0
+                ? `${ganttOverlaps.size} classes have overlaps in this room. Red outlines mark affected classes; select one to review the details.`
+                : "No overlapping classes in this room."}
             </div>
           )}
           <MasterGantt
@@ -266,6 +254,8 @@ export default function RoomViewModal({
         </div>
       </div>
       <ScheduleDetailModal
+        appearance="workflow"
+        includeUnapproved
         schedule={selectedSchedule}
         allSchedules={ganttSchedules}
         overlaps={ganttOverlaps}

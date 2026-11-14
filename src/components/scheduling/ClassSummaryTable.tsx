@@ -8,10 +8,37 @@ import {
   type SummaryPart,
 } from "../../pages/ClassSchedules/SchedulerPanel/GenerateSchedule/summaryRows";
 
-const partLines = (item: SummaryClass, valueOf: (part: SummaryPart) => string): string[] => {
-  const values = item.parts.map(valueOf);
-  return values.every((value) => value === values[0]) ? values.slice(0, 1) : values;
+const MODE_LABELS: Record<string, string> = { "on-site": "On-site", online: "Online", field: "Field" };
+const MODE_BADGES: Record<string, string> = {
+  "on-site": "bg-[#F7F4F0] text-[#4f433c] ring-[#E2D9D0]",
+  online: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  field: "bg-[#F5A623]/10 text-[#8A5A12] ring-[#F5A623]/40",
 };
+
+const meetingLabel = (meeting: string) =>
+  meeting === "laboratory" ? "Lab" : meeting === "lecture" ? "Lec" : meeting;
+
+// The meeting columns (day, time, room, instructor, mode) drop their cell padding and print one
+// fixed-height line per meeting, so a meeting reads straight across and the hairline between two
+// meetings runs unbroken through every meeting column.
+const MEETING_CELL = "!p-0 align-top text-[#3f342e]";
+
+function MeetingLines({
+  item,
+  children,
+}: {
+  item: SummaryClass;
+  children: (part: SummaryPart) => ReactNode;
+}) {
+  return item.parts.map((part, index) => (
+    <div
+      key={index}
+      className={`flex h-9 items-center whitespace-nowrap px-3 ${index > 0 ? "border-t border-[#F0EAE3]" : ""}`}
+    >
+      {children(part)}
+    </div>
+  ));
+}
 
 export default function ClassSummaryTable({
   classes,
@@ -41,18 +68,18 @@ export default function ClassSummaryTable({
       id: "section",
       accessorKey: "sectionName",
       header: "Section",
-      meta: { cellClassName: "align-top font-black text-slate-900" },
+      meta: { cellClassName: "whitespace-nowrap align-top !py-2.5 font-bold text-[#4A0D16]" },
       cell: ({ row }) => (renderSection ? renderSection(row.original) : row.original.sectionName),
     },
     {
       id: "course",
       accessorKey: "courseCode",
       header: "Course",
-      meta: { cellClassName: "align-top" },
+      meta: { cellClassName: "align-top !py-2.5" },
       cell: ({ row }) => (
         <>
-          <span className="block text-xs font-black text-slate-900">{row.original.courseCode}</span>
-          <span className="block text-[11px] font-semibold text-slate-600">{row.original.courseName}</span>
+          <span className="block text-xs font-bold tracking-tight text-[#1A1410]">{row.original.courseCode}</span>
+          <span className="block text-[11px] font-medium leading-snug text-[#6b5f57]">{row.original.courseName}</span>
           {renderCourseExtras?.(row.original)}
         </>
       ),
@@ -61,60 +88,72 @@ export default function ClassSummaryTable({
       id: "day",
       header: "Day",
       enableSorting: false,
-      meta: { cellClassName: "align-top text-slate-700" },
-      cell: ({ row }) => row.original.parts.map((part, index) => (
-        <span key={index} className="block leading-5">{part.dayLabel}</span>
-      )),
+      meta: { cellClassName: MEETING_CELL },
+      cell: ({ row }) => (
+        <MeetingLines item={row.original}>{(part) => part.dayLabel}</MeetingLines>
+      ),
     },
     {
       id: "time",
       accessorFn: (item) => item.parts[0]?.start ?? "",
       header: "Time",
-      meta: { cellClassName: "whitespace-nowrap align-top text-slate-700" },
-      cell: ({ row }) => row.original.parts.map((part, index) => (
-        <span key={index} className="block leading-5">
-          {timeRangeLabel(part.start, part.end)}
-          {part.meeting && (
-            <span className="ml-1.5 text-[10px] font-bold uppercase text-slate-400">
-              {part.meeting === "laboratory" ? "Lab" : part.meeting === "lecture" ? "Lec" : part.meeting}
-            </span>
+      meta: { cellClassName: MEETING_CELL },
+      cell: ({ row }) => (
+        <MeetingLines item={row.original}>
+          {(part) => (
+            <>
+              <span className="font-semibold tabular-nums text-[#2a1d1a]">{timeRangeLabel(part.start, part.end)}</span>
+              {part.meeting && (
+                <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-[#7A6E67]">
+                  {meetingLabel(part.meeting)}
+                </span>
+              )}
+            </>
           )}
-        </span>
-      )),
+        </MeetingLines>
+      ),
     },
     {
       id: "room",
       accessorFn: (item) => item.parts[0]?.room ?? "",
       header: "Room",
-      meta: { cellClassName: "align-top text-slate-700" },
-      cell: ({ row }) => partLines(row.original, (part) => part.room).map((room, index) => (
-        <span key={index} className={`block leading-5 ${room === "Unassigned" ? "italic text-amber-700" : ""}`}>
-          {room}
-        </span>
-      )),
+      meta: { cellClassName: MEETING_CELL },
+      cell: ({ row }) => (
+        <MeetingLines item={row.original}>
+          {(part) => (
+            <span className={part.room === "Unassigned" ? "italic text-[#8A5A12]" : "font-medium"}>{part.room}</span>
+          )}
+        </MeetingLines>
+      ),
     },
     ...(showFaculty ? [{
       id: "faculty",
       accessorFn: (item: SummaryClass) => item.parts[0]?.faculty || "Unassigned",
       header: "Instructor",
-      meta: { cellClassName: "align-top text-slate-700" },
-      cell: ({ row }: { row: { original: SummaryClass } }) => partLines(row.original, (part) => part.faculty || "Unassigned").map((faculty, index) => (
-        <span key={index} className={`block leading-5 ${faculty === "Unassigned" ? "italic text-amber-700" : ""}`}>
-          {faculty}
-        </span>
-      )),
+      meta: { cellClassName: MEETING_CELL },
+      cell: ({ row }: { row: { original: SummaryClass } }) => (
+        <MeetingLines item={row.original}>
+          {(part) => {
+            const faculty = part.faculty || "Unassigned";
+            return <span className={faculty === "Unassigned" ? "italic text-amber-700" : ""}>{faculty}</span>;
+          }}
+        </MeetingLines>
+      ),
     } satisfies ColumnDef<SummaryClass, string>] : []),
     {
       id: "mode",
       accessorFn: (item) => item.modes.join(" "),
       header: "Mode",
-      meta: { cellClassName: "whitespace-nowrap align-top text-[10px] font-black uppercase text-slate-700" },
-      cell: ({ row }) => row.original.modes.map((mode, index) => (
-        <span key={mode}>
-          {index > 0 && <span className="mx-1 text-slate-300">|</span>}
-          <span className="rounded-md bg-slate-100 px-1.5 py-0.5">{mode}</span>
-        </span>
-      )),
+      meta: { cellClassName: MEETING_CELL },
+      cell: ({ row }) => (
+        <MeetingLines item={row.original}>
+          {(part) => (
+            <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${MODE_BADGES[part.mode] ?? MODE_BADGES["on-site"]}`}>
+              {MODE_LABELS[part.mode] ?? part.mode}
+            </span>
+          )}
+        </MeetingLines>
+      ),
     },
   ], [showFaculty, renderSection, renderCourseExtras]);
 

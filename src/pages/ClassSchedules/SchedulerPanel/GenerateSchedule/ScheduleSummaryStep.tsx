@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { Filter, X } from "lucide-react";
+import { Lightbulb, X } from "lucide-react";
 import { DAYS } from "../constants";
 import type { ApiScheduleRecord, Course, Section } from "../types";
 import { buildSummaryClasses, type SummaryMeeting } from "./summaryRows";
@@ -14,6 +14,9 @@ import {
 } from "./generationChanges";
 import type { GenerationRecommendation } from "./yearLevelGenerationFailure";
 import RecommendationList from "./RecommendationList";
+import CollapsibleNotice from "./CollapsibleNotice";
+import { groupRecommendations } from "./recommendationGroups";
+import SearchField from "../components/SearchField";
 
 const ALL = "all";
 
@@ -47,6 +50,7 @@ export default function ScheduleSummaryStep({
   const [courseFilter, setCourseFilter] = useState(ALL);
   const [modeFilter, setModeFilter] = useState(ALL);
   const [changedOnly, setChangedOnly] = useState(false);
+  const [search, setSearch] = useState("");
 
   const badgesByClass = useMemo(
     () => changeBadgesByClass(changes ?? []),
@@ -98,40 +102,45 @@ export default function ScheduleSummaryStep({
 
   const classes = useMemo(() => buildSummaryClasses(rows), [rows]);
 
-  const filtered = useMemo(
-    () =>
-      classes
-        .filter(
-          (item) => sectionFilter === ALL || item.sectionId === sectionFilter,
-        )
-        .filter(
-          (item) => courseFilter === ALL || item.courseId === courseFilter,
-        )
-        .filter(
-          (item) =>
-            dayFilter === ALL ||
-            item.parts.some((part) => part.days.includes(dayFilter)),
-        )
-        .filter(
-          (item) =>
-            modeFilter === ALL ||
-            item.modes.some((mode) => mode === modeFilter),
-        )
-        .filter(
-          (item) =>
-            !changedOnly ||
-            badgesByClass.has(classKey(item.sectionId, item.courseId)),
-        ),
-    [
-      badgesByClass,
-      changedOnly,
-      classes,
-      courseFilter,
-      dayFilter,
-      modeFilter,
-      sectionFilter,
-    ],
-  );
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return classes
+      .filter(
+        (item) =>
+          !query ||
+          `${item.courseCode} ${item.courseName} ${item.sectionName}`
+            .toLowerCase()
+            .includes(query),
+      )
+      .filter(
+        (item) => sectionFilter === ALL || item.sectionId === sectionFilter,
+      )
+      .filter((item) => courseFilter === ALL || item.courseId === courseFilter)
+      .filter(
+        (item) =>
+          dayFilter === ALL ||
+          item.parts.some((part) => part.days.includes(dayFilter)),
+      )
+      .filter(
+        (item) =>
+          modeFilter === ALL || item.modes.some((mode) => mode === modeFilter),
+      )
+      .filter(
+        (item) =>
+          !changedOnly ||
+          badgesByClass.has(classKey(item.sectionId, item.courseId)),
+      );
+  }, [
+    badgesByClass,
+    changedOnly,
+    classes,
+    courseFilter,
+    dayFilter,
+    modeFilter,
+    search,
+    sectionFilter,
+  ]);
 
   const usedCourses = useMemo(
     () =>
@@ -149,12 +158,18 @@ export default function ScheduleSummaryStep({
     [rows],
   );
 
+  // The same grouping the list renders, so the header count matches what opens below it.
+  const suggestionGroups = useMemo(() => groupRecommendations(recommendations), [recommendations]);
+  const suggestionCount = suggestionGroups.groups.length + suggestionGroups.manual.length;
+  const hasSuggestions = suggestionCount > 0 || suggestionGroups.resolved.length > 0;
+
   const filtersActive =
     sectionFilter !== ALL ||
     dayFilter !== ALL ||
     courseFilter !== ALL ||
     modeFilter !== ALL ||
-    changedOnly;
+    changedOnly ||
+    search.trim() !== "";
 
   const clearFilters = () => {
     setSectionFilter(ALL);
@@ -162,6 +177,7 @@ export default function ScheduleSummaryStep({
     setCourseFilter(ALL);
     setModeFilter(ALL);
     setChangedOnly(false);
+    setSearch("");
   };
 
   const focusClass = (item: GenerationChangeItem) => {
@@ -171,21 +187,38 @@ export default function ScheduleSummaryStep({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
       <GenerationChangesPanel
         summary={
-          <>
-            {rows.length} class meetings generated for {classes.length} class
-            {classes.length === 1 ? "" : "es"} across {sections.length} section
-            {sections.length === 1 ? "" : "s"}
+          // Three separate stats so meetings, classes and sections read as distinct figures.
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-[13px]">
+            <span>
+              <strong className="text-base font-bold tabular-nums text-[#4A0D16]">
+                {rows.length}
+              </strong>{" "}
+              class meetings generated
+            </span>
+            <span aria-hidden="true" className="h-4 w-px bg-[#701522]/20" />
+            <span>
+              <strong className="text-base font-bold tabular-nums text-[#4A0D16]">
+                {classes.length}
+              </strong>{" "}
+              class{classes.length === 1 ? "" : "es"}
+            </span>
+            <span aria-hidden="true" className="h-4 w-px bg-[#701522]/20" />
+            <span>
+              <strong className="text-base font-bold tabular-nums text-[#4A0D16]">
+                {sections.length}
+              </strong>{" "}
+              section{sections.length === 1 ? "" : "s"}
+            </span>
             {unplacedCount > 0 && (
-              <>
-                {" "}
-                &middot; {unplacedCount} course{unplacedCount === 1 ? "" : "s"}{" "}
-                not placed yet
-              </>
+              <span className="rounded-full border border-[#F5A623]/45 bg-[#F5A623]/10 px-2 py-0.5 text-[11px] font-semibold text-[#8A5A12]">
+                {unplacedCount} course{unplacedCount === 1 ? "" : "s"} not
+                placed yet
+              </span>
             )}
-          </>
+          </span>
         }
         changes={changes}
         onFocusClass={focusClass}
@@ -193,84 +226,103 @@ export default function ScheduleSummaryStep({
 
       {attention}
 
-      {recommendations.length > 0 && !attention && (
-        <section className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+      {hasSuggestions && !attention && (
+        // Optional improvements: one line until opened, so the generated timetable stays in view.
+        <CollapsibleNotice
+          icon={Lightbulb}
+          label="Suggestions"
+          count={suggestionCount}
+          description="Optional changes that may improve this timetable"
+          tone="suggestion"
+          className="shrink-0"
+        >
           <RecommendationList
             recommendations={recommendations}
             heading="Suggestions"
             busy={applying}
             onApply={onApplyRecommendation}
+            embedded
           />
-        </section>
+        </CollapsibleNotice>
       )}
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3">
-        <div className="flex min-h-[24rem] min-w-0 flex-1 flex-col gap-3 lg:min-h-0">
-          <section className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-            <div className="flex flex-wrap items-end gap-2">
-              <span className="flex items-center gap-1.5 pb-1.5 text-[11px] font-black uppercase tracking-wide text-slate-500">
-                <Filter className="h-3.5 w-3.5" /> Filters
-              </span>
-              <FilterSelect
-                label="Section"
-                value={sectionFilter}
-                onChange={setSectionFilter}
-                options={sections.map((section) => [
-                  String(section.id),
-                  section.name,
-                ])}
-                allLabel="All sections"
-              />
-              <FilterSelect
-                label="Day"
-                value={dayFilter}
-                onChange={setDayFilter}
-                options={usedDays.map((day) => [day, day])}
-                allLabel="All days"
-              />
-              <FilterSelect
-                label="Course"
-                value={courseFilter}
-                onChange={setCourseFilter}
-                options={usedCourses}
-                allLabel="All courses"
-              />
-              <FilterSelect
-                label="Mode"
-                value={modeFilter}
-                onChange={setModeFilter}
-                options={usedModes.map((mode) => [mode, mode])}
-                allLabel="All modes"
-              />
-              {badgesByClass.size > 0 && (
-                <label className="mb-1 inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={changedOnly}
-                    onChange={(event) => setChangedOnly(event.target.checked)}
-                    className="h-3.5 w-3.5 rounded border-slate-300"
-                  />
-                  Changed only
-                </label>
-              )}
-              {filtersActive && (
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="mb-0.5 inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50"
-                >
-                  <X className="h-3 w-3" /> Clear
-                </button>
-              )}
-              <span className="mb-1 ml-auto text-[11px] font-bold text-slate-500">
-                Showing {filtered.length} of {classes.length} classes
-              </span>
-            </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-2">
+        <div className="flex min-h-[24rem] min-w-0 flex-1 flex-col gap-2 lg:min-h-0">
+          <section
+            aria-label="Filter the generated schedule"
+            className="flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-[#E8DFD6] bg-white px-3 py-2"
+          >
+            <SearchField
+              value={search}
+              onChange={setSearch}
+              placeholder="Search course or section..."
+              clearLabel="Clear schedule search"
+              className="w-full sm:w-60"
+              inputClassName="h-8 !py-0 border-[#E8DFD6] focus:ring-[#701522]/15 focus:border-[#701522]"
+            />
+            <FilterSelect
+              label="Section"
+              value={sectionFilter}
+              onChange={setSectionFilter}
+              options={sections.map((section) => [
+                String(section.id),
+                section.name,
+              ])}
+              allLabel="All sections"
+            />
+            <FilterSelect
+              label="Day"
+              value={dayFilter}
+              onChange={setDayFilter}
+              options={usedDays.map((day) => [day, day])}
+              allLabel="All days"
+            />
+            <FilterSelect
+              label="Course"
+              value={courseFilter}
+              onChange={setCourseFilter}
+              options={usedCourses}
+              allLabel="All courses"
+            />
+            <FilterSelect
+              label="Mode"
+              value={modeFilter}
+              onChange={setModeFilter}
+              options={usedModes.map((mode) => [mode, mode])}
+              allLabel="All modes"
+            />
+            {badgesByClass.size > 0 && (
+              <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-[11px] font-semibold text-[#3f342e] transition hover:bg-[#F7F4F0]">
+                <input
+                  type="checkbox"
+                  checked={changedOnly}
+                  onChange={(event) => setChangedOnly(event.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-[#DDD2C7] accent-[#701522]"
+                />
+                Changed only
+              </label>
+            )}
+            {filtersActive && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-[11px] font-semibold text-[#701522] transition hover:bg-[#F5E9EA]"
+              >
+                <X className="h-3 w-3" /> Clear filters
+              </button>
+            )}
+            <span className="ml-auto whitespace-nowrap text-[11px] font-medium tabular-nums text-[#6b5f57]">
+              Showing{" "}
+              <strong className="font-bold text-[#4A0D16]">
+                {filtered.length}
+              </strong>{" "}
+              of {classes.length} classes
+            </span>
           </section>
 
           <ClassSummaryTable
             classes={filtered}
-            className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white"
+            className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#E8DFD6] bg-white shadow-[0_1px_2px_rgb(74_13_22/0.04)]"
             scrollClassName="min-h-0 flex-1 overflow-auto"
             isRowFlagged={(item) =>
               attentionKeys?.has(
@@ -283,7 +335,7 @@ export default function ScheduleSummaryStep({
               ) ? (
                 <span
                   key="attention"
-                  className="mr-1 mt-1 inline-block rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-rose-700"
+                  className="mr-1 mt-1 inline-block rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-700 ring-1 ring-inset ring-rose-200"
                 >
                   Needs fix
                 </span>
@@ -293,10 +345,10 @@ export default function ScheduleSummaryStep({
                 ?.map((change) => (
                   <span
                     key={change.kind}
-                    className={`mr-1 mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-black uppercase ${
+                    className={`mr-1 mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ring-1 ring-inset ${
                       change.severity === "critical"
-                        ? "bg-rose-100 text-rose-700"
-                        : "bg-amber-100 text-amber-800"
+                        ? "bg-rose-50 text-rose-700 ring-rose-200"
+                        : "bg-[#F5A623]/10 text-[#8A5A12] ring-[#F5A623]/40"
                     }`}
                   >
                     {changeBadgeLabel(change)}
@@ -324,23 +376,22 @@ function FilterSelect({
   allLabel: string;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">
-        {label}
-      </span>
-      <select
-        aria-label={label}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-8 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-bold text-slate-800"
-      >
-        <option value={ALL}>{allLabel}</option>
-        {options.map(([optionValue, optionLabel]) => (
-          <option key={optionValue} value={optionValue}>
-            {optionLabel}
-          </option>
-        ))}
-      </select>
-    </label>
+    <select
+      aria-label={label}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className={`h-8 max-w-[11rem] rounded-md border px-2 text-[11px] font-semibold outline-none transition focus:border-[#701522] focus:ring-2 focus:ring-[#701522]/15 ${
+        value === ALL
+          ? "border-[#E8DFD6] bg-white text-[#5b4f48] hover:border-[#DDD2C7]"
+          : "border-[#701522]/40 bg-[#F5E9EA] text-[#4A0D16]"
+      }`}
+    >
+      <option value={ALL}>{allLabel}</option>
+      {options.map(([optionValue, optionLabel]) => (
+        <option key={optionValue} value={optionValue}>
+          {optionLabel}
+        </option>
+      ))}
+    </select>
   );
 }

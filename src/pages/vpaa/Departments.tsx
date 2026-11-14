@@ -1,13 +1,15 @@
 import { formatPhilippineDate } from '../../lib/philippineTime';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import SharedDepartmentLogo from '../../components/ui/DepartmentLogo';
 import DataTable from '../../components/ui/DataTable';
 import TableActionButton from '../../components/ui/TableActionButton';
 import SearchInput from '../../components/ui/SearchInput';
+import Modal from '../../components/ui/Modal';
+import { ModalButton, ModalField, ModalNotice, ModalState } from '../../components/ui/ModalForm';
+import { modalBody, modalControl } from '../../components/ui/modalStyles';
 import {
   Pencil,
   X,
@@ -41,9 +43,12 @@ import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { apiErrorMessage, apiFieldErrors } from '../../lib/apiError';
 import api from '../../lib/api';
 import { logoDataUrl } from '../../lib/imageDataUrl';
+import { formatPersonName } from '../../lib/personName';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import { programLabel, programMajorLabel, programName } from '../../lib/programLabel';
 import FilterBar from '../../components/ui/FilterBar';
+import type { UsageRoom } from '../../lib/roomUsage';
+import { isDepartmentOfficeRole } from '../../lib/roles';
 
 const DEPARTMENT_COLORS: Record<string, { bg: string; modal: string }> = {
   'INFORMATION TECHNOLOGY':      { bg: 'bg-blue-100 border-blue-400 text-blue-900',          modal: 'bg-blue-600'    },
@@ -70,7 +75,7 @@ const getDepartmentColor = (name: string) => {
 
 const CODE_MAX_LENGTH = 20;
 
-const FACULTY_PAGE_SIZE = 8;
+const DETAIL_PAGE_SIZE = 8;
 
 interface Department {
   id: number;
@@ -78,6 +83,8 @@ interface Department {
   name: string;
   dean: string | null;
   secretary: string | null;
+  /** Title of the department office holder: a department has one Secretary or one Director. */
+  officeTitle: 'Secretary' | 'Director';
   programHeads: ProgramHead[];
   facultyCount: number;
   sectionsCount: number;
@@ -128,6 +135,8 @@ interface ApiFacultyMember {
   last_name: string;
   middle_name?: string | null;
   suffix?: string | null;
+  honorific_prefix?: string | null;
+  credentials?: string | null;
   employment_type: 'full-time' | 'part-time';
   department_id: number;
   program_id?: number | null;
@@ -173,13 +182,85 @@ function PersonInitials({ name, accent = false, small = false }: { name: string 
   );
 }
 
+/** Section title row shared by every card in the department profile. */
+function ProfileSectionHeader({
+  icon,
+  title,
+  titleId,
+  count,
+  actions,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  titleId?: string;
+  count?: number;
+  actions?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#4e0a10]/[0.06] text-[#4e0a10]" aria-hidden="true">
+          {icon}
+        </span>
+        <h3 id={titleId} className="text-[13px] font-semibold text-slate-900">{title}</h3>
+        {count !== undefined && (
+          <span className="min-w-6 rounded-full bg-slate-100 px-2 py-0.5 text-center text-[11px] font-semibold tabular-nums text-slate-600">
+            {count}
+          </span>
+        )}
+      </div>
+      {actions}
+    </div>
+  );
+}
+
+/** Previous/next pager under a paginated profile list; hidden when everything fits on one page. */
+function ProfilePager({
+  page,
+  pageCount,
+  total,
+  noun,
+  onPageChange,
+}: {
+  page: number;
+  pageCount: number;
+  total: number;
+  noun: string;
+  onPageChange: (page: number) => void;
+}) {
+  if (pageCount <= 1) return null;
+  const buttonClass = 'flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors cursor-pointer hover:border-[#4e0a10]/40 hover:text-[#4e0a10] disabled:cursor-not-allowed disabled:opacity-40';
+  return (
+    <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-3">
+      <button type="button" onClick={() => onPageChange(page - 1)} disabled={page === 0} aria-label={`Previous ${noun}`} className={buttonClass}>
+        <ChevronLeft size={14} />
+      </button>
+      <span className="text-[11px] font-medium tabular-nums text-slate-500">
+        {page * DETAIL_PAGE_SIZE + 1}–{Math.min((page + 1) * DETAIL_PAGE_SIZE, total)} of {total}
+      </span>
+      <button type="button" onClick={() => onPageChange(page + 1)} disabled={page >= pageCount - 1} aria-label={`Next ${noun}`} className={buttonClass}>
+        <ChevronRight size={14} />
+      </button>
+    </div>
+  );
+}
+
+const PROFILE_CARD = 'flex min-w-0 flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4';
+const SEGMENT_GROUP = 'flex items-center gap-0.5 rounded-lg bg-slate-100 p-0.5';
+const segmentClass = (active: boolean) =>
+  `selection-indicator rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all cursor-pointer ${active ? 'shadow-xs' : 'text-slate-600 hover:text-slate-900'}`;
+
+/** The active Secretary or Director; the API lists only active personnel. */
+const officeHolder = (department: ApiDepartment) =>
+  department.users?.find((user) => isDepartmentOfficeRole(user.role));
+
 export default function Departments() {
   const { toast, confirm } = useToast();
   const userJson = localStorage.getItem('user') || sessionStorage.getItem('user');
   const user = userJson ? JSON.parse(userJson) : null;
   const userRole = user?.role?.toLowerCase() ?? '';
   const isVpaa = userRole === 'vpaa';
-  const isScopedRole = userRole === 'dean' || userRole === 'secretary' || userRole === 'program_head';
+  const isScopedRole = userRole === 'dean' || isDepartmentOfficeRole(userRole) || userRole === 'program_head';
   const canManageDepartments = isVpaa || !isScopedRole;
   const userDeptId = user?.department_id ?? user?.department?.id ?? null;
   const userDeptCode = user?.department?.department_code ?? null;
@@ -207,6 +288,12 @@ export default function Departments() {
   const [activeFacultyTab, setActiveFacultyTab] = useState<'full-time' | 'part-time'>('full-time');
   const [facultyPage, setFacultyPage] = useState(0);
   const [facultyProgramFilter, setFacultyProgramFilter] = useState<Program | null>(null);
+  const [facultySearch, setFacultySearch] = useState('');
+  const [rooms, setRooms] = useState<UsageRoom[]>([]);
+  const [activeRoomTab, setActiveRoomTab] = useState<'laboratory' | 'lecture'>('laboratory');
+  const [roomPage, setRoomPage] = useState(0);
+  const [isLoadingRooms, setIsLoadingRooms] = useState(isVpaa);
+  const [roomsError, setRoomsError] = useState(false);
 
   const [globalFilter, setGlobalFilter] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
@@ -255,6 +342,7 @@ export default function Departments() {
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [showProgramForm, setShowProgramForm] = useState(false);
   const [editingProgramId, setEditingProgramId] = useState<number | null>(null);
+  const [isProgramModalOpen, setIsProgramModalOpen] = useState(false);
 
   const liveProgramDuplicate = useMemo(() => {
     if (!selectedDeptForDetail || !newProgram.code.trim()) return null;
@@ -290,8 +378,12 @@ export default function Departments() {
 
   const openDepartmentDetail = (department: Department) => {
     setSelectedDeptForDetail(department);
+    setIsProgramModalOpen(false);
     setFacultyPage(0);
     setFacultyProgramFilter(null);
+    setFacultySearch('');
+    setActiveRoomTab('laboratory');
+    setRoomPage(0);
     closeProgramForm();
     setIsDetailModalOpen(true);
   };
@@ -299,6 +391,7 @@ export default function Departments() {
   const openAddProgram = (department: Department) => {
     openDepartmentDetail(department);
     setShowProgramForm(true);
+    setIsProgramModalOpen(isVpaa);
   };
 
   const fetchFaculties = async () => {
@@ -312,15 +405,44 @@ export default function Departments() {
     }
   };
 
+  const fetchRooms = useCallback(async () => {
+    if (!isVpaa) return;
+    setIsLoadingRooms(true);
+    setRoomsError(false);
+    try {
+      const response = await api.get<UsageRoom[]>('/rooms');
+      setRooms(Array.isArray(response.data) ? response.data : []);
+    } catch {
+      setRoomsError(true);
+    } finally {
+      setIsLoadingRooms(false);
+    }
+  }, [isVpaa]);
+
   useEffect(() => {
     fetchDepartments();
     fetchFaculties();
   }, []);
 
-  useLiveRefresh(['departments', 'faculty', 'users'], () => {
+  useEffect(() => {
+    void fetchRooms();
+  }, [fetchRooms]);
+
+  useLiveRefresh(['departments', 'faculty', 'users', 'rooms'], () => {
     void fetchDepartments(true, true);
     void fetchFaculties();
+    void fetchRooms();
   });
+
+  const departmentRooms = useMemo(() => rooms
+    .filter((room) => selectedDeptForDetail
+      && Number(room.department_id) === selectedDeptForDetail.id
+      && (room.room_type === 'laboratory' || room.room_type === 'lecture'))
+    .sort((first, second) => first.room_code.localeCompare(second.room_code)),
+  [rooms, selectedDeptForDetail]);
+  const activeRooms = departmentRooms.filter((room) => room.room_type === activeRoomTab);
+  const roomPageCount = Math.max(1, Math.ceil(activeRooms.length / DETAIL_PAGE_SIZE));
+  const safeRoomPage = Math.min(roomPage, roomPageCount - 1);
 
   const deptFaculties = useMemo(() => {
     if (!selectedDeptForDetail) return [];
@@ -359,8 +481,12 @@ export default function Departments() {
     return deptFaculties.filter((f) => f.employment_type === 'part-time');
   }, [deptFaculties]);
 
-  const activeFaculty = activeFacultyTab === 'full-time' ? fullTimeFaculty : partTimeFaculty;
-  const facultyPageCount = Math.max(1, Math.ceil(activeFaculty.length / FACULTY_PAGE_SIZE));
+  const tabFaculty = activeFacultyTab === 'full-time' ? fullTimeFaculty : partTimeFaculty;
+  const facultyQuery = facultySearch.trim().toLowerCase();
+  const activeFaculty = facultyQuery
+    ? tabFaculty.filter((faculty) => formatPersonName(faculty).toLowerCase().includes(facultyQuery))
+    : tabFaculty;
+  const facultyPageCount = Math.max(1, Math.ceil(activeFaculty.length / DETAIL_PAGE_SIZE));
   const safeFacultyPage = Math.min(facultyPage, facultyPageCount - 1);
 
   const mapDepartment = (department: ApiDepartment): Department => ({
@@ -368,7 +494,8 @@ export default function Departments() {
     code: department.department_code,
     name: department.department_name,
     dean: department.users?.find((user) => user.role === 'dean')?.name ?? null,
-    secretary: department.users?.find((user) => user.role === 'secretary')?.name ?? null,
+    secretary: officeHolder(department)?.name ?? null,
+    officeTitle: officeHolder(department)?.role === 'director' ? 'Director' : 'Secretary',
     programHeads: (department.users ?? [])
       .filter((user) => user.role === 'program_head')
       .map((user) => ({ name: user.name || '', program: user.program ?? null }))
@@ -637,6 +764,7 @@ export default function Departments() {
     () => [
       {
         accessorKey: 'logo',
+        meta: { hideBelow: 'sm' },
         header: 'Logo',
         enableSorting: false,
         enableGlobalFilter: false,
@@ -670,6 +798,7 @@ export default function Departments() {
       },
       {
         accessorKey: 'createdAt',
+        meta: { hideBelow: 'lg' },
         header: 'Created At',
         cell: info => {
           const val = info.getValue() as string;
@@ -780,13 +909,14 @@ export default function Departments() {
   });
 
   const viewToggle = (
-    <div className={`flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1 ${userRole === 'secretary' ? 'w-fit ml-auto mb-4' : ''}`}>
+    <div className={`flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1 ${isDepartmentOfficeRole(userRole) ? 'w-fit ml-auto mb-4' : ''}`}>
       <button
         type="button"
         onClick={() => setViewMode('grid')}
-        className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+        aria-pressed={viewMode === 'grid'}
+        className={`selection-indicator p-2 rounded-lg transition-all duration-200 cursor-pointer ${
           viewMode === 'grid'
-            ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+            ? 'shadow-sm font-bold'
             : 'text-gray-500 hover:text-gray-800'
         }`}
         title="Grid View"
@@ -796,9 +926,10 @@ export default function Departments() {
       <button
         type="button"
         onClick={() => setViewMode('list')}
-        className={`p-2 rounded-lg transition-all duration-200 cursor-pointer ${
+        aria-pressed={viewMode === 'list'}
+        className={`selection-indicator p-2 rounded-lg transition-all duration-200 cursor-pointer ${
           viewMode === 'list'
-            ? 'bg-[#5A1220] text-white shadow-sm font-bold'
+            ? 'shadow-sm font-bold'
             : 'text-gray-500 hover:text-gray-800'
         }`}
         title="List View"
@@ -808,9 +939,153 @@ export default function Departments() {
     </div>
   );
 
+  const programDirectory = selectedDeptForDetail && (
+    <section className={isVpaa ? 'flex flex-col gap-3' : PROFILE_CARD}>
+      <ProfileSectionHeader
+        icon={<LibraryBig size={14} />}
+        title={isVpaa ? 'Programs' : 'Program directory'}
+        count={selectedDeptForDetail.programs.length}
+        actions={canManageDepartments && (
+          <button
+            type="button"
+            onClick={() => (showProgramForm ? closeProgramForm() : openProgramCreateForm())}
+            className={`shrink-0 inline-flex items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-[11px] font-bold transition-all duration-200 cursor-pointer whitespace-nowrap ${showProgramForm
+              ? 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+              : 'bg-[#5A1220] text-white shadow-sm hover:bg-[#410b15]'}`}
+          >
+            {showProgramForm ? <X size={13} /> : <Plus size={13} />}
+            {showProgramForm ? 'Cancel' : 'Add program'}
+          </button>
+        )}
+      />
+
+      {showProgramForm && (
+        <div className="rounded-xl border border-[#C9952A]/30 bg-[#C9952A]/[0.06] p-3">
+          {liveProgramDuplicate && (
+            <div className="mb-2 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-2 text-[11px] font-semibold text-red-700 animate-in fade-in">
+              <AlertTriangle size={14} className="shrink-0 text-red-600" />
+              <span>
+                &ldquo;{liveProgramDuplicate.code}&rdquo;{liveProgramDuplicate.major ? ` (${liveProgramDuplicate.major})` : ''} already exists in this department.
+              </span>
+            </div>
+          )}
+          <p className="mb-2 text-xs font-bold text-[#4e0a10]">
+            {editingProgramId === null ? 'Add a program' : 'Edit program'}
+          </p>
+          <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-2">
+            <input
+              aria-label="Program code"
+              value={newProgram.code}
+              onChange={(event) => setNewProgram({ ...newProgram, code: event.target.value.toUpperCase() })}
+              onKeyDown={handleProgramFormKeyDown}
+              placeholder="Code (BSED)"
+              maxLength={50}
+              className={`w-full rounded-lg border bg-white px-2.5 py-2 text-xs font-mono outline-none transition ${liveProgramDuplicate ? 'border-red-500 focus:ring-2 focus:ring-red-200' : 'border-slate-200 focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20'}`}
+            />
+            <input
+              aria-label="Major"
+              value={newProgram.major}
+              onChange={(event) => setNewProgram({ ...newProgram, major: event.target.value })}
+              onKeyDown={handleProgramFormKeyDown}
+              placeholder="Major (optional)"
+              maxLength={255}
+              className={`w-full rounded-lg border bg-white px-2.5 py-2 text-xs outline-none transition ${liveProgramDuplicate ? 'border-red-500 focus:ring-2 focus:ring-red-200' : 'border-slate-200 focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20'}`}
+            />
+            <input
+              aria-label="Program name"
+              value={newProgram.name}
+              onChange={(event) => setNewProgram({ ...newProgram, name: event.target.value })}
+              onKeyDown={handleProgramFormKeyDown}
+              placeholder="Program name (Bachelor of Secondary Education)"
+              maxLength={255}
+              className="col-span-2 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20"
+            />
+          </div>
+          <p className="mt-2 truncate text-[11px] text-gray-500">
+            Saved as <span className="font-semibold text-gray-700">{programPreview}</span>
+          </p>
+          <button
+            type="button"
+            onClick={saveProgram}
+            disabled={isSavingProgram || !canSubmitProgram}
+            className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#4e0a10] px-3 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-[#C9952A] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSavingProgram
+              ? <Loader2 size={13} className="animate-spin" />
+              : (editingProgramId === null ? <Plus size={13} /> : <Pencil size={12} />)}
+            {editingProgramId === null ? 'Add program' : 'Save changes'}
+          </button>
+          {programFormError && <p className="mt-1.5 text-[11px] font-semibold text-red-500">{programFormError}</p>}
+        </div>
+      )}
+
+      {selectedDeptForDetail.programs.length > 0 ? <div className="space-y-2">{selectedDeptForDetail.programs.map((program) => {
+        const heads = headsByProgramId.get(program.id);
+        return (
+          <div
+            key={program.id}
+            className={`flex items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2 transition-colors ${editingProgramId === program.id
+              ? 'border-[#C9952A] ring-2 ring-[#C9952A]/20'
+              : 'border-slate-200 hover:border-slate-300'}`}
+          >
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <p className="shrink-0 text-xs font-bold text-gray-800">{program.code}</p>
+                {programMajorLabel(program) && (
+                  <span className="truncate rounded-full bg-[#C9952A]/10 px-2 py-px text-[10px] font-semibold text-[#8b681b]">
+                    {program.major}
+                  </span>
+                )}
+              </div>
+              <p className="truncate text-[11px] text-gray-500" title={program.name || undefined}>{program.name || 'Unnamed program'}</p>
+              {heads ? (
+                <p className="flex items-center gap-1 truncate text-[10px] font-semibold text-[#4e0a10]">
+                  <UserRound size={11} className="shrink-0 text-[#C9952A]" />
+                  {heads.join(', ')}
+                </p>
+              ) : (
+                <p className="text-[10px] text-gray-400">No program head</p>
+              )}
+            </div>
+            {canManageDepartments && (
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => openProgramEditForm(program)}
+                  aria-label={`Edit ${program.code}`}
+                  title="Edit program"
+                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-gray-400 transition-colors cursor-pointer hover:border-[#C9952A] hover:text-[#C9952A]"
+                >
+                  <Pencil size={13} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void archiveProgram(program)}
+                  aria-label={`Archive ${program.code}`}
+                  title="Archive program"
+                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-gray-400 transition-colors cursor-pointer hover:border-stone-400 hover:text-stone-700"
+                >
+                  <Archive size={13} />
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}</div> : (
+        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-3 py-5 text-center">
+          <LibraryBig size={18} className="mx-auto mb-1.5 text-slate-300" />
+          <p className="text-xs font-semibold text-slate-600">No programs added yet.</p>
+          <p className="mt-0.5 text-[11px] text-slate-400">
+            {canManageDepartments ? 'Use Add program to add the first one.' : 'Programs appear here once they are added to the department.'}
+          </p>
+        </div>
+      )}
+    </section>
+  );
+
   return (
     <div id="departments-page">
-      {userRole === 'secretary' ? viewToggle : (
+      {isDepartmentOfficeRole(userRole) ? viewToggle : (
         <FilterBar className="mb-6">
           <SearchInput
             value={globalFilter}
@@ -1034,247 +1309,248 @@ export default function Departments() {
         />
       )}
 
-      {isModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
-          <div className="bg-[#F7F4F0] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col animate-in zoom-in-95 duration-200">
-            <div className="p-5 flex shrink-0 justify-between items-center bg-[#4e0a10] relative overflow-hidden">
-              <h2 className="text-lg font-bold text-white font-display">
-                {isEditMode ? 'Edit Department' : 'Add New Department'}
-              </h2>
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 cursor-pointer relative z-10"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
-              {liveDeptDuplicate && (
-                <div className="flex items-center gap-2.5 p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-700 animate-in fade-in">
-                  <AlertTriangle size={16} className="shrink-0 text-red-600" />
-                  <span>
-                    Duplicate detected: A department named &ldquo;{liveDeptDuplicate.name}&rdquo; already exists.
-                  </span>
-                </div>
-              )}
+      {isModalOpen && (
+        <Modal
+          isOpen
+          onClose={() => setIsModalOpen(false)}
+          title={isEditMode ? 'Edit Department' : 'Add New Department'}
+          description={isEditMode ? 'Update the department logo, name, and code.' : 'Set the department logo, name, and short code.'}
+          closeOnOverlayClick={false}
+          closeOnEscape={!isSubmitting}
+          footer={<>
+            <ModalButton onClick={() => setIsModalOpen(false)} disabled={isSubmitting}>Cancel</ModalButton>
+            <ModalButton type="submit" form="department-form" variant="primary" loading={isSubmitting}>
+              {isSubmitting
+                ? (isEditMode ? 'Saving...' : 'Creating...')
+                : (isEditMode ? 'Save Changes' : 'Create Department')
+              }
+            </ModalButton>
+          </>}
+        >
+          <form id="department-form" onSubmit={handleSubmit} noValidate className={modalBody}>
+            {liveDeptDuplicate && (
+              <ModalNotice tone="error">
+                Duplicate detected: A department named &ldquo;{liveDeptDuplicate.name}&rdquo; already exists.
+              </ModalNotice>
+            )}
 
-              <div className="flex flex-col items-center justify-center space-y-2 pb-2 border-b border-gray-200/80">
-                <div className="relative">
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-24 h-24 rounded-full border-2 border-dashed border-gray-300 hover:border-[#5A1220] bg-white shadow-sm overflow-hidden flex items-center justify-center transition-all cursor-pointer relative"
-                    title="Click to upload department logo"
-                  >
-                    {logo ? (
-                      <img src={logo} alt="Department Logo Preview" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="flex flex-col items-center justify-center text-gray-400 hover:text-[#5A1220] transition-colors">
-                        <Camera size={26} />
-                        <span className="text-[10px] font-bold mt-1 uppercase tracking-wider">Upload</span>
-                      </div>
-                    )}
-                  </div>
-                  {logo && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setLogo(null);
-                        if (fileInputRef.current) fileInputRef.current.value = '';
-                      }}
-                      className="absolute -top-1 -right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-md transition-transform hover:scale-110 cursor-pointer"
-                      title="Remove Logo"
-                    >
-                      <X size={12} />
-                    </button>
+            <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-4">
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-slate-300 bg-white transition-colors hover:border-[#4e0a10] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] focus-visible:ring-offset-2 cursor-pointer"
+                  title="Click to upload department logo"
+                  aria-label={logo ? 'Change department logo' : 'Upload department logo'}
+                >
+                  {logo ? (
+                    <img src={logo} alt="Department Logo Preview" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="flex flex-col items-center justify-center text-slate-400">
+                      <Camera size={22} />
+                      <span className="mt-1 text-[10px] font-bold uppercase tracking-wide">Upload</span>
+                    </span>
                   )}
-                </div>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  accept="image/*"
-                  onChange={handlePhotoUpload}
-                  onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
-                  className="hidden"
-                />
-                <p className="text-[10px] font-semibold text-gray-500 font-sans">
+                </button>
+                {logo && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLogo(null);
+                      if (fileInputRef.current) fileInputRef.current.value = '';
+                    }}
+                    className="absolute -right-1 -top-1 rounded-full bg-red-500 p-1 text-white shadow-md hover:bg-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-2 cursor-pointer"
+                    title="Remove Logo"
+                    aria-label="Remove department logo"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                onChange={handlePhotoUpload}
+                onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
+                className="hidden"
+              />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-800">Department logo</p>
+                <p className="mt-0.5 text-xs leading-5 text-slate-500">
                   {logo ? 'Click logo to change' : 'Click to upload department logo'}
                 </p>
               </div>
+            </div>
 
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                  Department Name <span className="text-red-500">*</span>
-                </label>
-                <input 
-                  type="text" 
-                  value={name}
-                  onChange={(e) => {
-                    setName(e.target.value);
-                    setNameError('');
-                  }}
-                  placeholder="e.g. College of Computing Studies"
-                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white transition-all ${
-                    nameError || liveDeptDuplicate
-                      ? 'border-red-500 focus:ring-red-500' 
-                      : 'border-gray-200 focus:ring-[#C9952A]'
-                  }`}
-                />
-                {(nameError || liveDeptDuplicate) && (
-                  <p className="text-xs text-red-500 mt-1 font-semibold">
-                    {nameError || `A department named "${liveDeptDuplicate?.name}" already exists.`}
-                  </p>
-                )}
-              </div>
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                  Department Code <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={code}
-                  maxLength={CODE_MAX_LENGTH}
-                  onChange={(e) => {
-                    setCode(e.target.value.toUpperCase());
-                    setCodeError('');
-                  }}
-                  placeholder="e.g. CIT"
-                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 outline-none text-sm bg-white uppercase transition-all ${
-                    codeError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-[#C9952A]'
-                  }`}
-                />
-                {codeError ? (
-                  <p className="text-xs text-red-500 mt-1 font-semibold">{codeError}</p>
-                ) : (
-                  <p className="mt-1.5 text-[11px] leading-4 text-gray-500">
-                    Short label used across schedules, rooms and reports.
-                  </p>
-                )}
-              </div>
-              <div className="flex gap-3 pt-3">
-                <button 
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#4e0a10] hover:bg-[#C9952A] text-white rounded-xl transition-colors disabled:opacity-50 text-sm font-semibold cursor-pointer"
-                >
-                  {isSubmitting && <Loader2 size={16} className="animate-spin" />}
-                  {isSubmitting 
-                    ? (isEditMode ? 'Saving...' : 'Creating...') 
-                    : (isEditMode ? 'Save Changes' : 'Create Department')
-                  }
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>,
-        document.body
+            <ModalField
+              label="Department Name"
+              htmlFor="department-name"
+              required
+              error={nameError || liveDeptDuplicate ? (nameError || `A department named "${liveDeptDuplicate?.name}" already exists.`) : undefined}
+            >
+              <input
+                id="department-name"
+                type="text"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setNameError('');
+                }}
+                placeholder="e.g. College of Computing Studies"
+                aria-invalid={nameError || liveDeptDuplicate ? true : undefined}
+                className={modalControl(Boolean(nameError || liveDeptDuplicate))}
+              />
+            </ModalField>
+            <ModalField
+              label="Department Code"
+              htmlFor="department-code"
+              required
+              error={codeError}
+              hint="Short label used across schedules, rooms and reports."
+            >
+              <input
+                id="department-code"
+                type="text"
+                value={code}
+                maxLength={CODE_MAX_LENGTH}
+                onChange={(e) => {
+                  setCode(e.target.value.toUpperCase());
+                  setCodeError('');
+                }}
+                placeholder="e.g. CIT"
+                aria-invalid={codeError ? true : undefined}
+                className={`${modalControl(!!codeError)} uppercase placeholder:normal-case`}
+              />
+            </ModalField>
+          </form>
+        </Modal>
       )}
 
       {isDetailModalOpen && selectedDeptForDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in duration-200">
-          <div className="bg-[#F8F6F2] border border-white/70 rounded-[22px] max-w-6xl w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 font-sans">
-            <div className="relative shrink-0 border-b border-slate-200/80 bg-white">
-              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#4e0a10] via-[#C9952A] to-[#4e0a10]" />
-              <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 pt-5 pb-4 sm:px-6">
-                <div className="flex min-w-0 items-center gap-4">
-                  <DepartmentLogo
-                    name={selectedDeptForDetail.name}
-                    logo={selectedDeptForDetail.logo}
-                    className="w-12 h-12 shrink-0 rounded-2xl shadow-sm ring-4 ring-[#C9952A]/10"
-                    iconSize={23}
-                  />
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#C9952A]">Department profile</p>
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <h2 className="text-lg font-bold text-[#1A1410] font-display leading-tight">{selectedDeptForDetail.name}</h2>
-                      <span className="rounded-md bg-[#4e0a10] px-2 py-0.5 font-mono text-[10px] font-bold tracking-wide text-white">
-                        {selectedDeptForDetail.code}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="flex divide-x divide-slate-200">
-                    {[
-                      { label: 'Instructors', value: selectedDeptForDetail.facultyCount ?? 0 },
-                      { label: 'Sections', value: selectedDeptForDetail.sectionsCount ?? 0 },
-                      { label: 'Programs', value: selectedDeptForDetail.programs.length },
-                      {
-                        label: 'Created',
-                        value: selectedDeptForDetail.createdAt
-                          ? formatPhilippineDate(selectedDeptForDetail.createdAt, { month: 'short', day: '2-digit', year: 'numeric' })
-                          : '-',
-                      },
-                    ].map((stat) => (
-                      <div key={stat.label} className="px-3 first:pl-0 sm:px-4">
-                        <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">{stat.label}</p>
-                        <p className="text-sm font-bold text-[#1A1410] font-display whitespace-nowrap">{stat.value}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsDetailModalOpen(false)}
-                    aria-label="Close department profile"
-                    className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors cursor-pointer hover:bg-gray-100 hover:text-gray-600"
-                  >
-                    <X size={20} />
-                  </button>
+        <Modal
+          isOpen
+          onClose={() => setIsDetailModalOpen(false)}
+          title={selectedDeptForDetail.name}
+          description="Department profile"
+          size="wide"
+          className="lg:h-[min(800px,calc(100vh-2rem))]"
+          bodyClassName="flex flex-col gap-4 px-4 py-4 sm:px-5"
+          footerClassName="sm:py-3"
+          inert={isProgramModalOpen}
+          closeLabel="Close department profile"
+          leading={(
+            <DepartmentLogo
+              name={selectedDeptForDetail.name}
+              logo={selectedDeptForDetail.logo}
+              className="h-10 w-10 shrink-0 rounded-xl"
+              iconSize={20}
+            />
+          )}
+          headerActions={(
+            <div className="flex flex-col items-end gap-1">
+              <span className="rounded-md bg-white/15 px-2 py-0.5 font-mono text-[11px] font-bold tracking-wide text-white">
+                {selectedDeptForDetail.code}
+              </span>
+              <span className="whitespace-nowrap text-[11px] text-amber-100/75">
+                Created{' '}
+                {selectedDeptForDetail.createdAt
+                  ? formatPhilippineDate(selectedDeptForDetail.createdAt, { month: 'short', day: '2-digit', year: 'numeric' })
+                  : '—'}
+              </span>
+            </div>
+          )}
+          footer={<>
+            {isVpaa && (
+              <ModalButton
+                className="mr-auto"
+                onClick={() => {
+                  closeProgramForm();
+                  setIsProgramModalOpen(true);
+                }}
+              >
+                <LibraryBig size={16} />
+                Manage programs
+              </ModalButton>
+            )}
+            <ModalButton onClick={() => setIsDetailModalOpen(false)}>Close</ModalButton>
+            {canManageDepartments && (
+              <ModalButton
+                variant="primary"
+                onClick={() => {
+                  setIsDetailModalOpen(false);
+                  handleEditClick(selectedDeptForDetail);
+                }}
+              >
+                <Pencil size={16} />
+                <span>Edit Department</span>
+              </ModalButton>
+            )}
+          </>}
+        >
+          <div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4">
+            {[
+              { label: 'Instructors', value: selectedDeptForDetail.facultyCount ?? 0, icon: <GraduationCap size={16} /> },
+              { label: 'Programs', value: selectedDeptForDetail.programs.length, icon: <LibraryBig size={16} /> },
+              { label: 'Sections', value: selectedDeptForDetail.sectionsCount ?? 0, icon: <LayoutGrid size={16} /> },
+              isVpaa
+                ? { label: 'Facilities', value: isLoadingRooms || roomsError ? '—' : departmentRooms.length, icon: <Building2 size={16} /> }
+                : { label: 'Program heads', value: selectedDeptForDetail.programHeads.length, icon: <Layers size={16} /> },
+            ].map((metric) => (
+              <div key={metric.label} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#4e0a10]/[0.06] text-[#4e0a10]" aria-hidden="true">
+                  {metric.icon}
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-[11px] font-medium text-slate-500">{metric.label}</p>
+                  <p className="text-lg font-semibold leading-6 tabular-nums text-slate-900">{metric.value}</p>
                 </div>
               </div>
-            </div>
+            ))}
+          </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto px-4 py-5 sm:px-6 font-sans">
-              <div className="grid gap-5 lg:grid-cols-3">
-                <div className="space-y-5">
-                  <section className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <UsersIcon size={15} className="text-[#4e0a10]" />
-                      <h3 className="text-sm font-bold text-[#1A1410]">Leadership</h3>
-                    </div>
-                    {[
-                      { role: 'Dean', name: selectedDeptForDetail.dean },
-                      { role: 'Secretary', name: selectedDeptForDetail.secretary },
-                    ].map((person) => (
-                      <div
-                        key={person.role}
-                        className={`flex items-center gap-3 rounded-xl px-3 py-2 ${person.name
-                          ? 'border border-slate-200/80 bg-white shadow-sm'
-                          : 'border border-dashed border-slate-300 bg-white/60'}`}
-                      >
-                        <PersonInitials name={person.name} />
-                        <div className="min-w-0">
-                          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{person.role}</p>
-                          <p className={`truncate text-sm font-semibold ${person.name ? 'text-gray-800' : 'text-gray-400'}`}>
-                            {person.name || 'Not assigned'}
-                          </p>
-                        </div>
+          <div className="grid grow gap-4 lg:grid-cols-12 lg:grid-rows-[auto_1fr]">
+            <div className={`flex min-w-0 flex-col gap-4 lg:col-span-5 lg:col-start-1 lg:row-start-1 ${isVpaa ? '' : 'lg:row-span-2'}`}>
+              <section className={PROFILE_CARD}>
+                <ProfileSectionHeader icon={<UserRound size={14} />} title="Leadership" />
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+                  {[
+                    { role: 'Dean', name: selectedDeptForDetail.dean },
+                    { role: selectedDeptForDetail.officeTitle, name: selectedDeptForDetail.secretary },
+                  ].map((person) => (
+                    <div
+                      key={person.role}
+                      className={`flex items-center gap-3 rounded-lg px-3 py-2 ${person.name
+                        ? 'border border-slate-200 bg-white'
+                        : 'border border-dashed border-slate-300 bg-slate-50/60'}`}
+                    >
+                      <PersonInitials name={person.name} small />
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{person.role}</p>
+                        <p className={`truncate text-[13px] font-semibold ${person.name ? 'text-slate-800' : 'text-slate-400'}`}>
+                          {person.name || 'Not assigned'}
+                        </p>
                       </div>
-                    ))}
-                  </section>
-
-                  <section className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Layers size={15} className="text-[#4e0a10]" />
-                      <h3 className="text-sm font-bold text-[#1A1410]">Program heads</h3>
-                      <span className="min-w-6 rounded-full bg-[#4e0a10] px-2 py-0.5 text-center text-[10px] font-bold text-white">
-                        {selectedDeptForDetail.programHeads.length}
-                      </span>
                     </div>
+                  ))}
+                </div>
+              </section>
 
-                    {selectedDeptForDetail.programHeads.length > 0 ? (
-                      selectedDeptForDetail.programHeads.map((head, index) => {
-                        const program = head.program ?? null;
-                        const isFiltering = program !== null && facultyProgramFilter?.id === program.id;
-                        return (
+              {!isVpaa && programDirectory}
+
+              <section className={`${PROFILE_CARD} ${isVpaa ? '' : 'grow'}`}>
+                <ProfileSectionHeader
+                  icon={<Layers size={14} />}
+                  title="Program heads"
+                  count={selectedDeptForDetail.programHeads.length}
+                />
+
+                {selectedDeptForDetail.programHeads.length > 0 ? (
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+                    {selectedDeptForDetail.programHeads.map((head, index) => {
+                      const program = head.program ?? null;
+                      const isFiltering = program !== null && facultyProgramFilter?.id === program.id;
+                      return (
                         <button
                           type="button"
                           key={`${head.name}-${program?.id ?? 'none'}-${index}`}
@@ -1282,319 +1558,279 @@ export default function Departments() {
                           aria-pressed={isFiltering}
                           title={program ? (isFiltering ? 'Show all instructors' : `Show ${programLabelShort(program)} instructors`) : undefined}
                           onClick={() => program && toggleFacultyProgramFilter(program)}
-                          className={`flex w-full items-center gap-3 rounded-xl border border-l-4 px-3 py-2 text-left shadow-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#C9952A]/40 ${program
-                            ? 'border-l-[#C9952A] cursor-pointer'
-                            : 'border-l-slate-300 cursor-default'} ${isFiltering
+                          className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#C9952A]/40 ${program
+                            ? 'cursor-pointer'
+                            : 'cursor-default'} ${isFiltering
                             ? 'border-[#C9952A] bg-[#C9952A]/[0.08] ring-2 ring-[#C9952A]/20'
-                            : `border-slate-200/80 bg-white ${program ? 'hover:border-[#C9952A]/50' : ''}`}`}
+                            : `border-slate-200 bg-white ${program ? 'hover:border-slate-300 hover:bg-slate-50' : ''}`}`}
                         >
-                          <PersonInitials name={head.name} accent />
+                          <PersonInitials name={head.name} accent small />
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-xs font-semibold text-gray-800">{head.name || 'Unnamed'}</p>
+                            <p className="truncate text-[13px] font-semibold text-slate-800">{head.name || 'Unnamed'}</p>
                             {head.program ? (
                               <div className="mt-0.5 flex min-w-0 items-center gap-1" title={programName(head.program)}>
                                 <span className="shrink-0 rounded bg-[#C9952A]/15 px-1.5 py-px font-mono text-[10px] font-bold text-[#4e0a10]">
                                   {head.program.code}
                                 </span>
                                 {head.program.major && (
-                                  <span className="truncate text-[10px] font-semibold text-[#8b681b]">{head.program.major}</span>
+                                  <span className="truncate text-[11px] font-medium text-[#8b681b]">{head.program.major}</span>
                                 )}
                               </div>
                             ) : (
-                              <p className="mt-0.5 text-[10px] font-semibold text-slate-400">No program assigned</p>
+                              <p className="mt-0.5 text-[11px] font-medium text-slate-400">No program assigned</p>
                             )}
                           </div>
                         </button>
-                        );
-                      })
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 px-3 py-4 text-center">
-                        <p className="text-xs font-semibold text-slate-500">No program heads assigned.</p>
-                        <p className="mt-0.5 text-[11px] text-slate-400">The secretary schedules every program.</p>
-                      </div>
-                    )}
-
-                    {selectedDeptForDetail.programHeads.length > 0 && programsWithoutHead.length > 0 && (
-                      <p className="flex items-start gap-1.5 text-[11px] text-gray-500">
-                        <AlertTriangle size={13} className="mt-px shrink-0 text-amber-500" />
-                        <span>
-                          No head for{' '}
-                          <span className="font-semibold text-gray-700">{programsWithoutHead.map(programLabelShort).join(', ')}</span>
-                          {' '}— the secretary schedules {programsWithoutHead.length === 1 ? 'it' : 'these'}.
-                        </span>
-                      </p>
-                    )}
-                  </section>
-                </div>
-
-                <section className="space-y-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <LibraryBig size={15} className="text-[#4e0a10]" />
-                      <h3 className="text-sm font-bold text-[#1A1410]">Program directory</h3>
-                      <span className="min-w-6 rounded-full bg-[#4e0a10] px-2 py-0.5 text-center text-[10px] font-bold text-white">
-                        {selectedDeptForDetail.programs.length}
-                      </span>
-                    </div>
-                    {canManageDepartments && (
-                      <button
-                        type="button"
-                        onClick={() => (showProgramForm ? closeProgramForm() : openProgramCreateForm())}
-                        className={`shrink-0 inline-flex items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-[11px] font-bold transition-all duration-200 cursor-pointer whitespace-nowrap ${showProgramForm
-                          ? 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                          : 'bg-[#5A1220] text-white shadow-sm hover:bg-[#410b15]'}`}
-                      >
-                        {showProgramForm ? <X size={13} /> : <Plus size={13} />}
-                        {showProgramForm ? 'Cancel' : 'Add program'}
-                      </button>
-                    )}
+                      );
+                    })}
                   </div>
-
-                  {showProgramForm && (
-                    <div className="rounded-xl border border-[#C9952A]/30 bg-[#C9952A]/[0.06] p-3">
-                      {liveProgramDuplicate && (
-                        <div className="mb-2 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-2 text-[11px] font-semibold text-red-700 animate-in fade-in">
-                          <AlertTriangle size={14} className="shrink-0 text-red-600" />
-                          <span>
-                            &ldquo;{liveProgramDuplicate.code}&rdquo;{liveProgramDuplicate.major ? ` (${liveProgramDuplicate.major})` : ''} already exists in this department.
-                          </span>
+                ) : (
+                  <div className="flex items-start gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-3 py-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-slate-400 ring-1 ring-slate-200" aria-hidden="true">
+                      <UserRound size={15} />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-slate-700">No program heads assigned.</p>
+                      <p className="mt-0.5 text-[11px] leading-4 text-slate-500">
+                        The {selectedDeptForDetail.officeTitle.toLowerCase()} schedules every program
+                        {selectedDeptForDetail.programs.length > 0 ? ' until a head is assigned:' : '.'}
+                      </p>
+                      {selectedDeptForDetail.programs.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {selectedDeptForDetail.programs.map((program) => (
+                            <span
+                              key={program.id}
+                              title={programName(program)}
+                              className="rounded border border-slate-200 bg-white px-1.5 py-px font-mono text-[10px] font-semibold text-slate-600"
+                            >
+                              {programLabelShort(program)}
+                            </span>
+                          ))}
                         </div>
                       )}
-                      <p className="mb-2 text-xs font-bold text-[#4e0a10]">
-                        {editingProgramId === null ? 'Add a program' : 'Edit program'}
-                      </p>
-                      <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-2">
-                        <input
-                          aria-label="Program code"
-                          value={newProgram.code}
-                          onChange={(event) => setNewProgram({ ...newProgram, code: event.target.value.toUpperCase() })}
-                          onKeyDown={handleProgramFormKeyDown}
-                          placeholder="Code (BSED)"
-                          maxLength={50}
-                          className={`w-full rounded-lg border bg-white px-2.5 py-2 text-xs font-mono outline-none transition ${liveProgramDuplicate ? 'border-red-500 focus:ring-2 focus:ring-red-200' : 'border-slate-200 focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20'}`}
-                        />
-                        <input
-                          aria-label="Major"
-                          value={newProgram.major}
-                          onChange={(event) => setNewProgram({ ...newProgram, major: event.target.value })}
-                          onKeyDown={handleProgramFormKeyDown}
-                          placeholder="Major (optional)"
-                          maxLength={255}
-                          className={`w-full rounded-lg border bg-white px-2.5 py-2 text-xs outline-none transition ${liveProgramDuplicate ? 'border-red-500 focus:ring-2 focus:ring-red-200' : 'border-slate-200 focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20'}`}
-                        />
-                        <input
-                          aria-label="Program name"
-                          value={newProgram.name}
-                          onChange={(event) => setNewProgram({ ...newProgram, name: event.target.value })}
-                          onKeyDown={handleProgramFormKeyDown}
-                          placeholder="Program name (Bachelor of Secondary Education)"
-                          maxLength={255}
-                          className="col-span-2 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20"
-                        />
-                      </div>
-                      <p className="mt-2 truncate text-[11px] text-gray-500">
-                        Saved as <span className="font-semibold text-gray-700">{programPreview}</span>
-                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {selectedDeptForDetail.programHeads.length > 0 && programsWithoutHead.length > 0 && (
+                  <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] leading-4 text-amber-900">
+                    <AlertTriangle size={13} className="mt-px shrink-0 text-amber-500" />
+                    <span>
+                      No head for{' '}
+                      <span className="font-semibold">{programsWithoutHead.map(programLabelShort).join(', ')}</span>
+                      {' '}— the {selectedDeptForDetail.officeTitle.toLowerCase()} schedules {programsWithoutHead.length === 1 ? 'it' : 'these'}.
+                    </span>
+                  </p>
+                )}
+              </section>
+            </div>
+
+            <section className={`${PROFILE_CARD} lg:col-span-7 lg:col-start-6 lg:row-span-2 lg:row-start-1`}>
+              <ProfileSectionHeader
+                icon={<GraduationCap size={14} />}
+                title="Instructors"
+                actions={(
+                  <div className={SEGMENT_GROUP}>
+                    {(['full-time', 'part-time'] as const).map((tab) => (
                       <button
+                        key={tab}
                         type="button"
-                        onClick={saveProgram}
-                        disabled={isSavingProgram || !canSubmitProgram}
-                        className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#4e0a10] px-3 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-[#C9952A] disabled:cursor-not-allowed disabled:opacity-60"
+                        aria-pressed={activeFacultyTab === tab}
+                        onClick={() => {
+                          setActiveFacultyTab(tab);
+                          setFacultyPage(0);
+                        }}
+                        className={segmentClass(activeFacultyTab === tab)}
                       >
-                        {isSavingProgram
-                          ? <Loader2 size={13} className="animate-spin" />
-                          : (editingProgramId === null ? <Plus size={13} /> : <Pencil size={12} />)}
-                        {editingProgramId === null ? 'Add program' : 'Save changes'}
+                        {tab === 'full-time' ? 'Full-Time' : 'Part-Time'} (<span className="selection-indicator-count">{tab === 'full-time' ? fullTimeFaculty.length : partTimeFaculty.length}</span>)
                       </button>
-                      {programFormError && <p className="mt-1.5 text-[11px] font-semibold text-red-500">{programFormError}</p>}
-                    </div>
-                  )}
+                    ))}
+                  </div>
+                )}
+              />
 
-                  {selectedDeptForDetail.programs.length > 0 ? selectedDeptForDetail.programs.map((program) => {
-                    const heads = headsByProgramId.get(program.id);
-                    return (
-                      <div
-                        key={program.id}
-                        className={`flex items-center justify-between gap-2 rounded-xl border bg-white px-3 py-2 shadow-sm transition-colors ${editingProgramId === program.id
-                          ? 'border-[#C9952A] ring-2 ring-[#C9952A]/20'
-                          : 'border-slate-200/80 hover:border-[#C9952A]/50'}`}
-                      >
-                        <div className="min-w-0">
-                          <div className="flex min-w-0 items-center gap-1.5">
-                            <p className="shrink-0 text-xs font-bold text-gray-800">{program.code}</p>
-                            {programMajorLabel(program) && (
-                              <span className="truncate rounded-full bg-[#C9952A]/10 px-2 py-px text-[10px] font-semibold text-[#8b681b]">
-                                {program.major}
-                              </span>
+              <SearchInput
+                compact
+                value={facultySearch}
+                onChange={(event) => {
+                  setFacultySearch(event.target.value);
+                  setFacultyPage(0);
+                }}
+                placeholder="Search instructors by name..."
+                aria-label="Search instructors"
+                containerClassName="relative w-full"
+                className="border-slate-200"
+              />
+
+              {facultyProgramFilter && (
+                <div className="flex items-center gap-2 rounded-lg border border-[#C9952A]/30 bg-[#C9952A]/[0.06] px-2.5 py-1.5">
+                  <p className="min-w-0 flex-1 truncate text-[11px] text-slate-600">
+                    Showing <span className="font-semibold text-[#4e0a10]">{programLabelShort(facultyProgramFilter)}</span> and department-wide instructors
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFacultyProgramFilter(null);
+                      setFacultyPage(0);
+                    }}
+                    aria-label="Clear program filter"
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-500 transition-colors cursor-pointer hover:bg-white hover:text-[#4e0a10]"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
+
+              {isLoadingFaculties ? (
+                <ModalState loading title="Loading instructors..." />
+              ) : activeFaculty.length === 0 ? (
+                <div className="flex grow flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-3 py-8 text-center">
+                  <UserRound className="mb-1.5 text-slate-300" size={20} />
+                  {facultyQuery ? (
+                    <>
+                      <p className="text-xs font-semibold text-slate-600">No instructors match &ldquo;{facultySearch.trim()}&rdquo;.</p>
+                      <p className="mt-0.5 text-[11px] text-slate-400">Check the spelling or switch tabs.</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs font-semibold text-slate-600">
+                        No {activeFacultyTab === 'full-time' ? 'full-time' : 'part-time'} instructors.
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-400">Assign instructors in Instructor Management.</p>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <ul className="grid content-start gap-2 sm:grid-cols-2" aria-label={activeFacultyTab === 'full-time' ? 'Full-time instructors' : 'Part-time instructors'}>
+                    {activeFaculty
+                      .slice(safeFacultyPage * DETAIL_PAGE_SIZE, (safeFacultyPage + 1) * DETAIL_PAGE_SIZE)
+                      .map((faculty) => {
+                        const fullName = formatPersonName(faculty);
+                        const designationsList = (faculty.designations ?? []).map((d) => d.label || (d.parent ? `${d.parent.name} · ${d.name}` : d.name));
+
+                        return (
+                          <li
+                            key={faculty.id}
+                            className="flex min-w-0 items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 transition-colors hover:border-slate-300 hover:bg-slate-50/60"
+                          >
+                            {faculty.profile_picture ? (
+                              <img
+                                src={faculty.profile_picture}
+                                alt={fullName}
+                                className="h-8 w-8 shrink-0 rounded-full border border-slate-200 object-cover"
+                              />
+                            ) : (
+                              <PersonInitials name={fullName} small />
                             )}
-                          </div>
-                          <p className="truncate text-[11px] text-gray-500" title={program.name || undefined}>{program.name || 'Unnamed program'}</p>
-                          {heads ? (
-                            <p className="flex items-center gap-1 truncate text-[10px] font-semibold text-[#4e0a10]">
-                              <UserRound size={11} className="shrink-0 text-[#C9952A]" />
-                              {heads.join(', ')}
-                            </p>
-                          ) : (
-                            <p className="text-[10px] text-gray-400">No program head</p>
-                          )}
-                        </div>
-                        {canManageDepartments && (
-                          <div className="flex shrink-0 items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => openProgramEditForm(program)}
-                              aria-label={`Edit ${program.code}`}
-                              title="Edit program"
-                              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-gray-400 transition-colors cursor-pointer hover:border-[#C9952A] hover:text-[#C9952A]"
-                            >
-                              <Pencil size={13} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void archiveProgram(program)}
-                              aria-label={`Archive ${program.code}`}
-                              title="Archive program"
-                              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-gray-400 transition-colors cursor-pointer hover:border-stone-400 hover:text-stone-700"
-                            >
-                              <Archive size={13} />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  }) : (
-                    <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 px-3 py-6 text-center">
-                      <LibraryBig size={20} className="mx-auto mb-1.5 text-slate-300" />
-                      <p className="text-xs font-semibold text-slate-500">No programs added yet.</p>
-                      <p className="mt-0.5 text-[11px] text-slate-400">Use Add program to add the first one.</p>
-                    </div>
-                  )}
-                </section>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-[13px] font-semibold text-slate-900" title={fullName}>{fullName}</p>
+                              {designationsList.length > 0 ? (
+                                <p className="truncate text-[11px] font-medium text-[#7b5c18]" title={designationsList.join(', ')}>
+                                  {designationsList[0]}
+                                  {designationsList.length > 1 && <span className="text-slate-400"> +{designationsList.length - 1}</span>}
+                                </p>
+                              ) : (
+                                <p className="text-[11px] text-slate-400">No designation</p>
+                              )}
+                            </div>
+                          </li>
+                        );
+                      })}
+                  </ul>
+                  <ProfilePager
+                    page={safeFacultyPage}
+                    pageCount={facultyPageCount}
+                    total={activeFaculty.length}
+                    noun="instructors"
+                    onPageChange={setFacultyPage}
+                  />
+                </>
+              )}
+            </section>
 
-                <section className="space-y-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <GraduationCap size={16} className="text-[#4e0a10]" />
-                      <h3 className="text-sm font-bold text-[#1A1410]">Instructors</h3>
-                    </div>
-                    <div className="flex items-center gap-1 rounded-lg bg-gray-200/60 p-0.5">
-                      {(['full-time', 'part-time'] as const).map((tab) => (
+            {isVpaa && (
+              <section className={`${PROFILE_CARD} lg:col-span-5 lg:col-start-1 lg:row-start-2`} aria-labelledby="department-facilities-title">
+                <ProfileSectionHeader
+                  icon={<Building2 size={14} />}
+                  title="Facilities"
+                  titleId="department-facilities-title"
+                  count={isLoadingRooms || roomsError ? undefined : departmentRooms.length}
+                  actions={(
+                    <div className={SEGMENT_GROUP} role="group" aria-label="Facility type">
+                      {(['laboratory', 'lecture'] as const).map((tab) => (
                         <button
                           key={tab}
                           type="button"
                           onClick={() => {
-                            setActiveFacultyTab(tab);
-                            setFacultyPage(0);
+                            setActiveRoomTab(tab);
+                            setRoomPage(0);
                           }}
-                          className={`rounded-md px-2.5 py-1 text-[11px] font-bold transition-all cursor-pointer ${
-                            activeFacultyTab === tab ? 'bg-[#4e0a10] text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'
-                          }`}
+                          aria-pressed={activeRoomTab === tab}
+                          className={segmentClass(activeRoomTab === tab)}
                         >
-                          {tab === 'full-time' ? 'Full-Time' : 'Part-Time'} ({tab === 'full-time' ? fullTimeFaculty.length : partTimeFaculty.length})
+                          {tab === 'laboratory' ? 'Laboratory' : 'Lecture Room'}
+                          {!isLoadingRooms && !roomsError && <>{' ('}<span className="selection-indicator-count">{departmentRooms.filter((room) => room.room_type === tab).length}</span>)</>}
                         </button>
                       ))}
                     </div>
-                  </div>
-
-                  {isLoadingFaculties ? (
-                    <div className="py-6 text-center text-xs text-gray-400 animate-pulse">Loading instructors...</div>
-                  ) : activeFaculty.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 px-3 py-6 text-center">
-                      <UserRound className="mx-auto mb-1.5 text-gray-300" size={20} />
-                      <p className="text-xs font-semibold text-gray-600">
-                        No {activeFacultyTab === 'full-time' ? 'full-time' : 'part-time'} instructors.
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-gray-400">Assign instructors in Instructor Management.</p>
-                    </div>
-                  ) : (
-                    <>
-                      {activeFaculty
-                        .slice(safeFacultyPage * FACULTY_PAGE_SIZE, (safeFacultyPage + 1) * FACULTY_PAGE_SIZE)
-                        .map((faculty) => {
-                          const fullName = `${faculty.first_name}${faculty.middle_name ? ' ' + faculty.middle_name[0] + '.' : ''} ${faculty.last_name}${faculty.suffix ? ' ' + faculty.suffix : ''}`;
-                          const designationsList = (faculty.designations ?? []).map((d) => d.label || (d.parent ? `${d.parent.name} · ${d.name}` : d.name));
-
-                          return (
-                            <div
-                              key={faculty.id}
-                              className="flex items-center gap-2.5 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 shadow-sm transition-colors hover:border-[#C9952A]/40"
-                            >
-                              {faculty.profile_picture ? (
-                                <img
-                                  src={faculty.profile_picture}
-                                  alt={fullName}
-                                  className="h-8 w-8 shrink-0 rounded-full border border-gray-200 object-cover"
-                                />
-                              ) : (
-                                <PersonInitials name={fullName} small />
-                              )}
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-xs font-bold text-gray-900">{fullName}</p>
-                                {designationsList.length > 0 ? (
-                                  <p className="truncate text-[10px] font-semibold text-[#7b5c18]" title={designationsList.join(', ')}>
-                                    {designationsList[0]}
-                                    {designationsList.length > 1 && <span className="text-gray-400"> +{designationsList.length - 1}</span>}
-                                  </p>
-                                ) : (
-                                  <p className="text-[10px] text-gray-400">No designation</p>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      {facultyPageCount > 1 && (
-                        <div className="flex items-center justify-between pt-1">
-                          <button
-                            type="button"
-                            onClick={() => setFacultyPage(safeFacultyPage - 1)}
-                            disabled={safeFacultyPage === 0}
-                            aria-label="Previous instructors"
-                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-gray-500 transition-colors cursor-pointer hover:border-[#C9952A] hover:text-[#C9952A] disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            <ChevronLeft size={14} />
-                          </button>
-                          <span className="text-[11px] font-semibold text-gray-500">
-                            {safeFacultyPage * FACULTY_PAGE_SIZE + 1}–{Math.min((safeFacultyPage + 1) * FACULTY_PAGE_SIZE, activeFaculty.length)} of {activeFaculty.length}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setFacultyPage(safeFacultyPage + 1)}
-                            disabled={safeFacultyPage >= facultyPageCount - 1}
-                            aria-label="Next instructors"
-                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-gray-500 transition-colors cursor-pointer hover:border-[#C9952A] hover:text-[#C9952A] disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            <ChevronRight size={14} />
-                          </button>
-                        </div>
-                      )}
-                    </>
                   )}
-                </section>
-              </div>
-            </div>
-
-            <div className="shrink-0 border-t border-gray-200/80 bg-white px-4 py-3 sm:px-6 flex items-center justify-end gap-3">
-              <button
-                onClick={() => setIsDetailModalOpen(false)}
-                className="px-5 py-2 rounded-xl border border-gray-200 bg-white text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all cursor-pointer"
-              >
-                Close
-              </button>
-              {canManageDepartments && (
-                <button
-                  onClick={() => {
-                    setIsDetailModalOpen(false);
-                    handleEditClick(selectedDeptForDetail);
-                  }}
-                  className="px-5 py-2 rounded-xl bg-[#5A1220] hover:bg-[#410b15] text-white text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-1.5"
-                >
-                  <Pencil size={14} />
-                  <span>Edit Department</span>
-                </button>
-              )}
-            </div>
+                />
+                {isLoadingRooms ? (
+                  <ModalState loading title="Loading facilities..." />
+                ) : roomsError ? (
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-4 text-center" role="alert">
+                    <p className="text-xs font-semibold text-rose-700">Could not load facilities.</p>
+                    <button type="button" onClick={() => void fetchRooms()} className="mt-2 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100">
+                      Retry
+                    </button>
+                  </div>
+                ) : activeRooms.length > 0 ? (
+                  <>
+                    <ul className="grid content-start gap-2 sm:grid-cols-2 lg:grid-cols-1" aria-label={activeRoomTab === 'laboratory' ? 'Laboratory rooms' : 'Lecture rooms'}>
+                      {activeRooms
+                        .slice(safeRoomPage * DETAIL_PAGE_SIZE, (safeRoomPage + 1) * DETAIL_PAGE_SIZE)
+                        .map((room) => (
+                        <li key={room.id} className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[13px] font-semibold text-slate-900" title={room.room_code}>{room.room_code}</p>
+                            <p className="truncate text-[11px] text-slate-500" title={room.building || undefined}>{room.building || 'No building assigned'}</p>
+                          </div>
+                          {room.status === 'not available' && (
+                            <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">Unavailable</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                    <ProfilePager
+                      page={safeRoomPage}
+                      pageCount={roomPageCount}
+                      total={activeRooms.length}
+                      noun="facilities"
+                      onPageChange={setRoomPage}
+                    />
+                  </>
+                ) : (
+                  <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-3 py-4 text-center text-xs text-slate-500">
+                    No {activeRoomTab === 'laboratory' ? 'laboratory' : 'lecture'} rooms.
+                  </p>
+                )}
+              </section>
+            )}
           </div>
-        </div>
+        </Modal>
+      )}
+      {isVpaa && selectedDeptForDetail && (
+        <Modal
+          isOpen={isProgramModalOpen}
+          onClose={() => setIsProgramModalOpen(false)}
+          title="Manage programs"
+          description={selectedDeptForDetail.name}
+          busy={isSavingProgram}
+          bodyClassName="p-4 sm:p-5"
+        >
+          {programDirectory}
+        </Modal>
       )}
     </div>
   );

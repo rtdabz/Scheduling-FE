@@ -26,5 +26,7 @@ export function roomTransferPreview(request: RoomTransferRequest): SchedulePdfIn
     departments: [request.preview_department],
     users: request.preview_users ?? [],
     activeSemester: request.preview_semester,
+    signatories: request.signatories ?? null,
+    historicalDocument: !["pending_dean", "pending_vpaa"].includes(request.status),
   };
 }

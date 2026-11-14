@@ -1,8 +1,12 @@
 import { useMemo, useState, useEffect } from "react";
 import type { SortingState } from "@tanstack/react-table";
-import { AlertTriangle, Calendar, GanttChart, Info, Layers, List, MapPin, RefreshCw, User, X } from "lucide-react";
+import { Calendar, GanttChart, Info, Layers, List, MapPin, RefreshCw, User } from "lucide-react";
+import Modal from "../../components/ui/Modal";
+import { ModalNotice } from "../../components/ui/ModalForm";
+import { modalBody, modalLabel } from "../../components/ui/modalStyles";
 import api from "../../lib/api";
 import { getStoredUser } from "../../lib/storedUser";
+import { formatPersonName, type PersonNameParts } from "../../lib/personName";
 import Skeleton from "../../components/ui/Skeleton";
 import ScheduleMeetingsTable from "../../components/scheduling/ScheduleMeetingsTable";
 import {
@@ -20,6 +24,7 @@ import {
   buildGanttDays,
   buildTimeWindow,
   findOverlaps,
+  filterVpaaApprovedSchedules,
   type CalendarDepartment,
   type CalendarSchedule,
   type GroupBy,
@@ -41,6 +46,7 @@ type SubjectCategory = "major" | "minor";
 
 interface Schedule {
   id: string;
+  status?: string;
   sectionId: string;
   sectionName: string;
   departmentName: string;
@@ -84,6 +90,7 @@ interface RawSection {
 
 interface RawSchedule {
   id: number | string;
+  status?: string;
   section_id?: number | string | null;
   department_id?: number | string | null;
   faculty_id?: number | string | null;
@@ -111,10 +118,7 @@ interface RawSchedule {
     subject_name?: string;
     subject_category?: SubjectCategory;
   } | null;
-  faculty?: {
-    first_name?: string;
-    last_name?: string;
-  } | null;
+  faculty?: PersonNameParts | null;
   room?: {
     room_code?: string;
     building?: string | null;
@@ -178,6 +182,7 @@ const toCalendarSchedule = (schedule: Schedule): CalendarSchedule => {
   const [firstName, ...rest] = (schedule.facultyName ?? "").split(" ");
   return {
     id: Number(schedule.id),
+    status: schedule.status,
     day: schedule.day,
     start_time: to24h(schedule.startTime),
     end_time: to24h(schedule.endTime),
@@ -212,16 +217,16 @@ export default function DeanScheduleViewer() {
   const user = getStoredUser() as StoredUser | null;
   const userDeptId = user?.department_id;
   const userDeptName = user?.department?.department_name || "College of Information Technology";
-  const deanSchedulesCacheKey = `page:dean-schedules:${userDeptId ?? 'all'}`;
+  const deanSchedulesCacheKey = `page:dean-schedules:${userDeptId ?? 'all'}:published`;
   const cachedDeanSchedulesData = getCachedData<DeanSchedulesPageData>(deanSchedulesCacheKey);
   const [sections, setSections] = useState<Section[]>(cachedDeanSchedulesData?.sections ?? []);
-  const [schedules, setSchedules] = useState<Schedule[]>(cachedDeanSchedulesData?.schedules ?? []);
+  const [schedules, setSchedules] = useState<Schedule[]>(() => filterVpaaApprovedSchedules(cachedDeanSchedulesData?.schedules ?? []));
   const [isLoading, setIsLoading] = useState(!hasCachedData(deanSchedulesCacheKey));
   const [loadError, setLoadError] = useState<string | null>(null);
   const [schedulesTruncated, setSchedulesTruncated] = useState(cachedDeanSchedulesData?.schedulesTruncated ?? false);
   const [reloadKey, setReloadKey] = useState(0);
   const liveRevision = useLiveRevision(['schedules', 'sections', 'approvals', 'departments']);
-  const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
+  const [selectedScheduleRecord, setSelectedSchedule] = useState<Schedule | null>(null);
   const [serverConflicts, setServerConflicts] = useState<ScheduleConflict[]>([]);
 
   useEffect(() => {
@@ -238,7 +243,7 @@ export default function DeanScheduleViewer() {
           schedules: RawSchedule[];
           departments?: CalendarDepartment[];
           schedules_truncated?: boolean;
-        }>('/initial-data', { params: { schedule_limit: 2000 } });
+        }>('/initial-data', { params: { view: 'published', schedule_limit: 2000 } });
         const semester = response.data.active_semester;
 
         let rawSections = response.data.sections;
@@ -255,7 +260,7 @@ export default function DeanScheduleViewer() {
         }));
         setSections(mappedSections);
 
-        let rawSchedules = response.data.schedules;
+        let rawSchedules = filterVpaaApprovedSchedules(response.data.schedules);
         if (semester) {
           rawSchedules = rawSchedules.filter((s) => Number(s.semester_id) === Number(semester.id));
         }
@@ -278,6 +283,7 @@ export default function DeanScheduleViewer() {
 
           return {
             id: item.id.toString(),
+            status: item.status,
             sectionId: item.section_id ? item.section_id.toString() : "",
             sectionName: item.section?.section_name ?? "",
             departmentName: item.department?.department_name ?? userDeptName,
@@ -288,7 +294,7 @@ export default function DeanScheduleViewer() {
             subjectCategory: (item.course?.course_category ?? item.subject?.subject_category ?? "major") as SubjectCategory,
             meetingType: item.meeting_type ?? null,
             facultyId: item.faculty_id ? item.faculty_id.toString() : "",
-            facultyName: item.faculty ? `${item.faculty.first_name ?? ""} ${item.faculty.last_name ?? ""}`.trim() : null,
+            facultyName: item.faculty ? formatPersonName(item.faculty) : null,
             roomId: item.room_id ? item.room_id.toString() : "",
             roomName,
             day: DAYS_MAP[dayIndex] || "Monday",
@@ -331,7 +337,9 @@ export default function DeanScheduleViewer() {
 
     return () => controller.abort();
   }, [schedules, userDeptId]);
-  const conflictMap = useMemo(() => conflictFlagsBySchedule(serverConflicts), [serverConflicts]);
+  const conflictMap = useMemo(() => conflictFlagsBySchedule(serverConflicts.filter((conflict) => (
+    filterVpaaApprovedSchedules(conflict.schedules).length === conflict.schedules.length
+  ))), [serverConflicts]);
 
   // The department page always shows its latest conflict list; Details passes its own check state instead.
   const conflictState = useMemo<ScheduleConflictState>(() => ({ status: "ready", flags: conflictMap }), [conflictMap]);
@@ -353,6 +361,11 @@ export default function DeanScheduleViewer() {
 
   const resetPage = () => setPagination((current) => ({ ...current, pageIndex: 0 }));
   const showGrid = viewMode === "grid";
+  const selectedSchedule = schedules
+    .find((schedule) => schedule.id === selectedScheduleRecord?.id) ?? null;
+  const selectedConflictLabels = selectedSchedule
+    ? getConflictLabels(conflictMap.get(selectedSchedule.id))
+    : [];
 
   const [ganttGroupBy, setGanttGroupBy] = useState<GroupBy>("none");
   const [ganttZoom, setGanttZoom] = useState<ZoomLevel>("fit");
@@ -362,8 +375,8 @@ export default function DeanScheduleViewer() {
   const ganttOverlaps = useMemo(() => findOverlaps(schedules.map(toCalendarSchedule)), [schedules]);
   const ganttSchedules = useMemo(() => filteredSchedules.map(toCalendarSchedule), [filteredSchedules]);
   const ganttVisibleDays = useMemo(
-    () => (filteredSchedules.some((schedule) => schedule.day === "Sunday") ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4, 5]),
-    [filteredSchedules],
+    () => (ganttSchedules.some((schedule) => schedule.day === "Sunday") ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4, 5]),
+    [ganttSchedules],
   );
   const ganttStandardHours = useMemo(() => currentStandardHours(), []);
   const ganttDays = useMemo(
@@ -435,7 +448,7 @@ export default function DeanScheduleViewer() {
                     type="button"
                     aria-pressed={active}
                     onClick={() => setViewMode(value)}
-                    className={`flex items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors ${active ? "bg-[#4e0a10] text-[#E8D5C4]" : "text-slate-600 hover:bg-slate-50"}`}
+                    className={`selection-indicator flex items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors ${active ? '' : 'text-slate-600 hover:bg-slate-50'}`}
                   >
                     <Icon className="w-3.5 h-3.5" />
                     {label}
@@ -469,7 +482,7 @@ export default function DeanScheduleViewer() {
           />
         ) : isLoading ? (
           <div className="p-4"><Skeleton className="h-[420px] w-full rounded-xl" /></div>
-        ) : filteredSchedules.length === 0 ? (
+        ) : ganttSchedules.length === 0 ? (
           <div className="m-4 min-h-[320px] rounded-2xl border border-dashed border-slate-200 bg-white flex flex-col items-center justify-center text-center p-8">
             <Calendar className="w-10 h-10 text-slate-300 mb-3" />
             <h3 className="text-sm font-black text-slate-700">No schedules match the selected filters.</h3>
@@ -539,29 +552,24 @@ export default function DeanScheduleViewer() {
       </div>
 
       {selectedSchedule && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-            <div className="flex items-start justify-between gap-3 border-b border-slate-100 bg-[#F7F4F0] p-4">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-xs font-black uppercase tracking-wider text-[#C9952A]">{selectedSchedule.subjectCode}</p>
-                  {selectedSchedule.subjectCategory === "major" && selectedSchedule.meetingType && (
-                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${
-                      selectedSchedule.meetingType === "laboratory"
-                        ? "border-violet-200 bg-violet-50 text-violet-700"
-                        : "border-sky-200 bg-sky-50 text-sky-700"
-                    }`}>
-                      {selectedSchedule.meetingType === "laboratory" ? "Lab" : "Lec"}
-                    </span>
-                  )}
-                </div>
-                <h3 className="text-lg font-black leading-tight text-[#4e0a10]">{selectedSchedule.subjectName}</h3>
-              </div>
-              <button type="button" onClick={() => setSelectedSchedule(null)} className="rounded-lg p-1 text-slate-400 hover:bg-white hover:text-slate-700">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="space-y-3 p-4 text-sm">
+        <Modal
+          isOpen
+          onClose={() => setSelectedSchedule(null)}
+          title={selectedSchedule.subjectName}
+          description={selectedSchedule.subjectCode}
+          closeLabel="Close schedule details"
+          headerActions={selectedSchedule.subjectCategory === "major" && selectedSchedule.meetingType && (
+            <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${
+              selectedSchedule.meetingType === "laboratory"
+                ? "border-violet-200 bg-violet-50 text-violet-700"
+                : "border-sky-200 bg-sky-50 text-sky-700"
+            }`}>
+              {selectedSchedule.meetingType === "laboratory" ? "Lab" : "Lec"}
+            </span>
+          )}
+        >
+          <div className={modalBody}>
+            <dl className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
               {[
                 { icon: Layers, label: "Section", value: selectedSchedule.sectionName },
                 { icon: MapPin, label: "Room", value: selectedSchedule.roomName || "Unassigned" },
@@ -569,31 +577,24 @@ export default function DeanScheduleViewer() {
                 { icon: Calendar, label: "Schedule", value: `${selectedSchedule.day}, ${selectedSchedule.startTime} - ${selectedSchedule.endTime}` },
                 { icon: Info, label: "Mode", value: getModeLabel(selectedSchedule.mode) },
               ].map(({ icon: Icon, label, value }) => (
-                <div key={label} className="flex items-start gap-3">
-                  <Icon className="mt-0.5 h-4 w-4 shrink-0 text-[#C9952A]" />
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p>
-                    <p className="font-semibold text-slate-700">{value}</p>
+                <div key={label} className="flex items-start gap-3 px-4 py-2.5">
+                  <Icon className="mt-0.5 h-4 w-4 shrink-0 text-[#C9952A]" aria-hidden="true" />
+                  <div className="min-w-0">
+                    <dt className={`${modalLabel} mb-0.5`}>{label}</dt>
+                    <dd className="break-words text-sm font-semibold text-slate-800">{value}</dd>
                   </div>
                 </div>
               ))}
-              {getConflictLabels(conflictMap.get(selectedSchedule.id)).length > 0 && (
-                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-600">
-                  <div className="mb-1 flex items-center gap-1.5">
-                    <AlertTriangle className="h-4 w-4" />
-                    Confirmed conflict
-                  </div>
-                  {getConflictLabels(conflictMap.get(selectedSchedule.id)).join(", ")}
-                </div>
-              )}
-            </div>
+            </dl>
+            {selectedConflictLabels.length > 0 && (
+              <ModalNotice tone="error">
+                <p className="font-bold">Confirmed conflict</p>
+                {selectedConflictLabels.join(", ")}
+              </ModalNotice>
+            )}
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
 }
-
-
-
-

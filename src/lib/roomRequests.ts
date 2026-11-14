@@ -1,4 +1,5 @@
 import api from './api';
+import type { PersonNameParts } from './personName';
 import { FULL_DAY_NAMES, slotToTime24h } from './timeGrid';
 
 export type RoomRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'revoked';
@@ -32,6 +33,15 @@ export interface RoomRequestSemester {
   is_active: boolean;
 }
 
+export interface RoomRequestDecision {
+  event: string;
+  occurred_at: string;
+  actor: { id: number | null; name: string | null; role?: string | null } | null;
+  before_status: RoomRequestStatus | null;
+  after_status: RoomRequestStatus;
+  remarks: string | null;
+}
+
 export interface RoomRequest {
   id: number;
   status: RoomRequestStatus;
@@ -43,8 +53,9 @@ export interface RoomRequest {
   owner_department: RoomRequestDepartment | null;
   /** The room was reassigned after this request was sent. */
   owner_changed?: boolean;
-  requester: { id: number; name: string } | null;
-  reviewer: { id: number; name: string } | null;
+  requester: { id: number; name: string | null } | null;
+  reviewer: { id: number; name: string | null } | null;
+  decisions?: RoomRequestDecision[];
   reviewed_at: string | null;
   created_at: string | null;
   windows: RoomRequestWindow[];
@@ -101,12 +112,11 @@ export interface RoomOccupancySchedule {
     lecture_hours?: number | string | null;
     lab_hours?: number | string | null;
   } | null;
-  faculty?: {
+  faculty?: (PersonNameParts & {
     id: number;
     first_name: string;
     last_name: string;
-    middle_name?: string | null;
-  } | null;
+  }) | null;
 }
 
 export interface RoomRequestInput {
@@ -259,7 +269,7 @@ export const freeWindows = (
     .map((range) => ({ day, start_time: fromMinutes(range.start), end_time: fromMinutes(range.end) }));
 
 /**
- * Classes that would move to Room TBA when this grant ends: the borrower's classes in
+ * Classes affected when this grant ends: the borrower's classes in
  * the room that overlap any granted window, matching the server's release rule.
  */
 export const classesUnderGrant = (request: RoomRequest, schedules: RoomOccupancySchedule[]): RoomOccupancySchedule[] =>

@@ -42,9 +42,9 @@ it('pages through a large list of changes', async () => {
 
   const table = await screen.findByRole('table', { name: 'Changes from the previous version' });
   expect(screen.getByText('60 changed classes')).toBeTruthy();
-  expect(within(table).getAllByRole('row')).toHaveLength(26);
+  expect(within(table).getAllByRole('row')).toHaveLength(11);
   fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
-  expect(within(table).getByText('C25')).toBeTruthy();
+  expect(within(table).getByText('C10')).toBeTruthy();
 });
 
 it('says so when there are no class changes, and when the changes cannot load', async () => {

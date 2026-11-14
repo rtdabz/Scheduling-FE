@@ -157,7 +157,39 @@ beforeEach(() => {
 
 const renderPage = () => render(<MemoryRouter><VpaaDashboardPage /></MemoryRouter>);
 
+it.each(['overview', 'progress', 'attentions', 'activity'])('loads the VPAA skeleton for the requested %s tab', (tab) => {
+  get.mockImplementation(() => new Promise(() => {}));
+  const { container } = render(<MemoryRouter initialEntries={[`/?tab=${tab}`]}><VpaaDashboardPage /></MemoryRouter>);
+  expect(container.querySelector(`[data-skeleton="panel-${tab}"]`)).toBeTruthy();
+});
+
+const openTab = async (name: RegExp) => fireEvent.click(await screen.findByRole('tab', { name }));
+const renderTab = async (name: RegExp) => {
+  const view = renderPage();
+  await openTab(name);
+  return view;
+};
+
 describe('VpaaDashboardPage', () => {
+  it('distinguishes unavailable historical actors from explicit system activity', async () => {
+    get.mockImplementation((url: string) => {
+      if (url === '/initial-data') return Promise.resolve({ data: initialData });
+      if (url === '/vpaa/dashboard-insights') return Promise.resolve({ data: insights });
+      if (url === '/activity-log') return Promise.resolve({ data: {
+        data: [
+          { ...activityLog.data[0], actor: { id: 8, name: null }, actor_type: 'unknown' },
+          { ...activityLog.data[0], id: 'scheduling:2', actor: null, actor_type: 'system' },
+        ],
+      } });
+      return Promise.resolve({ data: {} });
+    });
+
+    await renderTab(/Activity/);
+    const panel = screen.getByText('Recent Administrative Activity').closest('section')!;
+    expect(await within(panel).findByText(/^Actor unavailable ·/)).toBeTruthy();
+    expect(within(panel).getByText(/^System ·/)).toBeTruthy();
+  });
+
   // Renders the full Gantt: about 3 s alone, past the 5 s default under a full parallel run.
   it('reuses the Gantt with configured hours and only published classes in the weekly view', async () => {
     renderPage();
@@ -221,20 +253,78 @@ describe('VpaaDashboardPage', () => {
     expect(within(chart).queryByRole('button', { name: /^IT 101 laboratory/ })).toBeNull();
   });
 
-  it('renders every section of the executive overview', async () => {
+  it('sorts every section of the executive overview into its tab', async () => {
     renderPage();
 
-    await waitFor(() => expect(screen.getByText('Requires Attention')).toBeTruthy());
+    const visible = (title: string) => {
+      const panel = screen.getByText(title).closest('[role="tabpanel"]');
+      return panel ? !(panel as HTMLElement).hidden : false;
+    };
 
+    await screen.findByText('Master timetable');
+    expect(screen.getByRole('tab', { name: /Overview/ }).getAttribute('aria-selected')).toBe('true');
+    ['Overall Approval Completion', 'Master timetable'].forEach(title => expect(visible(title)).toBe(true));
+    expect(screen.queryByText('Requires Attention')).toBeNull();
+    expect(screen.queryByText('Recent Administrative Activity')).toBeNull();
+
+    await openTab(/Progress/);
     [
-      'Requires Attention',
       'Workflow · Department Scheduling Progress',
       'Room Utilisation by Building',
-      'Master timetable',
       'Instructor Load Overview',
       'Institutional Readiness',
-      'Recent Administrative Activity',
-    ].forEach(title => expect(screen.getByText(title)).toBeTruthy());
+    ].forEach(title => expect(visible(title)).toBe(true));
+    expect(visible('Master timetable')).toBe(false);
+
+    await openTab(/Attentions/);
+    ['Requires Attention', '1 Section Awaiting VPAA Review'].forEach(title => expect(visible(title)).toBe(true));
+    expect(screen.queryByText('Returned Department Packages')).toBeNull();
+    expect(screen.queryByText('Scheduling Concerns')).toBeNull();
+    expect(visible('Master timetable')).toBe(false);
+
+    await openTab(/Activity/);
+    expect(visible('Recent Administrative Activity')).toBe(true);
+    expect(visible('Requires Attention')).toBe(false);
+  }, 15_000);
+
+  it('badges Attentions with one count per department package awaiting review', async () => {
+    renderPage();
+    // Only CIT is pending; returned packages and coverage gaps are not counted.
+    const tab = await screen.findByRole('tab', { name: /Attentions/ });
+    expect(within(tab).getByLabelText('1 item requiring attention').textContent).toBe('1');
+  });
+
+  it('counts a department once when it has both pending and returned sections', async () => {
+    get.mockImplementation((url: string) => {
+      if (url === '/initial-data') return Promise.resolve({ data: {
+        ...initialData,
+        sections: [...initialData.sections, section(5, 'BSIT 2A', 2)],
+        schedule_submissions: [
+          ...initialData.schedule_submissions,
+          submission(3, 2, 'rejected_by_vpaa', [5], { vpaa_reviewed_at: '2026-09-05T02:00:00.000000Z', rejection_reason: 'Room clash' }),
+        ],
+      } });
+      if (url === '/vpaa/dashboard-insights') return Promise.resolve({ data: insights });
+      return Promise.resolve({ data: activityLog });
+    });
+    renderPage();
+    const tab = await screen.findByRole('tab', { name: /Attentions/ });
+    expect(within(tab).getByLabelText('1 item requiring attention')).toBeTruthy();
+  });
+
+  it('hides the Attentions badge when nothing needs action', async () => {
+    get.mockImplementation((url: string) => {
+      if (url === '/initial-data') return Promise.resolve({ data: {
+        ...initialData,
+        schedule_submissions: [initialData.schedule_submissions[0]],
+        faculties: initialData.faculties.filter(f => f.assigned_units <= f.max_units),
+      } });
+      if (url === '/vpaa/dashboard-insights') return Promise.resolve({ data: { ...insights, coverage: { ...insights.coverage, classes_without_instructor: 0, sections_without_instructor: 0 } } });
+      return Promise.resolve({ data: activityLog });
+    });
+    renderPage();
+    const tab = await screen.findByRole('tab', { name: /Attentions/ });
+    expect(tab.textContent).toBe('Attentions');
   });
 
   it('counts a dean override as awaiting the VPAA rather than as a draft', async () => {
@@ -243,6 +333,7 @@ describe('VpaaDashboardPage', () => {
     // CIT sits at pending_vpaa with approval_override set. The old rollup read
     // `conditionally_approved` off the schedule row, found no branch for it and
     // called it a draft, so the package never reached this queue.
+    await openTab(/Attentions/);
     await waitFor(() => expect(screen.getByText('1 Section Awaiting VPAA Review')).toBeTruthy());
     expect(screen.getByText(/approved by a Dean with an override/)).toBeTruthy();
     expect(screen.getAllByRole('button', { name: /^Review/ }).length).toBe(1);
@@ -262,8 +353,9 @@ describe('VpaaDashboardPage', () => {
     renderPage();
 
     // Building names appear twice by design: once as a timetable filter option
-    // and once as a row of the utilisation table.
+    // (Overview) and once as a row of the utilisation table (Progress).
     fireEvent.click(await screen.findByRole('button', { name: 'Timetable filters' }));
+    await openTab(/Progress/);
     await waitFor(() => expect(screen.getAllByText('Main').length).toBeGreaterThan(1));
     expect(screen.getAllByText('Annex').length).toBeGreaterThan(1);
     expect(screen.getByText(/Unused this semester/)).toBeTruthy();
@@ -271,13 +363,13 @@ describe('VpaaDashboardPage', () => {
   });
 
   it('names the overloaded instructor rather than only counting them', async () => {
-    renderPage();
+    await renderTab(/Progress/);
     await waitFor(() => expect(screen.getByText('Ada Lovelace')).toBeTruthy());
     expect(screen.getByText('24 / 21 units')).toBeTruthy();
   });
 
   it('renders administrative activity from the audit log', async () => {
-    renderPage();
+    await renderTab(/Activity/);
     await waitFor(() => expect(screen.getByText('Schedule approved by vpaa')).toBeTruthy());
   });
 
@@ -316,7 +408,9 @@ describe('VpaaDashboardPage', () => {
 
     // The approval rollup does not depend on the aggregate endpoint, so it must
     // survive the aggregate being unavailable.
+    await openTab(/Attentions/);
     await waitFor(() => expect(screen.getByText('1 Section Awaiting VPAA Review')).toBeTruthy());
+    await openTab(/Progress/);
     // The utilisation panel falls back to the empty aggregate rather than blanking.
     expect(screen.getByText('Room Utilisation by Building')).toBeTruthy();
   });
@@ -344,17 +438,18 @@ describe('VpaaDashboardPage', () => {
 
     await waitFor(() => expect(get).toHaveBeenCalledWith('/vpaa/dashboard-insights'));
     expect(container.querySelector('[aria-label="Loading dashboard"]')).toBeTruthy();
-    expect(screen.queryByText('Requires Attention')).toBeNull();
+    expect(screen.queryByText('Master timetable')).toBeNull();
 
     releaseInsights({ data: insights });
 
-    await waitFor(() => expect(screen.getByText('Requires Attention')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Master timetable')).toBeTruthy());
+    await openTab(/Progress/);
     expect(screen.getByText('Room Utilisation by Building')).toBeTruthy();
   });
 
   it('serves a revisit from cache instead of refetching the aggregates', async () => {
     renderPage();
-    await waitFor(() => expect(screen.getByText('Requires Attention')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Master timetable')).toBeTruthy());
 
     const callsAfterFirstMount = get.mock.calls.length;
     cleanup();
@@ -362,7 +457,9 @@ describe('VpaaDashboardPage', () => {
 
     // Every panel is seeded from cache, so the revisit paints whole rather than
     // leaving the two aggregate panels to arrive behind the others.
-    await waitFor(() => expect(screen.getByText('Requires Attention')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Master timetable')).toBeTruthy());
+    await openTab(/Progress/);
+    await openTab(/Attentions/);
     expect(screen.getByText('Room Utilisation by Building')).toBeTruthy();
     expect(get.mock.calls.length).toBe(callsAfterFirstMount);
   });

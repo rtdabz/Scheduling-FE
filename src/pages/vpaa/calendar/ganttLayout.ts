@@ -1,3 +1,6 @@
+import { formatPersonListName, formatPersonName, type PersonNameParts } from '../../../lib/personName';
+import { isVpaaApproved } from '../../../lib/scheduleStatus';
+
 export interface CalendarDepartment {
   id: number;
   department_name: string;
@@ -7,6 +10,7 @@ export interface CalendarDepartment {
 
 export interface CalendarSchedule {
   id: number;
+  status?: string | null;
   day: string;
   start_time: string;
   end_time: string;
@@ -18,7 +22,7 @@ export interface CalendarSchedule {
   room_id?: number | null;
   room?: { id: number; room_code: string; building?: string | null } | null;
   faculty_id?: number | null;
-  faculty?: { id: number; first_name: string; last_name: string } | null;
+  faculty?: (PersonNameParts & { id: number; first_name: string; last_name: string }) | null;
   section_id?: number | null;
   section?: { id: number; section_name: string; department_id?: number | null } | null;
   course?: { course_code?: string; course_name?: string; units?: number } | null;
@@ -26,6 +30,10 @@ export interface CalendarSchedule {
 }
 
 export const CALENDAR_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;
+
+/** Gantt timelines publish only classes that have passed final VPAA approval. */
+export const filterVpaaApprovedSchedules = <T extends { status?: string | null }>(schedules: readonly T[]): T[] =>
+  schedules.filter((schedule) => isVpaaApproved(schedule.status));
 
 export const dayIndexOf = (day: string | null | undefined): number => {
   const prefix = (day ?? '').trim().toLowerCase().slice(0, 3);
@@ -61,7 +69,7 @@ export const courseNameOf = (schedule: CalendarSchedule): string =>
   schedule.course?.course_name || schedule.subject?.subject_name || '';
 
 export const instructorNameOf = (schedule: CalendarSchedule): string =>
-  schedule.faculty ? `${schedule.faculty.first_name} ${schedule.faculty.last_name}`.trim() : '';
+  schedule.faculty ? formatPersonName(schedule.faculty) : '';
 
 export const departmentIdOf = (schedule: CalendarSchedule): number | null =>
   schedule.department_id ?? schedule.department?.id ?? schedule.section?.department_id ?? null;
@@ -98,10 +106,10 @@ export const buildStandardHours = (openingTime?: string | null, closingTime?: st
   };
 };
 
-export const buildTimeWindow = (hours: StandardHours, schedules: readonly CalendarSchedule[]): TimeWindow => {
+export const buildTimeWindow = (hours: StandardHours, schedules: readonly CalendarSchedule[], includeUnapproved = false): TimeWindow => {
   let start = hours.opening;
   let end = hours.closing;
-  for (const schedule of schedules) {
+  for (const schedule of includeUnapproved ? schedules : filterVpaaApprovedSchedules(schedules)) {
     const from = toMinutes(schedule.start_time);
     const to = toMinutes(schedule.end_time);
     if (from !== null) start = Math.min(start, from);
@@ -129,11 +137,11 @@ export interface OverlapEntry {
   kinds: OverlapKind[];
 }
 
-export const findOverlaps = (schedules: readonly CalendarSchedule[]): Map<number, OverlapEntry[]> => {
+export const findOverlaps = (schedules: readonly CalendarSchedule[], includeUnapproved = false): Map<number, OverlapEntry[]> => {
   const result = new Map<number, OverlapEntry[]>();
   const byDay = new Map<number, { schedule: CalendarSchedule; start: number; end: number }[]>();
 
-  for (const schedule of schedules) {
+  for (const schedule of includeUnapproved ? schedules : filterVpaaApprovedSchedules(schedules)) {
     const day = dayIndexOf(schedule.day);
     const start = toMinutes(schedule.start_time);
     const end = toMinutes(schedule.end_time);
@@ -228,7 +236,7 @@ const groupKeyOf = (schedule: CalendarSchedule, groupBy: GroupBy): { key: string
       return schedule.faculty_id != null
         ? {
             key: `faculty:${schedule.faculty_id}`,
-            label: schedule.faculty ? `${schedule.faculty.last_name}, ${schedule.faculty.first_name}` : `Instructor #${schedule.faculty_id}`,
+            label: schedule.faculty ? formatPersonListName(schedule.faculty) : `Instructor #${schedule.faculty_id}`,
             isPlaceholder: false,
           }
         : { key: 'faculty:none', label: 'Unassigned', isPlaceholder: true };
@@ -251,10 +259,11 @@ export const buildGanttDays = (
   schedules: readonly CalendarSchedule[],
   groupBy: GroupBy,
   visibleDays: readonly number[],
+  includeUnapproved = false,
 ): GanttDay[] => {
   const perDay = new Map<number, Map<string, { label: string; isPlaceholder: boolean; items: Omit<GanttBlock, 'lane'>[] }>>();
 
-  for (const schedule of schedules) {
+  for (const schedule of includeUnapproved ? schedules : filterVpaaApprovedSchedules(schedules)) {
     const dayIndex = dayIndexOf(schedule.day);
     const start = toMinutes(schedule.start_time);
     const end = toMinutes(schedule.end_time);
@@ -283,9 +292,9 @@ export const buildGanttDays = (
   });
 };
 
-export const siblingMeetingsOf = (target: CalendarSchedule, schedules: readonly CalendarSchedule[]): CalendarSchedule[] => {
+export const siblingMeetingsOf = (target: CalendarSchedule, schedules: readonly CalendarSchedule[], includeUnapproved = false): CalendarSchedule[] => {
   const courseKey = (s: CalendarSchedule) => s.course_id ?? courseCodeOf(s);
-  return schedules
+  return (includeUnapproved ? schedules : filterVpaaApprovedSchedules(schedules))
     .filter((s) =>
       s.section_id === target.section_id
       && courseKey(s) === courseKey(target)

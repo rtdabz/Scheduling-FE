@@ -31,7 +31,7 @@ const klass = (parts: SummaryPart[]): SummaryClass => ({
 describe("ClassSummaryTable", () => {
   afterEach(cleanup);
 
-  it("prints a faculty or room shared by every part once", () => {
+  it("gives every meeting its own room, instructor and mode entry, even when they repeat", () => {
     render(
       <ClassSummaryTable
         showFaculty
@@ -39,8 +39,10 @@ describe("ClassSummaryTable", () => {
       />,
     );
 
-    expect(screen.getAllByText("Unassigned")).toHaveLength(1);
-    expect(screen.getAllByText("Online")).toHaveLength(1);
+    expect(screen.getAllByText("Unassigned")).toHaveLength(2);
+    // Two rooms named Online, plus the Online mode badge on the Tuesday meeting only.
+    expect(screen.getAllByText("Online")).toHaveLength(3);
+    expect(screen.getAllByText("On-site")).toHaveLength(1);
   });
 
   it("keeps one line per part when the parts differ", () => {

@@ -6,17 +6,18 @@ import ConfirmModal from '../ui/ConfirmModal';
 import SecretaryRoomTransferRequests from './SecretaryRoomTransferRequests';
 import RoomTransferRequests from './RoomTransferRequests';
 import api from '../../lib/api';
-import { getRecovery, recoveryError, ROOM_TRANSFER_STATUS_LABELS, type RecoveryData, type RecoveryPlan, type RoomTransferRequest } from '../../lib/roomRecovery';
+import { getRecovery, recoveryError, recoveryGroupWorkflow, roomReassignmentActivity, ROOM_TRANSFER_STATUS_LABELS, type RecoveryData, type RecoveryPlan, type RoomReassignmentActivity, type RoomTransferRequest } from '../../lib/roomRecovery';
 import { getStoredUser, hasStoredCapability } from '../../lib/storedUser';
 import { publishLiveTopics } from '../../lib/liveUpdates';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import { formatTime12h } from '../../lib/timeGrid';
 import './RoomReassignmentPanel.css';
+import { isDepartmentOfficeRole } from '../../lib/roles';
 
 const roomTypeLabel = (type?: string | null) => type === 'laboratory' ? 'Laboratory' : type === 'field' ? 'Field' : 'Lecture room';
 const meetingTime = (row: { day: string; start_time: string; end_time: string }) => `${row.day} ${formatTime12h(row.start_time)}–${formatTime12h(row.end_time)}`;
 
-export default function RoomReassignmentPanel({ semesterId, onTransferred, onPendingCountChange }: { semesterId?: number; onTransferred?: () => void; onPendingCountChange?: (count: number) => void }) {
+export default function RoomReassignmentPanel({ semesterId, onTransferred, onPendingCountChange, onActivityChange }: { semesterId?: number; onTransferred?: () => void; onPendingCountChange?: (count: number) => void; onActivityChange?: (activity: Record<string, RoomReassignmentActivity>) => void }) {
   const [params, setParams] = useSearchParams();
   const open = params.has('recovery');
   const [data, setData] = useState<RecoveryData | null>(null);
@@ -31,16 +32,18 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
   const [message, setMessage] = useState('');
   const [refresh, setRefresh] = useState(0);
   const [activePendingCount, setActivePendingCount] = useState<number | null>(null);
+  const [activeActivity, setActiveActivity] = useState<Record<string, RoomReassignmentActivity> | null>(null);
   const loaded = useRef<{ key: string; at: number; data: RecoveryData } | null>(null);
   const requestVersion = useRef(0);
   const modalContent = useRef<HTMLDivElement>(null);
   const live = useLiveRevision(['rooms', 'schedules', 'approvals', 'courses', 'sections', 'departments', 'settings']);
   const canEdit = hasStoredCapability('schedule.update');
-  const isSecretary = getStoredUser()?.role === 'secretary';
-  const canSubmit = canEdit && isSecretary;
+  // Secretary or Director: the department office submits room transfers.
+  const isDepartmentOffice = isDepartmentOfficeRole(getStoredUser()?.role);
+  const canSubmit = canEdit && isDepartmentOffice;
   const caseId = Number(params.get('recovery')) || 0;
   const transferId = params.get('room_transfer');
-  const requestsOpen = isSecretary && open && !!data && (params.has('transfer_requests') || Boolean(transferId && data.transfers?.some(item => item.id === transferId)));
+  const requestsOpen = isDepartmentOffice && open && !!data && (params.has('transfer_requests') || Boolean(transferId && data.transfers?.some(item => item.id === transferId)));
   const linkedScope = `${params.get('recovery')}|${params.get('recovery_semester')}|${params.get('recovery_room')}|${transferId}|${semesterId}`;
   const [previousScope, setPreviousScope] = useState(linkedScope);
   if (previousScope !== linkedScope) {
@@ -50,6 +53,9 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
   useEffect(() => {
     if (activePendingCount !== null) onPendingCountChange?.(activePendingCount);
   }, [activePendingCount, onPendingCountChange]);
+  useEffect(() => {
+    if (activeActivity !== null) onActivityChange?.(activeActivity);
+  }, [activeActivity, onActivityChange]);
   useEffect(() => {
     if (open) return;
     const poll = () => setRefresh(value => value + 1);
@@ -73,6 +79,7 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
           ({ data } = await getRecovery(undefined, controller.signal, true));
           if (controller.signal.aborted) return;
           setActivePendingCount(data.pending_count ?? data.schedules.filter(row => row.needs_attention).length);
+          setActiveActivity(roomReassignmentActivity(data));
         }
         const incident = open ? data.cases.find(item => item.id === caseId) : undefined;
         let linkedSemester = incident?.semester_id;
@@ -146,7 +153,7 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
     try {
       const { data } = await api.post<{ message: string; applied: boolean }>(`/room-recovery/plans/${plan.plan_id}/submit`, { group_keys: groups });
       setMessage(data.message); setPlan(null); setGroups([]); setRefresh(v => v + 1);
-      publishLiveTopics(['approvals', 'rooms', 'notifications']);
+      publishLiveTopics(data.applied ? ['approvals', 'rooms', 'schedules', 'notifications'] : ['approvals', 'rooms', 'notifications']);
       if (data.applied) onTransferred?.();
     } catch (error) { setError(recoveryError(error)); setPlan(null); }
     finally { setBusy(false); setConfirmSubmit(false); }
@@ -157,6 +164,18 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
   const term = data?.semesters.find(item => item.id === data.semester_id);
   const termName = term?.semester === '2nd' ? 'Second Semester' : term?.semester === '1st' ? 'First Semester' : term?.semester;
   const incidentTerm = term?.is_active != null && !term.is_active;
+  // Draft schedules are reassigned immediately; submitted ones are routed to Dean and VPAA. The server makes the final split.
+  const chosen = plan?.groups.filter(group => groups.includes(group.key)) ?? [];
+  const applyCount = chosen.filter(group => recoveryGroupWorkflow(group) === 'apply').length;
+  const approvalCount = chosen.length - applyCount;
+  const workflow = applyCount === 0 ? 'approval' : approvalCount === 0 ? 'apply' : 'mixed';
+  const actionLabel = { apply: 'Apply changes', approval: 'Submit for approval', mixed: 'Apply and submit for approval' }[workflow];
+  const busyLabel = workflow === 'apply' ? 'Applying…' : 'Submitting…';
+  const confirmCopy = {
+    apply: { title: 'Apply room schedule reassignment', message: 'Are you sure you want to apply this room schedule reassignment? The draft schedule will be updated immediately.', label: 'Apply changes' },
+    approval: { title: 'Submit room schedule reassignment', message: 'Are you sure you want to submit this room schedule reassignment for approval?', label: 'Submit request' },
+    mixed: { title: 'Apply and submit room schedule reassignments', message: `${applyCount} draft ${applyCount === 1 ? 'class' : 'classes'} will be reassigned immediately. ${approvalCount} submitted ${approvalCount === 1 ? 'class' : 'classes'} will be sent for Dean and VPAA approval and stay unchanged until approved. Continue?`, label: 'Apply and submit' },
+  }[workflow];
   return <>
     {!open && error && <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Unable to check room availability. <button type="button" onClick={() => setRefresh(v => v + 1)} className="font-semibold underline">Retry</button></p>}
     <Modal isOpen={open} onClose={close} title="Reassign Room Schedule" description={loading ? 'Loading semester…' : term ? `${incidentTerm ? 'Incident semester' : 'Current semester'}: ${term.academic_year} · ${termName}` : error ? 'Semester details unavailable' : 'No active semester configured'} size="xl" className="room-transfer-modal" inert={requestsOpen} closeOnEscape={!busy && !confirmSubmit && !requestsOpen} closeOnOverlayClick={!busy && !confirmSubmit && !requestsOpen} showCloseButton={!busy && !confirmSubmit && !requestsOpen}>
@@ -164,10 +183,10 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
         {message && <p role="status" className="transfer-alert transfer-success"><CheckCircle2 size={18} aria-hidden="true" />{message}</p>}
         {error && <div role="alert" className="transfer-alert transfer-error"><p>{error}</p><button type="button" disabled={busy} onClick={() => setRefresh(v => v + 1)}>Refresh</button></div>}
         {loading && <p role="status" className="transfer-loading"><LoaderCircle size={18} className="transfer-spinner" aria-hidden="true" />Loading schedules…</p>}
-        {data && isSecretary && <SecretaryRoomTransferRequests requests={data.transfers ?? []} isOpen={requestsOpen} loading={loading} linkedId={transferId}
+        {data && isDepartmentOffice && <SecretaryRoomTransferRequests requests={data.transfers ?? []} isOpen={requestsOpen} loading={loading} linkedId={transferId}
           onOpen={() => setParams(current => { const next = new URLSearchParams(current); next.delete('room_transfer'); next.set('transfer_requests', 'open'); return next; }, { replace: true })}
           onClose={() => setParams(current => { const next = new URLSearchParams(current); next.delete('room_transfer'); next.delete('transfer_requests'); return next; }, { replace: true })} />}
-        {data && !loading && !isSecretary && <RoomTransferRequests transfers={data.transfers ?? []} />}
+        {data && !loading && !isDepartmentOffice && <RoomTransferRequests transfers={data.transfers ?? []} />}
         {data && !loading && <div className="transfer-layout">
           <section aria-label="Schedules" className="transfer-schedules">
             <div className="transfer-section-heading">
@@ -194,7 +213,7 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
           </section>
           <section aria-label="Review proposed room schedule reassignments" className="transfer-review">
             <div className="transfer-section-heading"><h3><span className="transfer-step" aria-hidden="true">2</span>Review proposed room schedule reassignments</h3></div>
-            <p className="transfer-description">Find rooms, review changes, then submit for approval.</p>
+            <p className="transfer-description">Find rooms, review changes, then apply them to draft schedules or submit them for approval.</p>
             <div role="group" aria-label="Room schedule reassignment actions" className="transfer-workflow">
               <div className="transfer-finder">
                 <label className="transfer-time-option"><input type="checkbox" disabled={busy || !canEdit} checked={allowTime} onChange={event => { invalidate(); setAllowTime(event.target.checked); }} />Allow day and time changes</label>
@@ -205,12 +224,13 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
               </div>
               <article aria-label="Proposed room schedule reassignments" className="transfer-results">
                 <div className="transfer-results-heading"><h4>Available room suggestions</h4>{plan && <span>{plan.groups.length} ready</span>}</div>
-                <p role="status" className="sr-only">{busy ? (plan ? 'Submitting room schedule reassignments…' : 'Checking room availability…') : plan ? `${plan.groups.length} proposed transfers. ${plan.unresolved.length} unresolved.` : ''}</p>
+                <p role="status" className="sr-only">{busy ? (plan ? (workflow === 'apply' ? 'Applying room schedule reassignments…' : 'Submitting room schedule reassignments…') : 'Checking room availability…') : plan ? `${plan.groups.length} proposed transfers. ${plan.unresolved.length} unresolved.` : ''}</p>
                 <div className="transfer-results-scroll" role="region" aria-label="Room suggestions" tabIndex={0} aria-busy={busy}>
                   {!plan && <div className="transfer-empty"><p>{busy ? 'Checking room availability…' : affected.length ? 'Available rooms will appear here.' : 'No room suggestions needed.'}</p><p className="transfer-meta">{busy ? 'Matching room types and checking schedule conflicts.' : !affected.length ? 'Room suggestions appear when schedules need a replacement.' : selected.length ? 'Find suitable rooms for the selected schedules.' : 'Choose schedules from the list to get started.'}</p></div>}
                   {plan && <>
                     {plan.groups.map(group => <div key={group.key} className="transfer-proposal" data-selected={groups.includes(group.key)}>
                       <label className="transfer-proposal-select"><input aria-label={`Transfer ${[...new Set(group.after.map(row => { const label = meeting(row.id); return label ? `${label.course} ${label.section}` : 'linked meeting'; }))].join(', ')}`} type="checkbox" disabled={busy || !canEdit} checked={groups.includes(group.key)} onChange={() => setGroups(keys => keys.includes(group.key) ? keys.filter(key => key !== group.key) : [...keys, group.key])} /><span>Transfer this class</span><span className="transfer-proposal-state">{groups.includes(group.key) ? 'Selected' : 'Not selected'}</span></label>
+                      <p className="transfer-meta">{recoveryGroupWorkflow(group) === 'apply' ? 'Draft schedule · Applies immediately' : 'Submitted schedule · Requires Dean and VPAA approval'}</p>
                       {group.after.map(row => {
                         const before = group.before.find(item => item.id === row.id);
                         if (!before) return null;
@@ -252,16 +272,20 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
               </article>
               {plan && plan.groups.length > 0 && <div className="transfer-confirm">
                 <p role="status" className="transfer-confirm-count">{groups.length} of {plan.groups.length} classes selected for transfer</p>
-                <p className="transfer-meta">Existing schedules stay unchanged until Dean and VPAA approval. Linked meetings stay together and availability is rechecked at final approval.</p>
+                <p className="transfer-meta">{workflow === 'apply'
+                  ? 'Draft schedules are updated immediately. No Dean or VPAA approval is needed. Linked meetings stay together and availability is rechecked when applied.'
+                  : workflow === 'mixed'
+                    ? `${applyCount} draft ${applyCount === 1 ? 'class is' : 'classes are'} updated immediately. ${approvalCount} submitted ${approvalCount === 1 ? 'class stays' : 'classes stay'} unchanged until Dean and VPAA approval.`
+                    : 'Existing schedules stay unchanged until Dean and VPAA approval. Linked meetings stay together and availability is rechecked at final approval.'}</p>
                 {!canSubmit && <p className="transfer-meta">Only the Secretary can submit room schedule reassignments.</p>}
-                <button type="button" disabled={busy || !groups.length || !canSubmit} onClick={() => setConfirmSubmit(true)} className="transfer-button transfer-button-primary">{busy && <LoaderCircle size={17} className="transfer-spinner" aria-hidden="true" />}{busy ? 'Submitting…' : 'Submit for approval'}</button>
+                <button type="button" disabled={busy || !groups.length || !canSubmit} onClick={() => setConfirmSubmit(true)} className="transfer-button transfer-button-primary">{busy && <LoaderCircle size={17} className="transfer-spinner" aria-hidden="true" />}{busy ? busyLabel : actionLabel}</button>
               </div>}
             </div>
           </section>
         </div>}
       </div>
     </Modal>
-    <ConfirmModal isOpen={open && confirmSubmit} title="Submit room schedule reassignment" message="Are you sure you want to submit this room schedule reassignment for approval?"
-      confirmLabel="Submit request" variant="maroon" isConfirming={busy} onConfirm={submit} onCancel={() => { if (!busy) setConfirmSubmit(false); }} />
+    <ConfirmModal isOpen={open && confirmSubmit} title={confirmCopy.title} message={confirmCopy.message}
+      confirmLabel={confirmCopy.label} variant="maroon" isConfirming={busy} onConfirm={submit} onCancel={() => { if (!busy) setConfirmSubmit(false); }} />
   </>;
 }

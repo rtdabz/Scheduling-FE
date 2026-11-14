@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import Modal from '../ui/Modal';
+import { ModalButton } from '../ui/ModalForm';
+import { modalControl, modalLabel } from '../ui/modalStyles';
 import { X, Plus, BookOpen, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import TableActionButton from '../ui/TableActionButton';
@@ -53,10 +55,6 @@ const yearNames: Record<number, string> = {
 
 const ROW_GRID = 'md:grid-cols-[1.5rem_7.5rem_minmax(0,1fr)_6.5rem_4rem_4rem_3rem_3.5rem]';
 
-const CONTROL =
-  'h-10 w-full rounded-lg border bg-white px-3 text-sm text-slate-800 outline-none transition focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500';
-const controlTone = (hasError: boolean) =>
-  hasError ? 'border-red-400 focus:border-red-500 focus:ring-red-500/20' : 'border-slate-200 focus:border-[#C9952A] focus:ring-[#C9952A]/25';
 const MOBILE_LABEL = 'mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-500 md:sr-only';
 
 const emptyRow = (): ManualCourseRowRequest => ({
@@ -113,15 +111,6 @@ export default function AddCourseModal({
     const timer = setTimeout(onClose, 800);
     return () => clearTimeout(timer);
   }, [allSuccessful, isOpen, onClose]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !isSaving) onClose();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, isSaving, onClose]);
 
   if (!isOpen) return null;
 
@@ -189,46 +178,27 @@ export default function AddCourseModal({
   const totalUnits = pendingRows.reduce((sum, r) => sum + (Number(r.lecUnits) || 0) + (Number(r.labUnits) || 0), 0);
   const pendingCount = pendingRows.length;
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-slate-950/50 p-3 animate-in fade-in duration-200 sm:items-center sm:p-4"
-      role="presentation"
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      title="Add Courses"
+      description={`${yearNames[yearLevel] || `Year ${yearLevel}`} · ${semesterNames[semester] || `Semester ${semester}`}`}
+      icon={<BookOpen size={18} />}
+      size="wide"
+      busy={isSaving}
+      closeLabel="Close"
+      closeOnOverlayClick={false}
+      bodyClassName="flex flex-col"
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="add-course-modal-title"
-        className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-[#F7F4F0] animate-in zoom-in-95 duration-150"
-      >
-        <header className="flex shrink-0 items-center gap-3 bg-[#4e0a10] px-5 py-4 text-white">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#C9952A]/40 bg-[#39060b] text-[#C9952A]">
-            <BookOpen size={20} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <h2 id="add-course-modal-title" className="font-display text-lg font-black leading-6">Add Courses</h2>
-            <p className="truncate text-xs font-medium text-amber-100/75">
-              {yearNames[yearLevel] || `Year ${yearLevel}`} &middot; {semesterNames[semester] || `Semester ${semester}`}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSaving}
-            aria-label="Close"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-[#C9952A] disabled:opacity-50"
-          >
-            <X size={18} />
-          </button>
-        </header>
-
         <form onSubmit={handleSubmit} noValidate className="flex min-h-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5 sm:py-5">
             <div className="mb-2 flex items-baseline justify-between gap-3">
-              <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Courses</span>
-              <span className="text-xs text-slate-400">Lec and Lab are credit units</span>
+              <span className={`${modalLabel} mb-0`}>Courses</span>
+              <span className="text-xs text-slate-500">Lec and Lab are credit units</span>
             </div>
 
-            <div className="overflow-hidden rounded-xl border border-slate-200">
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
               <div className={`hidden gap-3 border-b border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-500 md:grid ${ROW_GRID}`}>
                 <span>#</span>
                 <span>Code <span className="text-red-500">*</span></span>
@@ -265,7 +235,7 @@ export default function AddCourseModal({
                           onChange={(e) => handleTextChange(row, 'courseCode', e.target.value)}
                           onBlur={() => handleTextBlur(row, 'courseCode')}
                           placeholder="IT 101"
-                          className={`${CONTROL} ${controlTone(flagged(row.courseCode))} font-semibold uppercase placeholder:normal-case`}
+                          className={`${modalControl(flagged(row.courseCode))} font-semibold uppercase placeholder:normal-case`}
                         />
                       </div>
 
@@ -279,7 +249,7 @@ export default function AddCourseModal({
                           onChange={(e) => handleTextChange(row, 'courseName', e.target.value)}
                           onBlur={() => handleTextBlur(row, 'courseName')}
                           placeholder="e.g. Data Structures and Algorithms"
-                          className={`${CONTROL} ${controlTone(flagged(row.courseName))}`}
+                          className={`${modalControl(flagged(row.courseName))}`}
                         />
                       </div>
 
@@ -290,7 +260,7 @@ export default function AddCourseModal({
                           value={row.courseCategory}
                           disabled={isLocked}
                           onChange={(e) => patchRow(row.rowId, { courseCategory: e.target.value as 'major' | 'minor' })}
-                          className={`${CONTROL} ${controlTone(false)} px-2.5`}
+                          className={`${modalControl()} px-2.5`}
                         >
                           <option value="major">Major</option>
                           <option value="minor">Minor</option>
@@ -310,7 +280,7 @@ export default function AddCourseModal({
                             disabled={isLocked}
                             onChange={(e) => handleUnitChange(row, field, e.target.value)}
                             placeholder="0"
-                            className={`${CONTROL} ${controlTone(flagged(row[field]))} px-2 text-center font-semibold tabular-nums`}
+                            className={`${modalControl(flagged(row[field]))} px-2 text-center font-semibold tabular-nums`}
                           />
                         </div>
                       ))}
@@ -361,34 +331,20 @@ export default function AddCourseModal({
             </div>
           </div>
 
-          <footer className="flex shrink-0 flex-col-reverse gap-3 border-t border-black/5 bg-[#F7F4F0] px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+          <footer className="flex shrink-0 flex-col-reverse gap-3 border-t border-black/5 bg-[#F7F4F0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
             <p className="text-xs text-slate-500">
               {allSuccessful
                 ? 'All courses saved.'
                 : `${pendingCount} course${pendingCount === 1 ? '' : 's'}, ${totalUnits} unit${totalUnits === 1 ? '' : 's'} to add`}
             </p>
             <div className="flex justify-end gap-2.5">
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={isSaving}
-                className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isSaving || allSuccessful}
-                className="flex h-10 items-center gap-2 rounded-lg bg-[#4e0a10] px-5 text-sm font-bold text-white transition hover:bg-[#6b0e17] disabled:opacity-60"
-              >
-                {isSaving && <LoadingSpinner size={16} className="animate-spin" />}
+              <ModalButton onClick={onClose} disabled={isSaving}>Cancel</ModalButton>
+              <ModalButton type="submit" variant="primary" loading={isSaving} disabled={allSuccessful}>
                 {isSaving ? 'Saving...' : pendingCount === 1 ? 'Save course' : `Save ${pendingCount} courses`}
-              </button>
+              </ModalButton>
             </div>
           </footer>
         </form>
-      </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }

@@ -39,7 +39,12 @@ import { GenerationRunProvider } from "../hooks/useGenerationRun";
 import { clearDataCache } from "../../../../lib/dataCache";
 import type { Course, ScheduleItem, Section, Semester } from "../types";
 
-afterEach(cleanup);
+afterEach(async () => {
+  cleanup();
+  // Workflow Help owns a separate root, whose unmount is queued by its hook.
+  await act(async () => { await Promise.resolve(); });
+  vi.unstubAllGlobals();
+});
 
 // The run itself is tracked above the modal, so the wizard is always rendered
 // inside its provider.
@@ -166,6 +171,53 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
       return Promise.resolve({ data: {} });
     });
   });
+
+  it("opens the restored stage's real Help without resetting its draft or submitting data", async () => {
+    vi.stubGlobal("IntersectionObserver", class { observe() {} disconnect() {} });
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    const bounds = { x: 0, y: 0, top: 0, left: 0, right: 300, bottom: 60, width: 300, height: 60, toJSON: () => ({}) };
+    vi.spyOn(HTMLElement.prototype, "getClientRects").mockReturnValue([bounds] as unknown as DOMRectList);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(bounds);
+    const draftKey = "wicars.year-level-wizard.v5.2.1";
+    localStorage.setItem(draftKey, JSON.stringify({
+      step: 2, yearLevel: 1, activeSectionId: "10", configs: {},
+      setupDraft: { completed: true, preferredDays: ["Monday"] },
+    }));
+    renderWorkflow(<YearLevelGenerateScheduleWorkflow
+      onClose={vi.fn()} sections={sections} courses={courses} activeSemester={activeSemester}
+      departmentId={2} existingSchedules={[]} onAccepted={vi.fn()}
+    />);
+    // Setup Courses has no Default Settings panel any more.
+    expect(await screen.findByRole("combobox", { name: "Delivery mode for IT 101" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Default Settings" })).toBeNull();
+    await waitFor(() => expect((screen.getByRole("combobox", { name: "Delivery mode for IT 101" }) as HTMLSelectElement).disabled).toBe(false));
+    const savedDraft = localStorage.getItem(draftKey);
+    fireEvent.click(screen.getByRole("button", { name: "Open help for this generator stage" }));
+    expect(await screen.findByRole("heading", { name: /Help for this generator stage/ }, { timeout: 5000 })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Next/ }));
+    expect(await screen.findByRole("heading", { name: /Review included courses and their options/ }, { timeout: 5000 })).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("heading", { name: /Review included courses and their options/ })).toBeNull());
+    expect(localStorage.getItem(draftKey)).toBe(savedDraft);
+    expect(document.querySelector("#generator-year-level")).toBeNull();
+    expect(post).not.toHaveBeenCalled();
+  }, 15000);
+
+  it("opens Help with no eligible sections instead of waiting for draft restoration forever", async () => {
+    vi.stubGlobal("IntersectionObserver", class { observe() {} disconnect() {} });
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    const bounds = new DOMRect(0, 0, 300, 60);
+    vi.spyOn(HTMLElement.prototype, "getClientRects").mockReturnValue([bounds] as unknown as DOMRectList);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(bounds);
+    renderWorkflow(<YearLevelGenerateScheduleWorkflow
+      onClose={vi.fn()} sections={[]} courses={courses} activeSemester={activeSemester}
+      departmentId={2} existingSchedules={[]} onAccepted={vi.fn()}
+    />);
+    fireEvent.click(screen.getByRole("button", { name: "Open help for this generator stage" }));
+    expect(await screen.findByRole("heading", { name: /Help for this generator stage/ }, { timeout: 5000 })).toBeTruthy();
+    expect(screen.queryByText(/This page is still loading/)).toBeNull();
+    expect(post).not.toHaveBeenCalled();
+  }, 15000);
 
   it("marks an already scheduled year level and asks before generating it again", async () => {
     localStorage.setItem(
@@ -810,6 +862,20 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     await waitFor(() =>
       expect((continueButton as HTMLButtonElement).disabled).toBe(false),
     );
+    // Friday + Saturday pairing sits under the Preferred Days in Step 1.
+    const pairSwitch = screen.getByRole("switch", {
+      name: "Allow Friday and Saturday as Paired Days",
+    });
+    expect(pairSwitch.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(pairSwitch);
+    expect(pairSwitch.getAttribute("aria-checked")).toBe("true");
+    // Saved per department, apart from the draft an accepted year level wipes,
+    // so the next year level opens with the same choice.
+    expect(
+      JSON.parse(
+        localStorage.getItem("wicars.generator-course-defaults.v1.2") ?? "{}",
+      ),
+    ).toMatchObject({ allowFridaySaturdaySplit: true });
     fireEvent.click(continueButton);
 
     // A field course used to be re-added to every run whatever was chosen.
@@ -818,24 +884,6 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
         name: "Include PATH FIT 1 in generation",
       }),
     );
-    // Default Settings open from the gear in the header, in the right sidebar.
-    fireEvent.click(screen.getByRole("button", { name: "Default Settings" }));
-    fireEvent.click(
-      screen.getByRole("checkbox", {
-        name: "Allow Friday and Saturday as Paired Days",
-      }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: /Apply Defaults/ }));
-    expect(
-      screen.queryByRole("region", { name: "Default Settings" }),
-    ).toBeNull();
-    // Saved per department, apart from the draft an accepted year level wipes,
-    // so the next year level opens with the same defaults.
-    expect(
-      JSON.parse(
-        localStorage.getItem("wicars.generator-course-defaults.v1.2") ?? "{}",
-      ),
-    ).toMatchObject({ allowFridaySaturdaySplit: true });
     fireEvent.click(screen.getByRole("button", { name: /^Continue/ }));
     fireEvent.click(await screen.findByRole("button", { name: /^Generate$/ }));
 
@@ -974,6 +1022,13 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
         await screen.findByRole("radio", { name: "Selected sections" }),
       );
       expect(selectedMode().getAttribute("aria-checked")).toBe("true");
+      const firstSection = () => screen.getByRole("checkbox", { name: /BSIT 1A/ }) as HTMLInputElement;
+      const secondSection = () => screen.getByRole("checkbox", { name: /BSIT 1B/ }) as HTMLInputElement;
+      expect(firstSection().checked).toBe(false);
+      expect(secondSection().checked).toBe(false);
+      fireEvent.click(secondSection());
+      fireEvent.click(selectedMode());
+      expect(secondSection().checked).toBe(true);
 
       rerender(opened(false));
       rerender(opened(true));
@@ -984,6 +1039,12 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
       expect(
         JSON.parse(localStorage.getItem(draftKey) ?? "{}").targetSectionIds,
       ).toEqual(["11"]);
+      expect(firstSection().checked).toBe(false);
+      expect(secondSection().checked).toBe(true);
+      fireEvent.click(screen.getByRole("radio", { name: "Whole year level" }));
+      fireEvent.click(selectedMode());
+      expect(firstSection().checked).toBe(false);
+      expect(secondSection().checked).toBe(false);
     });
 
     it("while a run for another year level is in progress", async () => {
@@ -1006,7 +1067,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     });
   });
 
-  it("opens every year level with the saved Default Settings, even without a draft", async () => {
+  it("opens every year level with the saved Friday + Saturday pairing, even without a draft", async () => {
     // An accepted year level wipes the wizard draft; the defaults survive it.
     localStorage.setItem(
       "wicars.generator-course-defaults.v1.2",
@@ -1239,111 +1300,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("excludes only the opted-out section from a course's split session", async () => {
-    // Two sections and one split-eligible minor course, so a per-section
-    // exclusion is observable in the payload.
-    const twoSections: Section[] = [
-      sections[0],
-      { ...sections[0], id: "11", name: "BSIT 1B" },
-    ];
-    const minor = {
-      id: 21,
-      course_code: "GEC 1",
-      course_name: "Understanding the Self",
-      units: 3,
-      lecture_hours: 3,
-      lab_hours: 0,
-      course_category: "minor",
-      semester: "1st",
-      department_id: 2,
-      year_level: "1",
-      room_type_required: "lecture",
-      status: "active",
-    };
-
-    get.mockImplementation((url: string) => {
-      if (url === "/scheduling-settings") {
-        return Promise.resolve({
-          data: {
-            forced_day_rules: [],
-            field_course_codes: [],
-            gec_split_schedule_override_enabled: true,
-          },
-        });
-      }
-      if (url === "/rooms") return Promise.resolve({ data: [] });
-      if (url === "/curriculum") return curriculumEndpoints(url);
-      if (url === "/courses") return Promise.resolve({ data: [minor] });
-      return Promise.resolve({ data: {} });
-    });
-    post.mockImplementation((url: string) => {
-      if (url === "/schedule-recommendations/year-level-preview/queue") {
-        return Promise.resolve({ data: { run_id: "run-5" } });
-      }
-      return Promise.reject(new Error(`Unexpected POST ${url}`));
-    });
-
-    renderWorkflow(
-      <YearLevelGenerateScheduleWorkflow
-        onClose={vi.fn()}
-        sections={twoSections}
-        courses={courses}
-        activeSemester={activeSemester}
-        departmentId={2}
-        existingSchedules={[]}
-        onAccepted={vi.fn()}
-      />,
-    );
-
-    // Split eligibility is configured directly in Step 2.
-    const toStep2 = screen.getByRole("button", { name: /^Continue/ });
-    await waitFor(() =>
-      expect((toStep2 as HTMLButtonElement).disabled).toBe(false),
-    );
-    fireEvent.click(toStep2);
-
-    // Turn Split on for GEC 1 in the table, then open Configure to exclude BSIT 1B.
-    fireEvent.click(
-      await screen.findByRole("checkbox", { name: "Split for GEC 1" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: /Configure/ }));
-
-    const sidebar = await screen.findByRole("region", {
-      name: /Configure GEC 1/i,
-    });
-
-    // Switch to Selected Sections scope
-    fireEvent.click(within(sidebar).getByLabelText(/Selected Sections Only/i));
-
-    // Exclude BSIT 1B
-    const bsit1bCheckbox = within(sidebar).getByRole("checkbox", {
-      name: /BSIT 1B/i,
-    });
-    fireEvent.click(bsit1bCheckbox);
-    fireEvent.click(
-      within(sidebar).getByRole("button", { name: /Apply Configuration/i }),
-    );
-
-    // The table now shows the partial override badge.
-    await waitFor(() => expect(screen.getByText("1/2 sections")).toBeTruthy());
-
-    fireEvent.click(screen.getByRole("button", { name: /^Continue/ }));
-    fireEvent.click(await screen.findByRole("button", { name: /^Generate$/ }));
-
-    await waitFor(() => expect(post).toHaveBeenCalled());
-    const payload = post.mock.calls.find(
-      (call) =>
-        call[0] === "/schedule-recommendations/year-level-preview/queue",
-    )?.[1] as { section_configs: Array<Record<string, unknown>> };
-    const bySection = new Map(
-      payload.section_configs.map((config) => [config.section_id, config]),
-    );
-
-    expect(bySection.get(10)?.selected_gec_course_ids).toEqual([21]);
-    expect(bySection.get(11)?.selected_gec_course_ids).toEqual([]);
-  });
-
-  it("limits every section to the Preferred Days picked on step 1", async () => {
+  it("limits every section to the days left after exclusions on step 1", async () => {
     post.mockImplementation((url: string) => {
       if (url === "/schedule-recommendations/year-level-preview/queue") {
         return Promise.resolve({ data: { run_id: "run-days" } });
@@ -1364,17 +1321,31 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     );
 
     const days = await screen.findByRole("group", { name: "Preferred days" });
-    // Picked out of order; sent in calendar order.
-    for (const day of ["Wed", "Mon", "Tue"]) {
+    // Every day starts in; exclude the rest out of order. Clicking an
+    // excluded day restores it.
+    for (const day of ["Saturday", "Thursday", "Monday", "Sunday", "Friday", "Monday"]) {
       fireEvent.click(within(days).getByRole("button", { name: day }));
     }
     await waitFor(() =>
       expect(
         within(screen.getByRole("group", { name: "Preferred days" }))
-          .getByRole("button", { name: "Tue" })
+          .getByRole("button", { name: "Thursday" })
           .getAttribute("aria-pressed"),
       ).toBe("true"),
     );
+    expect(
+      within(screen.getByRole("group", { name: "Preferred days" }))
+        .getByRole("button", { name: "Monday" })
+        .getAttribute("aria-pressed"),
+    ).toBe("false");
+    // Friday and Saturday are excluded, so they cannot be paired.
+    const pairSwitch = screen.getByRole("switch", {
+      name: "Allow Friday and Saturday as Paired Days",
+    }) as HTMLButtonElement;
+    expect(pairSwitch.disabled).toBe(true);
+    expect(
+      screen.getByText("Restore Friday and Saturday to pair Friday with Saturday."),
+    ).toBeTruthy();
 
     for (let step = 1; step <= 2; step += 1) {
       const continueButton = screen.getByRole("button", { name: /^Continue/ });
@@ -1533,5 +1504,122 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
     expect(await screen.findByText("IT 101")).toBeTruthy();
     expect(screen.queryByText(/Same-day concentration warning/)).toBeNull();
     expect(screen.queryByText(/MONDAY/i)).toBeNull();
+  });
+
+  it("sends Integrated component days from Configure with the run, and saves against the run's own context", async () => {
+    const integratedCourse: Course = {
+      ...courses[0],
+      code: "IT 103",
+      name: "Integrated App Software",
+      lectureHours: 2,
+      labHours: 1,
+      roomTypeRequired: "laboratory",
+    };
+    const row = (meetingType: "lecture" | "laboratory", day: string, start: string, end: string) => ({
+      id: meetingType === "lecture" ? 601 : 602,
+      semester_id: 1,
+      department_id: 2,
+      course_id: 20,
+      section_id: 10,
+      room_id: null,
+      day,
+      start_time: start,
+      end_time: end,
+      mode: "on-site" as const,
+      status: "draft" as const,
+      meeting_type: meetingType,
+      split_group_id: "g-20",
+    });
+    const generated = [row("lecture", "Monday", "08:00:00", "10:00:00"), row("laboratory", "Thursday", "08:00:00", "09:00:00")];
+    const pins = { lecture: "Monday", laboratory: "Thursday" };
+    get.mockImplementation((url: string) => {
+      if (url === "/scheduling-settings") {
+        return Promise.resolve({ data: { forced_day_rules: [], field_course_codes: [] } });
+      }
+      if (url === "/rooms") return Promise.resolve({ data: [] });
+      if (url === "/courses") {
+        return Promise.resolve({
+          data: [{
+            id: 20, course_code: "IT 103", course_name: "Integrated App Software", units: 3,
+            lecture_hours: 2, lab_hours: 1, course_category: "major", semester: "1st",
+            department_id: 2, year_level: "1", room_type_required: "laboratory", status: "active",
+          }],
+        });
+      }
+      const curriculumResponse = curriculumEndpoints(url);
+      if (curriculumResponse) return curriculumResponse;
+      if (url === "/schedule-recommendations/generation-runs/run-9") {
+        return Promise.resolve({
+          data: {
+            status: "completed",
+            // The server echoes the normalized days the run used.
+            result: { schedules: generated, component_required_days: { "10": { "20": pins } } },
+          },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    post.mockImplementation((url: string) => {
+      if (url === "/schedule-recommendations/year-level-preview/queue") {
+        return Promise.resolve({ data: { run_id: "run-9" } });
+      }
+      if (url === "/schedules/batch") return Promise.resolve({ data: { schedules: generated } });
+      return Promise.reject(new Error(`Unexpected POST ${url}`));
+    });
+
+    renderWorkflow(
+      <YearLevelGenerateScheduleWorkflow
+        onClose={vi.fn()}
+        sections={sections}
+        courses={[integratedCourse]}
+        activeSemester={activeSemester}
+        departmentId={2}
+        existingSchedules={[]}
+        onAccepted={vi.fn()}
+      />,
+    );
+
+    const continueToSetup = screen.getByRole("button", { name: /^Continue/ });
+    await waitFor(() => expect((continueToSetup as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(continueToSetup);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Integrated for IT 103" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Delivery mode for IT 103" }), { target: { value: "onsite" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Configure$/ }));
+    fireEvent.change(screen.getByLabelText("Lecture Required Day"), { target: { value: "Monday" } });
+    fireEvent.change(screen.getByLabelText("Laboratory Required Day"), { target: { value: "Thursday" } });
+    fireEvent.click(screen.getByRole("button", { name: /Apply Configuration/i }));
+    expect(await screen.findByText("Lecture: Monday · Laboratory: Thursday")).toBeDefined();
+
+    const continueToReview = screen.getByRole("button", { name: /^Continue/ });
+    await waitFor(() => expect((continueToReview as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(continueToReview);
+    // The review summary shows the same effective values.
+    expect(await screen.findByText("Lecture: Monday · Laboratory: Thursday")).toBeDefined();
+    fireEvent.click(await screen.findByRole("button", { name: /^Generate$/ }));
+    await screen.findByText(/class meetings generated/);
+    expect(post).toHaveBeenCalledWith(
+      "/schedule-recommendations/year-level-preview/queue",
+      expect.objectContaining({
+        section_configs: [
+          expect.objectContaining({
+            selected_split_session_course_ids: [20],
+            delivery_modes_by_course_id: { 20: "on-site" },
+            component_required_days_by_course_id: { 20: pins },
+          }),
+        ],
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save & View Timetable" }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/schedules/batch",
+        expect.objectContaining({
+          replace_section_ids: [10],
+          section_configs: [{ section_id: 10, component_required_days_by_course_id: { 20: pins } }],
+        }),
+      ),
+    );
   });
 });

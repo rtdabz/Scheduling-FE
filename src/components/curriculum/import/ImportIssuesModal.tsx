@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react';
 import Modal from '../../ui/Modal';
 import ImportIssuesPanel from './ImportIssuesPanel';
-import { IMPORT_HEADER_GRADIENT } from './importTheme';
+import { ModalButton } from '../../ui/ModalForm';
 
 type ImportIssuesModalProps = ComponentProps<typeof ImportIssuesPanel> & {
   /** One-line state of the check: not validated, changed since, current results, or ready. */
@@ -21,11 +21,10 @@ export default function ImportIssuesModal({ status, onClose, ...panel }: ImportI
       title="Validation results"
       description={status}
       size="lg"
-      headerClassName={IMPORT_HEADER_GRADIENT}
       footer={(
         <>
           <p className="mr-auto text-xs text-muted">Corrections are made in Preview and Configure. Closing changes nothing; validate again after editing.</p>
-          <button type="button" onClick={onClose} className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-5 text-[13px] font-bold text-white hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2">Done</button>
+          <ModalButton variant="primary" onClick={onClose}>Done</ModalButton>
         </>
       )}
     >

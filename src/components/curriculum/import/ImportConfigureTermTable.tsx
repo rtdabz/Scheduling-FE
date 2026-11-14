@@ -3,6 +3,7 @@ import { COURSE_CATEGORY_TONES } from '../courseCategoryStyles';
 import { HIGHLIGHT_CLASSES } from '../../../lib/curriculumImport/sheetNavigation';
 import { CONFIGURE_STATUS_LABELS, configureStatus, type ConfigureStatus } from '../../../lib/curriculumImport/configureStatus';
 import type { CourseCategory, DraftRow, ImportIssue, ImportSettings, ResolvedRow } from '../../../lib/curriculumImport/types';
+import { TABLE_HEAD, TABLE_HEAD_ROW } from '../../ui/tableStyles';
 
 interface ImportConfigureTermTableProps {
   headingId: string;
@@ -144,7 +145,7 @@ export default function ImportConfigureTermTable({ headingId, rows, showPlacemen
           <col className="w-[5rem]" />
         </colgroup>
         <thead className="max-sm:sr-only">
-          <tr className="text-left text-[10.5px] font-bold uppercase tracking-wide text-muted">
+          <tr className={`${TABLE_HEAD} ${TABLE_HEAD_ROW}`}>
             <th scope="col" className="py-1.5 pl-2.5 pr-0"><span className="sr-only">Select</span></th>
             <th scope="col" className="py-1.5 pl-1.5 pr-2">Course</th>
             <th scope="col" className="py-1.5 pr-2">Category</th>

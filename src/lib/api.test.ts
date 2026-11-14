@@ -1,6 +1,8 @@
+import axios from 'axios';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import api from './api';
+import api, { beginLogout, cancelPendingRequests } from './api';
 import { IDEMPOTENCY_HEADER, clearIdempotencyKeys } from './idempotency';
+import { isSessionEnded, isSessionEndedError } from './sessionEnded';
 import { LAST_ACTIVITY_KEY, SESSION_ENDED_EVENT, type SessionEndedReason } from './sessionTimeout';
 
 const rejectWith = (status: number, url: string) => {
@@ -13,13 +15,14 @@ const rejectWith = (status: number, url: string) => {
     );
 };
 
-// Resolves if the promise settles either way; the interceptor deliberately
-// leaves an expired request hanging, which is what these tests assert.
-const settlesWithin = (promise: Promise<unknown>, ms: number): Promise<boolean> =>
-  Promise.race([
-    promise.then(() => true, () => true),
-    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ms)),
-  ]);
+const settledError = async (promise: Promise<unknown>): Promise<unknown> => {
+  try {
+    await promise;
+  } catch (error) {
+    return error;
+  }
+  throw new Error('Expected the request to reject');
+};
 
 describe('api response interceptor', () => {
   beforeEach(() => {
@@ -42,9 +45,15 @@ describe('api response interceptor', () => {
     window.addEventListener(SESSION_ENDED_EVENT, listener);
 
     rejectWith(401, '/me');
-    const pending = api.get('/me');
+    let cleanedUp = false;
+    const pending = api.get('/me').finally(() => { cleanedUp = true; });
 
-    expect(await settlesWithin(pending, 50)).toBe(false);
+    // The request settles as a recognizable cancellation, so the caller's cleanup still runs.
+    const error = await settledError(pending);
+    expect(isSessionEndedError(error)).toBe(true);
+    expect(axios.isCancel(error)).toBe(true);
+    expect(cleanedUp).toBe(true);
+    expect(isSessionEnded()).toBe(true);
     expect(reasons).toEqual(['expired']);
     expect(localStorage.getItem('token')).toBeNull();
     expect(localStorage.getItem('user')).toBeNull();
@@ -57,6 +66,40 @@ describe('api response interceptor', () => {
     rejectWith(422, '/schedules');
     await expect(api.get('/schedules')).rejects.toThrow();
     expect(localStorage.getItem('token')).toBe('expired-token');
+  });
+
+  it('settles requests still in flight when the user signs out', async () => {
+    const answers: Array<() => void> = [];
+    api.defaults.adapter = (config) => new Promise((_resolve, reject) => {
+      const signal = config.signal as AbortSignal | undefined;
+      signal?.addEventListener?.('abort', () => reject(new axios.CanceledError('canceled', 'ERR_CANCELED', config)));
+      answers.push(() => reject(Object.assign(new Error('Request failed with status code 500'), {
+        config, response: { status: 500, data: {}, config },
+      })));
+    });
+    // One request the client can abort, one whose caller owns the signal and gets answered late.
+    let cleanedUp = 0;
+    const aborted = api.get('/rooms').finally(() => { cleanedUp += 1; });
+    const answered = api.get('/schedules', { signal: new AbortController().signal }).finally(() => { cleanedUp += 1; });
+    await vi.waitFor(() => expect(answers).toHaveLength(2));
+
+    beginLogout();
+    cancelPendingRequests();
+    answers[1]();
+
+    expect(isSessionEndedError(await settledError(aborted))).toBe(true);
+    expect(isSessionEndedError(await settledError(answered))).toBe(true);
+    expect(cleanedUp).toBe(2);
+  });
+
+  it('clears the ended session on the next sign-in', async () => {
+    beginLogout();
+    expect(isSessionEnded()).toBe(true);
+
+    api.defaults.adapter = (config) => Promise.resolve({ data: {}, status: 200, statusText: 'OK', headers: {}, config });
+    await api.post('/login');
+
+    expect(isSessionEnded()).toBe(false);
   });
 
   it('leaves a failed login to the login form', async () => {

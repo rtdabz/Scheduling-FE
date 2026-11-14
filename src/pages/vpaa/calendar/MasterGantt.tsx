@@ -28,6 +28,8 @@ const NARROW_BLOCK_PX = 88;
 const ROW_PADDING = 4;
 const AXIS_HEIGHT = 44;
 const DAY_HEADER_HEIGHT = 40;
+/** The system header's maroon gradient (index.css), so the sticky corner cell matches the axis behind it. */
+const HEADER_GRADIENT = 'bg-wicars-header-v';
 
 export interface MasterGanttHandle {
   scrollToNow: () => void;
@@ -50,6 +52,7 @@ interface MasterGanttProps {
   lockHorizontalScroll?: boolean;
   reservations?: readonly GanttReservation[];
   highlightAssigned?: boolean;
+  selectedId?: number | null;
 }
 
 export interface GanttReservation {
@@ -70,13 +73,15 @@ const ASSIGNED_TONE = {
 };
 
 const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function MasterGantt(
-  { days, timeWindow, standardHours, groupBy, zoom, density, overlaps, collapsedDays, onToggleDay, onSelect, now, className = '', fillHeight = false, lockHorizontalScroll = false, reservations, highlightAssigned = false },
+  { days, timeWindow, standardHours, groupBy, zoom, density, overlaps, collapsedDays, onToggleDay, onSelect, now, className = '', fillHeight = false, lockHorizontalScroll = false, reservations, highlightAssigned = false, selectedId = null },
   ref,
 ) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const dayRefs = useRef(new Map<number, HTMLElement>());
   const [hover, setHover] = useState<HoverState | null>(null);
   const [viewportWidth, setViewportWidth] = useState(0);
+  const hoveredSchedule = hover ? days.flatMap((day) => day.rows.flatMap((row) => row.blocks))
+    .find((block) => block.schedule.id === hover.schedule.id)?.schedule : null;
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -137,13 +142,13 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
       {timeWindow.start < standardHours.opening && <div className="absolute inset-y-0" style={{ ...span(timeWindow.start, standardHours.opening), ...OFF_HOURS_PATTERN }} />}
       {timeWindow.end > standardHours.closing && <div className="absolute inset-y-0" style={{ ...span(standardHours.closing, timeWindow.end), ...OFF_HOURS_PATTERN }} />}
       {minorTicks.map((minute) => (
-        <div key={`m${minute}`} className="absolute inset-y-0 border-l border-dashed border-slate-100" style={{ left: `${percentOf(minute, timeWindow)}%` }} />
+        <div key={`m${minute}`} className="absolute inset-y-0 border-l border-dashed border-border/40" style={{ left: `${percentOf(minute, timeWindow)}%` }} />
       ))}
       {hourTicks.map((minute) => (
-        <div key={`h${minute}`} className="absolute inset-y-0 border-l border-slate-200" style={{ left: `${percentOf(minute, timeWindow)}%` }} />
+        <div key={`h${minute}`} className="absolute inset-y-0 border-l border-border/60" style={{ left: `${percentOf(minute, timeWindow)}%` }} />
       ))}
       {isToday && nowInWindow && (
-        <div className="absolute inset-y-0 z-[15] w-0.5 -translate-x-1/2 bg-red-500/80" style={{ left: `${percentOf(nowMinutes, timeWindow)}%` }} />
+        <div className="absolute inset-y-0 z-[15] w-0.5 -translate-x-1/2 bg-primary/70" style={{ left: `${percentOf(nowMinutes, timeWindow)}%` }} />
       )}
     </div>
   );
@@ -166,7 +171,7 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
         {buckets.map((bucket) => bucket.active > 0 && (
           <div
             key={bucket.from}
-            className="absolute bottom-0 rounded-t-sm bg-[#5A1220]"
+            className="absolute bottom-0 rounded-t-sm bg-primary"
             title={`${minutesToLabel(bucket.from)}: ${bucket.active} ${bucket.active === 1 ? 'class' : 'classes'} in session`}
             style={{ ...span(bucket.from, bucket.to), height: `${Math.max(12, (bucket.active / peak) * 100)}%`, opacity: 0.18 + (bucket.active / peak) * 0.55 }}
           />
@@ -189,6 +194,11 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
     const time = `${formatTime12h(schedule.start_time)} – ${formatTime12h(schedule.end_time)}`;
     const mode = (schedule.mode ?? 'on-site').toLowerCase();
     const isNarrow = ((block.end - block.start) / 60) * pixelsPerHour < NARROW_BLOCK_PX;
+    const isSelected = selectedId === schedule.id;
+    // One ring at a time: the selected class outranks its overlap warning,
+    // which stays visible through the alert icon.
+    const stateRing = isSelected ? 'z-[13] ring-2 ring-primary ring-offset-2' : overlapEntries ? 'ring-2 ring-red-500/80' : '';
+    const unassignedEdge = !hasInstructor && !highlightAssigned ? 'border-dashed !border-accent' : '';
 
     return (
       <button
@@ -202,7 +212,8 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
         aria-label={`${code} ${isLab ? 'laboratory' : 'lecture'}, ${section}, ${time}, ${location}, ${instructor}${overlapEntries ? `. ${overlapSummary(overlapEntries)}` : ''}`}
         data-schedule-id={schedule.id}
         data-session-type={isLab ? 'laboratory' : 'lecture'}
-        className={`group absolute z-10 flex overflow-hidden rounded-lg border text-left shadow-sm transition-[box-shadow,background-color] hover:z-[12] hover:shadow-md focus:z-[12] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] ${tone.block} ${overlapEntries ? 'ring-2 ring-red-500/70' : ''}`}
+        data-selected={isSelected || undefined}
+        className={`group absolute z-10 flex overflow-hidden rounded-md border text-left transition-colors hover:z-[12] focus:z-[12] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${tone.block} ${unassignedEdge} ${stateRing}`}
         style={{
           ...span(block.start, block.end),
           top: ROW_PADDING + block.lane * laneHeight + 2,
@@ -210,28 +221,28 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
           ...(isLab ? LAB_PATTERN : null),
         }}
       >
-        <span className={`w-1 shrink-0 ${tone.accent}`} aria-hidden="true" />
-        <span className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 px-1.5 py-1">
+        <span className={`w-[3px] shrink-0 ${tone.accent}`} aria-hidden="true" />
+        <span className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 px-2 py-1">
           <span className="flex min-w-0 items-center gap-1 overflow-hidden">
             <DepartmentLogo name={schedule.department?.department_name || schedule.department?.department_code || 'Department'} logo={schedule.department?.logo} className="h-4 w-4" iconSize={10} />
-            <strong className="max-w-[calc(100%_-_1.25rem)] shrink-0 truncate text-[11px] font-black leading-tight">{code}</strong>
+            <strong className="max-w-[calc(100%_-_1.25rem)] shrink-0 truncate text-xs font-bold leading-tight">{code}</strong>
             {!isNarrow && (
-              <span className={`shrink-0 rounded px-1 text-[8px] font-black uppercase leading-[14px] tracking-wide ${isLab ? 'bg-slate-800 text-white' : 'bg-white/90 text-slate-700 ring-1 ring-inset ring-slate-300'}`}>
+              <span className={`shrink-0 rounded-full px-1.5 text-[9px] font-semibold leading-[14px] ${isLab ? 'bg-text/80 text-white' : 'bg-white/80 text-muted ring-1 ring-inset ring-black/10'}`}>
                 {isLab ? 'Lab' : 'Lec'}
               </span>
             )}
             {!isNarrow && mode !== 'on-site' && (
-              <span className="shrink-0 rounded bg-amber-100 px-1 text-[8px] font-black uppercase leading-[14px] text-amber-800">{mode === 'online' ? 'Online' : 'Field'}</span>
+              <span className="shrink-0 rounded-full bg-accent/20 px-1.5 text-[9px] font-semibold leading-[14px] text-stage-warnText">{mode === 'online' ? 'Online' : 'Field'}</span>
             )}
             {overlapEntries && <AlertTriangle className="h-3 w-3 shrink-0 text-red-600" aria-hidden="true" />}
           </span>
-          <span className="truncate text-[10px] font-semibold leading-tight opacity-80">
+          <span className="truncate text-[11px] font-medium leading-tight opacity-80">
             {section}{density === 'compact' ? ` · ${location}` : ''}
           </span>
           {density === 'comfortable' && (
-            <span className="flex min-w-0 items-center gap-2 text-[10px] font-medium leading-tight opacity-75">
-              <span className="flex min-w-0 shrink-0 items-center gap-0.5"><MapPin className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />{location}</span>
-              <span className="flex min-w-0 items-center gap-0.5"><User className="h-2.5 w-2.5 shrink-0" aria-hidden="true" /><span className="truncate">{instructor}</span></span>
+            <span className="flex min-w-0 items-center gap-2 text-[10px] font-medium leading-tight">
+              <span className="flex min-w-0 shrink-0 items-center gap-0.5 opacity-75"><MapPin className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />{location}</span>
+              <span className={`flex min-w-0 items-center gap-0.5 ${hasInstructor ? 'opacity-75' : 'font-semibold text-stage-warnText'}`}><User className="h-2.5 w-2.5 shrink-0" aria-hidden="true" /><span className="truncate">{instructor}</span></span>
             </span>
           )}
         </span>
@@ -248,12 +259,12 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
         onScroll={() => { if (hover) setHover(null); }}
         role="region"
         aria-label="Master calendar timeline"
-        className={`relative rounded-xl border border-slate-200 bg-white print:h-auto print:min-h-0 print:max-h-none print:overflow-visible ${lockHorizontalScroll ? 'overflow-y-auto overflow-x-hidden' : 'overflow-auto'} ${className}`}
+        className={`relative rounded-lg border border-border bg-white print:h-auto print:min-h-0 print:max-h-none print:overflow-visible ${lockHorizontalScroll || zoom === 'fit' ? 'overflow-y-auto overflow-x-hidden' : 'overflow-auto'} ${className}`}
       >
         <div className={fillHeight ? 'flex min-h-full flex-col [&>section]:shrink-0' : undefined}>
-        <div className="sticky top-0 z-40 grid shrink-0 border-b border-[#c9952a]/30 bg-gradient-to-b from-[#4e0a10] to-[#3d080c] text-white" style={{ ...gridStyle, height: AXIS_HEIGHT }}>
-          <div className="sticky left-0 z-10 flex items-center gap-1.5 border-r border-[#c9952a]/30 bg-[#45090e] px-3 text-[10px] font-black uppercase tracking-wider text-[#c9952a]">
-            <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+        <div className={`sticky top-0 z-40 grid shrink-0 border-b border-[#c9952a]/30 text-white ${HEADER_GRADIENT}`} style={{ ...gridStyle, height: AXIS_HEIGHT }}>
+          <div className={`sticky left-0 z-10 flex items-center gap-1.5 border-r border-[#c9952a]/25 px-3 text-[11px] font-semibold text-white ${HEADER_GRADIENT}`}>
+            <Clock className="h-3.5 w-3.5 text-[#C9952A]" aria-hidden="true" />
             {groupBy === 'none' ? 'Day / Time' : 'Day / Group'}
           </div>
           <div className="relative">
@@ -261,14 +272,14 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
               const left = percentOf(minute, timeWindow);
               const align = left >= 99 ? '-translate-x-full pr-1' : left <= 1 ? 'pl-1' : '-translate-x-1/2';
               return (
-                <span key={minute} className={`absolute top-1/2 -translate-y-1/2 whitespace-nowrap text-[10px] font-bold tracking-wide ${align}`} style={{ left: `${left}%` }}>
+                <span key={minute} className={`absolute top-1/2 -translate-y-1/2 whitespace-nowrap text-[11px] font-medium tabular-nums ${align}`} style={{ left: `${left}%` }}>
                   {minutesToLabel(minute)}
                 </span>
               );
             })}
             {nowInWindow && days.some((day) => day.dayIndex === todayIndex) && (
               <span
-                className="absolute bottom-0 z-10 -translate-x-1/2 rounded-t bg-red-500 px-1 text-[9px] font-black leading-4 text-white"
+                className="absolute bottom-0 z-10 -translate-x-1/2 rounded-t bg-[#C9952A] px-1.5 text-[10px] font-semibold leading-4 text-[#36060b]"
                 style={{ left: `${percentOf(nowMinutes, timeWindow)}%` }}
               >
                 Now
@@ -290,25 +301,27 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
               key={day.dayIndex}
               ref={(node) => { if (node) dayRefs.current.set(day.dayIndex, node); else dayRefs.current.delete(day.dayIndex); }}
               aria-label={`${day.name}, ${day.count} ${day.count === 1 ? 'class' : 'classes'}`}
-              className={`border-slate-200 ${fillHeight && day === days[days.length - 1] ? '' : 'border-b-2 last:border-b-0'}`}
+              className={`border-border ${fillHeight && day === days[days.length - 1] ? '' : 'border-b last:border-b-0'}`}
             >
-              <div className="sticky z-30 grid border-b border-slate-200 bg-slate-50" style={{ ...gridStyle, top: AXIS_HEIGHT, height: DAY_HEADER_HEIGHT }}>
+              <div className="sticky z-30 grid border-b border-border/70 bg-parchment" style={{ ...gridStyle, top: AXIS_HEIGHT, height: DAY_HEADER_HEIGHT }}>
                 <button
                   type="button"
                   onClick={() => onToggleDay(day.dayIndex)}
                   aria-expanded={!isCollapsed}
-                  className={`sticky left-0 z-10 flex items-center gap-1.5 border-r border-slate-200 px-2.5 text-left transition-colors hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C9952A] ${isToday ? 'bg-[#f5eced]' : 'bg-slate-50'}`}
+                  className={`sticky left-0 z-10 flex items-center gap-1.5 border-r border-border/70 px-2.5 text-left transition-colors hover:bg-[#efe9e2] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${isToday ? 'bg-[#f5eced]' : 'bg-parchment'}`}
                 >
-                  {isCollapsed ? <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" /> : <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />}
+                  {isCollapsed ? <ChevronRight className="h-4 w-4 shrink-0 text-muted/70" /> : <ChevronDown className="h-4 w-4 shrink-0 text-muted/70" />}
                   <span className="flex min-w-0 flex-col leading-tight">
-                    <span className={`truncate text-xs font-black uppercase tracking-wider ${isToday ? 'text-[#5A1220]' : 'text-slate-800'}`}>{day.name}</span>
-                    {isToday && <span className="text-[9px] font-bold uppercase tracking-wider text-red-600">● Today</span>}
-                  </span>
-                  <span
-                    className="ml-auto shrink-0 rounded-full bg-white px-1.5 text-[10px] font-extrabold leading-5 text-slate-600 ring-1 ring-inset ring-slate-200"
-                    title={`${day.count - labCount} lecture, ${labCount} laboratory`}
-                  >
-                    {day.count}
+                    <span className={`truncate text-[13px] font-semibold ${isToday ? 'text-primary' : 'text-text'}`}>{day.name}</span>
+                    <span className="mt-0.5 flex items-center gap-1.5 whitespace-nowrap">
+                      <span
+                        className="text-[11px] font-medium tabular-nums text-muted"
+                        title={`${day.count - labCount} lecture, ${labCount} laboratory`}
+                      >
+                        {day.count} {day.count === 1 ? 'class' : 'classes'}
+                      </span>
+                      {isToday && <span className="rounded-full bg-primary px-1.5 text-[10px] font-semibold leading-4 text-white">Today</span>}
+                    </span>
                   </span>
                 </button>
                 <div className="relative">
@@ -316,35 +329,35 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
                     <div
                       key={`reservation-${reservation.start}-${index}`}
                       title={`${reservation.label} · ${minutesToLabel(reservation.start)} - ${minutesToLabel(reservation.end)}`}
-                      className="absolute bottom-1 top-1 flex items-center overflow-hidden rounded-md border-2 border-dashed border-orange-300 bg-orange-50/90 px-1.5"
+                      className="absolute bottom-1 top-1 flex items-center overflow-hidden rounded-md border border-dashed border-accent bg-accent/10 px-2"
                       style={span(Math.max(reservation.start, timeWindow.start), Math.min(reservation.end, timeWindow.end))}
                     >
-                      <span className="truncate text-[10px] font-black uppercase tracking-wide text-orange-800">{reservation.label}</span>
+                      <span className="truncate text-[11px] font-semibold text-stage-warnText">{reservation.label}</span>
                     </div>
                   ))}
                   {day.count > 0
                     ? densityStrip(day)
-                    : dayReservations(day.dayIndex).length === 0 && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold italic text-slate-400">No classes in view</span>}
+                    : dayReservations(day.dayIndex).length === 0 && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted">No classes in view</span>}
                 </div>
               </div>
 
               {!isCollapsed && day.rows.length > 0 && (
                 <div className="grid" style={gridStyle}>
-                  <div className="sticky left-0 z-20 border-r border-slate-200 bg-white">
+                  <div className="sticky left-0 z-20 border-r border-border/70 bg-white">
                     {day.rows.map((row) => (
                       <div
                         key={row.key}
-                        className="flex items-center gap-1.5 border-b border-slate-100 px-2.5 last:border-b-0"
+                        className="flex items-center gap-1.5 border-b border-border/40 px-3 last:border-b-0"
                         style={{ height: row.laneCount * laneHeight + ROW_PADDING * 2 }}
                       >
                         {groupBy === 'none' ? (
-                          <span className="text-[10px] font-semibold text-slate-400">
+                          <span className="text-[11px] font-medium text-muted">
                             {row.laneCount > 1 ? `Up to ${row.laneCount} at once` : 'Classes'}
                           </span>
                         ) : (
                           <>
-                            <span className={`truncate text-[11px] font-bold ${row.isPlaceholder ? 'italic text-slate-400' : 'text-slate-700'}`} title={row.label}>{row.label}</span>
-                            <span className="ml-auto shrink-0 text-[10px] font-semibold text-slate-400">{row.blocks.length}</span>
+                            <span className={`truncate text-xs font-semibold ${row.isPlaceholder ? 'font-medium text-muted' : 'text-text'}`} title={row.label}>{row.label}</span>
+                            <span className="ml-auto shrink-0 rounded-full bg-parchment px-1.5 text-[11px] font-medium tabular-nums leading-[18px] text-muted">{row.blocks.length}</span>
                           </>
                         )}
                       </div>
@@ -356,7 +369,7 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
                       <div
                         key={row.key}
                         data-row-key={row.key}
-                        className="relative border-b border-slate-100 last:border-b-0"
+                        className="relative border-b border-border/40 last:border-b-0"
                         style={{ height: row.laneCount * laneHeight + ROW_PADDING * 2 }}
                       >
                         {row.blocks.map(renderBlock)}
@@ -370,7 +383,7 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
         })}
         {fillHeight && (
           <div aria-hidden="true" className="grid flex-1" style={gridStyle}>
-            <div className="sticky left-0 z-20 border-r border-slate-200 bg-white" />
+            <div className="sticky left-0 z-20 border-r border-border/70 bg-white" />
             <div className="relative">
               {trackBackdrop(days.length === 1 && days[0].dayIndex === todayIndex && !collapsedDays.has(todayIndex))}
             </div>
@@ -379,7 +392,7 @@ const MasterGantt = forwardRef<MasterGanttHandle, MasterGanttProps>(function Mas
         </div>
       </div>
 
-      {hover && <GanttHoverCard schedule={hover.schedule} anchor={hover.rect} overlap={overlapSummary(overlaps.get(hover.schedule.id))} />}
+      {hover && hoveredSchedule && <GanttHoverCard schedule={hoveredSchedule} anchor={hover.rect} overlap={overlapSummary(overlaps.get(hoveredSchedule.id))} />}
     </>
   );
 });

@@ -2,17 +2,23 @@ import { useMemo, useState, type ReactNode } from "react";
 import { BookOpen, CheckCircle2, FlaskConical, MapPin } from "lucide-react";
 import SlideOverPanel from "./SlideOverPanel";
 import type { Course, Section } from "../types";
+import { isFieldSchedulingEligible } from "../schedulingConfigurationEligibility";
 import { DAYS } from "../constants";
-import { consecutiveMeetingSlots, getCourseSlotPlan, slotsToHours } from "../courseSlotPlan";
+import { getCourseSlotPlan, slotsToHours } from "../courseSlotPlan";
 import type {
   ClassComponent,
+  ComponentRequiredDays,
   CourseClassConfig,
+  IntegratedComponent,
   PreferredRoomOption,
   SectionScope,
 } from "./courseClassConfig";
 import {
   asRegularClass,
   compatibleRoomOptions,
+  componentRequiredDaysError,
+  formatComponentRequiredDays,
+  normalizeComponentRequiredDays,
   DEFAULT_CONSECUTIVE_DAYS,
   durationShape,
   formatHours,
@@ -28,6 +34,8 @@ interface ConfigureClassSidebarProps {
   course: Course;
   sections: Section[];
   initialConfig: CourseClassConfig;
+  /** Each section's current Lecture/Laboratory Required Days for this course. */
+  componentDaysBySection?: Record<string, ComponentRequiredDays | null>;
   isFieldCourse: boolean;
   roomOptions: PreferredRoomOption[];
   sundayClassesEnabled?: boolean;
@@ -111,38 +119,11 @@ function Note({ tone, children }: { tone: "emerald" | "slate"; children: ReactNo
   );
 }
 
-function Chip({
-  active,
-  disabled,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  disabled: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      disabled={disabled}
-      onClick={onClick}
-      className={`rounded-lg border px-2 py-2 text-xs font-bold transition ${
-        active
-          ? "border-[#4e0a10] bg-[#4e0a10]/5 text-[#4e0a10]"
-          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
 export default function ConfigureClassSidebar({
   course,
   sections,
   initialConfig,
+  componentDaysBySection = {},
   isFieldCourse,
   roomOptions,
   sundayClassesEnabled = true,
@@ -156,9 +137,11 @@ export default function ConfigureClassSidebar({
 
   const hasLaboratory =
     Number(course.labHours ?? 0) > 0 || course.roomTypeRequired === "laboratory";
-  const [component, setComponent] = useState<ClassComponent>(
-    initialConfig.component === "field" ? "lecture" : initialConfig.component,
-  );
+  // The component follows the course's units; it is never picked by hand.
+  const inferredComponent: ClassComponent =
+    hasLaboratory && !(Number(course.lectureHours ?? 0) > 0 && Number(course.labHours ?? 0) > 0)
+      ? "laboratory"
+      : "lecture";
 
   const [runEnabled, setRunEnabled] = useState<boolean>(isConsecutiveConfig(initialConfig));
   const isConsecutive = shape === "single" && runEnabled;
@@ -184,9 +167,7 @@ export default function ConfigureClassSidebar({
       ? `Untick ${daysOutsidePreferred.join(", ")}: the Preferred Days are ${preferredDays.join(", ")}.`
       : meetingDays.length === 1
         ? "Pick at least two days."
-        : meetingDays.length >= MIN_CONSECUTIVE_DAYS && consecutiveMeetingSlots(course, meetingDays.length) === null
-          ? `${course.code}'s ${formatHours(slotsToHours(getCourseSlotPlan(course).totalSlots))} a week cannot be shared equally by ${meetingDays.length} days. Tick a number of days that divides its Total Hours evenly.`
-          : null;
+        : null;
   const meetingDaysMissing = isConsecutive && meetingDays.length === 0;
 
   const dayOffered = (day: string) =>
@@ -200,7 +181,30 @@ export default function ConfigureClassSidebar({
   };
 
   const [requiredDay, setRequiredDay] = useState<string>(initialConfig.requiredDay ?? "");
-  const requiredDayCollapsesShape = requiredDay !== "" && shape !== "single";
+  const isIntegrated = configType === "integrated";
+  // Integrated replaces the course-wide Required Day with one per component,
+  // so the existing collapse-to-Regular behavior never applies to it.
+  const requiredDayCollapsesShape = !isIntegrated && requiredDay !== "" && shape !== "single";
+
+  const mixedComponentDays = isIntegrated && initialConfig.componentRequiredDays === undefined;
+  const [componentDays, setComponentDays] = useState<Record<IntegratedComponent, string>>({
+    lecture: initialConfig.componentRequiredDays?.lecture ?? "",
+    laboratory: initialConfig.componentRequiredDays?.laboratory ?? "",
+  });
+  const [componentDaysTouched, setComponentDaysTouched] = useState(false);
+  const setComponentDay = (component: IntegratedComponent, day: string) => {
+    setComponentDaysTouched(true);
+    setComponentDays((current) => ({ ...current, [component]: day }));
+  };
+  const componentDaysError = isIntegrated
+    ? componentRequiredDaysError(componentDays, preferredDays, sundayClassesEnabled)
+    : null;
+  const mixedSectionSummary = Object.entries(componentDaysBySection)
+    .map(([sectionId, days]) => {
+      const name = sections.find((section) => section.id === sectionId)?.name ?? sectionId;
+      return `${name}: ${formatComponentRequiredDays(days) || "automatic"}`;
+    })
+    .join("; ");
   const compatibleRooms = useMemo(
     () => compatibleRoomOptions(course, initialConfig, isFieldCourse, roomOptions),
     [course, initialConfig, isFieldCourse, roomOptions],
@@ -211,44 +215,40 @@ export default function ConfigureClassSidebar({
       ? initialConfig.preferredRoomId
       : "",
   );
-  const fieldRequired = course.roomTypeRequired === "field";
+  const fieldRequired = isFieldSchedulingEligible(course) && course.roomTypeRequired === "field";
   const selectedRoom = compatibleRooms.find((room) => String(room.id) === preferredRoomId);
   const meetsInField = fieldRequired || selectedRoom?.room_type === "field";
   const classroomOptions = compatibleRooms.filter((room) => room.room_type !== "field");
   const fieldRoomOptions = compatibleRooms.filter((room) => room.room_type === "field");
 
-  const [sectionScope, setSectionScope] = useState<SectionScope>(
-    initialConfig.sectionScope,
-  );
-  const [selectedSectionIds, setSelectedSectionIds] = useState<string[]>(
-    initialConfig.selectedSectionIds.length > 0
-      ? initialConfig.selectedSectionIds
-      : sections.map((s) => s.id),
-  );
-
-  const toggleSection = (id: string) => {
-    setSelectedSectionIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
-    );
-  };
+  // There is no Apply To choice here: an existing section scope (set when the
+  // course was configured for some sections) is kept as it is.
+  const sectionScope: SectionScope = initialConfig.sectionScope;
 
   const handleApply = () => {
-    if (meetingDaysError || meetingDaysMissing) return;
+    if (meetingDaysError || meetingDaysMissing || componentDaysError) return;
+    const keepSectionDays =
+      mixedComponentDays && !componentDaysTouched;
     const config: CourseClassConfig = {
       ...initialConfig,
       component: meetsInField
         ? "field"
         : configType === "integrated" || !hasLaboratory
           ? "lecture"
-          : component,
+          : inferredComponent,
       consecutiveDays: isConsecutive ? meetingDays.length : null,
       preferredStartDay: isConsecutive ? meetingDays[0] : null,
       meetingDays: isConsecutive ? meetingDays : null,
-      requiredDay: isConsecutive ? null : requiredDay || null,
+      requiredDay: isConsecutive || isIntegrated ? null : requiredDay || null,
+      componentRequiredDays: !isIntegrated
+        ? {}
+        : keepSectionDays
+          ? undefined
+          : (normalizeComponentRequiredDays(componentDays) ?? {}),
       preferredRoomId: preferredRoomId || null,
       sectionScope,
       selectedSectionIds:
-        sectionScope === "all" ? sections.map((s) => s.id) : selectedSectionIds,
+        sectionScope === "all" ? sections.map((s) => s.id) : initialConfig.selectedSectionIds,
     };
     onSave(requiredDayCollapsesShape ? asRegularClass(config) : config);
   };
@@ -258,11 +258,13 @@ export default function ConfigureClassSidebar({
   const parts = isConsecutive && daysChosen && !meetingDaysError
     ? meetingParts({ ...initialConfig, consecutiveDays: meetingDays.length }, course)
     : meetingParts({ ...initialConfig, consecutiveDays: null }, course);
+  const isRun = isConsecutive && parts.length > 1;
   const roomLabel = (room: PreferredRoomOption) =>
     `${room.room_code}${room.building ? ` · ${room.building}` : ""}`;
 
   return (
     <SlideOverPanel
+      variant="modal"
       ariaLabel={`Configure ${course.code}`}
       icon={
         meetsInField ? (
@@ -274,12 +276,12 @@ export default function ConfigureClassSidebar({
         )
       }
       heading={
-        <div className="flex items-center gap-2">
-          <h3 className="text-base font-black tracking-tight">{course.code}</h3>
-          <span className="rounded-md bg-white/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-200">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3>{course.code}</h3>
+          <span className="rounded-md bg-amber-100 px-2 py-0.5 font-sans text-[10px] font-bold uppercase tracking-wider text-amber-800">
             {configType}
           </span>
-          <span className="rounded-md bg-white/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-emerald-200">
+          <span className="rounded-md bg-emerald-100 px-2 py-0.5 font-sans text-[10px] font-bold uppercase tracking-wider text-emerald-800">
             {initialConfig.delivery}
           </span>
         </div>
@@ -291,7 +293,7 @@ export default function ConfigureClassSidebar({
           <button
             type="button"
             onClick={() => close()}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-100"
+            className="scheduler-dialog-button rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-100"
           >
             Cancel
           </button>
@@ -300,52 +302,22 @@ export default function ConfigureClassSidebar({
             disabled={
               disabled ||
               meetingDaysError !== null ||
-              meetingDaysMissing
+              meetingDaysMissing ||
+              componentDaysError !== null
             }
             onClick={() => close(handleApply)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[#4e0a10] px-4 py-2 text-xs font-black text-white shadow-2xs transition hover:bg-[#34070a] disabled:cursor-not-allowed disabled:opacity-50"
+            data-variant="primary" className="scheduler-dialog-button inline-flex items-center gap-1.5 rounded-lg bg-[#4e0a10] px-4 py-2 text-xs font-black text-white shadow-2xs transition hover:bg-[#34070a] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <CheckCircle2 className="h-4 w-4" /> Apply Configuration
           </button>
         </>
       )}
     >
-      {(hasLaboratory || meetsInField) && (
-        <ConfigSection label="Class Component">
-          {meetsInField ? (
-            <Note tone="emerald">
-              <MapPin className="h-3.5 w-3.5 shrink-0" />
-              {fieldRequired
-                ? "Field course (required by the course record)."
-                : `Field course, meets in ${selectedRoom?.room_code ?? "the field"}.`}
-            </Note>
-          ) : configType === "integrated" ? (
-            <Note tone="slate">
-              Lecture + Laboratory, two sessions
-              {initialConfig.delivery === "hybrid" ? " (lecture online)." : "."}
-            </Note>
-          ) : (
-            <div className="grid grid-cols-2 gap-1.5">
-              {(["lecture", "laboratory"] as const).map((value) => (
-                <Chip
-                  key={value}
-                  active={component === value}
-                  disabled={disabled}
-                  onClick={() => setComponent(value)}
-                >
-                  {value === "lecture" ? "Lecture" : "Laboratory"}
-                </Chip>
-              ))}
-            </div>
-          )}
-        </ConfigSection>
-      )}
-
-      <ConfigSection label="Class Duration" aside={`Total ${formatHours(totalHours)} / week`}>
+      <ConfigSection label="Class Duration" aside={`Total ${formatHours(isRun ? totalHours * parts.length : totalHours)} / week`}>
         <Note tone="slate">
           {shape === "hybrid-split" ? "Hybrid Split · " : ""}
-          {isConsecutive && parts.length > 1
-            ? `${formatHours(parts[0].minutes / 60)} on each of the ${parts.length} days`
+          {isRun
+            ? `${formatHours(totalHours)}/day × ${parts.length} days = ${formatHours(totalHours * parts.length)}`
             : parts
                 .map((part) => `${formatHours(part.minutes / 60)}${part.label === "Class" ? "" : ` ${part.label.toLowerCase()}`}${part.mode ? ` ${part.mode}` : ""}`)
                 .join(" + ")}
@@ -354,7 +326,7 @@ export default function ConfigureClassSidebar({
           {`From the course's Total Hours (${[
             plan.lectureSlots > 0 && `${formatHours(slotsToHours(plan.lectureSlots))} lecture`,
             plan.laboratorySlots > 0 && `${formatHours(slotsToHours(plan.laboratorySlots))} laboratory`,
-          ].filter(Boolean).join(" + ")}${typeof course.lectureMinutes === "number" || typeof course.laboratoryMinutes === "number" ? ", as the curriculum recorded on import" : ""}). The meetings always add up to it.`}
+          ].filter(Boolean).join(" + ")}${typeof course.lectureMinutes === "number" || typeof course.laboratoryMinutes === "number" ? ", as the curriculum recorded on import" : ""}). ${isRun ? "Each selected day repeats it in full; academic units are unchanged." : "The meetings always add up to it."}`}
         </Hint>
       </ConfigSection>
 
@@ -420,6 +392,44 @@ export default function ConfigureClassSidebar({
         </ConfigSection>
       )}
 
+      {isIntegrated ? (
+        <>
+          {(["lecture", "laboratory"] as const).map((component) => {
+            const label = component === "lecture" ? "Lecture" : "Laboratory";
+            const id = `configure-${component}-required-day`;
+            const value = componentDays[component];
+            return (
+              <ConfigSection key={component} label={`${label} Required Day`} htmlFor={id} optional>
+                <select
+                  id={id}
+                  value={value}
+                  disabled={disabled}
+                  aria-invalid={componentDaysError !== null && value !== "" ? true : undefined}
+                  aria-describedby="configure-component-days-hint"
+                  onChange={(e) => setComponentDay(component, e.target.value)}
+                  className={SELECT_CLASS}
+                >
+                  <option value="">{mixedComponentDays && !componentDaysTouched ? "Keep each section's day" : "Automatic"}</option>
+                  {DAYS.filter(
+                    (day) => day !== "Sunday" || sundayClassesEnabled || value === "Sunday",
+                  ).map((day) => (
+                    <option key={day} value={day} disabled={!dayOffered(day) && value !== day}>
+                      {day}
+                    </option>
+                  ))}
+                </select>
+              </ConfigSection>
+            );
+          })}
+          <div id="configure-component-days-hint" className="-mt-2">
+            <Hint error={componentDaysError}>
+              {mixedComponentDays && !componentDaysTouched
+                ? `Sections use different days (${mixedSectionSummary}). Choosing a day applies both values to the sections below.`
+                : "Applies to the sections below, for this generation only. Automatic lets the Generator choose; the lecture and laboratory always meet on different days."}
+            </Hint>
+          </div>
+        </>
+      ) : (
       <ConfigSection label="Required Day" htmlFor="configure-required-day" optional>
         <select
           id="configure-required-day"
@@ -445,6 +455,7 @@ export default function ConfigureClassSidebar({
               : "Applies to every section."}
         </Hint>
       </ConfigSection>
+      )}
 
       <ConfigSection label="Preferred Room" htmlFor="configure-preferred-room" optional>
         {compatibleRooms.length === 0 ? (
@@ -494,84 +505,6 @@ export default function ConfigureClassSidebar({
               </Hint>
             )}
           </>
-        )}
-      </ConfigSection>
-
-      <ConfigSection label="Apply To">
-        <div className="grid grid-cols-2 gap-1.5">
-          {(
-            [
-              { value: "all", label: `All sections (${sections.length})` },
-              { value: "selected", label: "Selected sections only" },
-            ] as const
-          ).map((option) => (
-            <label
-              key={option.value}
-              className={`flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-xs font-bold transition ${
-                sectionScope === option.value
-                  ? "border-[#4e0a10] bg-[#4e0a10]/5 text-[#4e0a10]"
-                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              <input
-                type="radio"
-                name="sectionScopeSidebar"
-                checked={sectionScope === option.value}
-                onChange={() => setSectionScope(option.value)}
-                className="h-3.5 w-3.5 accent-[#4e0a10]"
-              />
-              {option.label}
-            </label>
-          ))}
-        </div>
-
-        {sectionScope === "selected" && (
-          <div className="mt-2">
-            <div className="mb-1.5 flex items-center justify-between text-[11px] font-bold">
-              <span className="text-slate-600">
-                Sections ({selectedSectionIds.length}/{sections.length})
-              </span>
-              <span className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedSectionIds(sections.map((s) => s.id))}
-                  className="text-[#4e0a10] hover:underline"
-                >
-                  All
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedSectionIds([])}
-                  className="text-slate-600 hover:underline"
-                >
-                  None
-                </button>
-              </span>
-            </div>
-            <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
-              {sections.map((section) => {
-                const isChecked = selectedSectionIds.includes(section.id);
-                return (
-                  <label
-                    key={section.id}
-                    className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-bold transition ${
-                      isChecked
-                        ? "border-[#4e0a10] bg-[#4e0a10]/5 text-[#4e0a10]"
-                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={() => toggleSection(section.id)}
-                      className="h-3.5 w-3.5 rounded border-slate-300 accent-[#4e0a10]"
-                    />
-                    {section.name}
-                  </label>
-                );
-              })}
-            </div>
-          </div>
         )}
       </ConfigSection>
     </SlideOverPanel>

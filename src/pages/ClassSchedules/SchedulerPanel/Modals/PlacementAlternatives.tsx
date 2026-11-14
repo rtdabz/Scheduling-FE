@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, ChevronDown, Lightbulb, MapPin, Monitor, Sparkles, TreePine, X } from "lucide-react";
 import { DAYS, slotToTimeStr } from "../constants";
 import RecommendedOptionList from "../components/RecommendedOptionList";
+import { useModalScrollLock } from "../../../../hooks/useModalScrollLock";
 import type { DeliveryMode } from "../types";
 import {
   ALL_ROOMS,
@@ -98,14 +99,26 @@ export default function PlacementAlternatives({
   const [view, setView] = useState<RecommendationView>("best");
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const isSplitPair = splitPairStarts !== null;
+  useModalScrollLock(true);
 
   useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeButtonRef.current?.focus();
-  }, []);
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      onClose();
+    };
+    document.addEventListener("keydown", dismiss, true);
+    return () => {
+      document.removeEventListener("keydown", dismiss, true);
+      if (opener?.isConnected) opener.focus();
+    };
+  }, [onClose]);
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-2 sm:p-4"
+      className="scheduler-dialog-overlay fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto"
       onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
     >
       <div
@@ -113,16 +126,17 @@ export default function PlacementAlternatives({
         aria-modal="true"
         aria-labelledby="placement-alternatives-title"
         aria-describedby="placement-alternatives-desc"
-        className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-[#F7F4F0] shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+        className="scheduler-dialog flex w-full max-w-2xl flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
       >
-        <div className="flex shrink-0 items-start justify-between gap-3 bg-[#5A1220] px-5 py-4 text-white">
+        <div className="scheduler-dialog-header flex shrink-0 items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-[#F5C842]">
+            <span className="scheduler-dialog-icon">
               <Lightbulb className="h-5 w-5" />
             </span>
             <div className="min-w-0">
-              <h3 id="placement-alternatives-title" className="text-base font-black leading-tight">Suggested Alternatives</h3>
-              <p id="placement-alternatives-desc" className="mt-0.5 text-xs leading-snug text-white/75">
+              <p className="scheduler-dialog-eyebrow">Placement recommendations</p>
+              <h3 id="placement-alternatives-title" className="scheduler-dialog-title">Suggested Alternatives</h3>
+              <p id="placement-alternatives-desc" className="scheduler-dialog-description">
                 Conflict-free rooms and times{courseLabel ? ` for ${courseLabel}` : ""}. Choosing one fills in the form for review. Nothing is saved yet.
               </p>
             </div>
@@ -132,7 +146,7 @@ export default function PlacementAlternatives({
             type="button"
             onClick={onClose}
             aria-label="Close suggested alternatives"
-            className="rounded-lg p-1.5 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+            className="scheduler-dialog-close"
           >
             <X className="h-4 w-4" />
           </button>
@@ -147,12 +161,12 @@ export default function PlacementAlternatives({
                 role="tab"
                 aria-selected={view === value}
                 onClick={() => setView(value)}
-                className={`rounded-md px-2 py-1.5 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220]/40 ${
-                  view === value ? "bg-[#5A1220] text-white shadow-sm" : "text-slate-600 hover:bg-white hover:text-slate-900"
+                className={`selection-indicator rounded-md px-2 py-1.5 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220]/40 ${
+                  view === value ? "shadow-sm" : "text-slate-600 hover:bg-white hover:text-slate-900"
                 }`}
               >
                 <span className="block text-xs font-black">{label}</span>
-                <span className={`block text-[10px] font-semibold ${view === value ? "text-white/70" : "text-slate-400"}`}>{hint}</span>
+                <span className={`block text-[10px] font-semibold ${view === value ? "opacity-75" : "text-slate-400"}`}>{hint}</span>
               </button>
             ))}
           </div>
@@ -167,8 +181,8 @@ export default function PlacementAlternatives({
                     type="button"
                     aria-pressed={slotMeeting === value}
                     onClick={() => onSlotMeetingChange(value)}
-                    className={`h-8 flex-1 rounded-md text-xs font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220]/40 ${
-                      slotMeeting === value ? "bg-white text-[#5A1220] shadow-sm ring-1 ring-[#5A1220]/20" : "text-slate-600 hover:bg-white/70 hover:text-slate-900"
+                    className={`selection-indicator h-8 flex-1 rounded-md text-xs font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220]/40 ${
+                      slotMeeting === value ? "shadow-sm" : "text-slate-600 hover:bg-white/70 hover:text-slate-900"
                     }`}
                   >
                     {label}
@@ -179,7 +193,7 @@ export default function PlacementAlternatives({
           )}
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4" role="tabpanel" aria-label={VIEWS.find((item) => item.value === view)?.label}>
+        <div className="scheduler-dialog-body min-h-0 flex-1 overflow-y-auto" role="tabpanel" aria-label={VIEWS.find((item) => item.value === view)?.label}>
           {!isSlotsLoading && !slotsError && onlineFallbackMessage && (
             <div role="status" className="mb-3 flex items-start gap-2 rounded-xl border border-[#c9952a]/40 bg-[#c9952a]/10 p-3">
               <Monitor className="mt-0.5 h-4 w-4 shrink-0 text-[#7a4c08]" />
@@ -457,24 +471,28 @@ function SplitPairStarts({
                 type="button"
                 onClick={() => onApply(startSlot)}
                 disabled={isCurrent}
-                className="flex w-full flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-[#E2D9D0] bg-white px-3 py-2 text-left transition-colors hover:border-[#5A1220] hover:bg-[#5A1220]/[0.04] disabled:cursor-default disabled:border-emerald-200 disabled:bg-emerald-50/50"
+                className="flex w-full flex-col gap-1 rounded-lg border border-[#E2D9D0] bg-white px-3 py-2 text-left transition-colors hover:border-[#5A1220] hover:bg-[#5A1220]/[0.04] disabled:cursor-default disabled:border-emerald-200 disabled:bg-emerald-50/50"
               >
-                <span className="shrink-0 text-[10px] font-black uppercase text-[#5A1220]">
-                  {days[0].slice(0, 3)} + {days[1].slice(0, 3)}
+                <span className="flex w-full flex-wrap items-center gap-x-2.5 gap-y-1">
+                  <span className="shrink-0 text-[10px] font-black uppercase text-[#5A1220]">
+                    {days[0].slice(0, 3)} + {days[1].slice(0, 3)}
+                  </span>
+                  <span className="min-w-0 flex-1 text-xs font-bold text-slate-800">
+                    {slotToTimeStr(startSlot)} – {slotToTimeStr(endSlot)}
+                  </span>
+                  {view === "best" && index === 0 && (
+                    <span className="rounded-full bg-[#c9952a]/15 px-2 py-0.5 text-[10px] font-bold text-[#7a4c08]">Best match</span>
+                  )}
+                  <MeetingTypeChip label="Split · both meetings" />
                 </span>
-                <span className="min-w-0 flex-1 text-xs font-bold text-slate-800">
-                  {slotToTimeStr(startSlot)} – {slotToTimeStr(endSlot)}
-                </span>
-                {view === "best" && index === 0 && (
-                  <span className="rounded-full bg-[#c9952a]/15 px-2 py-0.5 text-[10px] font-bold text-[#7a4c08]">Best match</span>
-                )}
-                <MeetingTypeChip label="Split · both meetings" />
-                <span className="flex shrink-0 items-center gap-1 text-[11px] text-slate-500">
-                  {isOnline ? <Monitor className="h-3 w-3" /> : <MapPin className="h-3 w-3" />}
-                  {roomLabel}
-                </span>
-                <span className="shrink-0 text-[11px] font-bold text-[#7a4c08]">
-                  {DELIVERY_SHORT_LABEL[first]} | {DELIVERY_SHORT_LABEL[second]}
+                <span className="flex w-full flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px]">
+                  <span className="flex min-w-0 items-center gap-1 text-slate-500">
+                    {isOnline ? <Monitor className="h-3 w-3 shrink-0" /> : <MapPin className="h-3 w-3 shrink-0" />}
+                    {roomLabel}
+                  </span>
+                  <span className="font-bold text-[#7a4c08]">
+                    {DELIVERY_SHORT_LABEL[first]} | {DELIVERY_SHORT_LABEL[second]}
+                  </span>
                 </span>
               </button>
             </li>

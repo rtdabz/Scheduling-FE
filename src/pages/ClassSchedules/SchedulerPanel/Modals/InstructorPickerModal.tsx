@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, Search, Users, X } from "lucide-react";
 import EmploymentBadge from "../EmploymentBadge";
 import { proBonoStatusOf } from "../../../../lib/facultyLoad";
+import { useModalScrollLock } from "../../../../hooks/useModalScrollLock";
 import type { Faculty } from "../types";
 
 const NO_PROGRAM = "__none__";
@@ -51,6 +52,7 @@ export default function InstructorPickerModal({
 }: InstructorPickerModalProps) {
   const searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
+  useModalScrollLock(true);
 
   const departments = useMemo<DepartmentTab[]>(() => {
     const groups = new Map<string, DepartmentTab>();
@@ -85,6 +87,7 @@ export default function InstructorPickerModal({
   });
 
   useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     searchRef.current?.focus();
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -92,7 +95,10 @@ export default function InstructorPickerModal({
       onClose();
     };
     document.addEventListener("keydown", handleKeyDown, true);
-    return () => document.removeEventListener("keydown", handleKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown, true);
+      if (opener?.isConnected) opener.focus();
+    };
   }, [onClose]);
 
   const departmentTab = departments.find((tab) => tab.key === activeDepartment) ?? departments[0];
@@ -117,44 +123,46 @@ export default function InstructorPickerModal({
       : (departmentTab?.faculties ?? []).filter(
           (faculty) => activeProgram === ALL_PROGRAMS || programKey(faculty) === activeProgram
         );
-    return [...pool].sort((left, right) => left.name.localeCompare(right.name));
+    return [...pool].sort((left, right) => (left.sortName ?? left.name).localeCompare(right.sortName ?? right.name));
   }, [faculties, departmentTab, activeProgram, normalizedQuery]);
 
   const tabClass = (active: boolean) =>
-    `shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
-      active ? "bg-[#4e0a10] text-white shadow-xs" : "bg-white text-gray-600 hover:bg-[#4e0a10]/10"
+    `selection-indicator shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+      active ? "shadow-xs" : "bg-white text-gray-600 hover:bg-[#4e0a10]/10"
     }`;
   const chipClass = (active: boolean) =>
-    `shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors ${
+    `selection-indicator shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors ${
       active
-        ? "border-[#C9952A] bg-[#C9952A]/15 text-[#7a4c08]"
+        ? ""
         : "border-gray-200 bg-white text-gray-500 hover:border-[#C9952A]/60"
     }`;
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex min-h-screen items-center justify-center bg-black/40 p-4"
+      className="scheduler-dialog-overlay fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto"
       onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="instructor-picker-title"
-        className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-[#F7F4F0] shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+        aria-describedby="instructor-picker-description"
+        className="scheduler-dialog flex w-full max-w-6xl flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
       >
-        <div className="flex items-center justify-between gap-3 bg-[#4e0a10] px-5 py-4">
-          <div className="flex items-center gap-3">
-            <Users className="h-5 w-5 shrink-0 text-[#C9952A]" />
-            <div>
-              <h3 id="instructor-picker-title" className="text-lg font-semibold leading-tight text-white">Select Instructor</h3>
-              <p className="mt-0.5 text-sm text-amber-100/75">{faculties.length} eligible instructor{faculties.length === 1 ? "" : "s"}</p>
+        <div className="scheduler-dialog-header flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="scheduler-dialog-icon"><Users className="h-5 w-5" /></span>
+            <div className="min-w-0">
+              <p className="scheduler-dialog-eyebrow">Instructor assignment</p>
+              <h3 id="instructor-picker-title" className="scheduler-dialog-title">Select Instructor</h3>
+              <p id="instructor-picker-description" className="scheduler-dialog-description">{faculties.length} eligible instructor{faculties.length === 1 ? "" : "s"}</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close instructor selector"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+            className="scheduler-dialog-close"
           >
             <X className="h-4 w-4" />
           </button>
@@ -188,7 +196,7 @@ export default function InstructorPickerModal({
                       className={tabClass(tab.key === departmentTab?.key)}
                     >
                       {tab.label}
-                      <span className="ml-1.5 opacity-60">{tab.faculties.length}</span>
+                      <span className="selection-indicator-count ml-1.5 opacity-60">{tab.faculties.length}</span>
                     </button>
                   ))}
                 </div>
@@ -214,7 +222,7 @@ export default function InstructorPickerModal({
                       className={chipClass(activeProgram === program.key)}
                     >
                       {program.label}
-                      <span className="ml-1 opacity-60">{program.count}</span>
+                      <span className="selection-indicator-count ml-1 opacity-60">{program.count}</span>
                     </button>
                   ))}
                 </div>
@@ -223,7 +231,7 @@ export default function InstructorPickerModal({
           )}
         </div>
 
-        <ul className="grid flex-1 grid-cols-1 content-start gap-2 overflow-y-auto px-5 py-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="scheduler-dialog-body grid min-h-0 flex-1 grid-cols-1 content-start gap-3 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
           {visibleFaculties.length === 0 ? (
             <li className="col-span-full rounded-xl border border-dashed border-gray-300 bg-white p-6 text-center text-sm font-semibold text-gray-500">
               {normalizedQuery ? "No instructor matches your search." : "No eligible instructor here."}

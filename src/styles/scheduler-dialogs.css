@@ -1,0 +1,277 @@
+/* Opt-in presentation for scheduling workflows; application modals retain their defaults. */
+.scheduler-dialog-overlay {
+  min-height: 0;
+  padding: 24px;
+  background: rgb(28 19 20 / 52%);
+}
+
+.scheduler-dialog {
+  min-width: 0;
+  max-height: calc(100dvh - 48px);
+  border: 1px solid #e2d9d0;
+  border-radius: 20px;
+  background: #fff;
+  color: #1a1410;
+  isolation: isolate;
+}
+
+.scheduler-dialog .scheduler-dialog-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 12px 20px;
+  border-bottom: 1px solid #e8e1d9;
+  background: #faf8f5;
+  color: #4e0a10;
+}
+
+.scheduler-dialog .scheduler-dialog-icon {
+  display: flex;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e7d9d7;
+  border-radius: 12px;
+  background: #f3eae6;
+  color: #4e0a10;
+}
+
+.scheduler-dialog .scheduler-dialog-eyebrow {
+  margin-bottom: 5px;
+  color: #806630;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.scheduler-dialog .scheduler-dialog-title {
+  overflow-wrap: anywhere;
+  color: #291a19;
+  font-family: 'Plus Jakarta Sans', 'DM Sans', system-ui, sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.scheduler-dialog .scheduler-dialog-description {
+  margin-top: 8px;
+  max-width: 64ch;
+  overflow-wrap: anywhere;
+  color: #71665e;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.65;
+}
+
+/* Full-height workspaces (generator, instructor assignment) keep their header
+   text compact to leave more room for the work area below. */
+.scheduler-dialog .scheduler-dialog-header.scheduler-brand-header {
+  align-items: center;
+}
+.scheduler-brand-header .scheduler-dialog-eyebrow { margin-bottom: 2px; }
+.scheduler-brand-header .scheduler-dialog-title { font-size: 20px; line-height: 1.25; }
+.scheduler-brand-header .scheduler-dialog-description { margin-top: 2px; line-height: 1.5; }
+
+/* ── Maroon-led workflow identity (Generate Schedule, Assign Instructors) ──
+   Tokens are scoped to scheduler dialogs so the rest of WICARS keeps the system
+   palette. Amber (#F5A623) fails text contrast on white, so it is used only
+   for fills, rings and hairlines; amber text uses --gen-amber-text.
+   `.scheduler-brand-header` is the shared deep-maroon header. */
+.scheduler-dialog {
+  --gen-deep: #4a0d16;
+  --gen-primary: #701522;
+  --gen-soft: #f5e9ea;
+  --gen-amber: #f5a623;
+  --gen-amber-text: #8a5a12;
+  --gen-neutral: #f7f4f0;
+  --gen-line: #e8dfd6;
+  --gen-line-strong: #ddd2c7;
+}
+
+.scheduler-dialog .scheduler-dialog-header.scheduler-brand-header {
+  border-bottom: 1px solid rgb(245 166 35 / 35%);
+  background-color: var(--gen-deep);
+  background-image:
+    radial-gradient(120% 140% at 100% 0%, rgb(245 166 35 / 10%) 0%, transparent 55%),
+    linear-gradient(115deg, var(--gen-deep) 0%, #5a1019 55%, var(--gen-primary) 100%);
+  color: #fff;
+}
+.scheduler-brand-header .scheduler-dialog-eyebrow { color: var(--gen-amber); }
+.scheduler-brand-header .scheduler-dialog-title { color: #fff; }
+.scheduler-brand-header .scheduler-dialog-description { color: rgb(255 255 255 / 78%); }
+.scheduler-dialog .scheduler-brand-header .scheduler-dialog-icon {
+  border-color: rgb(245 166 35 / 40%);
+  background: rgb(255 255 255 / 8%);
+  color: var(--gen-amber);
+}
+.scheduler-brand-header .scheduler-generator-logo {
+  border: 2px solid rgb(255 255 255 / 85%);
+  background: #fff;
+  box-shadow: 0 0 0 1px rgb(245 166 35 / 45%), 0 2px 6px rgb(0 0 0 / 25%);
+}
+.scheduler-dialog .scheduler-brand-header .scheduler-dialog-close {
+  width: 36px;
+  height: 36px;
+  border-color: rgb(255 255 255 / 18%);
+  background: rgb(255 255 255 / 6%);
+  color: rgb(255 255 255 / 85%);
+}
+.scheduler-dialog .scheduler-brand-header .scheduler-dialog-close:hover:not(:disabled) {
+  border-color: rgb(245 166 35 / 55%);
+  background: rgb(255 255 255 / 14%);
+  color: #fff;
+}
+.scheduler-dialog .scheduler-brand-header :is(button, [tabindex]):focus-visible {
+  outline-color: var(--gen-amber);
+  outline-offset: 2px;
+}
+
+.scheduler-generator-workspace .scheduler-generator-stepper {
+  border-bottom: 1px solid var(--gen-line);
+  background: #fff;
+}
+
+.scheduler-dialog .scheduler-generator-workspace > .scheduler-dialog-footer {
+  border-top: 1px solid var(--gen-line);
+  background: var(--gen-neutral);
+}
+
+/* One size, weight and interaction set for every generator action. */
+.scheduler-generator-workspace .scheduler-dialog-button {
+  min-height: 40px;
+  border-color: var(--gen-line-strong);
+  border-radius: 10px;
+  padding: 8px 16px;
+  background: #fff;
+  color: #3f342e;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 1px 1px rgb(74 13 22 / 4%);
+  transition: background-color 150ms, border-color 150ms, color 150ms, box-shadow 150ms;
+}
+.scheduler-generator-workspace .scheduler-dialog-button:hover:not(:disabled) {
+  border-color: rgb(112 21 34 / 30%);
+  background: var(--gen-soft);
+  color: var(--gen-deep);
+}
+.scheduler-generator-workspace .scheduler-dialog-button[data-variant='primary'] {
+  border-color: var(--gen-deep);
+  background: var(--gen-deep);
+  color: #fff;
+  box-shadow: 0 1px 2px rgb(74 13 22 / 25%);
+}
+.scheduler-generator-workspace .scheduler-dialog-button[data-variant='primary']:hover:not(:disabled) {
+  border-color: var(--gen-primary);
+  background: var(--gen-primary);
+  color: #fff;
+}
+.scheduler-generator-workspace .scheduler-dialog-button[data-variant='cancel'] {
+  border-color: #f3b4b4;
+  color: #b42318;
+}
+.scheduler-generator-workspace .scheduler-dialog-button[data-variant='cancel']:hover:not(:disabled) {
+  border-color: #e98a8a;
+  background: #fef2f2;
+  color: #912018;
+}
+
+.scheduler-dialog .scheduler-dialog-close {
+  display: flex;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e8e1d9;
+  border-radius: 10px;
+  background: #fff;
+  color: #71665e;
+  transition: background-color 150ms;
+}
+
+.scheduler-dialog .scheduler-dialog-close:hover:not(:disabled) { background: #f1ebe4; color: #4e0a10; }
+.scheduler-dialog .scheduler-dialog-content { background: #fff; }
+.scheduler-dialog .scheduler-dialog-body { padding: 24px; background: #fff; }
+
+.scheduler-dialog .scheduler-dialog-footer {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 20px;
+  border-top: 1px solid #e8e1d9;
+  background: #faf8f5;
+}
+
+.scheduler-dialog-button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #ded5ca;
+  border-radius: 10px;
+  padding: 10px 18px;
+  background: #fff;
+  color: #4e443c;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  transition: background-color 150ms, border-color 150ms;
+}
+
+.scheduler-dialog-button:hover:not(:disabled) { background: #f1ebe4; }
+.scheduler-dialog-button[data-variant='primary'] { border-color: #4e0a10; background: #4e0a10; color: #fff; }
+.scheduler-dialog-button[data-variant='primary']:hover:not(:disabled) { background: #640d14; }
+.scheduler-dialog-button[data-variant='danger'] { border-color: #b42318; background: #b42318; color: #fff; }
+.scheduler-dialog-button[data-variant='danger']:hover:not(:disabled) { background: #912018; }
+.scheduler-dialog-button:disabled, .scheduler-dialog-close:disabled { cursor: not-allowed; opacity: .5; }
+.scheduler-dialog :is(button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #8c6420;
+  outline-offset: 3px;
+}
+
+.scheduler-dialog-panel { overflow: hidden; border: 1px solid #e8e1d9; border-radius: 12px; background: #fff; }
+.scheduler-dialog-list { list-style: none; padding: 0; margin: 0; }
+.scheduler-dialog-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; }
+.scheduler-dialog-row + .scheduler-dialog-row { border-top: 1px solid #f0ebe5; }
+.scheduler-dialog-badge { display: inline-flex; flex-shrink: 0; align-items: center; gap: 5px; border-radius: 6px; padding: 4px 8px; font-size: 11px; font-weight: 600; line-height: 1.4; }
+.scheduler-dialog-notice { display: flex; align-items: flex-start; gap: 10px; border: 1px solid #e8e1d9; border-radius: 10px; padding: 12px 14px; font-size: 12px; line-height: 1.6; }
+.scheduler-readiness-track { height: 5px; overflow: hidden; border-radius: 4px; background: #ede7e0; }
+.scheduler-readiness-fill { height: 100%; border-radius: inherit; background: #c9952a; }
+
+@media (max-width: 639px) {
+  .scheduler-dialog-overlay { padding: 8px; }
+  .scheduler-dialog { max-height: calc(100dvh - 16px); border-radius: 16px; }
+  .scheduler-dialog .scheduler-dialog-header { gap: 12px; padding: 12px 16px; }
+  .scheduler-dialog .scheduler-dialog-title { font-size: 20px; }
+  .scheduler-dialog .scheduler-dialog-description { font-size: 12px; }
+  .scheduler-dialog .scheduler-dialog-icon { width: 36px; height: 36px; border-radius: 10px; }
+  .scheduler-dialog .scheduler-dialog-body { padding: 16px; }
+  .scheduler-dialog .scheduler-dialog-footer { gap: 8px; padding: 12px 16px; }
+  .scheduler-dialog-footer > .scheduler-dialog-button { flex: 1 1 140px; }
+  .scheduler-generator-workspace .scheduler-dialog-button { min-height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scheduler-dialog, .scheduler-dialog-overlay, .scheduler-dialog * { animation: none !important; transition: none !important; }
+}
+
+/* On short landscape screens the frame itself can scroll past a tall header/footer. */
+@media (max-height: 480px) {
+  .scheduler-dialog { overflow-y: auto; scroll-padding-block: 120px 80px; }
+  .scheduler-dialog > :is(.scheduler-dialog-content, .scheduler-dialog-body, form) { min-height: 120px; flex-shrink: 0; }
+  .scheduler-dialog .scheduler-dialog-header { position: sticky; top: 0; z-index: 30; gap: 12px; padding: 12px 16px; }
+  .scheduler-dialog .scheduler-dialog-title { font-size: 20px; }
+  .scheduler-dialog .scheduler-dialog-description { margin-top: 4px; font-size: 12px; }
+  .scheduler-dialog .scheduler-dialog-footer { position: sticky; bottom: 0; z-index: 30; padding: 12px 16px; }
+  .scheduler-dialog > .scheduler-generator-workspace { align-self: flex-start; height: auto; overflow: visible; }
+  .scheduler-generator-workspace > main { flex: none; overflow: visible; }
+}

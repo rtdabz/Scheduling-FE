@@ -4,7 +4,19 @@ import { useLiveRevision } from "../../hooks/useLiveRefresh";
 import api from "../../lib/api";
 import { getCachedData, hasCachedData, setCachedData } from "../../lib/dataCache";
 import { getStoredUser } from "../../lib/storedUser";
-import TimetableGrid from "./SchedulerPanel/TimetableGrid";
+import MasterGantt from "../vpaa/calendar/MasterGantt";
+import ScheduleDetailModal from "../vpaa/calendar/ScheduleDetailModal";
+import {
+  buildGanttDays,
+  buildTimeWindow,
+  dayIndexOf,
+  filterVpaaApprovedSchedules,
+  findOverlaps,
+  type CalendarSchedule,
+  type StandardHours,
+} from "../vpaa/calendar/ganttLayout";
+import { gridOpeningMinutes, slotCount, slotMinutes } from "../../lib/timeGrid";
+import { scheduleItemToCalendar } from "./SchedulerPanel/ganttAdapter";
 import {
   mapInitialData,
   type InitialDataResponse,
@@ -67,7 +79,7 @@ export default function SectionTimetables() {
 
       try {
         const response = await api.get<InitialDataResponse>("/initial-data", {
-          params: { schedule_limit: 2000 },
+          params: { schedule_limit: 2000, view: "gantt" },
           signal: controller.signal,
         });
         const mapped = mapInitialData(response.data, {
@@ -103,13 +115,14 @@ export default function SectionTimetables() {
     [data.sections, selectedSectionId],
   );
 
-  const sectionSchedules = useMemo(() => data.schedules.filter((schedule) => (
+  const approvedSchedules = useMemo(() => filterVpaaApprovedSchedules(data.schedules), [data.schedules]);
+  const sectionSchedules = useMemo(() => approvedSchedules.filter((schedule) => (
     schedule.sectionId === selectedSectionId && (mode === "all" || schedule.mode === mode)
-  )), [data.schedules, mode, selectedSectionId]);
+  )), [approvedSchedules, mode, selectedSectionId]);
 
-  const visibleSchedules = useMemo(() => data.schedules.filter((schedule) => (
+  const visibleSchedules = useMemo(() => approvedSchedules.filter((schedule) => (
     mode === "all" || schedule.mode === mode
-  )), [data.schedules, mode]);
+  )), [approvedSchedules, mode]);
 
   const totalSubjects = useMemo(() => {
     if (!selectedSection) return 0;
@@ -119,9 +132,43 @@ export default function SectionTimetables() {
     )).length;
   }, [data.subjects, selectedSection]);
 
-  const currentStatus = sectionSchedules[0]?.status ?? "draft";
   const totalScheduled = new Set(sectionSchedules.map((schedule) => schedule.subjectId)).size;
-  const noOp = useCallback(() => undefined, []);
+  const unplaced = Math.max(0, totalSubjects - totalScheduled);
+  const placedPercent = totalSubjects > 0 ? Math.min(100, Math.round((totalScheduled / totalSubjects) * 100)) : 0;
+
+  // The same Gantt chart as the dashboards and the master calendar.
+  const [selectedSchedule, setSelectedSchedule] = useState<CalendarSchedule | null>(null);
+  const [collapsedDays, setCollapsedDays] = useState<ReadonlySet<number>>(new Set());
+  const [now] = useState(() => new Date());
+  const ganttSchedules = useMemo<CalendarSchedule[]>(
+    () => sectionSchedules.map((schedule) => scheduleItemToCalendar(schedule, data.departments)),
+    [sectionSchedules, data.departments],
+  );
+  // Overlaps are checked against every loaded class, not only this section's.
+  const allGanttSchedules = useMemo<CalendarSchedule[]>(
+    () => visibleSchedules.map((schedule) => scheduleItemToCalendar(schedule, data.departments)),
+    [visibleSchedules, data.departments],
+  );
+  const ganttDays = useMemo(() => {
+    const dayIndexes = ganttSchedules.some((schedule) => dayIndexOf(schedule.day) === 6)
+      ? [0, 1, 2, 3, 4, 5, 6]
+      : [0, 1, 2, 3, 4, 5];
+    return buildGanttDays(ganttSchedules, "none", dayIndexes);
+  }, [ganttSchedules]);
+  const standardHours = useMemo<StandardHours>(() => {
+    const opening = gridOpeningMinutes();
+    return { opening, closing: opening + slotCount() * slotMinutes(), slotMinutes: slotMinutes() };
+    // The time grid is configured by the data load, so recompute when it lands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+  const timeWindow = useMemo(() => buildTimeWindow(standardHours, ganttSchedules), [standardHours, ganttSchedules]);
+  const overlaps = useMemo(() => findOverlaps(allGanttSchedules), [allGanttSchedules]);
+  const toggleDay = useCallback((day: number) => setCollapsedDays((current) => {
+    const next = new Set(current);
+    if (next.has(day)) next.delete(day);
+    else next.add(day);
+    return next;
+  }), []);
 
   return (
     <div className="mt-6 space-y-4">
@@ -193,43 +240,61 @@ export default function SectionTimetables() {
           </button>
         </div>
       ) : (
-        <TimetableGrid
-          sections={data.sections}
-          rooms={data.rooms}
-          subjects={data.subjects}
-          activeSemesterText={formatActiveSemester(data)}
-          selectedSectionId={selectedSectionId}
-          totalScheduled={totalScheduled}
-          totalSubjects={totalSubjects}
-          isEditable={false}
-          isPhase2Active={false}
-          currentStatus={currentStatus}
-          schedules={visibleSchedules}
-          sectionSchedules={sectionSchedules}
-          hoveredCell={null}
-          draggedScheduleId={null}
-          deleteConfirmScheduleId={null}
-          setDeleteConfirmScheduleId={noOp}
-          conflictInfo={null}
-          setConflictInfo={noOp}
-          placementSubjectId={null}
-          movingScheduleId={null}
-          cancelPlacement={noOp}
-          handleCellClick={noOp}
-          getClassesCountForDay={(dayIndex) => sectionSchedules.filter((schedule) => schedule.dayIndex === dayIndex).length}
-          getDragOverConflict={() => false}
-          setIsRoomViewOpen={noOp}
-          handleDragOver={noOp}
-          handleDragLeave={noOp}
-          handleDrop={noOp}
-          handleDragStartFromCell={noOp}
-          handleDragEnd={noOp}
-          handleRemoveSchedule={noOp}
-          handleScheduleCardClick={noOp}
-          handleEditMovingSchedule={noOp}
-          isLoading={isLoading}
-          isReadOnlyViewer
-        />
+        <section aria-label="Section timetable" className="rounded-xl border border-border bg-white p-5">
+          <header className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="min-w-0">
+              <h2 className="truncate font-sans text-[15px] font-semibold leading-5 tracking-tight text-text">
+                {selectedSection ? `${selectedSection.name} · ${yearLevelLabel(selectedSection.yearLevel)}` : "No section selected"}
+              </h2>
+              <p className="mt-1 text-xs text-muted">{formatActiveSemester(data)}</p>
+            </div>
+            <div className="ml-auto flex items-center gap-2.5" title={`${totalScheduled} placed, ${unplaced} unplaced`}>
+              <span className="text-xs font-medium tabular-nums text-muted">
+                <span className="font-semibold text-text">{totalScheduled}</span>/{totalSubjects} placed
+              </span>
+              <span
+                role="progressbar"
+                aria-label="Courses placed"
+                aria-valuemin={0}
+                aria-valuemax={totalSubjects}
+                aria-valuenow={totalScheduled}
+                className="block h-1.5 w-24 overflow-hidden rounded-full bg-stage-idle"
+              >
+                <span className={`block h-full rounded-full ${unplaced === 0 && totalSubjects > 0 ? "bg-stage-done" : "bg-accent"}`} style={{ width: `${placedPercent}%` }} />
+              </span>
+            </div>
+          </header>
+
+          {isLoading ? (
+            <div className="flex min-h-[420px] items-center justify-center rounded-lg border border-border bg-parchment/60 text-xs font-medium text-muted" role="status">
+              <RefreshCw className="mr-2 h-3.5 w-3.5 animate-spin" />
+              Loading timetable…
+            </div>
+          ) : (
+            <MasterGantt
+              days={ganttDays}
+              timeWindow={timeWindow}
+              standardHours={standardHours}
+              groupBy="none"
+              zoom="fit"
+              density="comfortable"
+              overlaps={overlaps}
+              collapsedDays={collapsedDays}
+              onToggleDay={toggleDay}
+              onSelect={setSelectedSchedule}
+              selectedId={selectedSchedule?.id}
+              now={now}
+              className="max-h-[calc(100vh-17rem)] min-h-[420px]"
+            />
+          )}
+          <ScheduleDetailModal
+            schedule={selectedSchedule}
+            allSchedules={allGanttSchedules}
+            overlaps={overlaps}
+            onClose={() => setSelectedSchedule(null)}
+            onSelect={setSelectedSchedule}
+          />
+        </section>
       )}
     </div>
   );

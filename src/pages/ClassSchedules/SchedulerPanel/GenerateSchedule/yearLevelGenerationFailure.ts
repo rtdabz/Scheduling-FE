@@ -107,7 +107,23 @@ export type AdjustableSectionConfig = {
   hybridSplitCourseIds?: string[];
   gecSplitPatternsByCourseId: Record<string, string>;
   modesByCourseId: Record<string, string>;
+  componentRequiredDaysByCourseId?: Record<string, { lecture?: string | null; laboratory?: string | null }>;
 };
+
+/** Lecture/Laboratory Required Days need Integrated; an adjustment never drops them. */
+function assertKeepsComponentDays(config: AdjustableSectionConfig, adjustment: GenerationAdjustment): void {
+  for (const [courseId, days] of Object.entries(config.componentRequiredDaysByCourseId ?? {})) {
+    if (!days?.lecture && !days?.laboratory) continue;
+    if (!config.splitCourseIds.includes(courseId)) {
+      const code = String(adjustment.course_id) === courseId && adjustment.course_code
+        ? adjustment.course_code
+        : "An Integrated course";
+      throw new Error(
+        `${code} has Lecture/Laboratory Required Days, so it must stay Integrated. Clear those days in Setup Courses before applying this adjustment.`,
+      );
+    }
+  }
+}
 
 const stageLabels: Record<string, string> = {
   feasibility: "Blocked before generation",
@@ -387,6 +403,7 @@ export function applyAdjustments<T extends AdjustableSectionConfig>(
 
     const updated = applyOne(config, adjustment, courseKey);
     if (!updated) continue;
+    assertKeepsComponentDays(updated, adjustment);
 
     next = next === configs ? { ...configs } : next;
     next[sectionKey] = updated;

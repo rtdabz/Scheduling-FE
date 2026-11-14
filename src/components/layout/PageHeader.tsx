@@ -1,6 +1,7 @@
 import { ChevronRight, Home } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import type { NavItem, NavSection } from '../../navigation/types';
+import { roleLabel, roleWorkspaceBase } from '../../lib/roles';
 
 interface PageHeaderProps {
   navItems: NavSection[];
@@ -28,7 +29,7 @@ const findMatch = (items: NavItem[], pathname: string, parents: string[] = []): 
 const humanizePath = (pathname: string): string[] => pathname
   .split('/')
   .filter(Boolean)
-  .filter((segment) => !['vpaa', 'dean', 'secretary', 'program_head'].includes(segment.toLowerCase()))
+  .filter((segment) => !['vpaa', 'dean', 'secretary', 'director', 'program_head'].includes(segment.toLowerCase()))
   .filter((segment) => !/^\d+$/.test(segment))
   .map((segment) => {
     if (segment.toLowerCase() === 'faculty') return 'Instructors';
@@ -46,9 +47,7 @@ export default function PageHeader({ navItems, homePath }: PageHeaderProps) {
   const rawTitle = trail[trail.length - 1] ?? 'Workspace';
   const role = pathname.split('/')[1];
   const title = rawTitle === 'Dashboard'
-    ? role === 'secretary' ? 'Secretary Dashboard'
-      : role === 'program_head' ? 'Program Head Dashboard'
-        : role === 'dean' ? 'Dean Dashboard' : 'VPAA Dashboard'
+    ? `${roleWorkspaceBase(role) ? roleLabel(role) : 'VPAA'} Dashboard`
     : rawTitle;
 
   return (
@@ -68,7 +67,7 @@ export default function PageHeader({ navItems, homePath }: PageHeaderProps) {
         );
       })}
       </nav>
-      <h1 className="mt-3 font-display text-2xl font-bold tracking-tight text-[#4e0a10] sm:text-3xl">{title}</h1>
+      <h1 className="mt-3 font-jakarta text-2xl font-bold tracking-tight text-[#4e0a10] sm:text-3xl">{title}</h1>
     </header>
   );
 }

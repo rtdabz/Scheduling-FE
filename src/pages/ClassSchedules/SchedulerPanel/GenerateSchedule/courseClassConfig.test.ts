@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { Course, Section } from "../types";
 import type { CourseSetupConfig } from "./SetupCoursesStep";
 import {
+  asRegularClass,
+  componentDaysSummary,
+  componentRequiredDaysError,
+  formatComponentRequiredDays,
+  normalizeComponentRequiredDays,
   compatibleRoomOptions,
   consecutiveDayRuns,
   consecutivePlacementFor,
@@ -131,7 +136,7 @@ describe("courseClassConfig", () => {
     expect(config.sectionScope).toBe("all");
   });
 
-  it("shows a lecture + lab course nobody configured as the one Regular meeting the Generator places", () => {
+  it("keeps a lecture + lab course Regular at its Total Hours", () => {
     const config = inferInitialCourseClassConfig(integratedCourse, emptyConfigs, dummySections, new Set());
 
     expect(config.configuration).toBe("regular");
@@ -139,11 +144,18 @@ describe("courseClassConfig", () => {
     expect(durationLabel(config, integratedCourse)).toBe("3h");
   });
 
+  it("keeps a lab-only course one laboratory meeting", () => {
+    const labOnly = { ...integratedCourse, lectureHours: 0 };
+    const config = inferInitialCourseClassConfig(labOnly, emptyConfigs, dummySections, new Set());
+    expect(config.configuration).toBe("regular");
+    expect(meetingParts(config, labOnly)).toHaveLength(1);
+  });
+
   it("makes Integrated On-site a lecture and a laboratory, both face-to-face", () => {
     const config = { ...baseConfig, configuration: "integrated" as const, delivery: "onsite" as const };
 
     expect(durationShape(config)).toBe("integrated-onsite");
-    expect(durationLabel(config, integratedCourse)).toBe("2h F2F + 1h F2F");
+    expect(durationLabel(config, integratedCourse)).toBe("2h Face to Face + 1h Face to Face");
   });
 
   it("sends Integrated On-site as Integrated with an on-site lecture, and reads it back", () => {
@@ -172,7 +184,7 @@ describe("courseClassConfig", () => {
     const config = { ...baseConfig, configuration: "integrated" as const, delivery: "hybrid" as const };
 
     expect(durationShape(config)).toBe("hybrid-laboratory");
-    expect(durationLabel(config, integratedCourse)).toBe("2h Online + 1h F2F");
+    expect(durationLabel(config, integratedCourse)).toBe("2h Online + 1h Face to Face");
   });
 
   it("infers Split configuration when sections carry gecSplitCourseIds", () => {
@@ -303,14 +315,17 @@ describe("courseClassConfig", () => {
       { id: 4, room_code: "GYM", room_type: "field" },
     ];
 
-    // Any face-to-face course may pick a field room, laboratory included;
-    // picking one is what makes it a field course.
-    expect(compatibleRoomOptions(lectureCourse, baseConfig, false, rooms).map((r) => r.room_code)).toEqual(["LEC 1", "LAB 2", "GYM"]);
-    expect(compatibleRoomOptions(integratedCourse, baseConfig, false, rooms).map((r) => r.room_code)).toEqual(["LAB 1", "LAB 2", "GYM"]);
+    // Only courses without laboratory requirements may choose Field placement.
+    // A major without laboratory units never takes a laboratory, even one flagged for lecture use.
+    expect(compatibleRoomOptions(lectureCourse, baseConfig, false, rooms).map((r) => r.room_code)).toEqual(["LEC 1", "GYM"]);
+    expect(
+      compatibleRoomOptions({ ...lectureCourse, roomTypeRequired: "laboratory" }, baseConfig, false, rooms).map((r) => r.room_code),
+    ).toEqual(["LEC 1"]);
+    expect(compatibleRoomOptions(integratedCourse, baseConfig, false, rooms).map((r) => r.room_code)).toEqual(["LAB 1", "LAB 2"]);
     expect(compatibleRoomOptions(lectureCourse, { ...baseConfig, delivery: "online" }, false, rooms)).toEqual([]);
     // A course already on the field list keeps its classrooms: clearing the
     // field room is how it goes back to being a regular class.
-    expect(compatibleRoomOptions(lectureCourse, baseConfig, true, rooms).map((r) => r.room_code)).toEqual(["LEC 1", "LAB 2", "GYM"]);
+    expect(compatibleRoomOptions(lectureCourse, baseConfig, true, rooms).map((r) => r.room_code)).toEqual(["LEC 1", "GYM"]);
     // Only a course whose record requires the field is limited to field rooms.
     expect(
       compatibleRoomOptions({ ...gecCourse, roomTypeRequired: "field" }, baseConfig, false, rooms).map((r) => r.room_code),
@@ -320,7 +335,7 @@ describe("courseClassConfig", () => {
     // Integrated Hybrid's only face-to-face session is its laboratory.
     expect(
       compatibleRoomOptions(integratedCourse, { configuration: "integrated", delivery: "hybrid" }, false, rooms).map((r) => r.room_code),
-    ).toEqual(["LAB 1", "LAB 2", "GYM"]);
+    ).toEqual(["LAB 1", "LAB 2"]);
   });
 
   it("derives Integrated Hybrid lengths from the course's own hours", () => {
@@ -329,7 +344,7 @@ describe("courseClassConfig", () => {
 
     expect(meetingParts(config, heavier)).toEqual([
       { label: "Lecture", minutes: 180, mode: "Online" },
-      { label: "Laboratory", minutes: 120, mode: "F2F" },
+      { label: "Laboratory", minutes: 120, mode: "Face to Face" },
     ]);
   });
 
@@ -338,9 +353,9 @@ describe("courseClassConfig", () => {
 
     expect(meetingParts(config, gecCourse)).toEqual([
       { label: "Meeting 1", minutes: 90, mode: "Online" },
-      { label: "Meeting 2", minutes: 90, mode: "F2F" },
+      { label: "Meeting 2", minutes: 90, mode: "Face to Face" },
     ]);
-    expect(durationLabel(config, gecCourse)).toBe("1.5h Online + 1.5h F2F");
+    expect(durationLabel(config, gecCourse)).toBe("1.5h Online + 1.5h Face to Face");
   });
 
   it("sends an Online Split as a Split Session delivered online, and reads it back", () => {
@@ -490,12 +505,13 @@ describe("courseClassConfig", () => {
       expect(consecutiveRulesForCourse("101", { ...all, configuration: "split" }, numericSections)).toEqual([]);
     });
 
-    it("shares the Total Hours equally across the days and never sends a duration", () => {
+    it("repeats the Total Hours on every day and never sends a duration", () => {
       const base = inferInitialCourseClassConfig(clinical, emptyConfigs, dummySections, new Set());
       const config: CourseClassConfig = { ...base, consecutiveDays: 2 };
 
       expect(durationShape(config)).toBe("single");
-      expect(durationLabel(config, clinical)).toBe("2 days × 4h");
+      expect(durationLabel(config, clinical)).toBe("8h/day × 2 days = 16h");
+      expect(meetingParts(config, clinical).map((part) => part.minutes)).toEqual([480, 480]);
 
       const onConfigChange = vi.fn();
       syncCourseConfigToSectionConfigs(
@@ -511,6 +527,171 @@ describe("courseClassConfig", () => {
         expect.objectContaining({ gecSplitCourseIds: [] }),
       );
       expect(onConfigChange.mock.calls[0][1]).not.toHaveProperty("durationMinutesByCourseId");
+    });
+  });
+
+  describe("Lecture and Laboratory Required Days", () => {
+    const integrated: CourseClassConfig = {
+      ...baseConfig,
+      configuration: "integrated",
+      delivery: "onsite",
+    };
+    const withPins = (
+      pins: Record<string, Record<string, string>>,
+      split: string[] = ["sec-1", "sec-2"],
+    ): Record<string, CourseSetupConfig> =>
+      Object.fromEntries(
+        dummySections.map((section): [string, CourseSetupConfig] => [
+          section.id,
+          {
+            ...emptyConfigs[section.id],
+            splitCourseIds: split.includes(section.id) ? ["c2"] : [],
+            modesByCourseId: split.includes(section.id) ? { c2: "on-site" as const } : {},
+            componentRequiredDaysByCourseId: pins[section.id] ? { c2: pins[section.id] } : {},
+          },
+        ]),
+      );
+
+    it("reads shared component days back as Integrated, never as a Regular Required Day", () => {
+      const pins = { lecture: "Monday", laboratory: "Thursday" };
+      const config = inferInitialCourseClassConfig(
+        integratedCourse,
+        withPins({ "sec-1": pins, "sec-2": pins }),
+        dummySections,
+        new Set(),
+      );
+
+      expect(config.configuration).toBe("integrated");
+      expect(config.delivery).toBe("onsite");
+      expect(config.requiredDay).toBeNull();
+      expect(config.componentRequiredDays).toEqual(pins);
+    });
+
+    it("leaves mixed section values undefined instead of showing one section's days", () => {
+      const config = inferInitialCourseClassConfig(
+        integratedCourse,
+        withPins({ "sec-1": { lecture: "Monday" }, "sec-2": { laboratory: "Friday" } }),
+        dummySections,
+        new Set(),
+      );
+
+      expect(config.configuration).toBe("integrated");
+      expect(config.componentRequiredDays).toBeUndefined();
+    });
+
+    it("does not infer a component day from a course-wide Required Day", () => {
+      const config = inferInitialCourseClassConfig(
+        integratedCourse,
+        withPins({}),
+        dummySections,
+        new Set(),
+        "Wednesday",
+      );
+
+      expect(config.componentRequiredDays).toEqual({});
+    });
+
+    it("sends component days only to the selected Integrated sections", () => {
+      const onConfigChange = vi.fn();
+      syncCourseConfigToSectionConfigs(
+        integratedCourse,
+        {
+          ...integrated,
+          componentRequiredDays: { lecture: "Monday", laboratory: "" },
+          sectionScope: "selected",
+          selectedSectionIds: ["sec-1"],
+        },
+        dummySections,
+        withPins({ "sec-2": { lecture: "Tuesday" } }, ["sec-2"]),
+        onConfigChange,
+      );
+
+      const changes = Object.fromEntries(onConfigChange.mock.calls);
+      expect(changes["sec-1"]).toMatchObject({
+        splitCourseIds: ["c2"],
+        componentRequiredDaysByCourseId: { c2: { lecture: "Monday" } },
+      });
+      // The Regular section outside the scope keeps no component rule.
+      expect(changes["sec-2"]).toMatchObject({ splitCourseIds: [], componentRequiredDaysByCourseId: {} });
+    });
+
+    it("keeps each section's own days when mixed values are applied untouched", () => {
+      const onConfigChange = vi.fn();
+      const configs = withPins({ "sec-1": { lecture: "Monday" }, "sec-2": { laboratory: "Friday" } });
+      syncCourseConfigToSectionConfigs(
+        integratedCourse,
+        { ...integrated, delivery: "hybrid", componentRequiredDays: undefined },
+        dummySections,
+        configs,
+        onConfigChange,
+      );
+
+      for (const [, change] of onConfigChange.mock.calls) {
+        expect(change).not.toHaveProperty("componentRequiredDaysByCourseId");
+      }
+    });
+
+    it("keeps component days when Integrated delivery changes", () => {
+      const onConfigChange = vi.fn();
+      const pins = { lecture: "Monday", laboratory: "Thursday" };
+      syncCourseConfigToSectionConfigs(
+        integratedCourse,
+        { ...integrated, delivery: "hybrid", hybridType: "laboratory", componentRequiredDays: pins },
+        dummySections,
+        withPins({ "sec-1": pins, "sec-2": pins }),
+        onConfigChange,
+      );
+
+      for (const [, change] of onConfigChange.mock.calls) {
+        expect(change.modesByCourseId).toEqual({});
+        expect(change).not.toHaveProperty("componentRequiredDaysByCourseId");
+      }
+    });
+
+    it("clears component days when the course leaves Integrated", () => {
+      const onConfigChange = vi.fn();
+      const pins = { lecture: "Monday", laboratory: "Thursday" };
+      syncCourseConfigToSectionConfigs(
+        integratedCourse,
+        { ...asRegularClass({ ...integrated, componentRequiredDays: pins }) },
+        dummySections,
+        withPins({ "sec-1": pins, "sec-2": pins }),
+        onConfigChange,
+      );
+
+      expect(onConfigChange).toHaveBeenCalledTimes(2);
+      for (const [, change] of onConfigChange.mock.calls) {
+        expect(change.splitCourseIds).toEqual([]);
+        expect(change.componentRequiredDaysByCourseId).toEqual({});
+      }
+      expect(asRegularClass({ ...integrated, componentRequiredDays: pins }).requiredDay).toBeNull();
+    });
+
+    it("explains the same corrections as the server", () => {
+      expect(componentRequiredDaysError({ lecture: "Monday", laboratory: "Monday" }, [], true)).toMatch(/different days/);
+      expect(componentRequiredDaysError({ laboratory: "Friday" }, ["Monday", "Tuesday"], true)).toMatch(/not one of the Preferred Days/);
+      expect(componentRequiredDaysError({ lecture: "Sunday" }, [], false)).toMatch(/Sunday classes are not enabled/);
+      expect(componentRequiredDaysError({ lecture: "Monday" }, ["Monday"], true)).toMatch(/only Monday/);
+      expect(componentRequiredDaysError({ lecture: "Monday", laboratory: "" }, [], true)).toBeNull();
+      expect(componentRequiredDaysError({}, ["Monday"], true)).toBeNull();
+    });
+
+    it("labels component days and their sections when they differ", () => {
+      expect(normalizeComponentRequiredDays({ lecture: "", laboratory: null })).toBeNull();
+      expect(formatComponentRequiredDays({ lecture: "Monday", laboratory: "Thursday" })).toBe(
+        "Lecture: Monday · Laboratory: Thursday",
+      );
+      expect(componentDaysSummary([
+        { name: "BSIT 1A", label: "Lecture: Monday" },
+        { name: "BSIT 1B", label: "Lecture: Monday" },
+      ], 2)).toEqual(["Lecture: Monday"]);
+      expect(componentDaysSummary([
+        { name: "BSIT 1A", label: "Lecture: Monday" },
+        { name: "BSIT 1B", label: "Laboratory: Friday" },
+      ], 2)).toEqual(["Lecture: Monday (BSIT 1A)", "Laboratory: Friday (BSIT 1B)"]);
+      expect(componentDaysSummary([{ name: "BSIT 1A", label: "Lecture: Monday" }], 2)).toEqual([
+        "Lecture: Monday (BSIT 1A)",
+      ]);
     });
   });
 });

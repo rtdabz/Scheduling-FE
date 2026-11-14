@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { roomTransferPreview } from '../../../lib/roomTransferPreview';
 import type { RoomTransferRequest } from '../../../lib/roomRecovery';
-import { buildSchedulePdf, type SchedulePdfInput } from './schedulePdf';
+import { buildSchedulePdf, buildSchedulesPdf, type SchedulePdfInput } from './schedulePdf';
 import type { ScheduleSignatories } from './types';
 import { mapApiSchedulesWithSignatories } from './hooks/initialDataMapper';
 
@@ -44,8 +44,8 @@ const input = (): SchedulePdfInput => roomTransferPreview({
   }],
 } as RoomTransferRequest)!;
 
-const pdfText = async (source: SchedulePdfInput): Promise<string> => {
-  const blob = await buildSchedulePdf(source);
+const pdfText = async (source: SchedulePdfInput | SchedulePdfInput[]): Promise<string> => {
+  const blob = Array.isArray(source) ? await buildSchedulesPdf(source) : await buildSchedulePdf(source);
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
@@ -73,9 +73,36 @@ describe('schedule PDF signatories', () => {
   });
 
   it('signs an unsubmitted draft with the officials in office now', async () => {
-    const pdf = await pdfText(input());
-    for (const text of ['(PAULA RENAMED', '(NADIA DEAN', '(NICO VPAA', '(Omar President', '(College President']) expect(pdf).toContain(text);
+    const source = input();
+    source.historicalDocument = false;
+    source.allSchedules = source.allSchedules.map(row => ({ ...row, status: 'draft', creatorIdentity: { id: 1, name: 'Paula Original', role: 'program_head' } }));
+    const pdf = await pdfText(source);
+    for (const text of ['(PAULA ORIGINAL', '(NADIA DEAN', '(NICO VPAA', '(Omar President', '(College President']) expect(pdf).toContain(text);
     expect(pdf).not.toContain('DIEGO DEAN');
+  });
+
+  it('does not substitute current officials for missing historical signatories', async () => {
+    const pdf = await pdfText({ ...input(), historicalDocument: true });
+    for (const text of CURRENT) expect(pdf).not.toContain(text);
+    expect(pdf).toContain('(Not recorded');
+  });
+
+  it('keeps missing slots in a closed legacy snapshot unrecorded', async () => {
+    const pdf = await pdfText({ ...input(), signatories: {
+      prepared: [], reviewed: null, recommended: null, approved: null, frozen: true,
+    } });
+    for (const text of CURRENT) expect(pdf).not.toContain(text);
+    expect(pdf).toContain('(Not recorded');
+  });
+
+  it('wraps long President names and designations within their signature column', async () => {
+    const name = 'President Alexandria '.repeat(7).trim();
+    const title = 'Office of the College President '.repeat(4).trim();
+    const pdf = await pdfText({ ...input(), signatories: { ...recorded, approved: { name, title } } });
+    expect(pdf).not.toContain(`(${name})`);
+    expect(pdf).not.toContain(`(${title})`);
+    expect(pdf).toContain('(President Alexandria');
+    expect(pdf).toContain('(Office of the College');
   });
 
   it('attaches recorded officials only to rows that name a submission', () => {
@@ -87,5 +114,22 @@ describe('schedule PDF signatories', () => {
     expect(signed.signatories).toBe(recorded);
     expect(draft.signatories).toBeUndefined();
     expect(mapApiSchedulesWithSignatories([{ ...base, signatories_submission_id: 42 }], [])[0].signatories).toBeUndefined();
+  });
+
+  it('prints each department as its own document with its own pages', async () => {
+    const science = input();
+    const arts = input();
+    arts.departments = [...arts.departments, { id: 2, department_name: 'Arts', department_code: 'ART' }];
+    arts.sections = arts.sections.map((section) => ({ ...section, id: 'arts-a', departmentId: 2, name: 'ARTS A' }));
+    arts.allSchedules = arts.allSchedules.map((schedule) => ({ ...schedule, sectionId: 'arts-a', departmentId: 2 }));
+    arts.selectedSectionId = 'arts-a';
+
+    const pdf = await pdfText([science, arts]);
+
+    expect(pdf.match(/\/Type \/Page\n/g)).toHaveLength(2);
+    expect(pdf.match(/\(TAGOLOAN COMMUNITY COLLEGE\)/g)).toHaveLength(2);
+    expect(pdf).toContain('(COLLEGE OF SCIENCE)');
+    expect(pdf).toContain('(COLLEGE OF ARTS)');
+    expect(pdf.match(/\(Page No\.  1 of 1\)/g)).toHaveLength(2);
   });
 });

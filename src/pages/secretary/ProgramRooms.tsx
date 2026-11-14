@@ -3,12 +3,14 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { AlertTriangle, ChevronRight, DoorOpen, House, Lock, RotateCcw, Save, Split, Users, type LucideIcon } from 'lucide-react';
 import DataTable from '../../components/ui/DataTable';
 import Skeleton from '../../components/ui/Skeleton';
+import LockedModuleView from '../../components/ui/LockedModuleView';
 import { useDataTable } from '../../components/ui/useDataTable';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
-import { getCachedData, setCachedData } from '../../lib/dataCache';
+import { clearCachedKey, getCachedData, setCachedData } from '../../lib/dataCache';
 import { getStoredUser } from '../../lib/storedUser';
+import { useLiveRevision } from '../../hooks/useLiveRefresh';
 
 type RoomSharingPolicy = 'open' | 'home_first' | 'strict';
 
@@ -45,15 +47,15 @@ const POLICIES: { value: RoomSharingPolicy; title: string; description: string; 
   },
   {
     value: 'home_first',
-    title: 'Home room first',
-    description: "A program has its home rooms every day; the other rooms are divided equally by days. Its unused days open to others once it has saved all its sections.",
+    title: 'Preferred',
+    description: "Prioritize the program's assigned homerooms. If unavailable, use other suitable rooms on the program's shared days or days released after another program has saved all its sections.",
     icon: House,
     order: ['Home', 'Shared days', 'Leftovers'],
   },
   {
     value: 'strict',
-    title: 'Home rooms only',
-    description: "A program has its home rooms every day; the other rooms are divided equally by days. Never another program's days.",
+    title: 'Exclusive',
+    description: "Restrict scheduling to the program's assigned homerooms and its allocated days in shared rooms. Other programs' unused days cannot be borrowed.",
     icon: Lock,
     order: ['Home', 'Shared days'],
   },
@@ -74,7 +76,7 @@ const ROOM_TYPE_STYLES: Record<string, string> = {
 };
 
 const SHARED = '';
-const SHARED_LABEL = 'Shared (all programs)';
+const SHARED_LABEL = 'Shared (split by day)';
 
 export default function ProgramRooms() {
   const { toast } = useToast();
@@ -87,10 +89,21 @@ export default function ProgramRooms() {
   );
   const [isLoading, setIsLoading] = useState(!cached);
   const [isSaving, setIsSaving] = useState(false);
+  const [accessError, setAccessError] = useState<string | null>(null);
+  const departmentsRevision = useLiveRevision(['departments']);
+
+  const handleAccessError = useCallback((err: unknown): boolean => {
+    if ((err as { response?: { status?: number } })?.response?.status !== 403) return false;
+    clearCachedKey(cacheKey);
+    setData(null);
+    setAccessError(apiErrorMessage(err, 'Program Rooms is unavailable.'));
+    return true;
+  }, [cacheKey]);
 
   const apply = useCallback((payload: ProgramRoomsPayload) => {
     setCachedData(cacheKey, payload);
     setData(payload);
+    setAccessError(null);
     setPolicy(payload.room_sharing_policy);
     setHomes(Object.fromEntries(payload.rooms.map((room) => [room.id, room.home_program_id])));
   }, [cacheKey]);
@@ -99,18 +112,27 @@ export default function ProgramRooms() {
     let active = true;
     api.get<{ data: ProgramRoomsPayload }>('/program-rooms')
       .then((response) => { if (active) apply(response.data.data); })
-      .catch((err) => { if (active) toast.error('Program Rooms', apiErrorMessage(err, 'Could not load the program rooms.')); })
+      .catch((err) => {
+        if (active && !handleAccessError(err)) toast.error('Program Rooms', apiErrorMessage(err, 'Could not load the program rooms.'));
+      })
       .finally(() => { if (active) setIsLoading(false); });
     return () => { active = false; };
-  }, [apply, toast]);
+  }, [apply, toast, handleAccessError, departmentsRevision]);
 
   const rooms = useMemo(() => data?.rooms ?? [], [data]);
   const programs = useMemo(() => data?.programs ?? [], [data]);
   const canManage = data?.can_manage ?? false;
 
+  // "All rooms shared" ignores home programs, so every room is shown and saved as Shared.
+  // The picks stay in `homes` so switching back to another policy before saving restores them.
+  const homeOf = useCallback(
+    (roomId: number) => (policy === 'open' ? null : homes[roomId] ?? null),
+    [policy, homes],
+  );
+
   const changedRooms = useMemo(
-    () => rooms.filter((room) => (homes[room.id] ?? null) !== room.home_program_id),
-    [rooms, homes],
+    () => rooms.filter((room) => homeOf(room.id) !== room.home_program_id),
+    [rooms, homeOf],
   );
   const isDirty = data !== null && (policy !== data.room_sharing_policy || changedRooms.length > 0);
   const activePolicy = POLICIES.find((option) => option.value === policy);
@@ -123,11 +145,11 @@ export default function ProgramRooms() {
   const roomsPerProgram = useMemo(() => {
     const counts = new Map<number | null, number>();
     rooms.forEach((room) => {
-      const home = homes[room.id] ?? null;
+      const home = homeOf(room.id);
       counts.set(home, (counts.get(home) ?? 0) + 1);
     });
     return counts;
-  }, [rooms, homes]);
+  }, [rooms, homeOf]);
 
   const warnings = useMemo(() => {
     if (!data || policy === 'open') return [];
@@ -161,6 +183,7 @@ export default function ProgramRooms() {
     },
     {
       id: 'building',
+      meta: { hideBelow: 'md' },
       accessorKey: 'building',
       header: 'Building',
       cell: ({ getValue }) => <span className="font-semibold text-gray-600">{getValue<string | null>() || 'Unassigned'}</span>,
@@ -170,7 +193,7 @@ export default function ProgramRooms() {
       accessorKey: 'room_type',
       header: 'Room Type',
       cell: ({ row }) => (
-        <span className={`rounded-full border px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide ${ROOM_TYPE_STYLES[row.original.room_type] ?? 'border-gray-200 bg-gray-50 text-gray-600'}`}>
+        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize whitespace-nowrap ${ROOM_TYPE_STYLES[row.original.room_type] ?? 'border-gray-200 bg-gray-50 text-gray-600'}`}>
           {row.original.room_type}
         </span>
       ),
@@ -187,20 +210,23 @@ export default function ProgramRooms() {
     },
     {
       id: 'home_program',
-      accessorFn: (room) => programCode(homes[room.id] ?? null),
+      accessorFn: (room) => programCode(homeOf(room.id)),
       header: 'Home Program',
       meta: { cellClassName: 'whitespace-nowrap' },
       cell: ({ row }) => {
         const room = row.original;
         if (!canManage) {
-          return <span className="font-bold text-gray-700">{programCode(room.home_program_id)}</span>;
+          return <span className="font-bold text-gray-700">{programCode(homeOf(room.id))}</span>;
         }
+        const allShared = policy === 'open';
         return (
           <select
             aria-label={`Home program for ${room.room_code}`}
-            value={homes[room.id] ?? SHARED}
+            value={homeOf(room.id) ?? SHARED}
+            disabled={allShared}
+            title={allShared ? 'All rooms shared ignores home programs. Choose Preferred or Exclusive to set one.' : undefined}
             onChange={(event) => setHomes((current) => ({ ...current, [room.id]: event.target.value === SHARED ? null : Number(event.target.value) }))}
-            className="w-full max-w-[240px] rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:border-[#5A1220]"
+            className="w-full max-w-[240px] rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:border-[#5A1220] disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500"
           >
             <option value={SHARED}>{SHARED_LABEL}</option>
             {programs.map((program) => (
@@ -212,11 +238,12 @@ export default function ProgramRooms() {
     },
     {
       id: 'days',
+      meta: { hideBelow: 'lg' },
       header: 'Days',
       enableSorting: false,
       cell: ({ row }) => <RoomDays days={row.original.days} programCode={programCode} stale={isDirty} />,
     },
-  ], [canManage, homes, isDirty, programCode, programs]);
+  ], [canManage, homeOf, isDirty, policy, programCode, programs]);
 
   const table = useDataTable({ data: rooms, columns, pageSize: 10, getRowId: (row) => String(row.id) });
 
@@ -228,16 +255,20 @@ export default function ProgramRooms() {
     try {
       const response = await api.put<{ data: ProgramRoomsPayload }>('/program-rooms', {
         room_sharing_policy: policy,
-        assignments: changedRooms.map((room) => ({ room_id: room.id, program_id: homes[room.id] ?? null })),
+        assignments: changedRooms.map((room) => ({ room_id: room.id, program_id: homeOf(room.id) })),
       });
       apply(response.data.data);
       toast.success('Program Rooms', 'Program rooms saved.');
     } catch (err) {
-      toast.error('Program Rooms', apiErrorMessage(err, 'Could not save the program rooms.'));
+      if (!handleAccessError(err)) toast.error('Program Rooms', apiErrorMessage(err, 'Could not save the program rooms.'));
     } finally {
       setIsSaving(false);
     }
   };
+
+  if (accessError) {
+    return <LockedModuleView moduleName="Program Rooms" message={accessError} />;
+  }
 
   if (isLoading) {
     return (
@@ -276,7 +307,7 @@ export default function ProgramRooms() {
             <div>
               <h3 className="text-base font-black text-[#4e0a10]">Room Sharing</h3>
               <p className="text-xs font-semibold text-gray-500">
-                {canManage ? 'Choose how your programs share the department\'s rooms.' : 'How your programs share the department\'s rooms. Only the secretary can change it.'}
+                {canManage ? 'Choose how your programs share the department\'s rooms.' : 'How your programs share the department\'s rooms. Only the department Secretary or Director can change it.'}
               </p>
             </div>
           </div>
@@ -304,9 +335,9 @@ export default function ProgramRooms() {
                 aria-checked={selected}
                 disabled={!canManage}
                 onClick={() => setPolicy(option.value)}
-                className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-extrabold transition-colors ${
+                className={`selection-indicator inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-extrabold transition-colors ${
                   selected
-                    ? 'bg-[#5A1220] text-white shadow-sm'
+                    ? 'shadow-sm'
                     : 'text-gray-600 enabled:hover:bg-white enabled:hover:text-[#4e0a10]'
                 } disabled:cursor-default`}
               >
@@ -347,7 +378,7 @@ export default function ProgramRooms() {
               ? 'Your department has one program, so its rooms are not divided.'
               : isDirty
                 ? 'The days update when you save.'
-                : 'Days show which program uses each room. Sunday is open to every program.'}
+                : 'Days show which program uses each room. Shared rooms are split between the programs by day. Sunday is open to every program.'}
           </p>
           <div className="flex flex-wrap gap-2">
             {programs.map((program) => (

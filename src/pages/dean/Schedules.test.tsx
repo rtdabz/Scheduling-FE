@@ -1,18 +1,25 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearDataCache } from '../../lib/dataCache';
+import { clearDataCache, setCachedData } from '../../lib/dataCache';
 import DeanScheduleViewer from './Schedules';
+import type { CalendarSchedule, GanttDay } from '../vpaa/calendar/ganttLayout';
 
-const mocks = vi.hoisted(() => ({ apiGet: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  apiGet: vi.fn(),
+  user: { role: 'dean', department_id: 1 as number | null, department: { department_name: 'Information Technology' } },
+}));
 
 vi.mock('../../lib/api', () => ({ default: { get: (...args: unknown[]) => mocks.apiGet(...args) } }));
-vi.mock('../../lib/storedUser', () => ({ getStoredUser: () => ({ department_id: 1, department: { department_name: 'Information Technology' } }) }));
+vi.mock('../../lib/storedUser', () => ({ getStoredUser: () => mocks.user }));
 vi.mock('../../hooks/useLiveRefresh', () => ({ useLiveRevision: () => 0 }));
-// The Gantt view is not under test here.
-vi.mock('../vpaa/calendar/MasterGantt', () => ({ default: () => null }));
+vi.mock('../vpaa/calendar/MasterGantt', () => ({ default: ({ days, onSelect }: { days: GanttDay[]; onSelect: (schedule: CalendarSchedule) => void }) => (
+  <div data-testid="gantt-schedules">{days.flatMap((day) => day.rows.flatMap((row) => row.blocks.map((block) => (
+    <button key={block.schedule.id} onClick={() => onSelect(block.schedule)}>Gantt class {block.schedule.id}</button>
+  ))))}</div>
+) }));
 
 const meeting = (id: number, overrides: Record<string, unknown>) => ({
-  id, section_id: 10, department_id: 1, semester_id: 1, faculty_id: null, room_id: 5, day: 'Monday',
+  id, status: 'approved', section_id: 10, department_id: 1, semester_id: 1, faculty_id: null, room_id: 5, day: 'Monday',
   start_time: '08:00:00', end_time: '09:00:00', mode: 'on-site', meeting_type: null,
   section: { section_name: 'IT-1A' }, room: { room_code: 'CIT 101' },
   course: { course_code: `IT ${id}`, course_name: `Course ${id}`, course_category: 'major' },
@@ -35,12 +42,14 @@ const payload = {
 
 const roomConflict = {
   id: 'room_conflict:3:99', rule: 'room_conflict', semester_id: 1, day: 'Monday', overlap_start: '08:00', overlap_end: '09:00',
-  message: 'Two classes share CIT 101.', resolution_options: [], schedules: [{ id: 3 }, { id: 99 }],
+  message: 'Two classes share CIT 101.', resolution_options: [], schedules: [{ id: 3, status: 'approved' }, { id: 99, status: 'approved' }],
 };
 
 describe('Dean Schedules table (shared with approval Schedule details)', () => {
   beforeEach(() => {
     clearDataCache();
+    mocks.user.role = 'dean';
+    mocks.user.department_id = 1;
     mocks.apiGet.mockReset().mockImplementation((url: string) => (url === '/conflicts'
       ? Promise.resolve({ data: { conflicts: [roomConflict] } })
       : Promise.resolve({ data: payload })));
@@ -94,5 +103,51 @@ describe('Dean Schedules table (shared with approval Schedule details)', () => {
     fireEvent.click(bodyRows()[0]);
     expect(screen.getByRole('heading', { name: 'Course 3' })).toBeTruthy();
     expect(screen.getByText('Confirmed conflict')).toBeTruthy();
+  });
+
+  it.each(['dean', 'vpaa'])('shows only published meetings in the %s table and Gantt', async (role) => {
+    mocks.user.role = role;
+    mocks.user.department_id = role === 'dean' ? 1 : null;
+    // An old unrestricted cache must not suppress the published-only request.
+    setCachedData(`page:dean-schedules:${mocks.user.department_id ?? 'all'}`, { sections: [], schedules: [] });
+    const statuses = ['approved', 'faculty_assignment', 'reassignment', 'finalized', 'draft', 'completed',
+      'submitted', 'approved_by_dean', 'conditionally_approved', 'revision', 'rejected', 'rejected_by_dean', 'unknown', undefined];
+    mocks.apiGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/conflicts'
+      ? { conflicts: [] }
+      : { ...payload, schedules: [
+        ...statuses.map((status, index) => meeting(index + 1, { status })),
+      ] } }));
+    render(<DeanScheduleViewer />);
+    await waitFor(() => expect(bodyRows()).toHaveLength(4));
+    expect(mocks.apiGet).toHaveBeenCalledWith('/initial-data', { params: { view: 'published', schedule_limit: 2000 } });
+    expect(bodyRows().map((row) => within(row).getAllByRole('cell')[0].textContent))
+      .toEqual(['IT 1Course 1', 'IT 2Course 2', 'IT 3Course 3', 'IT 4Course 4']);
+    fireEvent.click(screen.getByRole('button', { name: 'Gantt' }));
+    expect(screen.getAllByRole('button', { name: /^Gantt class/ })).toHaveLength(4);
+    expect(screen.queryByText('Gantt class 5')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Table' }));
+    expect(bodyRows()).toHaveLength(4);
+  });
+
+  it.each(['draft', 'approved'])('shows confirmed conflicts with a %s meeting only in the appropriate detail view', async (otherStatus) => {
+    mocks.apiGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/conflicts'
+      ? { conflicts: [{ ...roomConflict, schedules: [{ id: 3, status: 'approved' }, { id: 99, status: otherStatus }] }] }
+      : { ...payload, schedules: [meeting(3, { status: 'approved' }), meeting(99, { status: otherStatus })] } }));
+    render(<DeanScheduleViewer />);
+    await waitFor(() => expect(bodyRows()).toHaveLength(otherStatus === 'approved' ? 2 : 1));
+    if (otherStatus === 'approved') await waitFor(() => expect(within(bodyRows()[0]).getByText('Room Conflict')).toBeTruthy());
+    else expect(within(bodyRows()[0]).queryByText('Room Conflict')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Gantt' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Gantt class 3' }));
+    expect(screen.getByRole('heading', { name: 'Course 3' })).toBeTruthy();
+    if (otherStatus === 'approved') expect(screen.getByText('Confirmed conflict')).toBeTruthy();
+    else expect(screen.queryByText('Confirmed conflict')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close schedule details' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Table' }));
+    fireEvent.click(bodyRows()[0]);
+    if (otherStatus === 'approved') expect(screen.getByText('Confirmed conflict')).toBeTruthy();
+    else expect(screen.queryByText('Confirmed conflict')).toBeNull();
   });
 });

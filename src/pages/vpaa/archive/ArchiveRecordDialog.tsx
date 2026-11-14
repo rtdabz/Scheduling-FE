@@ -14,6 +14,7 @@ import {
   type RestoreFailure,
   type RestoreResult,
 } from './archiveTypes';
+import { ModalButton } from '../../../components/ui/ModalForm';
 
 type Step = 'details' | 'confirm' | 'result';
 
@@ -42,7 +43,6 @@ const failureFrom = (error: unknown): RestoreFailure => {
     message: apiErrorMessage(error, 'The record could not be restored. Nothing was changed.'),
     code: data?.code,
     blockers: data?.blockers,
-    violations: data?.violations,
   };
 };
 
@@ -128,22 +128,22 @@ export default function ArchiveRecordDialog({ target, initialStep = 'details', o
   const title = step === 'result' ? 'Restore complete' : step === 'confirm' ? 'Confirm restore' : (detail?.label ?? current?.label ?? 'Archived record');
 
   const footer = step === 'result' ? (
-    <button type="button" data-autofocus onClick={onClose} className="rounded-lg bg-[#5A1220] px-4 py-2 text-xs font-bold text-white hover:bg-[#47101a] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] focus-visible:ring-offset-2">Done</button>
+    <ModalButton variant="primary" data-autofocus onClick={onClose}>Done</ModalButton>
   ) : step === 'confirm' ? (
     <>
-      <button type="button" onClick={() => setStep('details')} disabled={restoring} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220] disabled:opacity-50">Back to details</button>
-      <button type="button" onClick={() => void restore()} disabled={restoring || !detail || blockers.length > 0} className="inline-flex items-center gap-1.5 rounded-lg bg-[#5A1220] px-4 py-2 text-xs font-bold text-white hover:bg-[#47101a] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] focus-visible:ring-offset-2 disabled:opacity-50">
+      <ModalButton onClick={() => setStep('details')} disabled={restoring}>Back to details</ModalButton>
+      <ModalButton variant="primary" onClick={() => void restore()} disabled={restoring || !detail || blockers.length > 0}>
         {restoring ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <RotateCcw size={14} aria-hidden="true" />}
         {restoring ? 'Restoring…' : willRestore.length > 1 ? `Restore ${willRestore.length} records` : 'Restore record'}
-      </button>
+      </ModalButton>
     </>
   ) : (
     <>
-      <button type="button" onClick={onClose} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220]">Close</button>
+      <ModalButton onClick={onClose}>Close</ModalButton>
       {detail && (
-        <button type="button" onClick={() => { setFailure(null); setStep('confirm'); }} disabled={blockers.length > 0} aria-describedby={blockers.length > 0 ? 'archive-restore-blocked-note' : undefined} className="inline-flex items-center gap-1.5 rounded-lg bg-[#5A1220] px-4 py-2 text-xs font-bold text-white hover:bg-[#47101a] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
+        <ModalButton variant="primary" onClick={() => { setFailure(null); setStep('confirm'); }} disabled={blockers.length > 0} aria-describedby={blockers.length > 0 ? 'archive-restore-blocked-note' : undefined}>
           <RotateCcw size={14} aria-hidden="true" /> Review restore
-        </button>
+        </ModalButton>
       )}
     </>
   );
@@ -222,7 +222,7 @@ export default function ArchiveRecordDialog({ target, initialStep = 'details', o
               <Section title="Archive provenance">
                 <dl className="space-y-1.5 text-xs">
                   <div className="flex flex-wrap justify-between gap-2"><dt className="text-gray-500">Archived</dt><dd className="font-semibold text-gray-900">{formatArchiveDate(detail.provenance.archived_at)}</dd></div>
-                  <div className="flex flex-wrap justify-between gap-2"><dt className="text-gray-500">Archived by</dt><dd className="text-right font-semibold text-gray-900">{detail.provenance.actor ? `${detail.provenance.actor.name} (@${detail.provenance.actor.username})` : 'Not recorded'}</dd></div>
+                  <div className="flex flex-wrap justify-between gap-2"><dt className="text-gray-500">Archived by</dt><dd className="text-right font-semibold text-gray-900">{detail.provenance.actor ? detail.provenance.actor.name || 'Actor unavailable' : 'Not recorded'}{detail.provenance.actor?.username ? ` (@${detail.provenance.actor.username})` : ''}</dd></div>
                   <div className="flex flex-wrap justify-between gap-2"><dt className="text-gray-500">Reason</dt><dd className="font-semibold text-gray-900">{detail.provenance.reason ?? 'Not recorded'}</dd></div>
                 </dl>
                 <p className="mt-2 text-[11px] text-gray-500">
@@ -251,12 +251,6 @@ export default function ArchiveRecordDialog({ target, initialStep = 'details', o
                 {detail.outcome.map((line) => <li key={line}>{line}</li>)}
               </ul>
             </Section>
-            {detail.restore.state === 'validation' && (
-              <p className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900">
-                <Info size={16} className="shrink-0" aria-hidden="true" />
-                Current scheduling rules and timetable conflicts are checked when you confirm. If any check fails, nothing is restored and every violation is listed.
-              </p>
-            )}
           </>
         )}
 
@@ -298,7 +292,7 @@ function BlockerAction({ blocker, onOpen }: { blocker: ArchiveBlocker; onOpen: (
 }
 
 function RestoreCheck({ detail, onOpen }: { detail: ArchiveDetail; onOpen: (ref: ArchiveRef) => void }) {
-  const { blockers, state } = detail.restore;
+  const { blockers } = detail.restore;
   if (blockers.length > 0) {
     return (
       <section className="rounded-xl border border-red-200 bg-red-50 p-4" aria-labelledby="archive-restore-blocked-note">
@@ -314,9 +308,7 @@ function RestoreCheck({ detail, onOpen }: { detail: ArchiveDetail; onOpen: (ref:
       </section>
     );
   }
-  return state === 'validation' ? (
-    <p className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900"><Info size={16} className="shrink-0" aria-hidden="true" /> No known blockers. Scheduling rules and conflicts are checked when the restore is submitted.</p>
-  ) : (
+  return (
     <p className="flex gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-900"><CheckCircle2 size={16} className="shrink-0" aria-hidden="true" /> No known blockers. Conditions are checked again when you confirm.</p>
   );
 }
@@ -329,15 +321,6 @@ function FailurePanel({ failure, onOpen }: { failure: RestoreFailure; onOpen: (r
         <ul className="mt-2 list-disc space-y-1.5 pl-5">
           {failure.blockers.map((blocker) => <li key={`${blocker.code}:${blocker.message}`}>{blocker.message} <BlockerAction blocker={blocker} onOpen={onOpen} /></li>)}
         </ul>
-      )}
-      {failure.violations && failure.violations.length > 0 && (
-        <>
-          <p className="mt-2 font-semibold">{failure.violations.length} scheduling {failure.violations.length === 1 ? 'violation' : 'violations'}:</p>
-          <ul className="mt-1 list-disc space-y-1 pl-5">
-            {failure.violations.map((violation, index) => <li key={`${violation.rule ?? 'rule'}:${index}`}>{violation.message}</li>)}
-          </ul>
-          <p className="mt-2">Move or remove the clashing classes in the scheduler, or restore the missing prerequisites, then try again. Nothing was restored.</p>
-        </>
       )}
     </section>
   );

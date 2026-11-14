@@ -45,6 +45,12 @@ Before changing behavior:
 - Comments should explain business reasoning, invariants, or non-obvious tradeoffs.
 - Keep changes focused and do not combine feature work with broad cleanup.
 
+### Selection Indicators
+
+- Use `selection-indicator` for filter pills, tabs, and segmented view selectors. Its shared stylesheet is `src/styles/selection-indicators.css`.
+- Expose selection with the control's existing `aria-pressed`, `aria-selected`, `aria-checked`, or `aria-current="page"` state; use `data-active` for a styled radio label. Selected controls use maroon with white labels; only their count badges use gold text.
+- Add `selection-indicator-count` to a nested count badge. Keep action buttons, checkboxes, status badges, and workflow progress styles separate.
+
 ## Backend Conventions
 
 ### Routes And Access Control
@@ -136,6 +142,13 @@ Place code at the narrowest reusable level. Do not move page-specific logic into
 - Disable or guard repeated destructive and long-running actions.
 - Show actionable error messages without exposing internal details.
 - Keep role-specific behavior consistent across navigation, page access, and API authorization.
+
+### Dialogs
+
+- Build every dialog on `components/ui/Modal`; use `ConfirmModal` (or `confirm()` from `ToastContext`) for confirmations. Do not hand-roll a `fixed inset-0` overlay.
+- Use `ModalButton`, `ModalField`, `ModalNotice`, `ModalState` and the tokens in `modalStyles.ts` for footers, fields, inline messages, and loading or empty states, instead of local class strings.
+- One main action per dialog, right-aligned after Cancel. Forms set `closeOnOverlayClick={false}`; nothing closes while it is saving.
+- Scheduler workspace dialogs keep `appearance="workflow"` and the `scheduler-dialog-*` classes. See `modal_refinement_audit.md`.
 
 ### Print And Download Filenames
 

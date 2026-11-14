@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { X, Pencil, AlertCircle } from 'lucide-react';
+import { Pencil } from 'lucide-react';
+import Modal from '../ui/Modal';
+import { ModalButton, ModalField, ModalNotice } from '../ui/ModalForm';
+import { modalBody, modalControl, modalLabel } from '../ui/modalStyles';
 import type { CurriculumCourse, Program } from '../../types/curriculum';
 import { formatCourseName } from '../../lib/formatters';
 import { programLabel } from '../../lib/programLabel';
@@ -89,175 +91,124 @@ export default function EditCourseModal({
     onClose();
   };
 
-  return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 animate-in fade-in duration-200">
-      <div className="bg-[#F7F4F0] w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col">
-        <div className="bg-[#4e0a10] px-6 py-4 flex items-center justify-between text-white shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#C9952A]/20 border border-[#C9952A]/30 flex items-center justify-center text-[#C9952A]">
-              <Pencil size={18} />
-            </div>
-            <div>
-              <h2 className="text-base font-extrabold tracking-wide uppercase">EDIT COURSE</h2>
-              <p className="text-xs text-gray-300 mt-0.5">
-                Update course code, title, category, and unit specifications
-              </p>
-            </div>
-          </div>
+  const totalUnits = (Number(lecUnits) || 0) + (Number(labUnits) || 0);
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-gray-300 hover:text-white transition-colors cursor-pointer"
-          >
-            <X size={18} />
-          </button>
-        </div>
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      title="Edit Course"
+      description="Update the course code, name, category, and units."
+      icon={<Pencil size={18} />}
+      closeOnOverlayClick={false}
+      closeOnEscape={!isSubmitting}
+      footer={<>
+        <ModalButton onClick={onClose} disabled={isSubmitting}>Cancel</ModalButton>
+        <ModalButton type="submit" form="edit-course-form" variant="primary" loading={isSubmitting}>
+          {isSubmitting ? 'Saving...' : 'Save Changes'}
+        </ModalButton>
+      </>}
+    >
+      <form id="edit-course-form" onSubmit={handleSubmit} className={modalBody}>
+        {error && <ModalNotice tone="error" role="alert">{error}</ModalNotice>}
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 min-h-0 flex-1 overflow-y-auto">
-          {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-red-600 text-xs font-medium">
-              <AlertCircle size={15} className="shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
-              Course Code <span className="text-red-500">*</span>
-            </label>
+        <div className="grid gap-4 sm:grid-cols-[10rem_minmax(0,1fr)]">
+          <ModalField label="Course Code" htmlFor="edit-course-code" required>
             <input
+              id="edit-course-code"
               type="text"
               value={courseCode}
               onChange={(e) => setCourseCode(e.target.value)}
               onBlur={() => setCourseCode(courseCode.replace(/\s+/g, ' ').trim().toUpperCase())}
               placeholder="e.g. IT 101"
-              className="w-full px-3.5 py-2 border border-gray-300 rounded-xl text-xs font-bold text-gray-900 uppercase bg-white outline-none focus:ring-1 focus:ring-[#C9952A] focus:border-[#C9952A] shadow-sm"
+              className={`${modalControl()} font-semibold uppercase placeholder:normal-case`}
             />
-          </div>
+          </ModalField>
 
-          <div>
-            <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
-              Course Name <span className="text-red-500">*</span>
-            </label>
+          <ModalField label="Course Name" htmlFor="edit-course-name" required>
             <input
+              id="edit-course-name"
               type="text"
               value={courseName}
               onChange={(e) => setCourseName(e.target.value)}
               onBlur={() => setCourseName(formatCourseName(courseName))}
               placeholder="e.g. Data Structures and Algorithms"
-              className="w-full px-3.5 py-2 border border-gray-300 rounded-xl text-xs font-medium text-gray-900 bg-white outline-none focus:ring-1 focus:ring-[#C9952A] focus:border-[#C9952A] shadow-sm"
+              className={modalControl()}
             />
-          </div>
+          </ModalField>
+        </div>
+
+        <ModalField label="Category" htmlFor="edit-course-category">
+          <select
+            id="edit-course-category"
+            value={courseCategory}
+            onChange={(e) => setCourseCategory(e.target.value as 'major' | 'minor')}
+            className={modalControl()}
+          >
+            <option value="major">Major Course</option>
+            <option value="minor">Minor Course</option>
+          </select>
+        </ModalField>
+
+        {courseCategory === 'major' && (
+          <ModalField
+            label="Program / Major"
+            htmlFor="edit-course-program"
+            hint="Once set, only instructors belonging to this program can be assigned to teach it."
+          >
+            <select
+              id="edit-course-program"
+              value={programId}
+              onChange={(e) => setProgramId(e.target.value)}
+              className={modalControl()}
+            >
+              <option value="">Not program-specific</option>
+              {programs.map((program) => (
+                <option key={program.id} value={String(program.id)}>
+                  {programLabel(program)}
+                </option>
+              ))}
+            </select>
+          </ModalField>
+        )}
+
+        <div className="grid grid-cols-3 gap-3">
+          <ModalField label="LEC Units" htmlFor="edit-course-lec" required>
+            <input
+              id="edit-course-lec"
+              type="number"
+              min="0"
+              max="99"
+              step="1"
+              value={lecUnits}
+              onChange={(e) => setLecUnits(e.target.value.replace(/\D/g, '').slice(0, 2))}
+              placeholder="0"
+              className={`${modalControl()} text-center font-semibold tabular-nums`}
+            />
+          </ModalField>
+
+          <ModalField label="LAB Units" htmlFor="edit-course-lab" required>
+            <input
+              id="edit-course-lab"
+              type="number"
+              min="0"
+              max="99"
+              step="1"
+              value={labUnits}
+              onChange={(e) => setLabUnits(e.target.value.replace(/\D/g, '').slice(0, 2))}
+              placeholder="0"
+              className={`${modalControl()} text-center font-semibold tabular-nums`}
+            />
+          </ModalField>
 
           <div>
-            <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
-              Category
-            </label>
-            <select
-              value={courseCategory}
-              onChange={(e) => setCourseCategory(e.target.value as 'major' | 'minor')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs font-bold text-gray-800 bg-white outline-none focus:ring-1 focus:ring-[#C9952A] shadow-sm cursor-pointer"
-            >
-              <option value="major">Major Course</option>
-              <option value="minor">Minor Course</option>
-            </select>
-          </div>
-
-          {courseCategory === 'major' && (
-            <div>
-              <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
-                Program / Major
-              </label>
-              <select
-                value={programId}
-                onChange={(e) => setProgramId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs font-bold text-gray-800 bg-white outline-none focus:ring-1 focus:ring-[#C9952A] shadow-sm cursor-pointer"
-              >
-                <option value="">Not program-specific</option>
-                {programs.map((program) => (
-                  <option key={program.id} value={String(program.id)}>
-                    {programLabel(program)}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1 text-[11px] text-gray-500">
-                Once set, only instructors belonging to this program can be assigned to teach it.
-              </p>
-            </div>
-          )}
-
-          <div className="grid grid-cols-3 gap-3 pt-1">
-            <div>
-              <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
-                LEC Units
-              </label>
-              <input
-                type="number"
-                min="0"
-                max="99"
-                step="1"
-                value={lecUnits}
-                onChange={(e) => setLecUnits(e.target.value.replace(/\D/g, '').slice(0, 2))}
-                placeholder="01"
-                className="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs font-bold text-gray-800 bg-white outline-none focus:ring-1 focus:ring-[#C9952A] shadow-sm text-center"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
-                LAB Units
-              </label>
-              <input
-                type="number"
-                min="0"
-                max="99"
-                step="1"
-                value={labUnits}
-                onChange={(e) => setLabUnits(e.target.value.replace(/\D/g, '').slice(0, 2))}
-                placeholder="01"
-                className="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs font-bold text-gray-800 bg-white outline-none focus:ring-1 focus:ring-[#C9952A] shadow-sm text-center"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1 text-center">
-                Total Units
-              </label>
-              <div className="h-[34px] flex items-center justify-center bg-[#4e0a10]/10 text-[#4e0a10] font-black text-xs rounded-xl px-2">
-                {(Number(lecUnits) || 0) + (Number(labUnits) || 0)} {(Number(lecUnits) || 0) + (Number(labUnits) || 0) === 1 ? 'unit' : 'units'}
-              </div>
+            <span className={modalLabel}>Total Units</span>
+            <div className="flex h-10 items-center justify-center rounded-lg bg-[#4e0a10]/10 px-2 text-sm font-bold tabular-nums text-[#4e0a10]">
+              {totalUnits} {totalUnits === 1 ? 'unit' : 'units'}
             </div>
           </div>
-
-          <div className="pt-4 border-t border-gray-100 flex items-center justify-end gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="px-4 py-2 border border-gray-200 text-gray-600 hover:bg-gray-100 text-xs font-bold rounded-xl transition-colors cursor-pointer disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="inline-flex items-center justify-center gap-2 px-5 py-2 bg-[#4e0a10] hover:bg-[#C9952A] text-white text-xs font-bold rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 shadow-md"
-            >
-              {isSubmitting ? (
-                <>
-                  <LoadingSpinner size={14} className="animate-spin" />
-                  <span>Saving...</span>
-                </>
-              ) : (
-                <span>Save Changes</span>
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>,
-    document.body
+        </div>
+      </form>
+    </Modal>
   );
 }
-import LoadingSpinner from "../ui/LoadingSpinner";

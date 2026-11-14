@@ -65,8 +65,19 @@ controls are derived from these permissions. UI visibility is only a usability
 layer; each API mutation is protected by its exact capability. Secretary and
 Program Head accounts inherit the scheduling workspace permissions defined
 above, while Dean accounts inherit only approval permissions.
-The former Director portal and account role are retired; legacy Director rows
-remain available for administrative cleanup but cannot be created or signed in.
+Director (stored as `director`) is a department office role with exactly the
+Secretary capability set (one shared definition in `config/capabilities.php`),
+the same workflow, and the same department scope. It is not an approval stage:
+Directors submit, recall, and assign instructors like Secretaries, never hold
+Dean/VPAA approval or VPAA administration, and are bound by the same Program
+Head ownership rules (`ScheduleAuthorizationService::writableProgramIdsFor`).
+Backend role checks that meant "the department office" use
+`User::isSecretaryOrDirector()`; `isSecretary()` stays Secretary-only.
+The frontend reuses the complete Secretary workspace under `/director/*`
+(`src/navigation/directorNav.ts`, `departmentOfficeRoutes` in `App.tsx`,
+`src/lib/roles.ts`) while keeping the Director's role identity and title.
+The earlier Director portal was retired on 2026-09-27 and reintroduced in this
+form on 2026-11-10; see the decision "Director shares the Secretary slot".
 
 ## Scheduling boundary
 

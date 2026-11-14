@@ -157,7 +157,7 @@ export const scheduleTableColumns = (conflicts: ScheduleConflictState): ColumnDe
     header: 'Mode',
     accessorFn: (row) => getModeLabel(row.mode),
     cell: ({ row }) => (
-      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${getModeBadgeClass(row.original.mode)}`}>
+      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${getModeBadgeClass(row.original.mode)}`}>
         {getModeLabel(row.original.mode)}
       </span>
     ),
@@ -175,7 +175,7 @@ export const scheduleTableColumns = (conflicts: ScheduleConflictState): ColumnDe
       return labels.length > 0 ? (
         <div className="flex flex-wrap gap-1">
           {labels.map((label) => (
-            <span key={label} className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600">{label}</span>
+            <span key={label} className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600 whitespace-nowrap">{label}</span>
           ))}
         </div>
       ) : (

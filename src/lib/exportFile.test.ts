@@ -34,17 +34,17 @@ describe('export filenames', () => {
   });
 
   it('suggests a print filename and restores the app title after printing', () => {
-    document.title = 'WICARS';
+    document.title = 'TCC Scheduling';
     vi.spyOn(window, 'print').mockImplementation(() => { expect(document.title).toBe('room-timetable-LAB-101'); });
     printWithTitle('room-timetable-LAB-101.pdf');
     window.dispatchEvent(new Event('afterprint'));
-    expect(document.title).toBe('WICARS');
+    expect(document.title).toBe('TCC Scheduling');
   });
 
   it('restores the title if printing fails', () => {
-    document.title = 'WICARS';
+    document.title = 'TCC Scheduling';
     vi.spyOn(window, 'print').mockImplementation(() => { throw new Error('print failed'); });
     expect(() => printWithTitle('calendar.pdf')).toThrow('print failed');
-    expect(document.title).toBe('WICARS');
+    expect(document.title).toBe('TCC Scheduling');
   });
 });

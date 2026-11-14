@@ -1,0 +1,245 @@
+{
+  "fixture": "Real generator and modal structure; browser-only API data, no credentials.",
+  "results": [
+    {
+      "stage": 1,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "errors": [],
+      "writeAttempts": [],
+      "passed": true,
+      "geometry": {
+        "x": 1116,
+        "y": 229.4375,
+        "width": 288,
+        "height": 84.5,
+        "clippedBy": [],
+        "cornersVisible": true,
+        "fitsViewport": true,
+        "textFits": true
+      }
+    },
+    {
+      "stage": 2,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "errors": [],
+      "writeAttempts": [],
+      "passed": true,
+      "geometry": {
+        "x": 1052,
+        "y": 302.625,
+        "width": 288,
+        "height": 84.5,
+        "clippedBy": [],
+        "cornersVisible": true,
+        "fitsViewport": true,
+        "textFits": true
+      }
+    },
+    {
+      "stage": 3,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "errors": [],
+      "writeAttempts": [],
+      "passed": true,
+      "geometry": {
+        "x": 1052,
+        "y": 160.5,
+        "width": 288,
+        "height": 84.5,
+        "clippedBy": [],
+        "cornersVisible": true,
+        "fitsViewport": true,
+        "textFits": true
+      }
+    },
+    {
+      "stage": 4,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "errors": [],
+      "writeAttempts": [],
+      "passed": true,
+      "geometry": {
+        "x": 1116,
+        "y": 270.5,
+        "width": 288,
+        "height": 84.5,
+        "clippedBy": [],
+        "cornersVisible": true,
+        "fitsViewport": true,
+        "textFits": true
+      }
+    },
+    {
+      "stage": 1,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "errors": [],
+      "writeAttempts": [],
+      "passed": true,
+      "geometry": {
+        "x": 82,
+        "y": 80,
+        "width": 288,
+        "height": 84.5,
+        "clippedBy": [],
+        "cornersVisible": true,
+        "fitsViewport": true,
+        "textFits": true
+      }
+    },
+    {
+      "stage": 2,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "errors": [],
+      "writeAttempts": [],
+      "passed": true,
+      "geometry": {
+        "x": 82,
+        "y": 234.125,
+        "width": 288,
+        "height": 84.5,
+        "clippedBy": [],
+        "cornersVisible": true,
+        "fitsViewport": true,
+        "textFits": true
+      }
+    },
+    {
+      "stage": 3,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "errors": [],
+      "writeAttempts": [],
+      "passed": true,
+      "geometry": {
+        "x": 82,
+        "y": 80,
+        "width": 288,
+        "height": 84.5,
+        "clippedBy": [],
+        "cornersVisible": true,
+        "fitsViewport": true,
+        "textFits": true
+      }
+    },
+    {
+      "stage": 4,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "errors": [],
+      "writeAttempts": [],
+      "passed": true,
+      "geometry": {
+        "x": 82,
+        "y": 122,
+        "width": 288,
+        "height": 84.5,
+        "clippedBy": [],
+        "cornersVisible": true,
+        "fitsViewport": true,
+        "textFits": true
+      }
+    },
+    {
+      "stage": 1,
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "errors": [],
+      "writeAttempts": [],
+      "passed": true,
+      "geometry": {
+        "x": 20,
+        "y": 80,
+        "width": 280,
+        "height": 84.5,
+        "clippedBy": [],
+        "cornersVisible": true,
+        "fitsViewport": true,
+        "textFits": true
+      }
+    },
+    {
+      "stage": 2,
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "errors": [],
+      "writeAttempts": [],
+      "passed": true,
+      "geometry": {
+        "x": 20,
+        "y": 96.125,
+        "width": 280,
+        "height": 104,
+        "clippedBy": [],
+        "cornersVisible": true,
+        "fitsViewport": true,
+        "textFits": true
+      }
+    },
+    {
+      "stage": 3,
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "errors": [],
+      "writeAttempts": [],
+      "passed": true,
+      "geometry": {
+        "x": 20,
+        "y": 80,
+        "width": 280,
+        "height": 84.5,
+        "clippedBy": [],
+        "cornersVisible": true,
+        "fitsViewport": true,
+        "textFits": true
+      }
+    },
+    {
+      "stage": 4,
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "errors": [],
+      "writeAttempts": [],
+      "passed": true,
+      "geometry": {
+        "x": 20,
+        "y": 80,
+        "width": 280,
+        "height": 84.5,
+        "clippedBy": [],
+        "cornersVisible": true,
+        "fitsViewport": true,
+        "textFits": true
+      }
+    }
+  ]
+}

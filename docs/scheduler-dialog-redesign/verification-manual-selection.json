@@ -1,0 +1,26 @@
+{
+  "status": "passed",
+  "results": [],
+  "interactions": [
+    "Submit mixed: protected labels, readiness and busy guard",
+    "Submit blocked: protected labels, readiness and busy guard",
+    "Submit busy: protected labels, readiness and busy guard",
+    "Long section list scrolls while submit action remains visible",
+    "done: starts unchecked, manual selection, empty selection guard, callback",
+    "finalize: starts unchecked, manual selection, empty selection guard, callback",
+    "reassign: starts unchecked, manual selection, empty selection guard, callback",
+    "reset: starts unchecked, manual selection, empty selection guard, callback",
+    "Recall: stage warning, released instructor count, eligible sections only",
+    "Generator section scope: starts unchecked, preserves explicit picks, All-to-Selected resets",
+    "Course section scope: starts unchecked, manual All, All-to-Selected resets",
+    "Nested instructor picker Escape preserves faculty dialog",
+    "done: busy dismissal blocked",
+    "reset: busy dismissal blocked",
+    "recall: busy dismissal blocked",
+    "faculty: busy dismissal blocked",
+    "bulk: busy dismissal blocked",
+    "confirm: busy dismissal blocked",
+    "Submission dialog autofocus, Tab loop, Escape and opener restoration"
+  ],
+  "errors": []
+}

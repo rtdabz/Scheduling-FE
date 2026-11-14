@@ -108,3 +108,22 @@ export function changeBadgesByClass(changes: GenerationChange[]): Map<string, Ge
 
 export const changeBadgeLabel = (change: GenerationChange) =>
   badgeLabels[change.kind] ?? change.title;
+
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+/** Splits "Scheduled online: no room was available (Monday)" into its parts. Anything unrecognized stays in `result`. */
+export function parseChangeDetail(detail: string): { result: string; reason: string | null; day: string | null } {
+  let text = detail.trim();
+  let day: string | null = null;
+  const dayMatch = text.match(/\s*\(([^()]+)\)$/);
+  if (dayMatch && dayMatch[1].split(/[,/&]|\band\b/).every((part) => DAYS.includes(part.trim()))) {
+    day = dayMatch[1].trim();
+    text = text.slice(0, dayMatch.index).trim();
+  }
+  const separator = text.indexOf(": ");
+  if (separator > 0) {
+    return { result: text.slice(0, separator), reason: text.slice(separator + 2), day };
+  }
+  // Listed under "Room to be assigned", so "Room TBA" from older results would repeat the word.
+  return { result: text === "Room TBA" ? "TBA" : text, reason: null, day };
+}

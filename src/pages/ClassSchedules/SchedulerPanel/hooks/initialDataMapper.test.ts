@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generatedScheduleSectionId, mapApiScheduleToItem, mapInitialData, type InitialDataResponse } from "./initialDataMapper";
+import { generatedScheduleSectionId, mapApiScheduleToItem, mapApiSchedulesWithSignatories, mapInitialData, type InitialDataResponse } from "./initialDataMapper";
 import type { ApiCourseRecord, ApiScheduleRecord } from "../types";
 
 const course = (overrides: Partial<ApiCourseRecord> = {}): ApiCourseRecord => ({
@@ -126,6 +126,32 @@ describe("generatedScheduleSectionId", () => {
     mapApiScheduleToItem(schedule(1, 10)),
     mapApiScheduleToItem(schedule(2, 11)),
   ];
+
+  it("shows a revoked grant's roomless online meeting as Online with its status unchanged", () => {
+    const mapped = mapApiScheduleToItem({ ...schedule(1, 10), room_id: null, room: null, mode: "online", status: "finalized" });
+
+    expect(mapped).toMatchObject({ roomId: "online", roomName: "Online", mode: "online", status: "finalized" });
+  });
+
+  it("keeps inline approval evidence when the response has no submission lookup", () => {
+    const signatories = {
+      prepared: [{ name: "Former Secretary", title: "Department Secretary" }],
+      reviewed: { name: "Former Dean", title: "Dean" },
+      recommended: { name: "Former VPAA", title: "VPAA" },
+      approved: { name: "Former President", title: "College President" },
+      frozen: true,
+    };
+    const creatorIdentity = { id: 17, name: "Original Creator", role: "secretary" };
+    const record = { ...schedule(1, 10), signatories, created_by: 17, creator_identity: creatorIdentity };
+
+    expect(mapApiScheduleToItem(record)).toMatchObject({ signatories, createdById: 17, creatorIdentity });
+    expect(mapApiSchedulesWithSignatories([record], undefined)[0].signatories).toEqual(signatories);
+    expect(mapApiScheduleToItem({ ...record, signatories: null }).signatories).toBeNull();
+    expect(mapApiScheduleToItem(schedule(2, 10)).signatories).toBeUndefined();
+    expect(mapApiScheduleToItem({ ...record, created_by: null, creator_identity: null })).toMatchObject({ createdById: null, creatorIdentity: null });
+    expect(mapApiScheduleToItem(schedule(2, 10)).creatorIdentity).toBeUndefined();
+    expect(mapApiScheduleToItem(schedule(2, 10)).createdById).toBeUndefined();
+  });
 
   it("keeps a selected section included in the generated result", () => {
     expect(generatedScheduleSectionId("11", generated)).toBe("11");

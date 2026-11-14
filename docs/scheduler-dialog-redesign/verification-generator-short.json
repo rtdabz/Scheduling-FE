@@ -1,0 +1,40 @@
+{
+  "status": "passed",
+  "results": [
+    {
+      "dialog": "generator",
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "x": 24,
+      "y": 24,
+      "width": 796,
+      "height": 342,
+      "frame": true,
+      "pageOverflow": false,
+      "inViewport": true,
+      "closeVisible": true
+    }
+  ],
+  "interactions": [
+    "Submit mixed: protected labels, readiness and busy guard",
+    "Submit blocked: protected labels, readiness and busy guard",
+    "Submit busy: protected labels, readiness and busy guard",
+    "Long section list scrolls while submit action remains visible",
+    "done: eligible selection defaults, empty selection guard, callback",
+    "finalize: eligible selection defaults, empty selection guard, callback",
+    "reassign: eligible selection defaults, empty selection guard, callback",
+    "reset: eligible selection defaults, empty selection guard, callback",
+    "Recall: stage warning, released instructor count, eligible sections only",
+    "Nested instructor picker Escape preserves faculty dialog",
+    "done: busy dismissal blocked",
+    "reset: busy dismissal blocked",
+    "recall: busy dismissal blocked",
+    "faculty: busy dismissal blocked",
+    "bulk: busy dismissal blocked",
+    "confirm: busy dismissal blocked",
+    "Submission dialog autofocus, Tab loop, Escape and opener restoration"
+  ],
+  "errors": []
+}

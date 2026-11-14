@@ -69,10 +69,3 @@ export const sectionConflictMessage = (section: string | null | undefined, reque
   `${subject("Section", section, "This section")} is unavailable on ${slot(requested)}. `
   + `It already has ${text(booking.course) ?? "another class"} from ${window(booking.start, booking.end)}. `
   + "Please choose another time.";
-
-export const onlineCourseConflictMessage = (course: string | null | undefined, requested: RequestedSlot, booking: ConflictBooking): string => {
-  const department = text(booking.department);
-  return `Online class ${text(course) ?? "for this course"} is unavailable on ${slot(requested)}. `
-    + `It is already running online for ${text(booking.section) ?? "another section"}${department === null ? "" : ` (${department})`} `
-    + `from ${window(booking.start, booking.end)}. Please choose another time or delivery mode.`;
-};

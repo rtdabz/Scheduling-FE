@@ -7,10 +7,13 @@ import SecretaryDashboardPage from '../pages/secretary/SecretaryDashboardPage';
 import DeanSchedules from '../pages/dean/Schedules';
 import InstructorTimetableModal from './InstructorTimetableModal';
 
-const { get } = vi.hoisted(() => ({ get: vi.fn() }));
+const { get, toast } = vi.hoisted(() => ({
+  get: vi.fn(),
+  toast: { error: vi.fn(), success: vi.fn() },
+}));
 vi.mock('../lib/api', () => ({ default: { get, post: vi.fn() } }));
 vi.mock('../context/ToastContext', () => ({
-  useToast: () => ({ toast: { error: vi.fn(), success: vi.fn() } }),
+  useToast: () => ({ toast }),
 }));
 // These tests exercise the real Gantt; unrelated dashboard charts need no layout.
 vi.mock('recharts', async () => ({
@@ -22,7 +25,7 @@ const department = { id: 6, department_name: 'Information Technology', departmen
 const otherDepartment = { id: 7, department_name: 'Business Administration', department_code: 'CBA', logo: '/cba-logo.png' };
 const schedule = {
   id: 1, semester_id: 1, department_id: 6, section_id: 1, faculty_id: 1, room_id: 1,
-  day: 'Monday', start_time: '08:00:00', end_time: '09:30:00', status: 'submitted', mode: 'on-site',
+  day: 'Monday', start_time: '08:00:00', end_time: '09:30:00', status: 'faculty_assignment', mode: 'on-site',
   // Actual schedule relations omit logo; only the directory has the upload.
   department: { id: 6, department_name: department.department_name, department_code: 'CIT' },
   section: { id: 1, section_name: 'BSIT 1A' },
@@ -66,6 +69,34 @@ describe('department logo data reaches each Gantt', () => {
     expectLogo(block);
     fireEvent.click(block);
     expect(within(await screen.findByRole('dialog')).getByRole('img', { name: 'Information Technology logo' }).getAttribute('src')).toBe(department.logo);
+  });
+
+  it.each(['dean', 'secretary', 'director', 'program_head'] as const)('shows only final VPAA-approved meetings on the %s dashboard', async role => {
+    const statuses = [
+      'approved', 'faculty_assignment', 'reassignment', 'finalized',
+      'draft', 'drafting', 'submitted', 'approved_by_dean', 'conditionally_approved',
+      'rejected', 'revision', undefined,
+    ];
+    const mixedSchedules = statuses.map((status, index) => ({ ...schedule, id: index + 1, status }));
+    get.mockImplementation((url: string) => {
+      if (url === '/initial-data') return Promise.resolve({ data: { ...initialData, schedules: mixedSchedules } });
+      if (url === '/departments') return Promise.resolve({ data: [department, otherDepartment] });
+      if (url === '/schedules') return Promise.resolve({ data: mixedSchedules });
+      if (url === '/departments/6/schedule-status') return Promise.resolve({ data: { sections: [] } });
+      return Promise.resolve({ data: [] });
+    });
+    localStorage.setItem('user', JSON.stringify({ id: 9, role, department_id: 6, permissions: ['schedule.view'] }));
+    render(<MemoryRouter>{role === 'dean' ? <DeanDashboardPage /> : <SecretaryDashboardPage role={role} />}</MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Week' }));
+
+    const visibleIds = () => screen.getAllByRole('button', { name: /IT 101 lecture/ }).map(block => block.getAttribute('data-schedule-id'));
+    expect(visibleIds()).toEqual(['1', '2', '3', '4']);
+    expect(screen.getByText('4 classes in view')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Full window view' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Week' }));
+    expect(visibleIds()).toEqual(['1', '2', '3', '4']);
+    fireEvent.click(screen.getAllByRole('button', { name: /IT 101 lecture/ })[0]);
+    expect(within(await screen.findByRole('dialog')).getByText('Overlapping classes (3)')).toBeTruthy();
   });
 
   it('preserves the department logo through the dean schedule adapter', async () => {

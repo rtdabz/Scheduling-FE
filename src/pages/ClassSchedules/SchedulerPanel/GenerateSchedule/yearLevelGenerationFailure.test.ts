@@ -279,3 +279,21 @@ describe("describeAdjustment", () => {
     }))).toBe("GEC 101 in IT 1A: Can't split, switched to one meeting.");
   });
 });
+
+describe("Lecture and Laboratory Required Days", () => {
+  it("refuses an adjustment that would drop Integrated for a pinned course", () => {
+    const pinned = config({ componentRequiredDaysByCourseId: { "21": { lecture: "Monday" } } });
+    expect(() => applyAdjustments({ "5": pinned }, [
+      adjustment({ type: "disable_lecture_lab_split", course_id: 21, course_code: "IT 201", value: null }),
+    ])).toThrow(/IT 201 has Lecture\/Laboratory Required Days/);
+    expect(() => applyAdjustments({ "5": pinned }, [
+      adjustment({ type: "disable_section_hybrid", course_id: 0, value: null }),
+    ])).toThrow(/must stay Integrated/);
+  });
+
+  it("still applies adjustments that keep the course Integrated", () => {
+    const pinned = config({ componentRequiredDaysByCourseId: { "21": { lecture: "Monday" } } });
+    const { configs: next } = applyAdjustments({ "5": pinned }, [adjustment()]);
+    expect(next["5"].componentRequiredDaysByCourseId).toEqual({ "21": { lecture: "Monday" } });
+  });
+});

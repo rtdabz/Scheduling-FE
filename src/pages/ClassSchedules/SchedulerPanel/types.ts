@@ -8,7 +8,7 @@ export type YearLevel = 1 | 2 | 3 | 4;
 export type RoomType = "lecture" | "laboratory" | "field" | "online";
 export type RoomStatus = "available" | "not available";
 export type DeliveryMode = "on-site" | "online" | "field";
-export type WithdrawalStage = "dean_review" | "vpaa_review" | "vpaa_approved";
+export type WithdrawalStage = "dean_review" | "vpaa_review";
 export type ScheduleStatus =
   | "draft"
   | "completed"
@@ -46,6 +46,7 @@ export interface Semester {
 }
 
 export interface UserSummary {
+  is_active?: boolean | number;
   id: number;
   name?: string;
   first_name?: string;
@@ -116,6 +117,7 @@ export interface Section {
   status: "active" | "inactive";
   submissionStatus?: SubmissionStatus;
   revisionStatus?: RevisionStatus;
+  resetSinceSubmission?: boolean;
 }
 
 export interface FacultyAvailability {
@@ -126,9 +128,9 @@ export interface FacultyAvailability {
   end_time: string;
 }
 
-export type FacultyAdministrativePost = "dean" | "secretary" | "program_head" | "vpaa";
+export type FacultyAdministrativePost = "dean" | "secretary" | "director" | "program_head" | "vpaa";
 
-const ADMINISTRATIVE_POSTS: readonly FacultyAdministrativePost[] = ["dean", "secretary", "program_head", "vpaa"];
+const ADMINISTRATIVE_POSTS: readonly FacultyAdministrativePost[] = ["dean", "secretary", "director", "program_head", "vpaa"];
 
 export const normalizeAdministrativePost = (
   value: string | null | undefined,
@@ -144,11 +146,16 @@ export interface HeldDesignation {
 
 export interface Faculty {
   id: string;
+  /** Display name, e.g. "Dr. Juan P. Dela Cruz Jr., DM". */
   name: string;
+  /** Title-free "First Last" for sorting. */
+  sortName?: string;
+  honorificPrefix?: string | null;
   firstName?: string;
   middleName?: string | null;
   lastName?: string;
   suffix?: string | null;
+  credentials?: string | null;
   profilePicture?: string | null;
   employmentType?: "full-time" | "part-time";
   administrativeRole?: FacultyAdministrativePost | null;
@@ -165,7 +172,18 @@ export interface Faculty {
   requiredUnits?: number;
   unitCeiling?: number;
   status?: "active" | "inactive";
+  /** Recorded custom windows: a hard limit for either employment type. */
   availabilities?: FacultyAvailability[];
+  /** "standard" when no custom windows are recorded. */
+  availabilityMode?: "standard" | "custom";
+  /** The employment type's standard week; outside it only warns. */
+  standardAvailabilities?: StandardAvailability[];
+}
+
+export interface StandardAvailability {
+  day_index: number;
+  start_time: string;
+  end_time: string;
 }
 
 export interface Room {
@@ -229,6 +247,7 @@ export interface ScheduleItem {
   meetingIndex?: number;
   /** User who entered the row; printed as the "Prepared by" signatory. */
   createdById?: number | null;
+  creatorIdentity?: { id: number; name: string; role: string; program_id?: number | null } | null;
   /** Officials recorded on the row's submission; absent while the row is an unsigned draft. */
   signatories?: ScheduleSignatories | null;
 }
@@ -369,6 +388,7 @@ export interface ApiSectionRecord {
   academic_semester?: ApiSemesterRecord | null;
   submission_status?: string;
   revision_status?: string;
+  schedule_reset_since_submission?: boolean;
 }
 
 export interface ApiFacultyRecord {
@@ -377,6 +397,8 @@ export interface ApiFacultyRecord {
   middle_name?: string | null;
   last_name: string;
   suffix?: string | null;
+  honorific_prefix?: string | null;
+  credentials?: string | null;
   employment_type?: "full-time" | "part-time";
   administrative_role?: FacultyAdministrativePost | string | null;
   max_units?: number | string | null;
@@ -399,6 +421,8 @@ export interface ApiFacultyRecord {
     department_name?: string;
   } | null;
   availabilities?: FacultyAvailability[];
+  availability_mode?: "standard" | "custom" | null;
+  standard_availabilities?: StandardAvailability[];
   designations?: {
     id: number;
     name: string;
@@ -441,8 +465,11 @@ export interface ApiScheduleRecord {
   meeting_type?: "lecture" | "laboratory" | null;
   meeting_index?: number;
   created_by?: number | string | null;
+  creator_identity?: ScheduleItem["creatorIdentity"];
   /** The submission whose recorded officials sign this row; set once the row has been submitted. */
   signatories_submission_id?: number | string | null;
+  /** That submission's recorded officials, inlined when `/schedules` is asked `with_signatories`. */
+  signatories?: ScheduleSignatories | null;
   course?: {
     course_code?: string;
     subject_code?: string;
@@ -477,7 +504,11 @@ export interface ApiScheduleRecord {
   faculty?: {
     id?: number | string;
     first_name?: string;
+    middle_name?: string | null;
     last_name?: string;
+    suffix?: string | null;
+    honorific_prefix?: string | null;
+    credentials?: string | null;
   } | null;
   room?: {
     room_code?: string;

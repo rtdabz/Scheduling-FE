@@ -6,6 +6,7 @@ import {
   Check,
   CheckCircle2,
   Clock,
+  DoorOpen,
   Eye,
   Loader2,
   RefreshCw,
@@ -23,7 +24,17 @@ import { useToast } from '../../context/ToastContext';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import { apiErrorMessage } from '../../lib/apiError';
 import { hasStoredCapability } from '../../lib/storedUser';
-import WeeklyTimetableGrid from '../../components/scheduling/WeeklyTimetableGrid';
+import WeeklyTimetableGrid, { GRID_SLOT_HEIGHT_PX } from '../../components/scheduling/WeeklyTimetableGrid';
+import TimetablePanel from '../../components/scheduling/TimetablePanel';
+import {
+  TIMETABLE_BLOCK_BASE,
+  TIMETABLE_BLOCK_META,
+  TIMETABLE_BLOCK_STYLES,
+  TIMETABLE_BLOCK_TITLE,
+  TIMETABLE_CELL_STATE,
+  TIMETABLE_SWATCH,
+  timetableCellBorderClass,
+} from '../../components/scheduling/timetableStyles';
 import { FULL_DAY_NAMES, formatTime12h, gridOpeningMinutes, slotCount, slotMinutes, slotToTime24h } from '../../lib/timeGrid';
 import {
   cancelRoomRequest,
@@ -42,11 +53,13 @@ import {
   type RoomOccupancyBlock,
   type RoomOccupancySchedule,
   type RoomRequest,
+  type RoomRequestDecision,
   type RoomRequestMutationResult,
   type RoomRequestSemester,
   type RoomRequestStatus,
   type RoomRequestWindow,
 } from '../../lib/roomRequests';
+import { modalButton, modalLabel, modalTextarea } from '../../components/ui/modalStyles';
 
 export interface LendableRoom {
   id: number;
@@ -70,14 +83,11 @@ const STATUS_STYLES: Record<RoomRequestStatus, string> = {
   revoked: 'border-orange-200 bg-orange-50 text-orange-700',
 };
 
-const fieldClass =
-  'mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 outline-none transition focus:border-[#5A1220] focus:ring-2 focus:ring-[#5A1220]/15 disabled:bg-gray-100 disabled:text-gray-400';
-const labelClass = 'block text-xs font-extrabold uppercase tracking-wide text-gray-500';
-const buttonBase =
-  'inline-flex items-center justify-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-bold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220]/30 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer';
-const secondaryButton = `${buttonBase} border-gray-200 bg-white text-gray-700 hover:bg-gray-50`;
-const primaryButton = `${buttonBase} border-transparent bg-[#5A1220] text-white hover:bg-[#4e0a10]`;
-const dangerButton = `${buttonBase} border-red-200 bg-white text-red-700 hover:bg-red-50`;
+const fieldClass = `mt-1.5 ${modalTextarea()}`;
+const labelClass = modalLabel.replace('mb-1.5 ', '');
+const secondaryButton = modalButton.secondary;
+const primaryButton = modalButton.primary;
+const dangerButton = modalButton.dangerOutline;
 
 const describeWindowLine = (window: RoomRequestWindow): string =>
   `${window.day}, ${formatTime12h(window.start_time)} – ${formatTime12h(window.end_time)}`;
@@ -97,7 +107,7 @@ const shortSemester = (semester: { academic_year: string; semester: string } | n
 
 export function StatusBadge({ status }: { status: RoomRequestStatus }) {
   return (
-    <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide ${STATUS_STYLES[status]}`}>
+    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize whitespace-nowrap ${STATUS_STYLES[status]}`}>
       {status}
     </span>
   );
@@ -214,7 +224,7 @@ export interface ScheduleChoice {
   duration: number;
 }
 
-const PICKER_SLOT_HEIGHT_PX = 20;
+const PICKER_SLOT_HEIGHT_PX = GRID_SLOT_HEIGHT_PX;
 
 const durationLabel = (minutes: number): string =>
   REQUEST_DURATIONS.find((option) => option.minutes === minutes)?.label ?? formatDuration(minutes);
@@ -260,6 +270,25 @@ const exactPlacement = (dayIndex: number, startTime: string, endTime: string) =>
 };
 
 type Occupancy = ReturnType<typeof useOccupancy>;
+
+/** How usable the chosen time is, shown on the Request Room schedule card. */
+type TimeState = 'checking' | 'unconfirmed' | 'closed' | 'conflict' | 'free';
+
+const TIME_CARD_TONE: Record<TimeState, string> = {
+  checking: 'border-slate-200',
+  unconfirmed: 'border-red-200',
+  closed: 'border-amber-200',
+  conflict: 'border-red-300',
+  free: 'border-[#C9952A]/45',
+};
+
+const TIME_STATUS_TONE: Record<TimeState, string> = {
+  checking: 'border-slate-200 bg-slate-50 text-slate-600',
+  unconfirmed: 'border-red-200 bg-red-50 text-red-700',
+  closed: 'border-amber-200 bg-amber-50 text-amber-800',
+  conflict: 'border-red-200 bg-red-50 text-red-700',
+  free: 'border-[#C9952A]/25 bg-emerald-50/70 text-emerald-800',
+};
 
 function SchedulePickerModal({
   roomCode,
@@ -308,12 +337,12 @@ function SchedulePickerModal({
         aria-label={startable ? `Start ${label}` : `${label}, unavailable`}
         title={startable ? `Start here: ${formatTime12h(start)} – ${formatTime12h(fromMinutes(toMinutes(start) + duration))}` : occupied ? 'Booked' : 'Not enough free time before the next booking or closing time'}
         onClick={() => setPick({ day, start })}
-        className={`border-b border-r border-b-slate-100 border-r-slate-100 transition focus:outline-none focus-visible:relative focus-visible:z-20 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#5A1220] ${
+        className={`${timetableCellBorderClass(slot)} transition-colors duration-100 motion-reduce:transition-none focus-visible:relative focus-visible:z-20 ${
           startable
-            ? 'cursor-pointer bg-white hover:bg-emerald-50'
+            ? isPicked ? `cursor-pointer ${TIMETABLE_CELL_STATE.target}` : TIMETABLE_CELL_STATE.available
             : occupied
-              ? 'cursor-not-allowed bg-white'
-              : 'cursor-not-allowed bg-slate-50 bg-[repeating-linear-gradient(135deg,transparent,transparent_4px,rgba(148,163,184,0.12)_4px,rgba(148,163,184,0.12)_8px)]'
+              ? `cursor-not-allowed ${TIMETABLE_CELL_STATE.idle}`
+              : TIMETABLE_CELL_STATE.unavailable
         }`}
         style={{ gridColumn: dayIndex + 2, gridRow: slot + 2 }}
       />
@@ -355,8 +384,9 @@ function SchedulePickerModal({
               {REQUEST_DURATIONS.map((option) => (
                 <label
                   key={option.minutes}
-                  className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-extrabold transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[#5A1220]/30 ${
-                    duration === option.minutes ? 'bg-[#5A1220] text-white shadow-sm' : 'text-gray-500 hover:text-gray-800'
+                  data-active={duration === option.minutes}
+                  className={`selection-indicator cursor-pointer rounded-lg px-3 py-1.5 text-xs font-extrabold transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[#5A1220]/30 ${
+                    duration === option.minutes ? 'shadow-sm' : 'text-gray-500 hover:text-gray-800'
                   }`}
                 >
                   <input
@@ -372,12 +402,6 @@ function SchedulePickerModal({
               ))}
             </div>
           </fieldset>
-          <ul className="flex flex-wrap items-center gap-3 text-[11px] font-bold text-gray-500" aria-label="Legend">
-            <li className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border border-slate-200 bg-white" /> Available</li>
-            <li className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border border-red-200 bg-red-100" /> Class</li>
-            <li className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border-2 border-dashed border-orange-300 bg-orange-50" /> Lent</li>
-            <li className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border-2 border-[#C9952A] bg-[#C9952A]/20" /> Selected</li>
-          </ul>
         </div>
 
         <div role="status" aria-live="polite">
@@ -401,13 +425,23 @@ function SchedulePickerModal({
         </div>
 
         {occupancy.status !== 'error' && (
-          <div className="overflow-x-auto">
+          // The modal header already names the room and semester, so the panel skips its title bar.
+          <TimetablePanel
+            legend={[{
+              label: 'Slots',
+              items: [
+                { label: 'Available start', swatch: TIMETABLE_SWATCH.target },
+                { label: 'Too short', swatch: TIMETABLE_SWATCH.unavailable },
+                { label: 'Class', swatch: TIMETABLE_SWATCH.occupied },
+                { label: 'Lent', swatch: TIMETABLE_SWATCH.borrowed },
+                { label: 'Selected', swatch: TIMETABLE_SWATCH.requested },
+              ],
+            }]}
+          >
             <WeeklyTimetableGrid
               days={FULL_DAY_NAMES}
               slotCount={slotCount()}
               slotHeight={PICKER_SLOT_HEIGHT_PX}
-              headerHeight={36}
-              timeColumnWidth={64}
               minWidth={680}
               isLoading={occupancy.status === 'loading' || occupancy.status === 'idle'}
               renderCell={occupancy.status === 'loading' || occupancy.status === 'idle' ? undefined : renderCell}
@@ -420,23 +454,19 @@ function SchedulePickerModal({
                     key={`${block.kind}-${block.day}-${block.start_time}-${index}`}
                     aria-hidden="true"
                     title={`${block.kind === 'grant' ? 'Lent' : 'Class'}: ${formatTime12h(block.start_time)} – ${formatTime12h(block.end_time)} · ${block.label || block.department_code || ''}`}
-                    className={`pointer-events-none z-10 mx-0.5 overflow-hidden rounded-md px-1.5 py-0.5 text-[9px] font-bold leading-tight ${
-                      block.kind === 'grant'
-                        ? 'border-2 border-dashed border-orange-300 bg-orange-50/95 text-orange-800'
-                        : 'border border-red-200 bg-red-100/95 text-red-800'
-                    }`}
+                    className={`${TIMETABLE_BLOCK_BASE} pointer-events-none z-10 px-1.5 py-0.5 ${TIMETABLE_BLOCK_STYLES[block.kind === 'grant' ? 'borrowed' : 'occupied']}`}
                     style={placement}
                   >
-                    {formatTime12h(block.start_time)}–{formatTime12h(block.end_time)}
-                    <span className="block truncate font-semibold">{block.label || block.department_code}</span>
+                    <span className={`block truncate ${TIMETABLE_BLOCK_TITLE}`}>{block.label || block.department_code}</span>
+                    <span className={`block truncate ${TIMETABLE_BLOCK_META}`}>{formatTime12h(block.start_time)}–{formatTime12h(block.end_time)}</span>
                   </div>
                 );
               })}
               {selection && (
                 <div
                   aria-hidden="true"
-                  className={`pointer-events-none z-10 mx-0.5 rounded-md border-2 px-1.5 py-0.5 text-[9px] font-black leading-tight ring-2 ${
-                    choiceFits ? 'border-[#C9952A] bg-[#C9952A]/20 text-[#7a5410] ring-[#C9952A]/25' : 'border-red-500 bg-red-500/10 text-red-700 ring-red-500/20'
+                  className={`${TIMETABLE_BLOCK_BASE} pointer-events-none z-20 px-1.5 py-0.5 ${TIMETABLE_BLOCK_TITLE} ${
+                    choiceFits ? TIMETABLE_BLOCK_STYLES.selected : TIMETABLE_BLOCK_STYLES.invalid
                   }`}
                   style={selection}
                 >
@@ -444,7 +474,7 @@ function SchedulePickerModal({
                 </div>
               )}
             </WeeklyTimetableGrid>
-          </div>
+          </TimetablePanel>
         )}
         <p className="text-[11px] font-semibold text-gray-400">
           Click a starting time. The whole {durationLabel(duration)} must be free and end by {formatTime12h(fromMinutes(gridBounds().closing))}.
@@ -533,6 +563,20 @@ export function RequestRoomModal({
   };
 
   const ownerCode = room.department?.department_code ?? 'the owning department';
+  const durationChoices = REQUEST_DURATIONS.map((option) => option.label).join(' or ');
+
+  const reviewerOwner = room.department ? `${room.department.department_code}’s` : 'The owning department’s';
+
+  // One visual state for the chosen time, so availability is read from the card itself.
+  const timeState: TimeState | null = choice === null
+    ? null
+    : occupancy.status === 'loading' || occupancy.status === 'idle'
+      ? 'checking'
+      : occupancy.status === 'error' || occupancy.status === 'stale'
+        ? 'unconfirmed'
+        : borrowingClosed !== null
+          ? 'closed'
+          : choiceValid ? 'free' : 'conflict';
 
   return (
     <>
@@ -540,22 +584,40 @@ export function RequestRoomModal({
         isOpen
         onClose={onClose}
         inert={isPicking}
+        busy={isSubmitting}
         closeOnEscape={!isPicking}
         title="Request Room"
-        description="Ask another department to lend one of its lecture rooms. Its secretary reviews the request."
-        size="lg"
-        className="!max-w-2xl"
+        description={`Borrow a lecture room from ${ownerCode} for weekly classes.`}
+        icon={<DoorOpen size={18} />}
+        size="form"
         footer={
-          <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p id={`${ids}-hint`} className="text-xs font-semibold text-gray-500" aria-live="polite">{submitHint ?? ''}</p>
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={onClose} className={secondaryButton}>Cancel</button>
+          <div className="flex w-full flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <p
+              id={`${ids}-hint`}
+              className={`flex min-w-0 items-start gap-1.5 text-xs leading-5 ${canSubmit ? 'font-semibold text-emerald-800' : 'font-medium text-slate-500'}`}
+              aria-live="polite"
+            >
+              {canSubmit && choice ? (
+                <>
+                  <CheckCircle2 size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0">
+                    Ready. <strong>{ownerCode}</strong> will review {room.room_code}, {choice.day.slice(0, 3)} {formatTime12h(choice.start)} – {formatTime12h(choiceEnd(choice))}.
+                  </span>
+                </>
+              ) : isSubmitting ? (
+                <span>Sending your request to {ownerCode}…</span>
+              ) : submitHint && (
+                <span>{submitHint}</span>
+              )}
+            </p>
+            <div className="grid shrink-0 grid-cols-2 gap-2 sm:flex">
+              <button type="button" onClick={onClose} disabled={isSubmitting} className={secondaryButton}>Cancel</button>
               <button
                 type="submit"
                 form={`${ids}-form`}
                 disabled={!canSubmit}
                 aria-describedby={submitHint ? `${ids}-hint` : undefined}
-                className={primaryButton}
+                className={`${primaryButton} min-w-[9.5rem]`}
               >
                 {isSubmitting ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
                 {isSubmitting ? 'Sending…' : 'Send Request'}
@@ -564,19 +626,28 @@ export function RequestRoomModal({
           </div>
         }
       >
-        <form id={`${ids}-form`} onSubmit={(event) => void submit(event)} className="space-y-6 p-5 font-sans" noValidate>
+        <form id={`${ids}-form`} onSubmit={(event) => void submit(event)} className="space-y-5 p-4 font-sans sm:p-5" noValidate>
           <section aria-labelledby={`${ids}-room-title`}>
-            <SectionTitle><span id={`${ids}-room-title`}>Room</span></SectionTitle>
-            <dl className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <Fact label="Selected room">
-                <span className="font-mono text-[#4e0a10]">{room.room_code}</span>
-                <span className="block text-xs font-semibold text-gray-500">{room.building || 'No building assigned'}</span>
-              </Fact>
-              <Fact label="Owning department">
-                {room.department ? room.department.department_code : 'Not assigned'}
-                {room.department && <span className="block text-xs font-semibold text-gray-500">{room.department.department_name}</span>}
-              </Fact>
-              <Fact label="Academic semester">{formatSemester(semester)}</Fact>
+            <h3 id={`${ids}-room-title`} className="sr-only">Room</h3>
+            <dl className="grid grid-cols-1 divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white sm:grid-cols-[1fr_1.25fr_1fr] sm:divide-x sm:divide-y-0">
+              <div className="min-w-0 px-3 py-2.5">
+                <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Selected room</dt>
+                <dd className="mt-0.5 min-w-0">
+                  <span className="block truncate font-mono text-sm font-bold text-[#4e0a10]">{room.room_code}</span>
+                  <span className="block truncate text-xs text-slate-500">{room.building || 'No building assigned'}</span>
+                </dd>
+              </div>
+              <div className="min-w-0 px-3 py-2.5">
+                <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Owning department</dt>
+                <dd className="mt-0.5 min-w-0">
+                  <span className="block text-sm font-bold text-slate-800">{room.department ? room.department.department_code : 'Not assigned'}</span>
+                  {room.department && <span className="block truncate text-xs text-slate-500" title={room.department.department_name}>{room.department.department_name}</span>}
+                </dd>
+              </div>
+              <div className="min-w-0 px-3 py-2.5">
+                <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Academic semester</dt>
+                <dd className="mt-0.5 text-sm font-bold leading-5 text-slate-800">{formatSemester(semester)}</dd>
+              </div>
             </dl>
             {semester !== null && openedSemesterId !== null && semester.id !== openedSemesterId && (
               <div className="mt-2">
@@ -588,75 +659,95 @@ export function RequestRoomModal({
           </section>
 
           <section aria-labelledby={`${ids}-time-title`}>
-            <SectionTitle><span id={`${ids}-time-title`}>Requested time</span></SectionTitle>
+            <SectionTitle
+              aside={<span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500"><RefreshCw size={11} aria-hidden="true" /> Repeats weekly</span>}
+            >
+              <span id={`${ids}-time-title`}>Requested time <span className="text-red-600" aria-hidden="true">*</span></span>
+            </SectionTitle>
             {borrowingClosed !== null && (
-              <div className="mb-3" role="alert">
+              <div className="mb-2" role="alert">
                 <Notice tone="warning" icon={<AlertTriangle size={14} />}>{borrowingClosed}</Notice>
               </div>
             )}
             {choice === null ? (
-              <div className="flex flex-col items-start gap-3 rounded-xl border border-dashed border-gray-300 bg-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm font-semibold text-gray-500">
-                  Pick a weekly day and time, 1.5 or 3 hours long, from {room.room_code}’s timetable.
-                </p>
-                <button ref={scheduleButtonRef} type="button" onClick={() => setIsPicking(true)} disabled={semester === null || borrowingClosed !== null} className={`${primaryButton} shrink-0 whitespace-nowrap`}>
+              <div className="flex flex-col items-stretch gap-3 rounded-lg border border-dashed border-slate-300 bg-white px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-start gap-2.5">
+                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#4e0a10]/[0.06] text-[#4e0a10]" aria-hidden="true">
+                    <CalendarClock size={16} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-slate-800">No schedule selected</p>
+                    <p className="text-xs leading-5 text-slate-500">Pick a weekday and start time ({durationChoices}) from {room.room_code}’s timetable.</p>
+                  </div>
+                </div>
+                <button ref={scheduleButtonRef} type="button" onClick={() => setIsPicking(true)} disabled={semester === null || borrowingClosed !== null} className={`${primaryButton} whitespace-nowrap`}>
                   <CalendarClock size={15} /> Choose Schedule
                 </button>
               </div>
             ) : (
-              <div className="flex flex-col gap-3 rounded-xl border border-[#C9952A]/30 bg-[#C9952A]/[0.06] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3">
-                  <CalendarClock size={20} className="shrink-0 text-[#C9952A]" />
-                  <div>
-                    <p className="text-sm font-extrabold text-gray-800">Every {choice.day}</p>
-                    <p className="text-sm font-semibold text-gray-700">
-                      {formatTime12h(choice.start)} – {formatTime12h(choiceEnd(choice))}
-                      <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-[#C9952A]/30 bg-white px-2 py-0.5 text-[11px] font-extrabold text-[#8a6416]">
-                        <Clock size={11} /> {durationLabel(choice.duration)}
-                      </span>
-                    </p>
+              <div className={`overflow-hidden rounded-lg border bg-white transition-colors ${timeState ? TIME_CARD_TONE[timeState] : ''}`}>
+                <div className="flex flex-col gap-3 px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#C9952A]/[0.12] text-[#8a6416]" aria-hidden="true">
+                      <CalendarClock size={17} />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-extrabold text-slate-800">Every {choice.day}</p>
+                      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-slate-600">
+                        <span className="tabular-nums">{formatTime12h(choice.start)} – {formatTime12h(choiceEnd(choice))}</span>
+                        <span className="inline-flex items-center gap-1 rounded-full border border-[#C9952A]/30 bg-[#C9952A]/[0.08] px-2 py-0.5 text-[11px] font-bold text-[#8a6416]">
+                          <Clock size={11} aria-hidden="true" /> {durationLabel(choice.duration)}
+                        </span>
+                      </p>
+                    </div>
                   </div>
+                  <button ref={scheduleButtonRef} type="button" onClick={() => setIsPicking(true)} disabled={borrowingClosed !== null || isSubmitting} className={`${secondaryButton} !h-9 whitespace-nowrap !px-3`}>
+                    <CalendarClock size={15} /> Change Schedule
+                  </button>
                 </div>
-                <button ref={scheduleButtonRef} type="button" onClick={() => setIsPicking(true)} disabled={borrowingClosed !== null} className={`${secondaryButton} shrink-0 whitespace-nowrap`}>
-                  <CalendarClock size={15} /> Change Schedule
-                </button>
+                <div role="status" aria-live="polite" className={`border-t px-3.5 py-2 text-xs font-semibold ${timeState ? TIME_STATUS_TONE[timeState] : ''}`}>
+                  {timeState === 'checking' && (
+                    <p className="flex items-center gap-1.5"><Loader2 size={13} className="animate-spin" aria-hidden="true" /> Checking {room.room_code}’s timetable…</p>
+                  )}
+                  {timeState === 'unconfirmed' && (
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="flex items-center gap-1.5"><XCircle size={13} aria-hidden="true" /> Availability could not be confirmed. Retry before sending.</p>
+                      <RetryButton onClick={occupancy.retry} />
+                    </div>
+                  )}
+                  {timeState === 'closed' && (
+                    <p className="flex items-center gap-1.5"><AlertTriangle size={13} aria-hidden="true" /> Borrowing is closed for this room.</p>
+                  )}
+                  {timeState === 'conflict' && (
+                    <div className="space-y-1">
+                      <p className="flex items-center gap-1.5"><XCircle size={13} aria-hidden="true" /> This time is no longer free{conflicts.length > 0 ? ':' : '. Choose another time.'}</p>
+                      {conflicts.length > 0 && (
+                        <ul className="list-disc space-y-0.5 pl-9 font-medium">
+                          {conflicts.map((block, index) => (
+                            <li key={`${block.kind}-${block.start_time}-${index}`}>
+                              {formatTime12h(block.start_time)} – {formatTime12h(block.end_time)} · {block.label || block.department_code || 'Booked'}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                  {timeState === 'free' && (
+                    <p className="flex items-center gap-1.5"><CheckCircle2 size={13} aria-hidden="true" /> {room.room_code} is free at this time.</p>
+                  )}
+                </div>
               </div>
             )}
-
-            <div className="mt-3" role="status" aria-live="polite">
-              {choice !== null && (occupancy.status === 'loading' || occupancy.status === 'idle') && (
-                <Notice tone="muted" icon={<Loader2 size={14} className="animate-spin" />}>Checking {room.room_code}’s timetable…</Notice>
-              )}
-              {choice !== null && (occupancy.status === 'error' || occupancy.status === 'stale') && (
-                <Notice tone="danger" icon={<XCircle size={14} />} action={<RetryButton onClick={occupancy.retry} />}>
-                  Availability could not be confirmed. Retry before sending.
-                </Notice>
-              )}
-              {choice !== null && occupancy.status === 'ready' && borrowingClosed === null && !choiceValid && (
-                <Notice tone="danger" icon={<XCircle size={14} />}>
-                  <p>This time is no longer free{conflicts.length > 0 ? ':' : '.'}</p>
-                  {conflicts.length > 0 && (
-                    <ul className="list-disc space-y-0.5 pl-4 font-medium">
-                      {conflicts.map((block, index) => (
-                        <li key={`${block.kind}-${block.start_time}-${index}`}>
-                          {formatTime12h(block.start_time)} – {formatTime12h(block.end_time)} · {block.label || block.department_code || 'Booked'}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </Notice>
-              )}
-              {choiceValid && (
-                <Notice tone="success" icon={<CheckCircle2 size={14} />}>{room.room_code} is free at this time.</Notice>
-              )}
-            </div>
           </section>
 
-          <section aria-labelledby={`${ids}-purpose-title`}>
-            <SectionTitle><span id={`${ids}-purpose-title`}>Purpose</span></SectionTitle>
-            <label htmlFor={`${ids}-purpose`} className={labelClass}>
-              Why do you need this room? <span className="text-red-600" aria-hidden="true">*</span>
-            </label>
+          <section>
+            <div className="mb-1.5 flex items-baseline justify-between gap-3">
+              <label htmlFor={`${ids}-purpose`} className="text-xs font-extrabold uppercase tracking-wider text-[#4e0a10]">
+                Purpose <span className="text-red-600" aria-hidden="true">*</span>
+                <span className="ml-1.5 font-semibold normal-case tracking-normal text-slate-500">Why do you need this room?</span>
+              </label>
+              <span className="shrink-0 text-[11px] font-medium tabular-nums text-slate-400" aria-hidden="true">{purpose.length}/1000</span>
+            </div>
             <textarea
               id={`${ids}-purpose`}
               value={purpose}
@@ -665,19 +756,13 @@ export function RequestRoomModal({
               maxLength={1000}
               required
               aria-required="true"
+              aria-describedby={`${ids}-purpose-hint`}
+              disabled={isSubmitting}
               placeholder="e.g. IT 1A lecture classes; our lecture rooms are fully booked."
-              className={fieldClass}
+              className={modalTextarea()}
             />
-          </section>
-
-          <section aria-labelledby={`${ids}-summary-title`} className="rounded-xl border border-[#5A1220]/15 bg-[#5A1220]/[0.03] p-4">
-            <SectionTitle><span id={`${ids}-summary-title`}>Summary</span></SectionTitle>
-            <p className="text-sm font-semibold text-gray-700">
-              Ask <strong>{ownerCode}</strong> to lend <strong>{room.room_code}</strong>
-              {choice
-                ? <> every <strong>{choice.day}</strong>, {formatTime12h(choice.start)} – {formatTime12h(choiceEnd(choice))} ({durationLabel(choice.duration)})</>
-                : ' at a weekly time you choose'}
-              , for <strong>{formatSemester(semester)}</strong>.
+            <p id={`${ids}-purpose-hint`} className="mt-1 text-[11px] text-slate-500">
+              {reviewerOwner} Secretary or Director sees this when reviewing.
             </p>
           </section>
 
@@ -720,18 +805,21 @@ const canGiveBack = (request: RoomRequest, departmentId: number | null): boolean
   && request.requesting_department?.id === departmentId
   && (request.status === 'pending' || request.status === 'approved');
 
-const roomTbaMessage = (request: RoomRequest, affected: RoomOccupancySchedule[] | null): string => {
+const grantEndMessage = (request: RoomRequest, affected: RoomOccupancySchedule[] | null, destination: 'Room TBA' | 'Online' = 'Room TBA'): string => {
   const roomCode = request.room?.room_code ?? 'the room';
+  const outcome = destination === 'Online'
+    ? 'temporarily move to Online until a replacement room is assigned'
+    : 'move to Room TBA and need a new room';
   if (affected === null) {
-    return `Classes held in ${roomCode} under this grant will move to Room TBA and need a new room.`;
+    return `Classes held in ${roomCode} under this grant will ${outcome}.`;
   }
   if (affected.length === 0) {
-    return `No classes are scheduled in ${roomCode} under this grant, so no class will move to Room TBA.`;
+    return `No classes are scheduled in ${roomCode} under this grant, so no class will move to ${destination}.`;
   }
   const names = affected.slice(0, 5)
     .map((schedule) => `${schedule.course?.course_code ?? 'Class'} ${schedule.section?.section_name ?? ''} (${schedule.day.slice(0, 3)} ${formatTime12h(schedule.start_time)})`.replace(/\s+/g, ' '))
     .join(', ');
-  return `${affected.length} class meeting${affected.length === 1 ? '' : 's'} will move to Room TBA and need a new room: ${names}${affected.length > 5 ? ', …' : ''}.`;
+  return `${affected.length} class meeting${affected.length === 1 ? '' : 's'} will ${outcome}: ${names}${affected.length > 5 ? ', …' : ''}.`;
 };
 
 function useGiveBack(onChanged: (result: RoomRequestMutationResult) => void) {
@@ -745,7 +833,7 @@ function useGiveBack(onChanged: (result: RoomRequestMutationResult) => void) {
     const confirmed = await confirm({
       title: isApproved ? 'Give Back Room' : 'Cancel Request',
       message: isApproved
-        ? `Your department will no longer be able to schedule into ${roomCode}. ${roomTbaMessage(request, affected)}`
+        ? `Your department will no longer be able to schedule into ${roomCode}. ${grantEndMessage(request, affected)}`
         : `Withdraw your request for ${roomCode}?`,
       eyebrow: 'Room Request',
       confirmLabel: isApproved ? 'Give Back' : 'Cancel Request',
@@ -773,7 +861,6 @@ export function RequestsModal({
   requests,
   status,
   errorMessage,
-  semester,
   departmentId,
   onRetry,
   onClose,
@@ -783,7 +870,6 @@ export function RequestsModal({
   requests: RoomRequest[];
   status: RequestsLoadStatus;
   errorMessage: string | null;
-  semester: RoomRequestSemester | null;
   departmentId: number | null;
   onRetry: () => void;
   onClose: () => void;
@@ -906,11 +992,9 @@ export function RequestsModal({
   const table = useDataTable({ data: visibleRequests, columns, pageSize: false, getRowId: (row) => String(row.id) });
 
   const tabButtonClass = (active: boolean) =>
-    `inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-extrabold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220]/30 cursor-pointer ${
-      active ? 'bg-[#5A1220] text-white shadow-sm' : 'text-gray-500 hover:text-gray-800'
+    `selection-indicator inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-extrabold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220]/30 cursor-pointer ${
+      active ? 'shadow-sm' : 'text-gray-500 hover:text-gray-800'
     }`;
-  const tabCountClass = (active: boolean) =>
-    `min-w-5 rounded-full px-1.5 py-0.5 text-center text-[10px] font-bold ${active ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-600'}`;
 
   const onTabKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
@@ -925,13 +1009,13 @@ export function RequestsModal({
       isOpen
       onClose={onClose}
       title="Room Requests"
-      description={`Pending and approved requests sent from or received by your department${semester ? ` for ${formatSemester(semester)}` : ''}.`}
       size="lg"
       className="!max-w-5xl"
     >
       <div className="space-y-4 p-5 font-sans">
         {hasTabs && (
-          <div className="flex w-max items-center gap-1 rounded-xl border border-gray-200 bg-gray-100/90 p-1" role="tablist" aria-label="Room request direction" onKeyDown={onTabKeyDown}>
+          <div className="w-max max-w-full space-y-1">
+          <div className="grid grid-cols-2 items-center gap-1 rounded-xl border border-gray-200 bg-gray-100/90 p-1" role="tablist" aria-label="Room request direction" onKeyDown={onTabKeyDown}>
             {(['sent', 'received'] as const).map((value) => (
               <button
                 key={value}
@@ -940,15 +1024,23 @@ export function RequestsModal({
                 data-tab={value}
                 id={`room-requests-tab-${value}`}
                 aria-controls="room-requests-panel"
+                aria-describedby={`room-requests-tab-${value}-description`}
                 aria-selected={tab === value}
                 tabIndex={tab === value ? 0 : -1}
                 onClick={() => setTab(value)}
                 className={tabButtonClass(tab === value)}
               >
-                {value === 'sent' ? 'Requester' : 'Requestee'}
-                <span className={tabCountClass(tab === value)}>{value === 'sent' ? sentRequests.length : receivedRequests.length}</span>
+                  <span className="inline-flex items-center gap-2">
+                    {value === 'sent' ? 'Requester' : 'Requestee'}
+                    <span className="selection-indicator-count min-w-5 rounded-full px-1.5 py-0.5 text-center text-[10px] font-bold">{value === 'sent' ? sentRequests.length : receivedRequests.length}</span>
+                  </span>
               </button>
             ))}
+          </div>
+          <div className="grid px-1 text-sm font-medium leading-5 text-gray-600">
+            <p id="room-requests-tab-sent-description" className={`col-start-1 row-start-1 ${tab === 'sent' ? '' : 'invisible'}`}>Sends a request</p>
+            <p id="room-requests-tab-received-description" className={`col-start-1 row-start-1 ${tab === 'received' ? '' : 'invisible'}`}>Receives a request</p>
+          </div>
           </div>
         )}
         <div id="room-requests-panel" role={hasTabs ? 'tabpanel' : undefined} aria-labelledby={hasTabs ? `room-requests-tab-${tab}` : undefined}>
@@ -973,6 +1065,7 @@ export function RequestsModal({
                 showPagination={false}
                 totalLabel="requests"
                 ariaLabel="Room requests"
+                onRowClick={onPreview}
                 emptyTitle="No active requests"
                 emptyDescription={
                   tab === 'sent'
@@ -999,6 +1092,18 @@ const remarksHeading: Partial<Record<RoomRequestStatus, string>> = {
   rejected: 'Reason for rejection',
   revoked: 'Reason for revoking',
 };
+
+const decisionLabel = (decision: RoomRequestDecision): string => {
+  if (decision.event === 'room_request_cancelled' && decision.before_status === 'approved') return 'Room given back';
+  return ({
+    room_request_submitted: 'Request submitted', room_request_approved: 'Room grant approved',
+    room_request_rejected: 'Request rejected', room_request_revoked: 'Room grant revoked',
+    room_request_cancelled: 'Request cancelled',
+  } as Record<string, string>)[decision.event] ?? decision.event.replaceAll('_', ' ');
+};
+
+const decisionDate = (value: string): string => Number.isNaN(Date.parse(value)) ? 'Not recorded'
+  : new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila' }).format(new Date(value));
 
 export function RequestPreviewModal({
   request,
@@ -1029,8 +1134,9 @@ export function RequestPreviewModal({
   const roomCode = request.room?.room_code ?? 'the room';
   const requester = request.requesting_department?.code ?? 'The department';
 
-  // Which classes would become Room TBA, from the same room/semester timetable the server releases.
+  // Match the room/semester timetable the server releases when the grant ends.
   const showsImpact = isApproved && (canReview || isOwn);
+  const grantEndDestination = canReview ? 'Online' : 'Room TBA';
   const impact = useOccupancy(showsImpact ? request.room?.id ?? null : null, request.academic_semester?.id ?? null);
   const affected = impact.status === 'ready' ? classesUnderGrant(request, impact.schedules) : null;
 
@@ -1083,7 +1189,7 @@ export function RequestPreviewModal({
     if (!requireRemarks()) return;
     const confirmed = await confirm({
       title: 'Revoke Room Grant',
-      message: `${requester} will lose access to ${roomCode}. ${roomTbaMessage(request, affected)}`,
+      message: `${requester} will lose access to ${roomCode}. ${grantEndMessage(request, affected, 'Online')}`,
       eyebrow: 'Room Request',
       confirmLabel: 'Revoke',
       variant: 'danger',
@@ -1159,7 +1265,7 @@ export function RequestPreviewModal({
           <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Fact label="Requested by">
               {request.requesting_department?.code ?? 'Not specified'}
-              {request.requester && <span className="block text-xs font-semibold text-gray-500">{request.requester.name}</span>}
+              <span className="block text-xs font-semibold text-gray-500">{request.requester?.name || 'Actor unavailable'}</span>
             </Fact>
             <Fact label="Room owner">
               {request.owner_department?.code ?? 'Not specified'}
@@ -1196,35 +1302,56 @@ export function RequestPreviewModal({
           </p>
         </section>
 
-        {(request.reviewer || request.review_remarks) && (
-          <section aria-labelledby={`${ids}-review`}>
-            <SectionTitle><span id={`${ids}-review`}>Review</span></SectionTitle>
-            <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <Fact label="Reviewed by">{request.reviewer?.name ?? '—'}</Fact>
-              <Fact label="Reviewed on">{formatDate(request.reviewed_at)}</Fact>
-            </dl>
-            {request.review_remarks && (
-              <div className="mt-2 rounded-lg border border-gray-100 bg-gray-50/70 px-3 py-2.5 text-sm text-gray-700">
-                <span className="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400">{remarksHeading[request.status] ?? 'Remarks'}</span>
-                {request.review_remarks}
-              </div>
-            )}
+        {request.decisions?.length ? (
+          <section aria-labelledby={`${ids}-decisions`}>
+            <SectionTitle><span id={`${ids}-decisions`}>Decision history</span></SectionTitle>
+            <ol className="space-y-2">
+              {request.decisions.map((decision, index) => (
+                <li key={`${decision.event}:${decision.occurred_at}:${index}`} className="rounded-lg border border-gray-100 bg-gray-50/70 px-3 py-2.5 text-sm text-gray-700">
+                  <p className="font-bold text-gray-800">{decisionLabel(decision)}</p>
+                  <dl className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <Fact label="Actor">{decision.actor?.name || 'Actor unavailable'}</Fact>
+                    <Fact label="Date">{decisionDate(decision.occurred_at)}</Fact>
+                  </dl>
+                  {decision.remarks && <p className="mt-2 whitespace-pre-line">{decision.remarks}</p>}
+                </li>
+              ))}
+            </ol>
           </section>
+        ) : (
+          <>
+            {(request.reviewer || request.reviewed_at) && (
+              <section aria-labelledby={`${ids}-review`}>
+                <SectionTitle><span id={`${ids}-review`}>{['revoked', 'cancelled'].includes(request.status) ? 'Original review' : 'Review'}</span></SectionTitle>
+                <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <Fact label="Reviewed by">{request.reviewer?.name || 'Actor unavailable'}</Fact>
+                  <Fact label="Reviewed on">{formatDate(request.reviewed_at)}</Fact>
+                </dl>
+              </section>
+            )}
+            {request.review_remarks && (
+              <section aria-labelledby={`${ids}-review-remarks`}>
+                <SectionTitle><span id={`${ids}-review-remarks`}>{remarksHeading[request.status] ?? 'Remarks'}</span></SectionTitle>
+                <p className="whitespace-pre-line rounded-lg border border-gray-100 bg-gray-50/70 px-3 py-2.5 text-sm text-gray-700">{request.review_remarks}</p>
+                {['revoked', 'cancelled'].includes(request.status) && <p className="mt-1 text-xs text-gray-500">The actor for these remarks was not recorded.</p>}
+              </section>
+            )}
+          </>
         )}
 
         {showsImpact && (
           <section aria-labelledby={`${ids}-impact`}>
-            <SectionTitle><span id={`${ids}-impact`}>If this grant ends</span></SectionTitle>
+            <SectionTitle><span id={`${ids}-impact`}>{canReview ? 'If you revoke this grant' : 'If you give back this room'}</span></SectionTitle>
             {impact.status === 'loading' || impact.status === 'idle' ? (
               <Notice tone="muted" icon={<Loader2 size={14} className="animate-spin" />}>Checking which classes use this grant…</Notice>
             ) : impact.status === 'error' || impact.status === 'stale' ? (
               <Notice tone="warning" icon={<AlertTriangle size={14} />} action={<RetryButton onClick={impact.retry} />}>
                 <p>The affected classes could not be loaded.</p>
-                <p className="font-medium">Classes held in {roomCode} under this grant will still move to Room TBA.</p>
+                <p className="font-medium">{grantEndMessage(request, null, grantEndDestination)}</p>
               </Notice>
             ) : affected && affected.length > 0 ? (
               <Notice tone="warning" icon={<AlertTriangle size={14} />}>
-                <p>{affected.length} class meeting{affected.length === 1 ? '' : 's'} will move to <strong>Room TBA</strong> and need a new room. Their schedule status does not change.</p>
+                <p>{affected.length} class meeting{affected.length === 1 ? '' : 's'} will {canReview ? 'temporarily move to' : 'move to'} <strong>{grantEndDestination}</strong>{canReview ? ' until a replacement room is assigned.' : ' and need a new room.'} Their schedule status does not change.</p>
                 <ul className="list-disc space-y-0.5 pl-4 font-medium">
                   {affected.map((schedule) => (
                     <li key={schedule.id}>
@@ -1235,7 +1362,7 @@ export function RequestPreviewModal({
               </Notice>
             ) : (
               <Notice tone="info" icon={<CheckCircle2 size={14} />}>
-                No classes are scheduled in {roomCode} under this grant. Ending it moves nothing to Room TBA.
+                {grantEndMessage(request, [], grantEndDestination)}
               </Notice>
             )}
           </section>

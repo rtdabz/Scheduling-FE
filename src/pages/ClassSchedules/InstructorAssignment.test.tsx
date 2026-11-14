@@ -4,6 +4,7 @@ import type { CalendarSchedule, GanttDay } from '../vpaa/calendar/ganttLayout';
 import { clearDataCache } from '../../lib/dataCache';
 import InstructorAssignment from './InstructorAssignment';
 import CrossDepartmentAssignments from './CrossDepartmentAssignments';
+import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 
 const { get, patch, post, useScheduler, autoAssign } = vi.hoisted(() => ({
   get: vi.fn(), patch: vi.fn(), post: vi.fn(), useScheduler: vi.fn(), autoAssign: vi.fn(),
@@ -94,6 +95,47 @@ const expandSection = (name = 'BLIS 1A') => {
   if (button.getAttribute('aria-expanded') === 'false') fireEvent.click(button);
 };
 
+describe('assignment help context', () => {
+  const steps = () => {
+    const guide = vi.mocked(useWorkflowGuide).mock.calls.at(-1)![0];
+    return typeof guide.steps === 'function' ? guide.steps() : guide.steps;
+  };
+
+  it('starts inside a deep-linked department and preserves the saved Grid view', async () => {
+    localStorage.setItem('instructor-assignment:view', 'grid');
+    window.history.replaceState(null, '', '/secretary/instructor-assignment?department=7');
+    expect(window.location.search).toBe('?department=7');
+    render(<InstructorAssignment />);
+    await screen.findByRole('button', { name: 'Back to departments' }, { timeout: 5000 });
+    const guideSteps = steps();
+    expect(guideSteps.some((step) => step.element === '#instructor-assignment-overview')).toBe(false);
+    expect(guideSteps.some((step) => step.element === '#instructor-assignment-timetable')).toBe(true);
+    guideSteps.forEach((step) => expect(document.querySelector(step.element)).toBeTruthy());
+    expect(localStorage.getItem('instructor-assignment:view')).toBe('grid');
+    expect(patch).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('keeps immediate-save instructor choices review-only in List view', async () => {
+    payload.schedules[0].status = 'approved';
+    render(<InstructorAssignment />);
+    await openDepartment();
+    const guideSteps = steps();
+    expect(guideSteps.find((step) => step.element === '#instructor-assignment-worklist')?.action).toBeUndefined();
+    expect(guideSteps.every((step) => step.action !== 'select' && step.action !== 'submit')).toBe(true);
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it('uses the same contextual workspace help for delegated assignments', async () => {
+    render(<CrossDepartmentAssignments />);
+    await openDepartment();
+    const guide = vi.mocked(useWorkflowGuide).mock.calls.at(-1)![0];
+    expect(guide.id).toBe('cross-department-assignment');
+    steps().forEach((step) => expect(document.querySelector(step.element)).toBeTruthy());
+    expect(scheduler.handleFacultyAssignmentDone).not.toHaveBeenCalled();
+  });
+});
+
 describe('cross-department assignment visibility', () => {
   it.each(['submitted', 'revision', 'approved_by_dean', 'finalized'])('retains assigned %s classes read-only without duplicate courses or unassigned preapproval rows', async (status) => {
     payload.subjects.push(course(2, { course_code: 'HIDDEN', teaching_department_id: 8 }));
@@ -114,9 +156,30 @@ describe('cross-department assignment visibility', () => {
     expect((screen.getByRole('button', { name: 'Clear All Instructors' }) as HTMLButtonElement).disabled).toBe(true);
     expect(workspace.mock.calls.at(-1)?.[0].scheduleIds).toEqual([1, 2]);
     fireEvent.click(screen.getByRole('button', { name: 'Grid' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Class 1' }));
+    if (status === 'finalized') fireEvent.click(screen.getByRole('button', { name: 'Class 1' }));
+    else expect(screen.queryByRole('button', { name: 'Class 1' })).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(patch).not.toHaveBeenCalled(); expect(post).not.toHaveBeenCalled();
+  });
+
+  it('keeps retained assignments in List while showing only final VPAA-approved classes in Grid', async () => {
+    payload.schedules = [
+      schedule(1, { status: 'submitted' }),
+      schedule(2, { status: 'approved', section_id: 32, section: { section_name: 'BLIS 1B' } }),
+      schedule(3, { status: 'approved_by_dean', section_id: 33, section: { section_name: 'BLIS 1C' } }),
+    ];
+    render(<InstructorAssignment />);
+    await openDepartment();
+    expect(screen.getByRole('button', { name: 'Section BLIS 1A' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Section BLIS 1C' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Grid' }));
+    expect(screen.getByRole('button', { name: 'Class 2' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Class 1' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Class 3' })).toBeNull();
+    expect(screen.getByText('1 of 1 classes assigned')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'List' }));
+    expect(screen.getByRole('button', { name: 'Section BLIS 1A' })).toBeTruthy();
+    expect(screen.getByText('3 of 3 classes assigned')).toBeTruthy();
   });
 
   it('keeps approved assignments in other departments editable', async () => {

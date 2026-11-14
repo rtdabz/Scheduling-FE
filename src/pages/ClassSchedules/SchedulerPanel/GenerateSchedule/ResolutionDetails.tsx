@@ -18,6 +18,9 @@ export default function ResolutionDetailsButton({ details }: { details: Resoluti
       </button>
 
       <Modal
+        appearance="workflow"
+        icon={<FileText className="h-6 w-6" />}
+        eyebrow="Schedule generation"
         isOpen={open}
         onClose={() => setOpen(false)}
         title="Resolution Summary"
@@ -27,7 +30,7 @@ export default function ResolutionDetailsButton({ details }: { details: Resoluti
           <button
             type="button"
             onClick={() => setOpen(false)}
-            className="inline-flex min-h-10 items-center rounded-lg bg-[#4e0a10] px-4 py-2 text-xs font-black text-white transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-[#C9952A]"
+            data-variant="primary" className="scheduler-dialog-button inline-flex min-h-10 items-center rounded-lg bg-[#4e0a10] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-[#C9952A]"
           >
             Close
           </button>

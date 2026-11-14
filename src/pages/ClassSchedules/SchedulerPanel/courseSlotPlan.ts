@@ -68,10 +68,14 @@ export const placeCourse = <T extends Course>(course: T, curriculumId: number | 
 export const courseInCurriculum = (course: Course, curriculumId: number | string | null | undefined): boolean =>
   curriculumId == null || course.curriculumPlacements === undefined || curriculumPlacement(course, curriculumId) !== undefined;
 
-/** Each consecutive-day meeting's equal share of the Total Hours, or null when the days cannot split it. */
+/**
+ * Each consecutive-day meeting's length, matching SchedulingPolicy on the server: the course's full
+ * Total Hours repeated on every selected day (PRAC 101 at 6 hours on 3 days meets 6 hours a day,
+ * 18 hours in all). Null when the course has no time or the day count is not a run.
+ */
 export const consecutiveMeetingSlots = (course: CourseHours | null | undefined, dayCount: number): number | null => {
   const total = getCourseSlotPlan(course).totalSlots;
-  return dayCount > 0 && total > 0 && total % dayCount === 0 ? total / dayCount : null;
+  return dayCount >= 2 && total > 0 ? total : null;
 };
 
 export const slotsToHours = (slots: number): number => slots / SLOTS_PER_HOUR;

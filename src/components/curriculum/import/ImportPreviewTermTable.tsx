@@ -2,6 +2,7 @@ import { AlertOctagon, AlertTriangle } from 'lucide-react';
 import { rowHasProblem, totalsDiffer, type GroupTotals } from '../../../lib/curriculumImport/draft';
 import { HIGHLIGHT_CLASSES } from '../../../lib/curriculumImport/sheetNavigation';
 import type { DraftRow, ImportIssue } from '../../../lib/curriculumImport/types';
+import { TABLE_HEAD, TABLE_HEAD_ROW } from '../../ui/tableStyles';
 
 interface ImportPreviewTermTableProps {
   headingId: string;
@@ -101,7 +102,7 @@ export default function ImportPreviewTermTable({ headingId, rows, group, showPla
         <col className="hidden w-[7.5rem] sm:table-column" />
       </colgroup>
       <thead>
-        <tr className="text-left text-[10.5px] font-bold uppercase tracking-wide text-muted">
+        <tr className={`${TABLE_HEAD} ${TABLE_HEAD_ROW}`}>
           <th scope="col" className="py-1.5 pl-1.5 pr-0 sm:pl-2.5"><span className="sr-only">Status</span></th>
           <th scope="col" className="py-1.5 pl-1 pr-1.5 sm:pl-1.5 sm:pr-2">Code</th>
           <th scope="col" className="py-1.5 pr-2">Course title</th>

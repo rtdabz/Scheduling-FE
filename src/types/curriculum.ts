@@ -65,8 +65,32 @@ export interface Curriculum {
   lifecycle?: CurriculumLifecycle | null;
   lifecycle_label?: string | null;
   department?: Department | null;
+  /** Department hours per unit, sent with the full curriculum for the Edit Hours per Unit dialog. */
+  hours_defaults?: CurriculumHoursDefaults;
   created_at: string;
   updated_at: string;
+}
+
+export interface CurriculumHoursDefaults {
+  lecture_minutes_per_unit: number;
+  laboratory_minutes_per_unit: number;
+  slot_minutes: number;
+  max_minutes_per_unit: number;
+}
+
+/** Where a placement's hours per unit came from. Legacy placements use 1 unit = 1 hour. */
+export type CourseHoursSource = 'legacy' | 'import' | 'department' | 'custom';
+
+/** A course's weekly hours as placed in this curriculum; scheduling uses these minutes. */
+export interface CurriculumCourseHours {
+  lecture_units: number;
+  lab_units: number;
+  lecture_minutes_per_unit: number;
+  laboratory_minutes_per_unit: number;
+  lecture_minutes: number;
+  laboratory_minutes: number;
+  total_minutes: number;
+  source: CourseHoursSource;
 }
 
 export interface ApiCurriculum {
@@ -101,6 +125,8 @@ export interface CurriculumCourse {
   program_id?: number | null;
   department_id?: number | null;
   prerequisites_text?: string | null;
+  /** Hours per unit and the weekly hours they give; absent on rows added before the next reload. */
+  hours?: CurriculumCourseHours;
   /** Present only for imported placements; null rows keep the legacy credit-derived durations. */
   placement?: {
     lecture_units: number | null;

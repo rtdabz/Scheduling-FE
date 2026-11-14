@@ -18,6 +18,7 @@ import {
 import type { Course, Section } from "../types";
 import {
   isBalancedSplitSchedulingEligible,
+  hasLectureAndLaboratoryComponents,
   isConfiguredFieldCourse,
   isHybridSplitEligible,
   isHybridSchedulingEligible,
@@ -28,24 +29,23 @@ import type { ColumnDef } from "@tanstack/react-table";
 import DataTable from "../../../../components/ui/DataTable";
 import { useDataTable } from "../../../../components/ui/useDataTable";
 import ConfigureClassSidebar from "./ConfigureClassSidebar";
-import CourseDefaultsSidebar from "./CourseDefaultsSidebar";
-import type { LabRoomType } from "../../../../lib/labRoomPolicy";
 import { getForcedDayConcentration } from "./forcedDayConcentration";
 import type {
   ClassConfiguration,
+  ComponentRequiredDays,
   ConsecutiveDayRule,
   CourseClassConfig,
-  CourseDefaults,
   DeliveryMode,
   PreferredRoomOption,
 } from "./courseClassConfig";
 import {
   asRegularClass,
+  formatComponentRequiredDays,
+  normalizeComponentRequiredDays,
   consecutiveRulesForCourse,
   consecutiveSummary,
   isConsecutive,
   DEFAULT_CONSECUTIVE_DAYS,
-  EMPTY_COURSE_DEFAULTS,
   durationLabel,
   durationShape,
   formatHours,
@@ -55,6 +55,7 @@ import {
   sameConsecutiveRules,
   syncCourseConfigToSectionConfigs,
 } from "./courseClassConfig";
+import SearchInput from "../../../../components/ui/SearchInput";
 
 export type CourseSetupConfig = {
   courseIds: string[];
@@ -63,6 +64,8 @@ export type CourseSetupConfig = {
   hybridSplitCourseIds?: string[];
   modesByCourseId?: Record<string, "automatic" | "on-site" | "online" | "field">;
   preferredRoomsByCourseId?: Record<string, string>;
+  /** Run-scoped Lecture/Laboratory Required Days of Integrated courses. */
+  componentRequiredDaysByCourseId?: Record<string, ComponentRequiredDays>;
 };
 
 export type RequiredDayRule = { course_id: number; day: string };
@@ -106,16 +109,8 @@ export default function SetupCoursesStep({
   onRequiredDayChange,
   onConsecutiveDaysChange,
   onFieldCourseChange,
-  defaults = EMPTY_COURSE_DEFAULTS,
-  onDefaultsChange,
-  labRoomType = "laboratory",
-  onLabRoomTypeChange,
   excludedCourseIds = [],
   onExcludedChange,
-  customizedCourseIds = [],
-  onCustomizedChange,
-  defaultsOpen = false,
-  onDefaultsClose,
   actionsDisabled,
 }: {
   courses: Course[];
@@ -134,22 +129,19 @@ export default function SetupCoursesStep({
     requiredDay: string | null,
   ) => void | Promise<unknown>;
   onFieldCourseChange?: (courseCode: string, isField: boolean) => void | Promise<unknown>;
-  defaults?: CourseDefaults;
-  onDefaultsChange?: (next: CourseDefaults) => void;
-  labRoomType?: LabRoomType;
-  onLabRoomTypeChange?: (next: LabRoomType) => void | Promise<unknown>;
   excludedCourseIds?: string[];
   onExcludedChange?: (courseIds: string[]) => void;
-  customizedCourseIds?: string[];
-  onCustomizedChange?: (courseIds: string[]) => void;
-  defaultsOpen?: boolean;
-  onDefaultsClose?: () => void;
   actionsDisabled: boolean;
 }) {
   const [configuringCourseId, setConfiguringCourseId] = useState<string | null>(
     null,
   );
   const [searchQuery, setSearchQuery] = useState("");
+  const [componentDaysNotice, setComponentDaysNotice] = useState<string | null>(null);
+  const sectionsWithComponentDays = (courseId: string) =>
+    sections.filter((section) =>
+      normalizeComponentRequiredDays(configs[section.id]?.componentRequiredDaysByCourseId?.[courseId]),
+    );
   const [configFilter, setConfigFilter] = useState<"all" | ClassConfiguration>("all");
 
   const fieldCourseCodes = useMemo(
@@ -245,21 +237,6 @@ export default function SetupCoursesStep({
     withRequiredDay(course, courseConfigs[course.id] ?? infer(course));
 
   const excluded = useMemo(() => new Set(excludedCourseIds), [excludedCourseIds]);
-  const customized = useMemo(() => new Set(customizedCourseIds), [customizedCourseIds]);
-  const laboratoryEnabled = courses.some((course) =>
-    !excluded.has(course.id)
-    && !isConfiguredFieldCourse(course, fieldCourseCodes)
-    && (Number(course.labHours ?? 0) > 0 || course.roomTypeRequired === "laboratory"),
-  );
-
-  const changeDefaults = (next: CourseDefaults) => {
-    onDefaultsChange?.(next);
-  };
-
-  const resetCustomized = () => {
-    onCustomizedChange?.([]);
-  };
-
   const setIncluded = (courseIds: string[], include: boolean) => {
     const next = new Set(excluded);
     for (const id of courseIds) {
@@ -272,12 +249,8 @@ export default function SetupCoursesStep({
   const updateCourseConfig = (
     course: Course,
     changedConfig: CourseClassConfig,
-    { fromConfigure = false }: { fromConfigure?: boolean } = {},
   ) => {
     const updatedConfig = changedConfig;
-    if (fromConfigure && !customized.has(course.id)) {
-      onCustomizedChange?.([...customizedCourseIds, course.id]);
-    }
     setCourseConfigs((prev) => ({
       ...prev,
       [course.id]: updatedConfig,
@@ -329,11 +302,24 @@ export default function SetupCoursesStep({
       nextHybridType = nextDelivery === "hybrid" ? "laboratory" : undefined;
     }
 
+    // Leaving Integrated clears its component days explicitly; they never
+    // become a course-wide Required Day and are not restored later.
+    const leavesIntegrated = current.configuration === "integrated" && targetConfigType !== "integrated";
+    if (leavesIntegrated && sectionsWithComponentDays(course.id).length > 0) {
+      setComponentDaysNotice(
+        `${course.code}'s Lecture and Laboratory Required Days were cleared because it is no longer Integrated.`,
+      );
+    }
+
     updateCourseConfig(course, {
       ...current,
       configuration: targetConfigType,
       delivery: nextDelivery,
       hybridType: nextHybridType,
+      componentRequiredDays:
+        targetConfigType === "integrated" && current.configuration === "integrated"
+          ? current.componentRequiredDays
+          : {},
       ...(targetConfigType === "regular" ? {} : { consecutiveDays: null, preferredStartDay: null, meetingDays: null }),
       sectionScope: "all",
       selectedSectionIds: sections.map((s) => s.id),
@@ -351,8 +337,9 @@ export default function SetupCoursesStep({
       : current.configuration === "integrated"
         ? isHybridSchedulingEligible(course, hybridEnabled, fieldCourseCodes)
         : false;
-    const onlineAllowed = current.configuration !== "split"
-      || isOnlineSplitEligible(course, fieldCourseCodes);
+    const onlineAllowed = current.configuration === "split"
+      ? isOnlineSplitEligible(course, fieldCourseCodes)
+      : current.configuration !== "regular" || !hasLectureAndLaboratoryComponents(course, fieldCourseCodes);
     const effectiveDelivery =
       (nextDelivery === "hybrid" && !hybridAllowed) || (nextDelivery === "online" && !onlineAllowed)
         ? "onsite"
@@ -381,10 +368,15 @@ export default function SetupCoursesStep({
       const config = withRequiredDay(course, base);
       const oneMeeting = config.requiredDay !== null;
 
+      // Regular is always available: for lecture + laboratory units the server assigns the
+      // lecture and laboratory sessions automatically. Integrated stays optional (Hybrid,
+      // Lecture/Laboratory Required Days). Split Session is never offered to a course with
+      // laboratory units.
+      const hasComponents = hasLectureAndLaboratoryComponents(course, fieldCourseCodes);
+
       const canSplit = !oneMeeting && isBalancedSplitSchedulingEligible(course, splitSettings);
 
-      const canIntegrated =
-        !oneMeeting && isHybridSchedulingEligible(course, hybridEnabled, fieldCourseCodes);
+      const canIntegrated = !oneMeeting && hasComponents;
 
       return {
         course,
@@ -412,12 +404,6 @@ export default function SetupCoursesStep({
   ]);
 
   const includedCount = rows.filter((row) => row.included).length;
-  const activeDefaults = [
-    defaults.allowFridaySaturdaySplit ? "Fri + Sat pairs" : null,
-    laboratoryEnabled && labRoomType === "lecture" ? "Labs in classrooms" : null,
-    laboratoryEnabled && labRoomType === "either" ? "Labs in lab or classroom" : null,
-  ].filter((label): label is string => label !== null);
-
   const regularCount = useMemo(
     () => rows.filter((r) => r.config.configuration === "regular").length,
     [rows],
@@ -466,6 +452,9 @@ export default function SetupCoursesStep({
 
     const checked = isCurrent;
     const eligible = row.eligibility[targetType];
+    // Unavailable boxes get their own visible "locked" look instead of fading
+    // to near-invisible against the light row background.
+    const unavailable = !eligible || !row.included;
 
     return (
       <div className="flex flex-col items-center justify-center gap-0.5">
@@ -481,12 +470,14 @@ export default function SetupCoursesStep({
           }
           disabled={actionsDisabled || !eligible || !row.included}
           onClick={() => handleSelectConfiguration(row.course, targetType)}
-          className={`inline-flex h-6 w-6 items-center justify-center rounded-md border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+          className={`inline-flex h-6 w-6 items-center justify-center rounded-md border-2 transition disabled:cursor-not-allowed ${
             checked
-              ? "border-[#4e0a10] bg-[#4e0a10] text-white shadow-2xs"
+              ? "border-[#4e0a10] bg-[#4e0a10] text-white shadow-2xs disabled:opacity-50"
               : isPartial
-                ? "border-[#4e0a10] bg-white text-[#4e0a10]"
-                : "border-slate-300 bg-white text-transparent hover:border-slate-400"
+                ? "border-[#4e0a10] bg-white text-[#4e0a10] disabled:opacity-50"
+                : unavailable
+                  ? "border-dashed border-slate-300 bg-slate-100 text-transparent"
+                  : "border-slate-400 bg-white text-transparent shadow-2xs hover:border-[#4e0a10] hover:bg-[#4e0a10]/[0.04] disabled:opacity-60"
           }`}
         >
           {isPartial ? (
@@ -572,14 +563,6 @@ export default function SetupCoursesStep({
                     Excluded
                   </span>
                 )}
-                {customized.has(course.id) && (
-                  <span
-                    title="Uses its own Configure settings instead of the Default Settings"
-                    className="inline-flex rounded bg-indigo-50 px-1 py-0.5 text-[9px] font-black uppercase text-indigo-700"
-                  >
-                    Custom
-                  </span>
-                )}
                 {hasSectionOverride && (
                   <span className="inline-flex rounded bg-amber-50 px-1 py-0.5 text-[9px] font-bold text-amber-800 border border-amber-200">
                     {config.selectedSectionIds.length}/{sections.length} sections
@@ -607,6 +590,29 @@ export default function SetupCoursesStep({
                     {config.requiredDay}
                   </span>
                 )}
+                {config.configuration === "integrated" && (() => {
+                  const pinned = sectionsWithComponentDays(course.id);
+                  if (pinned.length === 0) return null;
+                  const shared = config.componentRequiredDays !== undefined
+                    ? formatComponentRequiredDays(config.componentRequiredDays)
+                    : "";
+                  const perSection = pinned
+                    .map((section) => `${section.name}: ${formatComponentRequiredDays(configs[section.id]?.componentRequiredDaysByCourseId?.[course.id])}`)
+                    .join("\n");
+                  return (
+                    <span
+                      title={`Lecture/Laboratory Required Days\n${perSection}`}
+                      className="inline-flex items-center gap-0.5 rounded bg-violet-50 px-1 py-0.5 text-[9px] font-black text-violet-800"
+                    >
+                      <CalendarDays className="h-2.5 w-2.5" />
+                      {shared && pinned.length === sections.length
+                        ? shared
+                        : shared
+                          ? `${shared} (${pinned.length}/${sections.length} sections)`
+                          : "Lecture/Lab days vary by section"}
+                    </span>
+                  );
+                })()}
                 {preferredRoomCode && (
                   <span
                     title="Preferred Room"
@@ -671,7 +677,10 @@ export default function SetupCoursesStep({
               {cfg.configuration === "regular" && (
                 <>
                   <option value="onsite">On-Site</option>
-                  <option value="online">Online</option>
+                  {/* A laboratory session never meets online. */}
+                  {!hasLectureAndLaboratoryComponents(original.course, fieldCourseCodes) && (
+                    <option value="online">Online</option>
+                  )}
                 </>
               )}
               {cfg.configuration === "split" && (
@@ -703,7 +712,9 @@ export default function SetupCoursesStep({
     {
       id: "duration",
       header: "Duration",
-      size: 160,
+      // Wide enough for "Laboratory 3h Face to Face" on one line; the Course
+      // column absorbs the difference.
+      size: 220,
       enableSorting: false,
       meta: { align: "center" },
       cell: ({ row: { original: { config, course } } }) => {
@@ -711,7 +722,7 @@ export default function SetupCoursesStep({
         if (shape === "hybrid-split" || isIntegratedShape(shape)) {
           return (
             <span className="inline-flex flex-col items-center gap-0.5">
-              <span className="text-[9px] font-black uppercase tracking-wide text-slate-500">
+              <span className="whitespace-nowrap text-[9px] font-black uppercase tracking-wide text-slate-500">
                 {shape === "hybrid-split"
                   ? "Hybrid Split"
                   : shape === "hybrid-laboratory"
@@ -721,7 +732,7 @@ export default function SetupCoursesStep({
               {meetingParts(config, course).map((part) => (
                 <span
                   key={part.label}
-                  className="inline-flex items-center gap-1 text-[11px] font-black text-slate-800"
+                  className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-black text-slate-800"
                 >
                   <Clock3 className="h-3 w-3 text-slate-400" />
                   {isIntegratedShape(shape) ? `${part.label} ` : ""}
@@ -732,7 +743,7 @@ export default function SetupCoursesStep({
           );
         }
         return (
-          <span className="inline-flex items-center gap-1 text-xs font-black text-slate-800">
+          <span className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-black text-slate-800">
             <Clock3 className="h-3 w-3 text-slate-400" />
             {durationLabel(config, course)}
           </span>
@@ -775,18 +786,34 @@ export default function SetupCoursesStep({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {componentDaysNotice && (
+        <div
+          role="status"
+          className="flex items-start justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900"
+        >
+          <span className="flex items-start gap-1.5">
+            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            {componentDaysNotice}
+          </span>
+          <button
+            type="button"
+            onClick={() => setComponentDaysNotice(null)}
+            className="shrink-0 font-bold text-amber-900 underline-offset-2 hover:underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-2xs">
         <div className="flex flex-wrap items-center gap-2.5">
-          <div className="relative min-w-[220px]">
-            <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search course code or name..."
-              className="w-full rounded-lg border border-slate-300 bg-white pl-8 pr-2.5 py-1.5 text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:border-[#4e0a10] focus:ring-1 focus:ring-[#4e0a10] focus:outline-hidden"
-            />
-          </div>
+          <SearchInput
+            compact
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search course code or name..."
+            aria-label="Search courses"
+            containerClassName="relative min-w-[220px]"
+          />
 
           <div className="flex items-center gap-1">
             {(
@@ -801,19 +828,16 @@ export default function SetupCoursesStep({
                 key={filter.id}
                 type="button"
                 onClick={() => setConfigFilter(filter.id)}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition ${
+                aria-pressed={configFilter === filter.id}
+                className={`selection-indicator inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition ${
                   configFilter === filter.id
-                    ? "bg-[#4e0a10] text-white shadow-2xs"
+                    ? "shadow-2xs"
                     : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 }`}
               >
                 <span>{filter.label}</span>
                 <span
-                  className={`rounded-full px-1.5 py-0.2 text-[10px] font-black ${
-                    configFilter === filter.id
-                      ? "bg-white/20 text-white"
-                      : "bg-slate-200 text-slate-700"
-                  }`}
+                  className="selection-indicator-count rounded-full bg-slate-200 px-1.5 py-0.2 text-[10px] font-black text-slate-700"
                 >
                   {filter.count}
                 </span>
@@ -830,14 +854,6 @@ export default function SetupCoursesStep({
           <span className="flex items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1 text-slate-700">
             <span className="font-bold">{includedCount}</span> of {rows.length} Course{rows.length === 1 ? "" : "s"} included
           </span>
-          {activeDefaults.length > 0 && (
-            <span
-              title="Default Settings (the gear in the header)"
-              className="rounded-md bg-[#4e0a10]/10 px-2 py-1 font-bold text-[#4e0a10]"
-            >
-              Defaults: {activeDefaults.join(" · ")}
-            </span>
-          )}
         </div>
       </div>
 
@@ -881,28 +897,17 @@ export default function SetupCoursesStep({
         }
       />
 
-      {defaultsOpen && (
-        <CourseDefaultsSidebar
-          defaults={defaults}
-          customizedCount={customizedCourseIds.length}
-          laboratoryEnabled={laboratoryEnabled}
-          labRoomType={labRoomType}
-          onLabRoomTypeApply={onLabRoomTypeChange}
-          onResetCustomized={resetCustomized}
-          disabled={actionsDisabled}
-          onClose={() => onDefaultsClose?.()}
-          onApply={(next) => {
-            changeDefaults(next);
-            onDefaultsClose?.();
-          }}
-        />
-      )}
-
       {configuringRow && (
         <ConfigureClassSidebar
           course={configuringRow.course}
           sections={sections}
           initialConfig={configuringRow.config}
+          componentDaysBySection={Object.fromEntries(
+            sections.map((section) => [
+              section.id,
+              configs[section.id]?.componentRequiredDaysByCourseId?.[configuringRow.course.id] ?? null,
+            ]),
+          )}
           isFieldCourse={configuringRow.isField}
           roomOptions={roomOptions}
           sundayClassesEnabled={settings?.sunday_classes_enabled ?? true}
@@ -910,7 +915,7 @@ export default function SetupCoursesStep({
           disabled={actionsDisabled}
           onClose={() => setConfiguringCourseId(null)}
           onSave={(updatedConfig) => {
-            updateCourseConfig(configuringRow.course, updatedConfig, { fromConfigure: true });
+            updateCourseConfig(configuringRow.course, updatedConfig);
             setConfiguringCourseId(null);
           }}
         />

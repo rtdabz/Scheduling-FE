@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { CalendarDays, ChevronDown, Plus } from 'lucide-react';
-import type { CurriculumCourse, CurriculumSemester, Program } from '../../types/curriculum';
+import type { CurriculumCourse, CurriculumCourseHours, CurriculumHoursDefaults, CurriculumSemester, Program } from '../../types/curriculum';
 import CourseTable from './CourseTable';
 import AddCourseModal from './AddCourseModal';
 import EditCourseModal, { type EditCourseFormData } from './EditCourseModal';
+import EditCourseHoursModal from './EditCourseHoursModal';
 
 interface SemesterCardProps {
   semester: CurriculumSemester;
@@ -35,6 +36,10 @@ interface SemesterCardProps {
     onProgress?: (rowId: string, status: 'saving' | 'success' | 'error', errorMsg?: string) => void
   ) => Promise<void>;
   onEditCourse?: (data: EditCourseFormData) => Promise<void>;
+  /** Enables Edit Hours per Unit when given with hoursDefaults. */
+  curriculumId?: number | string;
+  hoursDefaults?: CurriculumHoursDefaults;
+  onCourseHoursSaved?: (courseId: number, hours: CurriculumCourseHours) => void;
 }
 
 const semesterLabels: Record<number, string> = {
@@ -61,8 +66,13 @@ export default function SemesterCard({
   onConfirmRemove,
   onAddCourseToSemester,
   onEditCourse,
+  curriculumId,
+  hoursDefaults,
+  onCourseHoursSaved,
 }: SemesterCardProps) {
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [hoursCourse, setHoursCourse] = useState<CurriculumCourse | null>(null);
+  const canEditHours = canEdit && curriculumId !== undefined && hoursDefaults !== undefined && onCourseHoursSaved !== undefined;
 
   const [editingCourse, setEditingCourse] = useState<CurriculumCourse | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -136,18 +146,16 @@ export default function SemesterCard({
                   role="tab"
                   aria-selected={isSelected}
                   onClick={() => onSelectSemester(curriculumSemester.semester)}
-                  className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-bold transition-colors cursor-pointer ${
+                  className={`selection-indicator inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-bold transition-colors cursor-pointer ${
                     isSelected
-                      ? 'bg-[#4e0a10] text-white shadow-sm'
+                      ? 'shadow-sm'
                       : 'text-gray-600 hover:bg-gray-100 hover:text-[#4e0a10]'
                   }`}
                 >
                   <CalendarDays size={14} aria-hidden="true" />
                   <span>{semesterLabels[curriculumSemester.semester] || `Semester ${curriculumSemester.semester}`}</span>
                   <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-mono ${
-                      isSelected ? 'bg-[#C9952A] text-white' : 'bg-gray-100 text-gray-500'
-                    }`}
+                    className="selection-indicator-count rounded-full px-2 py-0.5 text-[10px] font-mono"
                   >
                     {semUnits} {semUnits === 1 ? 'unit' : 'units'}
                   </span>
@@ -185,6 +193,7 @@ export default function SemesterCard({
         isRemoving={isRemoving}
         canEdit={canEdit}
         onInitiateEdit={(course) => setEditingCourse(course)}
+        onEditHours={canEditHours ? (course) => setHoursCourse(course) : undefined}
         onInitiateRemove={onInitiateRemove}
         onCancelRemove={onCancelRemove}
         onConfirmRemove={onConfirmRemove}
@@ -208,6 +217,17 @@ export default function SemesterCard({
           programs={programs}
           onClose={() => setEditingCourse(null)}
           onSave={handleSaveEditedCourse}
+        />
+      )}
+
+      {canEditHours && hoursCourse && (
+        <EditCourseHoursModal
+          key={hoursCourse.id}
+          curriculumId={curriculumId}
+          course={hoursCourse}
+          defaults={hoursDefaults}
+          onClose={() => setHoursCourse(null)}
+          onSaved={onCourseHoursSaved}
         />
       )}
     </div>

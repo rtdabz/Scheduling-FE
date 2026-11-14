@@ -1,14 +1,28 @@
 # Architecture decisions
 
+## Owner revocation temporarily moves borrowed classes Online (2026-11-09)
+
+When a room owner revokes an approved borrowing grant, automatically switch only
+the borrower's overlapping classes in the granted room and semester to Online.
+Clear `room_id` and retain the original room and displacement time in
+`displaced_room_id` and `displaced_at` so existing room recovery can identify
+classes that still need reassignment. Preserve day, time, instructor, and
+schedule status, and keep history, revision tracking when applicable, audit,
+and recovery records in the grant transaction. Borrower Give Back/cancellation
+continues to move affected classes to Room TBA without changing delivery mode.
+
 ## Master Calendar centers the weekly timeline
 
 The Master Calendar uses the existing Gantt components as its primary workspace.
 A compact semester header and meeting count replace the introductory banner and
-statistic cards. Search, department, row grouping, overlaps, days, and zoom stay
-visible; session type, density, collapse controls, and printing live in View
-options. Closing those options preserves their selections.
+statistic cards. Search, department, row grouping, days, zoom, session type,
+density, collapse controls, printing, and standard hours stay visible. The
+Overlaps filter and View options disclosure are removed.
 
-The meeting count and department legend follow the selected days and filters.
+All seven days, including Sunday, are always available. Selecting a day shows
+only that day's timeline and expands it if collapsed; All days restores the
+full week, while Clear filters also resets the other filters.
+The meeting count and department legend follow the selected day and filters.
 Overlap detection still considers all loaded meetings, including hidden ones.
 Fit uses the available chart width and reduces time-label density on narrow
 screens; fixed zoom levels remain available for inspecting small blocks.
@@ -46,12 +60,13 @@ save actions, validation, and the semester activation confirmation remain the
 only paths that apply those settings. The hours preview uses the shared
 operating-hours parser and hides the range when the draft is invalid.
 
-## Reports share a searchable directory
+## Reports share a department directory
 
-The shared Reports page presents Department Schedule and Teaching Load as two
-report types above a department-grouped directory. Search matches department and
-program names; Available only filters report scopes with a positive printable
-count. Availability counts represent PDF scopes, not unique sections or faculty.
+The shared Reports page presents Department Schedule, Teaching Load, Room
+Utilization, and Curriculums & Courses above a department-grouped directory.
+The directory header shows only the selected report title; descriptions,
+readiness notices, search, filters, and the directory scope counter are omitted.
+Availability counts represent report scopes, not unique sections or faculty.
 The existing reports API remains authoritative for approval and access scope,
 and the existing schedule and teaching-load PDF builders produce the documents.
 Failed refreshes keep the last loaded directory visible with an inline notice.
@@ -128,25 +143,58 @@ cannot restore them; back up `model_has_permissions` first if they may be needed
 ## Archive domain records instead of permanently deleting them
 
 User-facing delete endpoints preserve domain records with soft deletes. The
-VPAA can review and restore them through the system Archive. Curricula continue
+VPAA reviews and restores them from an Archived tab inside the module that owns
+them (Users, Departments, Facilities, Instructors, Designations, Settings →
+Academic Semesters, and Curriculum for courses). Schedules have no archive (see
+below). Each tab is locked to its module's record types; the central
+`/archive` page was removed and its links redirect to the owning module. Restore
+authority is unchanged: the archive API stays VPAA-only, so sharing a module
+with other roles does not let them restore. Curricula continue
 to use their established `archived` status because that status is part of the
 curriculum workflow. Security-sensitive token revocation and transient
 replacement data are excluded from archival and remain immediate deletions.
 
-## Clear schedules uses the section checklist
+## Reset permanently deletes draft schedules only (2026-11-09)
 
-Clear schedules reuses the Done/Finalize checklist with only the open section
-initially selected. Choices are scoped to the department and active semester;
-empty sections and sections locked for approval or instructor assignment are
-disabled. Confirmation rechecks eligibility and sends only selected section IDs
-through the existing batch replacement endpoint, which also covers meetings
-beyond the loaded preview. Draft, completed, and revision are the backend's
-replaceable statuses.
+Supersedes the earlier "Clear schedules uses the section checklist" decision and
+the 2026-11-01 proposal to archive Reset actions
+([schedule archive policy review](reports/schedule_archive_policy_review.md)).
 
-The former clear dialog incorrectly promised Archive restoration. The existing
-batch endpoint permanently removes these working rows and records schedule
-history; the checklist now describes that behavior. This is an exception to
-ordinary domain-record archival, not a change to persistence behavior.
+Reset uses the section checklist with only the open section preselected, then
+`POST /api/schedules/reset/preview` and `POST /api/schedules/reset`
+(`schedule.delete`). The request carries one `semester_id` and explicit
+`section_ids`; the server resolves the rows. Only live `draft` rows are eligible:
+a selected section with any other live status, a section in an open submission,
+an inactive semester, an empty section, or a section outside the user's
+department/program write scope rejects the whole request. The preview returns
+server counts and a token; the confirm must present the same token, and a changed
+target returns 409 with a refreshed preview that must be confirmed again.
+
+Reset takes the semester scheduling lock, then the department workflow row lock
+as the transaction's first statement, re-checks everything, and physically
+deletes the schedules and all their split rows (soft-deleted ones included)
+with query-builder deletes, so no model events, archive, history, or revision
+recorders run. It never archives. It writes one metadata-only `schedule_reset`
+Activity Log entry and sends the existing cross-department release notice after
+commit. It never inserts, updates, or deletes Schedule History, submissions,
+approvals, or earlier audit rows; history keeps `original_schedule_id` values
+for rows that no longer exist.
+
+Generation replacement keeps using `/schedules/batch`. The frontend no longer
+sends Reset through `/schedules/batch`.
+
+## Schedules have no archive (2026-11-09)
+
+Class schedules and meeting splits are never archived and never restored. Every
+delete path (single Delete, group Delete, batch deletion, split deletion, and
+Reset) removes the rows and all their split rows permanently
+(`Schedule::deletePermanently`). Schedule History keeps its own snapshots and is
+not touched. The archive API no longer accepts the `schedules` or
+`schedule-splits` types (list validation rejects them; detail and restore return
+404), and the scheduler warns that removing a class is permanent. Rows
+soft-deleted before this decision stay in the database, hidden and unrecoverable;
+removing them needs separate approval of the legacy inventory. This is an
+exception to "archive domain records instead of permanently deleting them".
 
 ## Task-based interactive guides on the existing tour library
 
@@ -154,17 +202,40 @@ Onboarding stays on react-joyride (`useWorkflowGuide`, `joyrideTour`,
 `WorkflowGuideButton`); no second tour library is introduced. Guides are
 page-scoped and always start/restart from the existing per-page Help (?)
 button — there is no global mission overlay or extra entry button.
-`src/onboarding/taskGuide.ts` defines `TourAction` (`click`, `select`,
-`input`, `submit`, `toggle`, `navigate`, `complete`), per-action validation,
-and `waitForElement` (MutationObserver, never fixed sleeps). Each page
-declares its steps with the actions the user must perform; action steps hide
-the Next button until the real action is detected, then auto-advance.
-Completion is persisted per user per guide (v3 key), and destructive moves
-(save, submit, approve) are review-only `complete` steps so a tour can never
-force a mutation. Action steps spotlight the exact control (the button, not
-the card) via precise selectors and zero-visual-change `data-tour` hooks;
-the tooltip tracks moving targets with Floating UI autoUpdate while the
-spotlight follows scroll, resize, and target mutations.
+All 12 workflow guides use one controlled `TaskGuideRunner`, including
+review-only `complete` steps. Help snapshots the page's current role, view,
+and workflow stage when opened; changing a wizard stage does not reset its
+draft. Reopening or retrying Help uses the latest page state. There is no
+automatic startup on page visits. If Help is requested during loading, visible
+recovery remains available and that request opens the latest guide once ready;
+exiting recovery cancels it. Outcomes are versioned per user, guide, and variant (v4);
+dismissal and completion are distinct, and legacy v3 flags are not treated
+as verified completion.
+
+`src/onboarding/taskGuide.ts` defines action/result validation and bounded,
+cancelable target waits. The actual reachable element is passed to Joyride;
+an optional missing control is skipped, while required missing controls show
+Retry/Exit recovery. Only explicit guide navigation and verified task results
+change progress; library pause/update callbacks do not. Reversible opening
+actions can advance after their resulting UI is observed. Committed input
+or explicit Next follows validation rather than the first keystroke.
+
+Save, submit, approve, delete, curriculum/settings persistence, immediate-save
+instructor choices, and generation launches are review-only. Completing Help
+does not mean that an application operation succeeded. Existing authorization,
+validation, and confirmations remain authoritative.
+
+Guidance uses a labeled nonmodal tooltip with keyboard access to the highlighted
+control. Modal-contained guide controls share the active modal's focus scope;
+the existing Help entry moves into ordinary forms and is hidden for a separate
+scoped workflow such as the generator, which retains its own Help. Escape exits
+Help without also closing the underlying form. Timers, observers, listeners,
+portals, waits, and opt-in diagnostic sampling are canceled on exit, restart,
+unmount, session expiry, and replacement by another guide. Positioning unmounts
+when a successful action removes its target. Floating UI tracks scroll/resize/layout
+changes and fits tooltip height to the viewport; reduced motion and narrow/short screens are
+supported. Implementation and verification evidence are recorded in the
+[Tour Guide repair plan](tour_guide_repair_plan.md).
 
 ## Course Configure choices travel on the requirement, not new solver inputs
 
@@ -191,6 +262,14 @@ stays exact at `HYBRID_SPLIT_MEETING_MINUTES` per meeting.
 
 Required Day stays the department forced-day rule rather than a per-run
 field, because `MeetingDayRule` enforces it on manual edits too.
+
+*Superseded in part (2026-11-11):* the generator treats day rules as choices
+for one run (`SchedulingSettingsControllerTest::test_day_rules_are_no_longer_saved`).
+Integrated courses now take separate, run-scoped Lecture and Laboratory
+Required Days instead of the course-wide one; they are never persisted and
+never constrain manual plotting. Review and the generated save enforce them
+from the context the run returns (see
+`docs/plan/integrated_required_days_plan.md`).
 
 ## Shared-resource conflicts: one answer from every validator (2026-09-19)
 
@@ -290,3 +369,67 @@ is ignored, while old serialized profile metadata cannot gate new execution.
 Deploy the API, frontend, and migration together, restart generation workers,
 and invalidate department/initial-data lookup caches. No compatibility profile
 or automatic department-level toggle replaces the removed setting.
+
+## Director shares the Secretary slot (2026-11-10)
+
+Director returns as a distinct account role (`director`) that runs a department
+office exactly like a Secretary: the same capabilities (one shared list in
+`config/capabilities.php`), department scope, workflow, Program Head ownership
+limits, notifications, Sunday-class and curriculum-import settings, room
+borrowing/review, program room allocation, and room-transfer submission. It adds
+no approval stage and receives no Dean/VPAA approval or VPAA administration.
+This supersedes the 2026-09-27 retirement of the Director portal.
+
+A department has EITHER one active Secretary OR one active Director. The two
+roles share one slot in `AdministrativeRoleSlots`/`User::activeRoleHolder` and in
+the database backstop (see [[database]]); inactive and archived accounts do not
+occupy it, and switching one account between the roles is allowed. The faculty
+"Director" designation is unrelated to the login role and creates no account.
+
+Legacy Director accounts kept by the retirement migration are not silently
+re-enabled. The upgrade migration disables them and revokes their tokens; the
+VPAA must reactivate each one deliberately, which runs the slot check and
+restores the Spatie role. As defence in depth, a Director without its role
+assignment cannot authenticate even if code is deployed before the migration.
+Roll out with `php artisan migrate --force` (no `DatabaseSeeder`); the
+migration creates the `director` role and permissions itself.
+
+
+## Scheduler stays complete past the meeting limit (2026-11-11)
+
+`/initial-data` still returns at most `schedule_limit` (2,000) full meeting
+rows. When the list is cut, the scheduler also asks for `schedule_section_id`
+(the open section's meetings are always returned in full) and
+`schedule_occupancy=1` (every other visible meeting as a compact row of ids,
+times, room, instructor and status). Occupancy rows feed client conflict checks
+only and are never rendered; the server remains the authority on every save.
+Occupancy applies the same scope and borrowed-instructor masking as full rows.
+
+Sections are scoped to the active `semester_id` (plus sections with no
+semester). The former match on the `1st`/`2nd` label pulled in same-named
+sections from other academic years. Without `schedule_submissions` in the
+response, only each section's latest submission is loaded, and
+`schedule_signatories` lists only the submissions rows reference.
+
+Requests cut off by sign-out or session expiry now reject with an axios
+cancellation marked `sessionEnded` instead of staying pending, so caller
+cleanup runs; failure notices are suppressed while the session-ended screen
+shows.
+
+## Concurrent online classes (2026-11-11)
+
+Online is a shared resource, like the field. Different sections may take the
+same online course at the same time; each meeting is stored as `mode = online`
+with `room_id = null`, so no schema change was needed. The
+`subject_section_time_conflict` rule is retired everywhere it ran: both
+`OverlapConflict` implementations (rule engine and constraint kernel),
+`BatchConflictValidator`, `CspSolver`, the client pre-check (`useConflict`) and
+Draft Review's option selection (`draftReview.ts`). Its catalog entry, message,
+priority and conflict-inbox resolution options went with it.
+
+Section and instructor double-bookings, exclusive physical-room conflicts,
+availability, laboratory eligibility and hybrid meeting requirements still
+apply to online meetings. The solver keeps its per-course index for the soft
+mixed-mode preference (an online meeting avoiding another section's
+face-to-face meeting of the same course). Old conflict responses that carry
+the retired rule id still get a label in `lib/conflicts.ts`.

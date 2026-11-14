@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import { cloneElement } from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ResponsiveContainer measures its parent, and jsdom reports 0x0 — recharts then
@@ -102,25 +102,83 @@ beforeEach(() => {
 
 const renderPage = () => render(<MemoryRouter><DeanDashboardPage /></MemoryRouter>);
 
+it.each(['overview', 'progress', 'attentions'])('loads the dean skeleton for the requested %s tab', (tab) => {
+  get.mockImplementation(() => new Promise(() => {}));
+  const { container } = render(<MemoryRouter initialEntries={[`/?tab=${tab}`]}><DeanDashboardPage /></MemoryRouter>);
+  expect(container.querySelector(`[data-skeleton="panel-${tab}"]`)).toBeTruthy();
+});
+
+const openTab = async (name: RegExp) => fireEvent.click(await screen.findByRole('tab', { name }));
+const renderTab = async (name: RegExp) => {
+  const view = renderPage();
+  await openTab(name);
+  return view;
+};
+
 describe('DeanDashboardPage', () => {
-  it('mounts and renders every panel of the dashboard', async () => {
+  it('splits the dashboard panels across the Overview, Progress and Attentions tabs', async () => {
     renderPage();
+    const visible = (title: string) => {
+      const panel = screen.getByText(title).closest('[role="tabpanel"]');
+      return panel ? !(panel as HTMLElement).hidden : false;
+    };
 
-    await waitFor(() => expect(screen.getByText('Schedule Review Queue')).toBeTruthy());
+    // Overview: KPI row and the timetable. Other tabs mount on their first visit.
+    await screen.findByText('Department Academic Timetable');
+    expect(screen.getByRole('tab', { name: /Overview/ }).getAttribute('aria-selected')).toBe('true');
+    ['Sections', 'Instructors', 'Courses', 'Rooms', 'Scheduling Completion', 'Awaiting Your Approval',
+      'Department Academic Timetable'].forEach(title => expect(visible(title)).toBe(true));
+    expect(screen.queryByText('Schedule Review Queue')).toBeNull();
+    expect(screen.queryByText('Instructor Workload')).toBeNull();
 
-    // Every panel from the design is present.
-    ['Schedule Review Queue', 'Section Submission Readiness', 'Schedule Review Overview',
-      'Department Academic Timetable', 'Instructor Workload', 'Room Utilization'].forEach(title =>
-      expect(screen.getAllByText(title).length).toBeGreaterThanOrEqual(1));
+    // Progress: three summary cards, each with its breakdown.
+    await openTab(/Progress/);
+    ['Section Submission Overview', 'Section Readiness', 'Instructor Workload Overview', 'Instructor Workload Breakdown',
+      'Room Utilization Overview', 'Room Utilization Breakdown'].forEach(title => expect(visible(title)).toBe(true));
+    expect(visible('Department Academic Timetable')).toBe(false);
 
-    // KPI row.
-    ['Sections', 'Instructors', 'Courses', 'Rooms',
-      'Scheduling Completion', 'Awaiting Your Approval'].forEach(label =>
-      expect(screen.getByText(label)).toBeTruthy());
+    // Attentions: the review queue and its overview.
+    await openTab(/Attentions/);
+    ['Schedule Review Queue', 'Schedule Review Overview'].forEach(title => expect(visible(title)).toBe(true));
+    expect(visible('Section Readiness')).toBe(false);
+  });
+
+  it('breaks section readiness down by program', async () => {
+    await renderTab(/Progress/);
+
+    // BSIT: 1A submitted, 2A still in preparation. ACT: 1A returned.
+    expect(await screen.findByRole('img', { name: 'BSIT: 1 Ready for Review, 1 Still in Preparation' })).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'ACT: 1 Returned for Revision' })).toBeTruthy();
+    expect(screen.getByText('1 of 3 sections completed')).toBeTruthy();
+  });
+
+  it('shows overload in the workload breakdown instead of capping it', async () => {
+    await renderTab(/Progress/);
+
+    const ada = await screen.findByRole('progressbar', { name: 'Ada Lovelace workload' });
+    expect(ada.getAttribute('aria-valuetext')).toBe('24/21 units, 114% of maximum load');
+    // Above capacity shares the donut's amber, not the completed-load green.
+    expect((ada.firstElementChild as HTMLElement).style.backgroundColor).toBe('rgb(201, 149, 42)');
+    const grace = screen.getByRole('progressbar', { name: 'Grace Hopper workload' });
+    expect((grace.firstElementChild as HTMLElement).style.backgroundColor).toBe('rgb(63, 125, 88)');
+  });
+
+  it('labels room bars as load relative to the busiest room', async () => {
+    await renderTab(/Progress/);
+
+    const room = await screen.findByRole('progressbar', { name: 'R 301 class load' });
+    expect(room.getAttribute('aria-valuetext')).toBe('2 classes, 100% of the busiest room');
+    expect(screen.getByRole('progressbar', { name: 'R 202 class load' }).getAttribute('aria-valuetext')).toBe('1 class, 50% of the busiest room');
+  });
+
+  it('badges Attentions with one count per package awaiting review', async () => {
+    renderPage();
+    const tab = await screen.findByRole('tab', { name: /Attentions/ });
+    await waitFor(() => expect(tab.textContent).toBe('Attentions1'));
   });
 
   it('groups sections into per-program schedule packages', async () => {
-    renderPage();
+    await renderTab(/Attentions/);
 
     // "BSIT 1A" + "BSIT 2A" collapse into one BSIT package; "ACT 1A" is its own.
     // Both appear in the overview, but only BSIT is waiting in the review queue —
@@ -130,7 +188,7 @@ describe('DeanDashboardPage', () => {
   });
 
   it('names the user who actually submitted each package', async () => {
-    renderPage();
+    await renderTab(/Attentions/);
     await waitFor(() => expect(screen.getAllByText('Juan Dela Cruz').length).toBe(1));
     expect(screen.queryByText('Maria Santos')).toBeNull();
   });
@@ -140,11 +198,14 @@ describe('DeanDashboardPage', () => {
 
     // One 'submitted' section awaits the Dean.
     await waitFor(() => expect(screen.getByText('Awaiting your action')).toBeTruthy());
-    // These labels appear twice by design: once as a readiness legend row, once as
-    // a Review Overview column header.
+    // The readiness legend lives on Progress; the Review Overview on Attentions
+    // repeats two of its labels as column headers.
+    await openTab(/Progress/);
+    expect(screen.getAllByText('Ready for Review').length).toBe(1);
+    expect(screen.getByText('Not Started')).toBeTruthy();
+    await openTab(/Attentions/);
     expect(screen.getAllByText('Ready for Review').length).toBe(2);
     expect(screen.getAllByText('Returned for Revision').length).toBe(2);
-    expect(screen.getByText('Not Started')).toBeTruthy();
   });
 
   it('keeps virtual ONLINE rows out of the room inventory', async () => {
@@ -152,6 +213,7 @@ describe('DeanDashboardPage', () => {
 
     // Two physical rooms, both carrying a class, so utilization is 100%.
     await waitFor(() => expect(screen.getByText('Total rooms')).toBeTruthy());
+    await openTab(/Progress/);
     expect(screen.getByText('2 of 2 in use')).toBeTruthy();
   });
 

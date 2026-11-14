@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BookOpen, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Info, Layers3, ListChecks, Pencil, Plus, Save, Search, Scale, SlidersHorizontal, UserCheck, UserRound, Users, X } from 'lucide-react';
+import { AlertTriangle, Ban, BookOpen, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Info, Layers3, ListChecks, Pencil, Plus, Save, Search, Scale, SlidersHorizontal, UserCheck, UserRound, Users, X } from 'lucide-react';
 import type { ColumnDef } from "@tanstack/react-table";
 import DataTable from "../../../../components/ui/DataTable";
 import { useDataTable } from "../../../../components/ui/useDataTable";
@@ -9,9 +9,10 @@ import TableActionButton from "../../../../components/ui/TableActionButton";
 import { useToast } from "../../../../context/ToastContext";
 import { facultyEligibilityForSubject } from "../facultyEligibility";
 import { AVAILABILITY_WARNING_TITLE, isAvailabilityWarning } from "../../../../lib/availabilityWindows";
-import { LOAD_TIER_BADGE_CLASSES, LOAD_TIER_LABELS, basicLoadOf, loadTierForUnits, type LoadAllowances, type LoadTier } from "../../../../lib/facultyLoad";
+import { LOAD_TIER_LABELS, basicLoadOf, loadTierForUnits, type LoadAllowances, type LoadTier } from "../../../../lib/facultyLoad";
 import { employmentLabel } from "../EmploymentBadge";
 import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
+import { useWorkflowDialog } from "../GenerateSchedule/useWorkflowDialog";
 import './AutoAssignModal.css';
 
 /* eslint-disable react-hooks/set-state-in-effect */
@@ -82,6 +83,16 @@ const loadBandsOf = (faculty?: Faculty): LoadAllowances => ({
   overloadUnits: faculty?.overloadUnits ?? 0,
 });
 
+// Display-only tones for this modal. Overload is an allowed allowance, so it reads amber;
+// red is kept for loads past the ceiling. (The shared LOAD_TIER_BADGE_CLASSES paints
+// overload red and is used elsewhere, so it is not changed here.)
+const LOAD_TONE: Record<LoadTier, { badge: string; bar: string; text: string }> = {
+  basic: { badge: "border-emerald-200 bg-emerald-50 text-emerald-700", bar: "bg-emerald-500", text: "text-emerald-700" },
+  overload: { badge: "border-[#F5A623]/45 bg-[#F5A623]/10 text-[#8A5A12]", bar: "bg-[#F5A623]", text: "text-[#8A5A12]" },
+  pro_bono: { badge: "border-[#F5A623]/45 bg-[#F5A623]/10 text-[#8A5A12]", bar: "bg-[#F5A623]", text: "text-[#8A5A12]" },
+  beyond_ceiling: { badge: "border-rose-200 bg-rose-50 text-rose-700", bar: "bg-rose-500", text: "text-rose-700" },
+};
+
 interface LoadDisplay {
   bands: LoadAllowances;
   ceiling: number;
@@ -90,6 +101,7 @@ interface LoadDisplay {
   badgeClass: string;
   percentage: number;
   barClass: string;
+  textClass: string;
 }
 
 const loadDisplay = (faculty: Faculty | undefined, units: number): LoadDisplay => {
@@ -102,9 +114,10 @@ const loadDisplay = (faculty: Faculty | undefined, units: number): LoadDisplay =
       ceiling,
       tier: null,
       label: "No load recorded",
-      badgeClass: "border-slate-200 bg-slate-100 text-slate-600",
+      badgeClass: "border-[#E2D9D0] bg-[#F7F4F0] text-[#625a54]",
       percentage: 0,
-      barClass: "bg-slate-300",
+      barClass: "bg-[#D7CCC1]",
+      textClass: "text-[#625a54]",
     };
   }
 
@@ -115,9 +128,10 @@ const loadDisplay = (faculty: Faculty | undefined, units: number): LoadDisplay =
     ceiling,
     tier,
     label: tier === "basic" ? "Total Load" : LOAD_TIER_LABELS[tier],
-    badgeClass: LOAD_TIER_BADGE_CLASSES[tier],
+    badgeClass: LOAD_TONE[tier].badge,
     percentage: Math.min(100, (units / ceiling) * 100),
-    barClass: tier === "basic" ? "bg-emerald-500" : tier === "beyond_ceiling" ? "bg-rose-500" : "bg-amber-500",
+    barClass: LOAD_TONE[tier].bar,
+    textClass: LOAD_TONE[tier].text,
   };
 };
 
@@ -205,42 +219,7 @@ export default function AutoAssignModal({
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [assignments, setAssignments] = useState<QueuedAssignment[]>([]);
   const dialogRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const dialog = dialogRef.current;
-    const previousFocus = document.activeElement;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const controls = () => Array.from(dialog?.querySelectorAll<HTMLElement>('button:not(:disabled):not([tabindex="-1"]), input:not(:disabled), select:not(:disabled), summary, [tabindex="0"]') ?? []).filter(element => !element.closest('[inert]'));
-    const timer = window.setTimeout(() => (controls()[0] ?? dialog)?.focus(), 0);
-    const trapFocus = (event: KeyboardEvent) => {
-      if (event.key !== 'Tab' || Array.from(document.querySelectorAll('[role="dialog"], [role="alertdialog"]')).at(-1) !== dialog) return;
-      const elements = controls();
-      const first = elements[0]; const last = elements[elements.length - 1];
-      if (!first) { event.preventDefault(); dialog?.focus(); }
-      else if (event.shiftKey && (document.activeElement === first || !dialog?.contains(document.activeElement))) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && (document.activeElement === last || !dialog?.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
-    };
-    document.addEventListener('keydown', trapFocus);
-    return () => {
-      window.clearTimeout(timer);
-      document.removeEventListener('keydown', trapFocus);
-      document.body.style.overflow = previousOverflow;
-      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
-    };
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const dismiss = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && facultyActionSlotId !== 'bulk' && Array.from(document.querySelectorAll('[role="dialog"], [role="alertdialog"]')).at(-1) === dialogRef.current) {
-        event.preventDefault(); event.stopPropagation(); onClose();
-      }
-    };
-    document.addEventListener('keydown', dismiss);
-    return () => document.removeEventListener('keydown', dismiss);
-  }, [facultyActionSlotId, isOpen, onClose]);
+  useWorkflowDialog(dialogRef, isOpen, onClose, facultyActionSlotId === "bulk");
 
   const groups = useMemo<SectionGroup[]>(() => {
     const map = new Map<string, SectionGroup>();
@@ -541,6 +520,7 @@ export default function AutoAssignModal({
     const holder = group.schedules.find((schedule) => schedule.facultyId);
     const name = faculties.find((faculty) => faculty.id === holder?.facultyId)?.name ?? holder?.facultyName ?? "the instructor";
     const confirmed = await confirm({
+      appearance: "workflow",
       title: "Remove instructor",
       message: `Remove ${name} from ${group.courseCode} ${group.sectionName}? Every meeting of this class loses its instructor, and it can be assigned again right away.`,
       eyebrow: "Reassignment",
@@ -572,18 +552,30 @@ export default function AutoAssignModal({
   if (!isOpen) return null;
 
   return (
-    <div className="assign-modal-overlay" onClick={(event) => event.target === event.currentTarget && !isSaving && onClose()}>
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="auto-assign-title" aria-describedby="auto-assign-description" tabIndex={-1} className="assign-modal">
-        <header className="assign-modal-header">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white"><UserCheck className="h-5 w-5" /></span>
+    <div className="assign-modal-overlay scheduler-dialog-overlay" onClick={(event) => event.target === event.currentTarget && !isSaving && onClose()}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="auto-assign-title" aria-describedby="auto-assign-description" aria-busy={isSaving} tabIndex={-1} className="assign-modal scheduler-dialog">
+        <header className="assign-modal-header scheduler-dialog-header scheduler-brand-header">
+          <span className="scheduler-dialog-icon"><UserCheck className="h-6 w-6" /></span>
           <div className="min-w-0 flex-1">
-            <h2 id="auto-assign-title" className="truncate text-base font-black text-white sm:text-lg">Assign Instructors</h2>
-            <p id="auto-assign-description" className="sr-only">{steps[step - 1].title}. Step {step} of {steps.length}. Nothing is saved until you confirm.</p>
+            <p className="scheduler-dialog-eyebrow">Instructor assignment</p>
+            <h2 id="auto-assign-title" className="scheduler-dialog-title">Assign Instructors</h2>
+            <p id="auto-assign-description" className="scheduler-dialog-description">Build your list, review teaching loads, then save the assignments.</p>
+            <p className="sr-only">{steps[step - 1].title}. Step {step} of {steps.length}. Nothing is saved until you confirm.</p>
           </div>
-          <button type="button" onClick={onClose} disabled={isSaving} aria-label="Close auto-assign" className="rounded-lg bg-white/10 p-2 text-white transition hover:bg-white/20 disabled:opacity-50"><X className="h-5 w-5" /></button>
+          <button type="button" onClick={onClose} disabled={isSaving} aria-label="Close auto-assign" className="scheduler-dialog-close"><X className="h-5 w-5" /></button>
         </header>
 
-        <nav className="assign-progress" aria-label="Auto-assign instructor steps"><ol>{steps.map(item => <li key={item.id} aria-current={step === item.id ? 'step' : undefined} data-complete={step > item.id}><span className="assign-step-number" aria-hidden="true">{step > item.id ? <Check size={13} /> : item.id}</span><span>{item.title}</span></li>)}</ol><span className="assign-step-count" aria-hidden="true">Step {step} of 3</span></nav>
+        <nav className="assign-progress" aria-label="Auto-assign instructor steps">
+          <ol>
+            {steps.map((item) => (
+              <li key={item.id} aria-current={step === item.id ? 'step' : undefined} data-complete={step > item.id}>
+                <span className="assign-step-number" aria-hidden="true">{step > item.id ? <Check size={13} strokeWidth={3} /> : item.id}</span>
+                <span className="assign-step-title">{item.title}</span>
+              </li>
+            ))}
+          </ol>
+          <span className="assign-step-count" aria-hidden="true">Step {step} of {steps.length}</span>
+        </nav>
 
         <main className="assign-modal-body" aria-busy={isSaving} inert={isSaving}>
           {step === 1 && (
@@ -600,15 +592,28 @@ export default function AutoAssignModal({
                 <SectionTable groups={courseGroups} selectedKeys={selectedKeys} queuedKeys={queuedKeys} getIssue={getIssue} getConflict={getConflict} getConflictMeetings={getConflictMeetings} clashPartners={clashPartners} onToggle={toggleGroup} onSelectAll={selectAllGroups} selectAllChecked={allSelectableGroupsSelected} selectAllDisabled={selectableCourseGroupKeys.length === 0} onRemoveQueued={removeAssignment} onRemove={onRemoveAssignment ? removeClassAssignment : undefined} removalBlockedReason={removalBlockedReason} busy={isSaving} />
                 <div className="assign-selection-actions" data-selected={selectedGroups.length > 0}>
                   {selectedFaculty ? (
-                    <div className="min-w-0 flex-1 text-xs text-slate-600" role="status">
-                      <p className="assign-selected-title">{selectedGroups.length ? `${plural(selectedGroups.length, 'section')} selected` : 'Select available sections'}</p>
-                      <p>{selectedFaculty.name} · Projected load <strong className="tabular-nums">{currentLoad + selectedUnits} / {projectedLoad.ceiling} units</strong>{projectedLoad.tier !== 'basic' && ` · ${projectedLoad.label}`}</p>
+                    <div className="assign-selection-summary" role="status">
+                      <div className="assign-selection-who">
+                        <ProfileAvatar src={selectedFaculty.profilePicture} alt="" className="h-8 w-8 shrink-0 rounded-full" iconClassName="h-4 w-4" />
+                        <div className="min-w-0">
+                          <p className="assign-selected-title">{selectedGroups.length ? `${plural(selectedGroups.length, 'section')} selected` : 'No sections selected'}<span className="assign-selected-units">{selectedGroups.length > 0 && ` · +${plural(selectedUnits, 'unit')}`}</span></p>
+                          <p className="assign-selected-name">{selectedFaculty.name}</p>
+                        </div>
+                      </div>
+                      <div className="assign-selection-load">
+                        <p className="assign-selection-load-label">Projected load <strong className="tabular-nums">{currentLoad + selectedUnits} / {projectedLoad.ceiling} units</strong></p>
+                        <span className="assign-load-track assign-load-track-lg" aria-hidden="true">
+                          <span className={`${projectedLoad.barClass} opacity-40`} style={{ width: `${projectedLoad.percentage}%` }} />
+                          <span className={`${projectedLoad.barClass} assign-load-current`} style={{ width: `${projectedLoad.ceiling > 0 ? Math.min(100, (currentLoad / projectedLoad.ceiling) * 100) : 0}%` }} />
+                        </span>
+                      </div>
+                      {projectedLoad.tier !== null && <span className={`assign-tier-chip ${projectedLoad.badgeClass}`}>{projectedLoad.tier === 'basic' ? LOAD_TIER_LABELS.basic : projectedLoad.label}</span>}
                     </div>
                   ) : (
-                    <p className="mr-auto text-xs font-semibold text-slate-500">Select an instructor to see which sections they can take.</p>
+                    <p className="assign-selection-empty">Select an instructor to see which sections they can take.</p>
                   )}
                   <button type="button" onClick={addToAssignmentList} disabled={selectedGroups.length === 0} className="assign-button assign-button-primary">
-                    <Plus className="h-3.5 w-3.5" /> {selectedGroups.length ? `Add ${plural(selectedGroups.length, "section")} to list` : "Add to list"}
+                    <Plus className="h-4 w-4" /> {selectedGroups.length ? `Add ${plural(selectedGroups.length, "section")} to list` : "Add to list"}
                   </button>
                 </div>
               </section>
@@ -720,13 +725,13 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
   );
   return (
     <aside aria-label="Instructor selection" className="assign-instructor-panel">
-      <div className="flex shrink-0 items-center gap-2 px-3 pb-2 pt-3 text-sm font-black text-slate-900">
-        <Users className="h-4 w-4 text-[#4e0a10]" /> Instructor
-        <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">
+      <div className="assign-panel-heading">
+        <Users className="h-4 w-4 text-[#701522]" aria-hidden="true" /> Instructor
+        <span className="assign-count-pill">
           {query || activeDepartment || employment !== "all" ? `${matchingFaculties.length} of ${visibleFaculties.length}` : visibleFaculties.length}
         </span>
       </div>
-      {allowExternalInstructors && <div className="flex shrink-0 border-b border-slate-200 px-3">
+      {allowExternalInstructors && <div className="assign-tabs">
         {([
           ["department", "My department"],
           ["external", "Other departments"],
@@ -745,7 +750,7 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
               })?.id) ?? "");
             }}
             aria-pressed={tab === value}
-            className={`-mb-px border-b-2 px-3 py-2 text-xs font-bold transition-colors ${tab === value ? "border-[#4e0a10] text-[#4e0a10]" : "border-transparent text-slate-400 hover:text-slate-700"}`}
+            className="assign-tab"
           >
             {label}
           </button>
@@ -757,52 +762,48 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
             value={activeDepartment}
             onChange={(event) => setDepartmentFilter(event.target.value)}
             aria-label="Filter instructors by department"
-            className="h-9 w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-8 text-xs font-semibold text-slate-800 outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/25"
+            className="assign-input h-9 w-full appearance-none px-3 pr-8 text-xs font-semibold"
           >
             <option value="">All departments ({visibleFaculties.length})</option>
             {externalDepartments.map((department) => (
               <option key={department.value} value={department.value}>{department.label} ({department.count})</option>
             ))}
           </select>
-          <ChevronDown className="pointer-events-none absolute right-5 top-[18px] h-4 w-4 text-slate-400" />
+          <ChevronDown className="pointer-events-none absolute right-5 top-[20px] h-4 w-4 text-[#7A6E67]" />
         </div>
       )}
       <div className="relative shrink-0 px-3 pt-2.5">
-        <Search className="pointer-events-none absolute left-[22px] top-5 h-4 w-4 text-slate-400" />
+        <Search className="pointer-events-none absolute left-[22px] top-[22px] h-4 w-4 text-[#7A6E67]" />
         <input
           type="search"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Search instructors"
           aria-label="Search instructors to assign"
-          className="h-9 w-full rounded-lg border border-slate-200 pl-8 pr-8 text-xs outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/25"
+          className="assign-input h-9 w-full pl-8 pr-8 text-xs"
         />
         {search && (
           <button
             type="button"
             onClick={() => setSearch("")}
             aria-label="Clear instructor search"
-            className="absolute right-5 top-[18px] rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="absolute right-5 top-[20px] rounded p-0.5 text-[#7A6E67] hover:bg-[#F5E9EA] hover:text-[#4A0D16]"
           >
             <X className="h-3.5 w-3.5" />
           </button>
         )}
       </div>
-      <div role="group" aria-label="Filter instructors by employment type" className="flex shrink-0 gap-1.5 px-3 pt-2.5">
+      <div role="group" aria-label="Filter instructors by employment type" className="assign-segments">
         {EMPLOYMENT_FILTERS.map(([value, label]) => (
           <button
             key={value}
             type="button"
             onClick={() => setEmployment(value)}
             aria-pressed={employment === value}
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors ${
-              employment === value
-                ? "border-[#4e0a10] bg-[#4e0a10] text-white"
-                : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
-            }`}
+            className="assign-segment"
           >
             {label}{' '}
-            <span className={`tabular-nums ${employment === value ? "text-white/75" : "text-slate-400"}`}>{employmentCounts[value]}</span>
+            <span className="assign-segment-count tabular-nums">{employmentCounts[value]}</span>
           </button>
         ))}
       </div>
@@ -811,18 +812,36 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
           {matchingFaculties.map((faculty) => {
             const load = facultyLoads.get(faculty.id) ?? 0;
             const display = loadDisplay(faculty, load);
+            const selected = faculty.id === facultyId;
+            const employmentText = employmentLabel(faculty.employmentType);
             return <li key={faculty.id}>
-              <button type="button" onClick={() => onSelect(faculty.id)} aria-pressed={faculty.id === facultyId} className="assign-instructor-option" style={{ contentVisibility: 'auto', containIntrinsicSize: '100px' }}>
-                <span aria-hidden="true"><ProfileAvatar src={faculty.profilePicture} alt="" className="h-8 w-8 shrink-0 rounded-full" iconClassName="h-4 w-4" /></span>
-                <span className="assign-instructor-identity"><span className="assign-instructor-name">{faculty.name}</span><span className="assign-instructor-meta">{employmentLabel(faculty.employmentType) ?? 'Employment not recorded'} · {faculty.status === 'inactive' ? 'Inactive' : 'Active'}{tab === 'external' && ` · ${faculty.departmentCode ?? faculty.departmentName ?? 'External'}`}</span></span>
-                <span className="assign-instructor-check" aria-hidden="true">{faculty.id === facultyId && <Check size={16} />}</span>
-                <span className="assign-instructor-load"><span>Teaching load <strong>{load} / {display.ceiling} units</strong></span><span className="assign-load-track" aria-hidden="true"><span className={display.barClass} style={{width: `${display.percentage}%`}} /></span>{display.tier !== 'basic' && <span className="assign-load-notice">{display.label}</span>}</span>
+              <button type="button" onClick={() => onSelect(faculty.id)} aria-pressed={selected} className="assign-instructor-option" style={{ contentVisibility: 'auto', containIntrinsicSize: '84px' }}>
+                <span className="assign-instructor-avatar" aria-hidden="true">
+                  <ProfileAvatar src={faculty.profilePicture} alt="" className="h-9 w-9 shrink-0 rounded-full" iconClassName="h-4 w-4" />
+                  {selected && <span className="assign-instructor-check"><Check size={10} strokeWidth={3.5} /></span>}
+                </span>
+                <span className="assign-instructor-identity">
+                  <span className="assign-instructor-name">{faculty.name}</span>
+                  <span className="assign-instructor-meta">
+                    <span className="assign-employment-chip" data-type={faculty.employmentType ?? 'unknown'}>{employmentText ?? 'Employment not recorded'}</span>
+                    {faculty.status === 'inactive' && <span className="assign-employment-chip" data-type="inactive">Inactive</span>}
+                    {tab === 'external' && <span className="truncate">{faculty.departmentCode ?? faculty.departmentName ?? 'External'}</span>}
+                  </span>
+                </span>
+                <span className="assign-instructor-units" title="Teaching load">
+                  <span className="sr-only">Teaching load </span>
+                  <span className={display.tier && display.tier !== 'basic' ? display.textClass : undefined}>{load} / {display.ceiling} units</span>
+                </span>
+                <span className="assign-instructor-load">
+                  <span className="assign-load-track" aria-hidden="true"><span className={display.barClass} style={{width: `${display.percentage}%`}} /></span>
+                  {display.tier !== 'basic' && <span className={`assign-load-notice ${display.textClass}`}>{display.label}</span>}
+                </span>
               </button>
             </li>;
           })}
         </ul>
         {matchingFaculties.length === 0 && (
-          <p className="px-3 py-8 text-center text-xs font-semibold text-slate-500">
+          <p className="px-3 py-8 text-center text-xs font-semibold text-[#625a54]">
             {query && searchedFaculties.length === 0 && visibleFaculties.length > 0
               ? `No instructor matches “${search.trim()}”.`
               : employment !== "all" && searchedFaculties.length > 0
@@ -836,7 +855,7 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
 }
 
 function SelectField({ label, value, onChange, options, placeholder, allValue }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[]; placeholder: string; allValue?: string }) {
-  return <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}<div className="relative mt-1"><select value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-8 text-sm font-semibold normal-case tracking-normal text-slate-800 outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/25"><option value={allValue ?? ""}>{placeholder}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><ChevronDown className="pointer-events-none absolute right-2.5 top-3 h-4 w-4 text-slate-400" /></div></label>;
+  return <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}<div className="relative mt-1"><select value={value} onChange={(event) => onChange(event.target.value)} className="assign-input h-10 w-full appearance-none truncate px-3 pr-8 text-sm font-semibold normal-case tracking-normal"><option value={allValue ?? ""}>{placeholder}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><ChevronDown className="pointer-events-none absolute right-2.5 top-3 h-4 w-4 text-[#7A6E67]" /></div></label>;
 }
 
 function SectionTable({ groups, selectedKeys, queuedKeys, getIssue, getConflict, getConflictMeetings, clashPartners, onToggle, onSelectAll, selectAllChecked, selectAllDisabled, onRemoveQueued, onRemove, removalBlockedReason, busy }: { groups: SectionGroup[]; selectedKeys: string[]; queuedKeys: Set<string>; getIssue: (group: SectionGroup) => string | null; getConflict: (group: SectionGroup) => string | null; getConflictMeetings: (group: SectionGroup) => Set<string>; clashPartners: Map<string, string[]>; onToggle: (group: SectionGroup) => void; onSelectAll: () => void; selectAllChecked: boolean; selectAllDisabled: boolean; onRemoveQueued: (key: string) => void; onRemove?: (group: SectionGroup) => void; removalBlockedReason: (group: SectionGroup) => string | null; busy: boolean }) {
@@ -857,8 +876,8 @@ function SectionTable({ groups, selectedKeys, queuedKeys, getIssue, getConflict,
     {
       accessorKey: "sectionName",
       header: "Section",
-      size: 110,
-      cell: ({ row }) => <span className="text-sm font-bold text-slate-800">{row.original.sectionName}</span>,
+      size: 104,
+      cell: ({ row }) => <span className="assign-section-name">{row.original.sectionName}</span>,
     },
     {
       id: "schedule",
@@ -886,35 +905,40 @@ function SectionTable({ groups, selectedKeys, queuedKeys, getIssue, getConflict,
     {
       accessorKey: "units",
       header: "Units",
-      size: 56,
-      cell: ({ row }) => <span className="text-sm font-bold text-slate-700">{row.original.units}</span>,
+      size: 64,
+      meta: { align: "center" as const },
+      cell: ({ row }) => <span className="assign-section-units">{row.original.units}</span>,
     },
     {
       id: "availability",
       accessorFn: (group) => getIssue(group) ?? getConflict(group) ?? "Available",
       header: "Availability",
+      size: 248,
       cell: ({ row }) => {
         const issue = getIssue(row.original);
         const conflict = issue ? null : getConflict(row.original);
         if (conflict) {
           return (
             <div id={`assignment-availability-${row.original.key}`} className="assign-availability">
-              <span className="assign-status assign-status-conflict"><AlertTriangle size={13} aria-hidden="true" />
-                {isAvailabilityWarning(conflict) ? AVAILABILITY_WARNING_TITLE : "Conflict"}
-              </span>
+              {isAvailabilityWarning(conflict)
+                ? <span className="assign-status assign-status-warning"><Clock size={13} aria-hidden="true" />{AVAILABILITY_WARNING_TITLE}</span>
+                : <span className="assign-status assign-status-conflict"><AlertTriangle size={13} aria-hidden="true" />Conflict</span>}
               <details className="assign-conflict-details" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}><summary>View reason<span className="sr-only"> for {row.original.sectionName}</span></summary><p>{conflict}</p></details>
             </div>
           );
         }
         const blocks = issue ? [] : [...new Set(row.original.schedules.flatMap((schedule) => clashPartners.get(schedule.id) ?? []))];
+        const kind = !issue ? 'available' : row.original.assignedFacultyId ? 'assigned' : issue.startsWith('Queued') ? 'queued' : 'unavailable';
+        const detail = issue ? issue.replace(/^Assigned Instructor: /, '') : null;
+        const StatusIcon = { available: CheckCircle2, assigned: UserCheck, queued: ListChecks, unavailable: Ban }[kind];
         return (
           <div id={`assignment-availability-${row.original.key}`} className="assign-availability">
-            <span className={`assign-status ${issue ? 'assign-status-neutral' : 'assign-status-available'}`}>
-              {issue ? <Info size={13} aria-hidden="true" /> : <CheckCircle2 size={13} aria-hidden="true" />}
-              {issue ? row.original.assignedFacultyId ? 'Assigned' : issue.startsWith('Queued') ? 'On list' : 'Unavailable' : 'Available'}
+            <span className={`assign-status assign-status-${kind}`}>
+              <StatusIcon size={13} aria-hidden="true" />
+              {{ available: 'Available', assigned: 'Assigned', queued: 'On list', unavailable: 'Unavailable' }[kind]}
             </span>
-            {issue && <span className="assign-status-detail">{issue.replace(/^Assigned Instructor: /, '')}</span>}
-            {blocks.length > 0 && <span className="assign-status-detail text-rose-700">Conflicts with {blocks.join(", ")}</span>}
+            {detail && <span className="assign-status-detail" title={detail}>{detail}</span>}
+            {blocks.length > 0 && <span className="assign-status-detail assign-status-detail-conflict">Conflicts with {blocks.join(", ")}</span>}
           </div>
         );
       },
@@ -922,7 +946,7 @@ function SectionTable({ groups, selectedKeys, queuedKeys, getIssue, getConflict,
     {
       id: "actions",
       header: () => <span className="sr-only">Actions</span>,
-      size: 56,
+      size: 52,
       enableSorting: false,
       meta: { align: "right" as const, stopRowClick: true },
       cell: ({ row }: { row: { original: SectionGroup } }) => {
@@ -959,8 +983,14 @@ function SectionTable({ groups, selectedKeys, queuedKeys, getIssue, getConflict,
 
   return (
     <section aria-label="Section selection" className="assign-section-panel">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2.5"><div className="flex items-center gap-2 text-sm font-black text-slate-900"><Layers3 className="h-4 w-4 text-[#4e0a10]" /> Sections <span className="text-xs font-semibold text-slate-400">{groups.length}</span></div><div className="flex items-center gap-3">{selectedKeys.length > 0 && <span className="rounded-full bg-[#4e0a10]/10 px-2.5 py-0.5 text-[11px] font-bold text-[#4e0a10]">{selectedKeys.length} selected</span>}<label className={`inline-flex items-center gap-1.5 text-xs font-bold ${selectAllDisabled ? "cursor-not-allowed text-slate-400" : "cursor-pointer text-slate-700"}`}><input type="checkbox" checked={selectAllChecked} onChange={onSelectAll} disabled={selectAllDisabled} className="h-4 w-4 rounded border-slate-300 accent-[#4e0a10]" /> Select all available</label></div></div>
-      {groups.length === 0 ? <div className="flex flex-1 flex-col items-center justify-center gap-1 p-6 text-center"><Layers3 className="h-6 w-6 text-slate-300" /><p className="text-sm font-semibold text-slate-600">No sections to assign</p><p className="text-xs text-slate-500">Pick another course or year level.</p></div> : (
+      <div className="assign-sections-heading">
+        <div className="assign-panel-title"><Layers3 className="h-4 w-4 text-[#701522]" aria-hidden="true" /> Sections <span className="assign-count-pill">{groups.length}</span></div>
+        <div className="assign-sections-tools">
+          {selectedKeys.length > 0 && <span className="assign-selected-pill">{selectedKeys.length} selected</span>}
+          <label className="assign-select-all" data-disabled={selectAllDisabled}><input type="checkbox" checked={selectAllChecked} onChange={onSelectAll} disabled={selectAllDisabled} /> Select all available</label>
+        </div>
+      </div>
+      {groups.length === 0 ? <div className="flex flex-1 flex-col items-center justify-center gap-1 p-6 text-center"><Layers3 className="h-6 w-6 text-[#D7CCC1]" /><p className="text-sm font-semibold text-[#3f342e]">No sections to assign</p><p className="text-xs text-[#625a54]">Pick another course or year level.</p></div> : (
         <DataTable
           table={table}
           variant="embedded"
@@ -969,11 +999,13 @@ function SectionTable({ groups, selectedKeys, queuedKeys, getIssue, getConflict,
           tableClassName="assign-sections-table"
           ariaLabel="Sections"
           onRowClick={onToggle}
-          rowClassName={(group) => (getIssue(group)
-            ? "!cursor-not-allowed"
-            : getConflict(group)
-              ? selectedKeys.includes(group.key) ? "!bg-orange-100/70" : "!bg-orange-50/60"
-              : selectedKeys.includes(group.key) ? "!bg-[#4e0a10]/[0.04]" : "")}
+          rowClassName={(group) => {
+            if (getIssue(group)) return "!cursor-not-allowed assign-row-locked";
+            const conflict = getConflict(group);
+            const selected = selectedKeys.includes(group.key) ? " assign-row-selected" : "";
+            if (conflict) return `${isAvailabilityWarning(conflict) ? "assign-row-warning" : "assign-row-conflict"}${selected}`;
+            return selected.trim();
+          }}
         />
       )}
     </section>
@@ -1000,7 +1032,7 @@ function ReviewAssignments({ assignments, faculties, facultyLoads, onRemove }: {
     .sort((left, right) => {
       if (sortMode === "sections") return right.items.length - left.items.length;
       if (sortMode === "load") return (facultyLoads.get(right.facultyId) ?? 0) - (facultyLoads.get(left.facultyId) ?? 0);
-      return (left.faculty?.name ?? left.items[0].facultyName).localeCompare(right.faculty?.name ?? right.items[0].facultyName);
+      return (left.faculty?.sortName ?? left.faculty?.name ?? left.items[0].facultyName).localeCompare(right.faculty?.sortName ?? right.faculty?.name ?? right.items[0].facultyName);
     });
   const [selectedFacultyId, setSelectedFacultyId] = useState(facultyGroups[0]?.facultyId ?? "");
   const selectedGroup = facultyGroups.find((group) => group.facultyId === selectedFacultyId) ?? filteredGroups[0] ?? facultyGroups[0];
@@ -1157,7 +1189,7 @@ function AssignmentItemsTable({ items, onRemove, showTotal = false, className, s
         <>
           {row.original.schedule}
           {row.original.conflict && (
-            <span className="mt-1 flex w-fit items-center gap-1 rounded border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[11px] font-semibold text-orange-700" title={row.original.conflict}>
+            <span className="mt-1 flex w-fit items-center gap-1 rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[11px] font-semibold text-rose-700" title={row.original.conflict}>
               <AlertTriangle className="h-3 w-3 shrink-0" /> {row.original.conflict}
             </span>
           )}
@@ -1304,13 +1336,13 @@ function ConfirmValidationSummary({ assignments, faculties, facultyLoads }: { as
   const totalUnits = assignments.reduce((total, assignment) => total + assignment.units, 0);
   return (
     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 text-xs font-semibold text-slate-600">
-      <span className={`flex items-center gap-1.5 ${overloadCount ? "text-amber-800" : ""}`}>
+      <span className={`flex items-center gap-1.5 ${overloadCount ? "text-[#8A5A12]" : ""}`}>
         {overloadCount ? <AlertTriangle className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5 text-emerald-600" />}
         {overloadCount ? `${plural(overloadCount, "instructor")} past Basic Load` : "All within Basic Load"}
       </span>
       <span className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-600" /> {plural(assignments.length, "section")}</span>
       {assignments.some((assignment) => assignment.conflict) && (
-        <span className="flex items-center gap-1.5 text-orange-700">
+        <span className="flex items-center gap-1.5 text-rose-700">
           <AlertTriangle className="h-3.5 w-3.5" /> {plural(assignments.filter((assignment) => assignment.conflict).length, "conflict")} · remove to save
         </span>
       )}

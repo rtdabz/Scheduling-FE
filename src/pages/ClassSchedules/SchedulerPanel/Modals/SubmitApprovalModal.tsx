@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
-import { AlertTriangle, CheckCircle2, Send, X } from "lucide-react";
+﻿import { AlertTriangle, CheckCircle2, LockKeyhole, Send } from "lucide-react";
+import Modal from "../../../../components/ui/Modal";
+import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
 import type { DepartmentSectionProgress, Section } from "../types";
 
 interface SubmitApprovalModalProps {
@@ -12,10 +13,16 @@ interface SubmitApprovalModalProps {
   departmentTotalSections: number;
   departmentDoneSections: number;
   departmentReadyToSubmit: boolean;
+  departmentCorrectionsRequired?: boolean;
   confirmSubmitForApproval: () => void;
   cancelSubmitForApproval: () => void;
   isSubmittingSchedule?: boolean;
 }
+
+const isProtected = (section: DepartmentSectionProgress) => [
+  "submitted", "approved_by_dean", "conditionally_approved", "approved",
+  "faculty_assignment", "reassignment", "finalized",
+].includes(section.status);
 
 export default function SubmitApprovalModal({
   sections,
@@ -27,183 +34,129 @@ export default function SubmitApprovalModal({
   departmentTotalSections,
   departmentDoneSections,
   departmentReadyToSubmit,
+  departmentCorrectionsRequired = false,
   confirmSubmitForApproval,
   cancelSubmitForApproval,
-  isSubmittingSchedule = false
+  isSubmittingSchedule = false,
 }: SubmitApprovalModalProps) {
-  const cancelButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!isSubmitApprovalModalOpen) return;
-
-    cancelButtonRef.current?.focus();
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !isSubmittingSchedule) {
-        cancelSubmitForApproval();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isSubmitApprovalModalOpen, cancelSubmitForApproval]);
-
-  if (!isSubmitApprovalModalOpen) return null;
-
   const sectionName = sections.find((section) => section.id === selectedSectionId)?.name ?? "this section";
   const unplottedCount = Math.max(0, totalSubjects - totalScheduled);
-  const completionPercent = departmentTotalSections > 0 ? (departmentDoneSections / departmentTotalSections) * 100 : 0;
-  const progressWidthClass = completionPercent >= 100
-    ? "w-full"
-    : completionPercent >= 75
-    ? "w-3/4"
-    : completionPercent >= 50
-    ? "w-1/2"
-    : completionPercent >= 25
-    ? "w-1/4"
-    : completionPercent > 0
-    ? "w-1/6"
-    : "w-0";
+  const completionPercent = departmentTotalSections > 0
+    ? Math.min(100, Math.max(0, (departmentDoneSections / departmentTotalSections) * 100))
+    : 0;
+  const submittingCount = departmentSectionProgress.filter((section) => section.isDone && !isProtected(section)).length;
+  const protectedCount = departmentSectionProgress.filter(isProtected).length;
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 min-h-screen p-4"
-      onClick={(event) => {
-        if (event.target === event.currentTarget && !isSubmittingSchedule) {
-          cancelSubmitForApproval();
-        }
-      }}
-    >
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="submit-approval-title"
-        aria-describedby="submit-approval-desc"
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200"
-      >
-        <div className="relative bg-gradient-to-br from-[#4e0a10]/5 to-amber-50 px-6 pt-6 pb-5 border-b border-[#4e0a10]/10">
-          <button
-            type="button"
-            onClick={cancelSubmitForApproval}
-            disabled={isSubmittingSchedule}
-            aria-label="Close"
-            className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 hover:bg-white/70 rounded-full p-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <X className="w-4 h-4" />
-          </button>
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-full bg-[#4e0a10]/10 border border-[#4e0a10]/15 flex items-center justify-center shrink-0">
-              <Send className="w-6 h-6 text-[#4e0a10]" />
-            </div>
-            <div className="pt-0.5">
-              <h3 id="submit-approval-title" className="text-lg font-bold text-gray-900 leading-tight">
-                Submit schedule?
-              </h3>
-              <p id="submit-approval-desc" className="text-sm text-gray-600 mt-1">
-                You are about to send the ready schedule sections to the Dean for review.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="px-6 py-5 space-y-3">
-          <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Sections ready</span>
-              <span className="text-sm font-extrabold text-gray-900">
-                {departmentDoneSections}/{departmentTotalSections}
-              </span>
-            </div>
-            <div className="mt-2 h-2 rounded-full bg-gray-200 overflow-hidden">
-              <div
-                className={`h-full rounded-full bg-[#C9952A] transition-all ${progressWidthClass}`}
-              />
-            </div>
-          </div>
-
-          {departmentReadyToSubmit ? (
-            <div className="flex items-start gap-2.5 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
-              <p className="text-xs font-medium text-emerald-800">
-                Only the completed revision cohort will be submitted. Sections that are already finalized or approved will remain unchanged.
-              </p>
-            </div>
-          ) : (
-            <div className="flex items-start gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
-              <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
-              <p className="text-xs font-medium text-amber-800">
-                {unplottedCount} subject{unplottedCount !== 1 ? "s" : ""} still appear unplotted for {sectionName}. The department submission may be blocked until every required section is complete.
-              </p>
-            </div>
-          )}
-
-          <div className="rounded-xl border border-gray-200 overflow-hidden">
-            <div className="bg-gray-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-gray-500">
-              Department workflow status
-            </div>
-            <div className="divide-y divide-gray-100 max-h-48 overflow-y-auto">
-              {departmentSectionProgress.map((section) => {
-                const isProtected = ["submitted", "approved_by_dean", "conditionally_approved", "approved", "faculty_assignment", "reassignment", "finalized"].includes(section.status);
-                const willSubmit = section.isDone && !isProtected;
-                const statusLabel = willSubmit
-                  ? "Will submit"
-                  : section.status === "finalized"
-                    ? "Finalized"
-                    : isProtected
-                      ? "Unchanged"
-                      : "Not ready";
-                return <div key={section.sectionId} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-gray-800 truncate">{section.sectionName}</p>
-                    <p className="text-[11px] text-gray-500">
-                      {section.plottedSubjects}/{section.requiredSubjects} subjects plotted
-                    </p>
-                  </div>
-                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                    willSubmit
-                      ? "bg-emerald-50 text-emerald-700"
-                      : isProtected
-                        ? "bg-slate-100 text-slate-600"
-                        : "bg-amber-50 text-amber-700"
-                  }`}>
-                    {statusLabel}
-                  </span>
-                </div>;
-              })}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-3 px-6 pb-6">
-          <button
-            ref={cancelButtonRef}
-            type="button"
-            onClick={cancelSubmitForApproval}
-            disabled={isSubmittingSchedule}
-            className="border border-gray-300 rounded-lg px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
+    <Modal
+      isOpen={isSubmitApprovalModalOpen}
+      onClose={cancelSubmitForApproval}
+      appearance="workflow"
+      role="alertdialog"
+      title="Submit schedule?"
+      eyebrow="Schedule submission"
+      description="Review your department's sections before sending them to the Dean."
+      icon={<Send size={21} />}
+      busy={isSubmittingSchedule}
+      closeLabel="Close submission review"
+      className="max-w-[640px]"
+      bodyClassName="scheduler-dialog-body"
+      footer={
+        <>
+          <button type="button" data-autofocus onClick={cancelSubmitForApproval}
+            disabled={isSubmittingSchedule} className="scheduler-dialog-button">
             Review Again
           </button>
-          <button
-            type="button"
-            onClick={confirmSubmitForApproval}
+          <button type="button" onClick={confirmSubmitForApproval}
             disabled={!departmentReadyToSubmit || isSubmittingSchedule}
-            className={`flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-[#4e0a10]/30 focus:ring-offset-1 ${
-              departmentReadyToSubmit && !isSubmittingSchedule
-                ? "text-white bg-[#4e0a10] hover:bg-[#C9952A] cursor-pointer"
-                : "text-gray-400 bg-gray-200 cursor-not-allowed"
-            }`}
-          >
-            {isSubmittingSchedule ? (
-              <LoadingSpinner className="w-4 h-4" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
-            {isSubmittingSchedule ? "Submitting..." : "Agree and Submit"}
+            className="scheduler-dialog-button" data-variant="primary">
+            {isSubmittingSchedule ? <LoadingSpinner className="h-4 w-4" /> : <Send size={16} />}
+            {isSubmittingSchedule ? "Submitting..." : "Submit to Dean"}
           </button>
+        </>
+      }
+    >
+      <div className="space-y-5">
+        <div className="rounded-xl border border-[#e8e1d9] bg-[#faf8f5] p-4 sm:p-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold text-[#71665e]">Department readiness</p>
+              <p className="mt-1 flex items-baseline gap-1.5 text-[#291a19]">
+                <span className="text-3xl font-semibold tabular-nums tracking-tight">{departmentDoneSections}</span>
+                <span className="text-sm text-[#71665e]">of {departmentTotalSections} sections done</span>
+              </p>
+            </div>
+            <span className={`scheduler-dialog-badge ${departmentReadyToSubmit ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>
+              {departmentReadyToSubmit ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
+              {departmentReadyToSubmit ? "Ready for review" : "Action needed"}
+            </span>
+          </div>
+          <div className="scheduler-readiness-track mt-4" role="progressbar" aria-label="Department sections done"
+            aria-valuemin={0} aria-valuemax={departmentTotalSections || 1} aria-valuenow={Math.min(departmentDoneSections, departmentTotalSections)}
+            aria-valuetext={`${departmentDoneSections} of ${departmentTotalSections} sections done`}>
+            <div className="scheduler-readiness-fill" style={{ width: `${completionPercent}%` }} />
+          </div>
         </div>
+
+        {departmentReadyToSubmit ? (
+          <div className="scheduler-dialog-notice border-emerald-200 bg-emerald-50 text-emerald-900">
+            <CheckCircle2 size={17} className="mt-0.5 shrink-0" />
+            <div>
+              <p className="font-semibold">{submittingCount} section{submittingCount === 1 ? "" : "s"} will be sent for review</p>
+              <p className="mt-0.5">Completed sections in the current revision will be submitted, including unchanged timetables. Sections already under review, approved, or finalized keep their current workflow status.</p>
+            </div>
+          </div>
+        ) : departmentCorrectionsRequired ? (
+          <div className="scheduler-dialog-notice border-amber-200 bg-amber-50 text-amber-900">
+            <AlertTriangle size={17} className="mt-0.5 shrink-0" />
+            <div>
+              <p className="font-semibold">Save the needed timetable corrections</p>
+              <p className="mt-0.5">No timetable corrections have been saved for this returned schedule. Correct the sections identified in the rejection feedback using Generate Schedule or Manual Plotting. Other sections may keep their existing timetables.</p>
+            </div>
+          </div>
+        ) : (
+          <div className="scheduler-dialog-notice border-amber-200 bg-amber-50 text-amber-900">
+            <AlertTriangle size={17} className="mt-0.5 shrink-0" />
+            <div>
+              <p className="font-semibold">Finish the required sections before submitting</p>
+              <p className="mt-0.5">Every section in the current revision must be fully plotted.
+                {unplottedCount > 0 && ` ${sectionName} still has ${unplottedCount} unplotted subject${unplottedCount === 1 ? "." : "s."}`}
+              </p>
+            </div>
+          </div>
+        )}
+
+        <section aria-label="Department workflow status" className="scheduler-dialog-panel">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e8e1d9] bg-[#faf8f5] px-4 py-3">
+            <h3 className="font-sans text-xs font-semibold text-[#4e443c]">Department workflow status</h3>
+            <span className="text-[11px] text-[#71665e]">{departmentSectionProgress.length} sections</span>
+          </div>
+          <ul className="scheduler-dialog-list">
+            {departmentSectionProgress.map((section) => {
+              const protectedSection = isProtected(section);
+              const willSubmit = section.isDone && !protectedSection;
+              const unchangedReturn = sections.some((item) => item.id === section.sectionId
+                && item.submissionStatus === "rejected" && item.revisionStatus === "initial");
+              const statusLabel = protectedSection ? section.status === "finalized" ? "Finalized" : "Unchanged"
+                : willSubmit ? unchangedReturn ? "Will submit unchanged" : "Will submit" : "Not ready";
+              return (
+                <li key={section.sectionId} className="scheduler-dialog-row">
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-semibold text-[#291a19]">{section.sectionName}</p>
+                    <p className="mt-1 text-xs text-[#71665e]">{section.plottedSubjects ?? section.plottedCourses}/{section.requiredSubjects ?? section.requiredCourses} subjects plotted</p>
+                  </div>
+                  <span className={`scheduler-dialog-badge ${willSubmit ? "bg-emerald-50 text-emerald-800" : protectedSection ? "bg-[#f1ede8] text-[#625a54]" : "bg-amber-50 text-amber-800"}`}>
+                    {willSubmit ? <CheckCircle2 size={12} /> : protectedSection ? <LockKeyhole size={12} /> : <AlertTriangle size={12} />}
+                    {statusLabel}
+                  </span>
+                </li>
+              );
+            })}
+            {departmentSectionProgress.length === 0 && <li className="px-4 py-6 text-center text-sm text-[#71665e]">No sections are available for submission.</li>}
+          </ul>
+        </section>
+        {protectedCount > 0 && <p className="flex items-start gap-2 text-xs leading-5 text-[#71665e]"><LockKeyhole size={14} className="mt-0.5 shrink-0" />{protectedCount} protected section{protectedCount === 1 ? " keeps its" : "s keep their"} current workflow status.</p>}
       </div>
-    </div>
+    </Modal>
   );
 }
-import LoadingSpinner from "../../../../components/ui/LoadingSpinner";

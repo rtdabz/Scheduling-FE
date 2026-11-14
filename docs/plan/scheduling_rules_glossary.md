@@ -25,7 +25,11 @@ they never clash on booking.
 | `room_conflict` | A room cannot host overlapping classes in the same semester. |
 | `faculty_conflict` | An instructor cannot teach overlapping classes. A clash someone chose to override is not raised again while the instructor, day and time are unchanged. |
 | `section_conflict` | A section cannot attend overlapping classes. |
-| `subject_section_time_conflict` | Different online sections taking the same course cannot use overlapping times. |
+
+Online is shared like the field. Different sections may take the same course
+online at overlapping times, with `mode = online` and no room. The former
+`subject_section_time_conflict` rule was retired (see `decisions.md`). Section
+and instructor double-bookings still apply to online meetings.
 
 Generation also *prefers* to keep an online meeting from overlapping another
 section's face-to-face meeting of the same course, because one instructor often
@@ -142,7 +146,7 @@ Meanings of each rule id are the same as in Part 1.
 | `OperatingHoursConstraints` | `slot_grid`, `operating_hours`, `field_evening_window` | opening, closing and field end time |
 | `RoomTypeConstraints` | `room_type_match` | course, room |
 | `RoomAvailabilityConstraints` | `room_availability`, `room_department_alignment` | rooms and their grant windows |
-| `OverlapConflict` | `room_conflict`, `faculty_conflict`, `section_conflict`, `subject_section_time_conflict` | persisted schedules plus candidate rows |
+| `OverlapConflict` | `room_conflict`, `faculty_conflict`, `section_conflict` | persisted schedules plus candidate rows |
 | `InstructorAvailabilityConstraints` | `faculty_active`, `part_time_faculty_availability` | faculty, employment type, availability windows |
 | `SectionLoadConstraints` | `class_duration` | the section's scheduled minutes per course |
 | `MeetingGroupConstraints` | `hybrid_component_count`, `hybrid_components`, `minor_split_component_count`, `minor_split_eligibility`, `minor_split_pattern`, `minor_split_duration`, `split_group_same_time`, `split_group_day_separation` | the linked meeting group |

@@ -8,6 +8,7 @@ import { useLiveRefresh } from '../useLiveRefresh';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import type { Curriculum, Department, Program } from '../../types/curriculum';
 import { annotateCurriculumLifecycle } from '../../types/curriculum';
+import { isDepartmentOfficeRole } from '../../lib/roles';
 
 interface CurriculumPageData {
   curriculumList: Curriculum[];
@@ -28,11 +29,12 @@ export function useCurriculum() {
   const [departments, setDepartments] = useState<Department[]>(cachedData?.departments ?? []);
   const [programs, setPrograms] = useState<Program[]>(cachedData?.programs ?? []);
   const [isLoading, setIsLoading] = useState(!hasCachedData(curriculumCacheKey));
+  const [loadError, setLoadError] = useState(false);
 
   const canManageCurriculum = useMemo(() => hasStoredCapability('curriculum.manage'), []);
 
-  // Secretaries filter with Active/Deactivated status buttons, so their list opens on Active.
-  const [statusFilter, setStatusFilter] = useState<string>(() => (userRole === 'secretary' ? 'active' : 'all'));
+  // The department office filters with Active/Deactivated status buttons, so its list opens on Active.
+  const [statusFilter, setStatusFilter] = useState<string>(() => (isDepartmentOfficeRole(userRole) ? 'active' : 'all'));
   const [searchQuery, setSearchQuery] = useState('');
 
   const fetchCurriculumList = useCallback(
@@ -58,7 +60,9 @@ export function useCurriculum() {
         setCurriculumList(data.curriculumList);
         setDepartments(data.departments);
         setPrograms(data.programs);
+        setLoadError(false);
       } catch {
+        setLoadError(true);
         toast.error('Error', 'Failed to load curriculum data.');
       } finally {
         setIsLoading(false);
@@ -189,6 +193,7 @@ export function useCurriculum() {
     rawCurriculumList: annotatedCurriculumList,
     departments,
     isLoading,
+    loadError,
     userRole,
     canManageCurriculum,
     programs,

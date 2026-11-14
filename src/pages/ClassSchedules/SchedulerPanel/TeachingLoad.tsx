@@ -17,6 +17,7 @@ import { getStoredUserDepartmentId, getStoredUserRole } from "../../../lib/store
 import { fetchInstitutionSettings, type InstitutionSettings } from "../../../lib/institutionSettings";
 import { BASIC_LINE_COUNT, classifyLoad } from "./teachingLoadRows";
 import { drawSheet } from "./teachingLoadSheet";
+import { loadSheetSignatories } from "./teachingLoadSignatories";
 import { formPageSize } from "./teachingLoadForm";
 import { facultyNameParts } from "./teachingLoadName";
 import { buildExportFilename } from "../../../lib/exportFile";
@@ -37,7 +38,8 @@ interface TeachingLoadProps {
 
 const DESIGNATION_LABELS: Record<FacultyAdministrativePost, string> = {
   dean: "Department Dean",
-  secretary: "Department Secretary",
+  secretary: "Program Head/Secretary",
+  director: "Department Director",
   program_head: "Program Head",
   vpaa: "Vice President for Academic Affairs",
 };
@@ -136,7 +138,7 @@ export default function TeachingLoad({
       return;
     }
 
-    const vpaaAccount = users.find((u) => u.role?.toLowerCase() === "vpaa");
+    const vpaaAccount = users.find((u) => u.is_active !== false && u.is_active !== 0 && u.role?.toLowerCase() === "vpaa");
 
     let doc: jsPDF | null = null;
 
@@ -153,17 +155,28 @@ export default function TeachingLoad({
 
       const deptId = faculty.departmentId?.toString();
       const byRole = (role: string) =>
-        users.find((u) => u.role?.toLowerCase() === role && u.department_id?.toString() === deptId);
-      const programHeads = users.filter((u) => u.role?.toLowerCase() === "program_head" && u.department_id?.toString() === deptId);
+        users.find((u) => u.is_active !== false && u.is_active !== 0 && u.role?.toLowerCase() === role && u.department_id?.toString() === deptId);
+      const programHeads = users.filter((u) => u.is_active !== false && u.is_active !== 0 && u.role?.toLowerCase() === "program_head" && u.department_id?.toString() === deptId);
       const ownProgramHead = faculty.programId == null
         ? undefined
         : programHeads.find((u) => Number(u.program_id) === Number(faculty.programId));
       const preparer = ownProgramHead
         ?? (programHeads.length === 1 ? programHeads[0] : undefined)
+        // The department office holder: a Secretary or a Director, never both.
         ?? byRole("secretary")
+        ?? byRole("director")
         ?? programHeads[0];
 
-      const load = classifyLoad(faculty, assignedSchedules.filter((s) => s.facultyId === faculty.id));
+      const facultySchedules = assignedSchedules.filter((s) => s.facultyId === faculty.id);
+      const load = classifyLoad(faculty, facultySchedules);
+      const signatories = loadSheetSignatories(facultySchedules, faculty.programId, {
+        preparedBy: preparer?.name ?? "",
+        preparedTitle: preparer ? DESIGNATION_LABELS[preparer.role as FacultyAdministrativePost] : undefined,
+        verifiedBy: byRole("dean")?.name ?? "",
+        vpaaName: vpaaAccount?.name ?? "",
+        presidentName: settings.president_name,
+        presidentTitle: settings.president_title,
+      });
 
       const sheetCount = Math.max(1, Math.ceil(load.basic.length / BASIC_LINE_COUNT));
 
@@ -189,11 +202,7 @@ export default function TeachingLoad({
               ? [{ label: DESIGNATION_LABELS[faculty.administrativeRole], deloadUnits: faculty.deloadUnits ?? 0 }]
               : [],
           instructorName: fullName,
-          preparedBy: preparer?.name ?? "",
-          verifiedBy: byRole("dean")?.name ?? "",
-          vpaaName: vpaaAccount?.name ?? "",
-          presidentName: settings.president_name,
-          presidentTitle: settings.president_title,
+          ...signatories,
           load,
           basicLines: load.basic.slice(sheet * BASIC_LINE_COUNT, (sheet + 1) * BASIC_LINE_COUNT),
           overloadLines,

@@ -28,6 +28,8 @@ import type {
 import { DEAN_REQUIRED_MESSAGE } from "../../../../hooks/useDepartmentScheduleStatus";
 import { consecutiveMeetingSlots, courseInCurriculum, laboratoryComponentSlots, placeCourse, sortSplitMeetingsForEdit, type SchedulingRoomSettings } from "../courseSlotPlan";
 import { buildSectionClearCandidates } from "../sectionClearCandidates";
+import { changedResetPreview, confirmScheduleReset, previewScheduleReset, resetConfirmationSummary } from "../../../../lib/scheduleReset";
+import ResetConfirmationMessage from "../Modals/ResetConfirmationMessage";
 import { buildSectionFinalizeCandidates, buildSectionReassignCandidates } from "../sectionFinalizeCandidates";
 import { getSubjectTotalSlots } from "../types";
 import { isMajorSubject, majorTeachingDepartmentId } from "../facultyEligibility";
@@ -43,7 +45,10 @@ import {
   mapApiSchedulesWithSignatories,
   mapApiSections,
   mapInitialData,
-  slotToTime24h
+  mapOccupancy,
+  replaceSectionSchedules,
+  slotToTime24h,
+  withConflictOccupancy
 } from "./initialDataMapper";
 import { buildPlacementSessionKey } from "./placementSession";
 
@@ -63,6 +68,7 @@ import { isCustomDayPattern, relocatedPairPattern, requiredRoomTypeForMeeting, u
 import { useDragDrop } from "./useDragDrop";
 import { useToast } from "../../../../context/ToastContext";
 import api from "../../../../lib/api";
+import { EDITABLE_STATUSES } from "../../../../lib/scheduleStatuses";
 import { fetchConflicts, fetchResolvedConflicts, resolvedScheduleIds } from "../../../../lib/conflicts";
 import { getCachedData, loadCachedData, patchCachedData, setCachedData, clearCachedKey } from "../../../../lib/dataCache";
 import { useLiveRefresh } from "../../../../hooks/useLiveRefresh";
@@ -71,7 +77,7 @@ import { roomGrantFits } from "../../../../lib/roomRequests";
 import { configureLabRoomType, roomTypeSatisfies } from "../../../../lib/labRoomPolicy";
 import { getStoredUser, hasStoredCapability } from "../../../../lib/storedUser";
 import { buildPreferredPattern, consecutiveDayCount, fixedSplitPatternForDays, FULL_DAY_NAMES, parsePreferredPattern, slotCount } from "../../../../lib/timeGrid";
-import { isHybridSplitEligible, savedMeetingPairShape } from "../schedulingConfigurationEligibility";
+import { isConfiguredFieldCourse, isHybridSplitEligible, savedMeetingPairShape } from "../schedulingConfigurationEligibility";
 import { resolveManualOperationStatus, validateManualMeetingRooms } from "../manualScheduleOperation";
 import {
   consecutiveDayRuns,
@@ -105,7 +111,8 @@ const relocatedRows = (data: ApiScheduleRecord & { moved_partners?: ApiScheduleR
 ];
 
 const SCHEDULER_SCHEDULE_LIMIT = 2000;
-const SCHEDULER_INITIAL_DATA_PARAMS = { schedule_limit: SCHEDULER_SCHEDULE_LIMIT };
+// Past the limit, the server adds compact occupancy rows so conflict checks still see every meeting.
+const SCHEDULER_INITIAL_DATA_PARAMS = { schedule_limit: SCHEDULER_SCHEDULE_LIMIT, schedule_occupancy: 1 };
 
 export interface ManualSchedulingSettings extends SchedulingRoomSettings {
   lecture_lab_schedule_override_enabled?: boolean;
@@ -117,13 +124,9 @@ export interface ManualSchedulingSettings extends SchedulingRoomSettings {
   sunday_classes_enabled?: boolean;
 }
 
-const departmentPlottingStatuses: ScheduleItem["status"][] = [
-  "draft",
-  "revision",
-  "completed"
-];
+const departmentPlottingStatuses = EDITABLE_STATUSES;
 
-const departmentReadyStatuses: ScheduleItem["status"][] = [
+const departmentReadyStatuses: readonly string[] = [
   ...departmentPlottingStatuses,
   "submitted",
   "approved_by_dean",
@@ -160,16 +163,16 @@ const deriveSectionProgressStatus = (items: ScheduleItem[]): ScheduleItem["statu
   if (statuses.has("finalized")) return "finalized";
 
   const conservativeOrder: ScheduleItem["status"][] = [
-    "revision",
-    "rejected_by_dean",
-    "rejected",
-    "draft",
-    "completed",
     "submitted",
     "approved_by_dean",
     "conditionally_approved",
     "approved",
     "faculty_assignment",
+    "revision",
+    "rejected_by_dean",
+    "rejected",
+    "draft",
+    "completed",
     "reassignment"
   ];
   return conservativeOrder.find((status) => statuses.has(status)) ?? "draft";
@@ -247,7 +250,7 @@ export const useScheduler = () => {
   const canSubmitSchedule = hasStoredCapability('schedule.submit');
   const canWithdrawSubmission = hasStoredCapability('schedule.withdraw');
   const canAssignInstructor = hasStoredCapability('schedule.assign_instructor');
-  const schedulerCacheKey = `scheduler:v18:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}:${user?.program_id ?? 'all'}`;
+  const schedulerCacheKey = `scheduler:v19:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}:${user?.program_id ?? 'all'}`;
   const cachedSchedulerData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
   const canUseInitialCache = hasUsableSchedulerCache(cachedSchedulerData);
   const [rooms, setRooms] = useState<Room[]>(canUseInitialCache ? cachedSchedulerData.rooms : []);
@@ -269,6 +272,11 @@ export const useScheduler = () => {
   const [schedulesTruncated, setSchedulesTruncated] = useState<boolean>(
     canUseInitialCache ? cachedSchedulerData.schedulesTruncated === true : false
   );
+  const [occupancy, setOccupancy] = useState<ScheduleItem[]>(
+    canUseInitialCache ? cachedSchedulerData.occupancy ?? [] : []
+  );
+  /** Bumped by every full timetable load, so an older answer never replaces a newer one. */
+  const scheduleLoadSeqRef = useRef(0);
   const [fieldCourseAssignmentEnabled, setFieldCourseAssignmentEnabled] = useState<boolean>(
     canUseInitialCache ? cachedSchedulerData.fieldCourseAssignmentEnabled : false
   );
@@ -278,7 +286,6 @@ export const useScheduler = () => {
   const [isLoading, setIsLoading] = useState(!canUseInitialCache);
   const [isEditingSection, setIsEditingSection] = useState(false);
 
-  const [isResubmittingSection, setIsResubmittingSection] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [isFinalizeSectionsModalOpen, setIsFinalizeSectionsModalOpen] = useState(false);
   const [isReassignSectionsModalOpen, setIsReassignSectionsModalOpen] = useState(false);
@@ -290,7 +297,8 @@ export const useScheduler = () => {
 
   const [isWideView, setIsWideView] = useState<boolean>(() => {
     const saved = localStorage.getItem("timetable_wide_view");
-    return saved === null ? true : saved === "true";
+    // With nothing saved, start in the two-column workspace so Manual Plotting is visible.
+    return saved === null ? false : saved === "true";
   });
 
   const handleToggleWideView = useCallback(() => {
@@ -325,6 +333,7 @@ export const useScheduler = () => {
       setUsers(cachedData.users);
       setSections(cachedData.sections);
       setSchedules(cachedData.schedules);
+      setOccupancy(cachedData.occupancy ?? []);
       setFieldCourseAssignmentEnabled(cachedData.fieldCourseAssignmentEnabled);
       setFieldCourseCodes(cachedData.fieldCourseCodes);
       if (!selectedSectionId && cachedData.sections.length > 0) {
@@ -355,6 +364,7 @@ export const useScheduler = () => {
         if (!canUseCachedData || schedulesRef.current === cachedData.schedules) {
           setSchedules(data.schedules);
           setSchedulesTruncated(data.schedulesTruncated === true);
+          setOccupancy(data.occupancy ?? []);
         }
         setFieldCourseAssignmentEnabled(data.fieldCourseAssignmentEnabled);
         setFieldCourseCodes(data.fieldCourseCodes);
@@ -387,10 +397,9 @@ export const useScheduler = () => {
     if (truncationWarnedRef.current) return;
     truncationWarnedRef.current = true;
     toast.warning(
-      "Timetable Partly Loaded",
-      `This semester has more than ${SCHEDULER_SCHEDULE_LIMIT.toLocaleString()} class meetings, so only the most recent `
-        + `${SCHEDULER_SCHEDULE_LIMIT.toLocaleString()} are shown. Older classes are missing from the grid and from conflict `
-        + "checks here; the server still checks every save against all of them.",
+      "Large Timetable",
+      `This semester has more than ${SCHEDULER_SCHEDULE_LIMIT.toLocaleString()} class meetings. The open section and `
+        + "conflict checks use all of them; summaries of other sections may leave out the oldest classes.",
     );
   }, [schedulesTruncated, toast]);
 
@@ -412,24 +421,80 @@ export const useScheduler = () => {
     }
   }, [sections, selectedSectionId]);
 
+  const selectedSectionIdRef = useRef(selectedSectionId);
+  useEffect(() => {
+    selectedSectionIdRef.current = selectedSectionId;
+  }, [selectedSectionId]);
+
+  // Past the schedule limit, the opened section may have meetings that were only sent as occupancy.
+  // Load that section in full so its grid is complete; conflict checks already see every meeting.
+  useEffect(() => {
+    if (!schedulesTruncated || !selectedSectionId) return;
+    if (!occupancy.some((item) => item.sectionId === selectedSectionId)) return;
+    const controller = new AbortController();
+    const seq = scheduleLoadSeqRef.current;
+    void api.get<Pick<InitialDataResponse, "schedules" | "schedule_signatories">>('/initial-data', {
+      signal: controller.signal,
+      params: { include: 'schedules', schedule_limit: 1, schedule_section_id: selectedSectionId },
+    }).then((res) => {
+      // A full load that started after this request already carries the section.
+      if (seq !== scheduleLoadSeqRef.current || !Array.isArray(res.data.schedules)) return;
+      const sectionRows = mapApiSchedulesWithSignatories(
+        res.data.schedules.filter((item) => String(item.section_id) === selectedSectionId
+          && (!activeSemester || Number(item.semester_id) === Number(activeSemester.id))),
+        res.data.schedule_signatories,
+      );
+      const nextOccupancy = occupancy.filter((item) => item.sectionId !== selectedSectionId);
+      setOccupancy(nextOccupancy);
+      setSchedules((previous) => {
+        const next = replaceSectionSchedules(previous, selectedSectionId, sectionRows);
+        patchCachedData<SchedulerCacheData>(schedulerCacheKey, { schedules: next, occupancy: nextOccupancy });
+        return next;
+      });
+    }).catch(() => {
+      // The section stays as loaded; the server still checks every save against all meetings.
+    });
+    return () => controller.abort();
+  }, [activeSemester, occupancy, schedulerCacheKey, schedulesTruncated, selectedSectionId]);
+
 
   const refreshSchedules = useCallback(async () => {
+    const seq = ++scheduleLoadSeqRef.current;
     try {
-      const res = await api.get<Pick<InitialDataResponse, "schedules" | "schedules_truncated" | "schedule_signatories">>('/initial-data', {
-        params: { ...SCHEDULER_INITIAL_DATA_PARAMS, include: 'schedules' },
+      const sectionId = selectedSectionIdRef.current;
+      const res = await api.get<Pick<InitialDataResponse, "sections" | "schedules" | "schedules_truncated" | "schedule_signatories" | "schedule_occupancy">>('/initial-data', {
+        params: {
+          ...SCHEDULER_INITIAL_DATA_PARAMS,
+          include: 'schedules,sections',
+          ...(sectionId ? { schedule_section_id: sectionId } : {}),
+        },
       });
+      // Live updates and actions refresh concurrently; only the most recently started answer applies.
+      if (seq !== scheduleLoadSeqRef.current) return;
       if (!Array.isArray(res.data.schedules)) return;
-      setSchedulesTruncated(res.data.schedules_truncated === true);
+      if (Array.isArray(res.data.sections)) {
+        const freshSections = mapApiSections(res.data.sections, activeSemester ?? null);
+        setSections(freshSections);
+        patchCachedData<SchedulerCacheData>(schedulerCacheKey, { sections: freshSections });
+      }
+      const truncated = res.data.schedules_truncated === true;
+      setSchedulesTruncated(truncated);
+      const freshOccupancy = mapOccupancy(res.data.schedule_occupancy, activeSemester?.id);
+      setOccupancy(freshOccupancy);
       let apiData = res.data.schedules;
       if (activeSemester) {
         apiData = apiData.filter((item) => Number(item.semester_id) === Number(activeSemester.id));
       }
       const mapped = mapApiSchedulesWithSignatories(apiData, res.data.schedule_signatories);
       const signature = scheduleSignature(mapped);
-      if (signature === scheduleSignature(schedulesRef.current)) return;
+      if (signature === scheduleSignature(schedulesRef.current)) {
+        patchCachedData<SchedulerCacheData>(schedulerCacheKey, { occupancy: freshOccupancy, schedulesTruncated: truncated });
+        return;
+      }
       setSchedules(mapped);
-      patchCachedData<SchedulerCacheData>(schedulerCacheKey, { schedules: mapped, schedulesTruncated: res.data.schedules_truncated === true });
+      patchCachedData<SchedulerCacheData>(schedulerCacheKey, { schedules: mapped, schedulesTruncated: truncated, occupancy: freshOccupancy });
     } catch {
+      if (seq !== scheduleLoadSeqRef.current) return;
       toast.error("Timetable Not Refreshed", "The timetable could not be refreshed. What you see may be out of date; reload to try again.");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -466,9 +531,15 @@ export const useScheduler = () => {
 
   const refreshData = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!silent) setIsLoading(true);
+    const seq = ++scheduleLoadSeqRef.current;
     try {
       clearCachedKey(schedulerCacheKey);
-      const response = await api.get<InitialDataResponse>('/initial-data', { params: SCHEDULER_INITIAL_DATA_PARAMS });
+      const sectionId = selectedSectionIdRef.current;
+      const response = await api.get<InitialDataResponse>('/initial-data', {
+        params: { ...SCHEDULER_INITIAL_DATA_PARAMS, ...(sectionId ? { schedule_section_id: sectionId } : {}) },
+      });
+      // A newer load started meanwhile and will apply its own, more recent answer.
+      if (seq !== scheduleLoadSeqRef.current) return;
       const freshData = mapInitialData(response.data, { isVpaa, userDepartmentId: user?.department_id });
 
       setCachedData<SchedulerCacheData>(schedulerCacheKey, freshData);
@@ -483,9 +554,10 @@ export const useScheduler = () => {
       setSections(freshData.sections);
       setSchedules(freshData.schedules);
       setSchedulesTruncated(freshData.schedulesTruncated === true);
+      setOccupancy(freshData.occupancy ?? []);
       if (!silent) toast.success("Synchronized", "Successfully loaded fresh sections and schedules from database.");
     } catch {
-      toast.error("Synchronize Failed", "Could not load fresh data from database.");
+      if (seq === scheduleLoadSeqRef.current) toast.error("Synchronize Failed", "Could not load fresh data from database.");
     } finally {
       if (!silent) setIsLoading(false);
     }
@@ -538,9 +610,17 @@ export const useScheduler = () => {
     });
     if (instructorChanged) void refreshFaculties();
     setSchedules((previousSchedules) => {
-      const nextSchedules = previousSchedules.map((schedule) =>
-        updatedScheduleMap.get(schedule.id) ?? schedule
-      );
+      const nextSchedules = previousSchedules.map((schedule) => {
+        const updated = updatedScheduleMap.get(schedule.id);
+        if (!updated) return schedule;
+        // Assignment responses may omit unchanged actor evidence; explicit null still clears it.
+        return {
+          ...updated,
+          signatories: updated.signatories === undefined ? schedule.signatories : updated.signatories,
+          createdById: updated.createdById === undefined ? schedule.createdById : updated.createdById,
+          creatorIdentity: updated.creatorIdentity === undefined ? schedule.creatorIdentity : updated.creatorIdentity,
+        };
+      });
       patchCachedData<SchedulerCacheData>(schedulerCacheKey, { schedules: nextSchedules });
       return nextSchedules;
     });
@@ -635,7 +715,7 @@ export const useScheduler = () => {
   );
 
   const currentStatus: ScheduleItem["status"] = useMemo(() => {
-    return sectionSchedules.length > 0 ? sectionSchedules[0].status : "draft";
+    return deriveSectionProgressStatus(sectionSchedules);
   }, [sectionSchedules]);
 
   const helperStatusContextRef = useRef<{ sectionId: string; status: ScheduleItem["status"] } | null>(null);
@@ -783,8 +863,8 @@ export const useScheduler = () => {
   }, [semesterSubjects, selectedSection, sectionCourses]);
 
   const totalScheduled = useMemo(
-    () => new Set(sectionSchedules.map((s) => s.subjectId)).size,
-    [sectionSchedules]
+    () => sectionCourses.filter((course) => scheduledSubjectIds.has(course.id)).length,
+    [sectionCourses, scheduledSubjectIds]
   );
   const isPhase1Completed = ["submitted", "approved_by_dean", "conditionally_approved", "approved", "faculty_assignment", "reassignment", "finalized"].includes(currentStatus)
     || (departmentPlottingStatuses.includes(currentStatus) && totalSubjects > 0 && totalScheduled >= totalSubjects);
@@ -797,11 +877,16 @@ export const useScheduler = () => {
   const unassignedSlotsCount = totalSlotsCount - assignedSlotsCount;
   const selectedDepartmentId = selectedSection?.departmentId ?? user?.department_id ?? null;
 
+  const conflictSchedules = useMemo(
+    () => withConflictOccupancy(schedules, occupancy, subjects, sections),
+    [schedules, occupancy, subjects, sections],
+  );
+
   const departmentSectionProgress = useMemo<DepartmentSectionProgress[]>(() => {
     if (!selectedDepartmentId) return [];
 
     const schedulesBySection = new Map<string, ScheduleItem[]>();
-    schedules.forEach((schedule) => {
+    conflictSchedules.forEach((schedule) => {
       const sectionItems = schedulesBySection.get(schedule.sectionId) ?? [];
       sectionItems.push(schedule);
       schedulesBySection.set(schedule.sectionId, sectionItems);
@@ -812,12 +897,14 @@ export const useScheduler = () => {
       .sort((a, b) => a.yearLevel - b.yearLevel || a.name.localeCompare(b.name))
       .map((section) => {
         const sectionScheduleItems = schedulesBySection.get(section.id) ?? [];
-        const requiredSubjects = coursesForSection(section).length;
-        const plottedSubjects = new Set(sectionScheduleItems.map((schedule) => schedule.subjectId)).size;
+        const requiredCourses = coursesForSection(section);
+        const requiredSubjects = requiredCourses.length;
+        const plottedCourseIds = new Set(sectionScheduleItems.map((schedule) => schedule.courseId ?? schedule.subjectId));
+        const plottedSubjects = requiredCourses.filter((course) => plottedCourseIds.has(course.id)).length;
         const status = sectionScheduleItems.length > 0
           ? deriveSectionProgressStatus(sectionScheduleItems)
           : "draft";
-        const isFullyPlotted = requiredSubjects === 0 || plottedSubjects >= requiredSubjects;
+        const isFullyPlotted = sectionScheduleItems.length > 0 && plottedSubjects === requiredSubjects;
 
         return {
           sectionId: section.id,
@@ -835,7 +922,7 @@ export const useScheduler = () => {
             && sectionScheduleItems.every((schedule) => Boolean(schedule.facultyAssignmentDone))
         };
       });
-  }, [schedules, sections, selectedDepartmentId, selectedSectionId, coursesForSection, ownsProgram]);
+  }, [conflictSchedules, sections, selectedDepartmentId, selectedSectionId, coursesForSection, ownsProgram]);
 
   const sectionFinalizeCandidates = useMemo<SectionDoneCandidate[]>(
     () => buildSectionFinalizeCandidates(departmentSectionProgress, schedules),
@@ -848,10 +935,19 @@ export const useScheduler = () => {
   );
 
   const departmentTotalSections = departmentSectionProgress.length;
+  const departmentSectionIds = new Set(departmentSectionProgress.map((section) => section.sectionId));
+  const departmentHasSchedules = schedules.some((item) => departmentSectionIds.has(item.sectionId))
+    || occupancy.some((item) => departmentSectionIds.has(item.sectionId));
   const departmentDoneSections = departmentSectionProgress.filter((section) => section.isDone).length;
   const submissionReadySections = departmentSectionProgress.filter((section) =>
     departmentPlottingStatuses.includes(section.status)
   );
+  const submissionSectionIds = new Set(submissionReadySections.map((section) => section.sectionId));
+  const returnedSubmissionSections = sections.filter((section) =>
+    submissionSectionIds.has(section.id) && section.submissionStatus === "rejected"
+  );
+  const departmentCorrectionsRequired = departmentHasSchedules && returnedSubmissionSections.length > 0
+    && !returnedSubmissionSections.some((section) => section.revisionStatus === "modified");
   const departmentRemainingSections = departmentSectionProgress.filter((section) =>
     !section.isDone && !departmentProtectedStatuses.includes(section.status)
   ).length;
@@ -866,33 +962,18 @@ export const useScheduler = () => {
     )
   );
   const departmentWithdrawalStage: WithdrawalStage = departmentSectionProgress.some((section) =>
-    section.status === "approved"
-      || section.status === "faculty_assignment"
-      || (section.status === "reassignment" && isDepartmentSectionWithdrawable(
-        section.status,
-        section.assignedInstructorBlocks,
-        section.facultyAssignmentDone,
-      ))
+    section.status === "approved_by_dean" || section.status === "conditionally_approved"
   )
-    ? "vpaa_approved"
-    : departmentSectionProgress.some((section) => section.status === "approved_by_dean")
-      ? "vpaa_review"
-      : "dean_review";
+    ? "vpaa_review"
+    : "dean_review";
   const departmentReadyToSubmit =
     submissionReadySections.length > 0 &&
-    departmentRemainingSections === 0;
+    departmentRemainingSections === 0 &&
+    !departmentCorrectionsRequired;
 
   const dropSubject = dropContext
     ? subjects.find((s) => s.id === dropContext.subjectId) ?? null
     : null;
-
-  const dropSubjectIsField = useMemo(() => {
-    if (!dropSubject) return false;
-    if (dropSubject.roomTypeRequired === "field") return true;
-    if (!fieldCourseAssignmentEnabled) return false;
-    const configuredCodes = new Set(fieldCourseCodes.map((code) => code.trim().toUpperCase()));
-    return configuredCodes.has(dropSubject.code.trim().toUpperCase());
-  }, [dropSubject, fieldCourseAssignmentEnabled, fieldCourseCodes]);
 
   const listCategories: Subject["category"][] = ["major", "minor"];
 
@@ -919,7 +1000,7 @@ export const useScheduler = () => {
   }, [dropSubject, modalFieldEnabled, fieldCourseCodes]);
 
   const { checkConflict, checkMoveConflict, checkFacultyConflict, getDragOverConflict, conflictedMap, resolvedIds } = useConflict({
-    schedules,
+    schedules: conflictSchedules,
     selectedSectionId,
     dragSubjectId,
     draggedScheduleId,
@@ -986,13 +1067,7 @@ export const useScheduler = () => {
 
     if (dropContext) {
       const subject = subjects.find((s) => s.id === dropContext.subjectId);
-      const isFieldSubject = !!subject && (
-        subject.roomTypeRequired === "field"
-        || (
-          fieldCourseAssignmentEnabled
-          && fieldCourseCodes.map((code) => code.trim().toUpperCase()).includes(subject.code.trim().toUpperCase())
-        )
-      );
+      const isFieldSubject = isConfiguredFieldCourse(subject, new Set(fieldCourseAssignmentEnabled ? fieldCourseCodes : []));
       const totalSlots = getSubjectTotalSlots(subject);
       const singleSlots = totalSlots;
       const splitDay2Slots = singleSlots;
@@ -1111,7 +1186,11 @@ export const useScheduler = () => {
           });
           const ownMatchingRooms = matchingTypeRooms.filter(r => !r.grantWindows);
           const ownAvailableRooms = availableRooms.filter(r => !r.grantWindows);
-          resolvedRoomId = nonConflictingRoom?.id || (ownMatchingRooms.length > 0 ? ownMatchingRooms[0].id : (ownAvailableRooms.length > 0 ? ownAvailableRooms[0].id : ""));
+          // A laboratory meeting never borrows another room type; it waits as Room TBA.
+          const fallbackRoomId = requiredRoomType === "laboratory"
+            ? ""
+            : (ownAvailableRooms.length > 0 ? ownAvailableRooms[0].id : "");
+          resolvedRoomId = nonConflictingRoom?.id || (ownMatchingRooms.length > 0 ? ownMatchingRooms[0].id : fallbackRoomId);
         }
 
         const requiredRoomType = requiredRoomTypeForMeeting(subject);
@@ -1174,7 +1253,7 @@ export const useScheduler = () => {
           setModalDay1Duration(savedRun[0].durationSlots);
         } else {
           setModalDay1Index(runStartForDay(run, dropContext.dayIndex));
-          // The days share the Total Hours equally.
+          // Every day of the run repeats the course's full Total Hours.
           setModalDay1Duration(consecutiveMeetingSlots(subject, run.dayCount) ?? singleSlots);
         }
       }
@@ -1210,13 +1289,14 @@ export const useScheduler = () => {
       (room) => isUsable(room) && !room.grantWindows && (!requiredRoomType || roomTypeSatisfies(requiredRoomType, room.roomType))
     );
     if (matchingTypeRooms.length > 0) return matchingTypeRooms[0].id;
+    // A laboratory meeting never falls back to another room type: it waits as Room TBA.
+    if (requiredRoomType === "laboratory") return ROOM_TBA;
 
     const physicalRooms = rooms.filter(
       (room) => isUsable(room) && !room.grantWindows && (room.roomType === "lecture" || room.roomType === "laboratory")
     );
 
-    if (physicalRooms.length > 0) return physicalRooms[0].id;
-    return requiredRoomType === "laboratory" ? ROOM_TBA : "";
+    return physicalRooms.length > 0 ? physicalRooms[0].id : "";
   }, [dropContext, subjects, rooms]);
 
   const applyModalClassMode = useCallback((mode: DeliveryMode) => {
@@ -1318,7 +1398,7 @@ export const useScheduler = () => {
       for (const day of runDays) {
         const conflict = checkConflict(
           courseId, selectedSectionId, null, modalRoomId,
-          FULL_DAY_NAMES.findIndex((name) => name === day), modalDay1StartSlot, modalDay1Duration, excludeIds, null
+          FULL_DAY_NAMES.findIndex((name) => name === day), modalDay1StartSlot, modalDay1Duration, excludeIds, null, modalRun.dayCount
         );
         if (conflict) return `${day}: ${conflict.message}`;
       }
@@ -1572,7 +1652,7 @@ export const useScheduler = () => {
 
     const runDayIndexes = (runDays ?? []).map((day) => FULL_DAY_NAMES.findIndex((name) => name === day));
     const runConflicts = (startSlot: number): boolean => runDayIndexes.some((dayIndex) => Boolean(
-      checkConflict(subject.id, selectedSectionId, null, modalRoomId, dayIndex, startSlot, d1, excludeIds, null)
+      checkConflict(subject.id, selectedSectionId, null, modalRoomId, dayIndex, startSlot, d1, excludeIds, null, modalRun?.dayCount ?? null)
     ));
 
     let currentHasConflict = false;
@@ -1936,7 +2016,7 @@ export const useScheduler = () => {
           await api.delete(`/schedules/${target.id}?delete_group=true`);
           const linkedIds = new Set(linked.map(s => s.id));
           setSchedules((prev) => prev.filter((s) => !linkedIds.has(s.id)));
-          toast.success("Split Schedule Removed", "All linked split meetings removed.");
+          toast.success("Split Schedule Deleted", "All linked split meetings were permanently deleted.");
           void refreshSchedules();
           return;
         }
@@ -1944,7 +2024,7 @@ export const useScheduler = () => {
 
       await api.delete(`/schedules/${target.id}`);
       setSchedules((prev) => prev.filter((s) => s.id !== scheduleId));
-      toast.success("Schedule Removed", "Class schedule successfully removed.");
+      toast.success("Schedule Deleted", "The class was permanently deleted.");
       void refreshSchedules();
     } catch (err) {
       if (isNotFoundError(err)) {
@@ -1975,93 +2055,103 @@ export const useScheduler = () => {
   }, [isEditable, isClearingAll, schedules]);
 
   const confirmClearAll = async (sectionIds: string[]) => {
-    if (!isEditable || isClearingAll) {
+    if (!isEditable || isClearingAll || !activeSemester) {
       setIsClearAllModalOpen(false);
       return;
     }
+    // Editable-status eligibility mirrors the server; the server re-checks it, plus submission membership, on preview and confirm.
     const eligibleIds = new Set(sectionClearCandidates.filter((candidate) => candidate.isReady).map((candidate) => candidate.sectionId));
-    const selectedIds = new Set(sectionIds.filter((id) => eligibleIds.has(id)));
-    const targetSchedules = schedules.filter((schedule) => selectedIds.has(schedule.sectionId));
-    if (targetSchedules.length === 0) {
+    const targetSectionIds = sectionIds.filter((id) => eligibleIds.has(id)).map(Number).filter((id) => id > 0);
+    if (targetSectionIds.length === 0) {
       setIsClearAllModalOpen(false);
       return;
     }
-
-    const sectionLabel = `${selectedIds.size} section${selectedIds.size === 1 ? "" : "s"}`;
-    const recalledCount = new Set(
-      targetSchedules
-        .filter((s) => s.status === "revision")
-        .map((s) => s.sectionId),
-    ).size;
-    const instructorClassCount = new Set(
-      targetSchedules
-        .filter((s) => s.facultyId)
-        .map((s) => `${s.sectionId}:${s.courseId || s.subjectId}`),
-    ).size;
-    const confirmed = await confirm({
-      title: "Reset Schedules",
-      message: `Are you sure you want to reset the schedules of ${sectionLabel}? `
-        + `${targetSchedules.length} meeting${targetSchedules.length === 1 ? "" : "s"} will be permanently deleted. This action cannot be undone.`
-        + (recalledCount > 0
-          ? ` ${recalledCount} of these section${recalledCount === 1 ? " was" : "s were"} recalled or returned from approval; only the working copy is cleared — the submitted version stays in the approval history.`
-          : "")
-        + (instructorClassCount > 0
-          ? ` ${instructorClassCount} class${instructorClassCount === 1 ? " has an instructor" : "es have instructors"} assigned; ${instructorClassCount === 1 ? "that assignment is" : "those assignments are"} released too, including classes taught by other departments, which will be notified.`
-          : ""),
-      eyebrow: "Irreversible Action",
-      confirmLabel: "Yes, Reset Schedules",
-      variant: "danger",
-    });
-    if (!confirmed) return;
 
     setIsClearingAll(true);
-    const clearedCount = targetSchedules.length;
-    const validSchedules = targetSchedules.filter((s) => !isNaN(Number(s.id)));
-
-    setSchedules((prev) => {
-      const updated = prev.filter((schedule) => !selectedIds.has(schedule.sectionId));
-      patchCachedData<SchedulerCacheData>(schedulerCacheKey, { schedules: updated });
-      return updated;
-    });
-
-    setConflictInfo(null);
-    setPlacementSubjectId(null);
-    setMovingScheduleId(null);
-    setIsClearAllModalOpen(false);
-
     try {
-      const targetSectionIds = Array.from(selectedIds)
-        .map(Number)
-        .filter((id) => id > 0);
-
-      let releasedInstructors = 0;
-      if (targetSectionIds.length > 0 && activeSemester) {
-        const response = await api.post<{ instructors_released?: number }>('/schedules/batch', {
-          operations: [],
-          delete_ids: validSchedules.map((s) => Number(s.id)),
-          replace_section_ids: targetSectionIds,
-          replace_semester_id: Number(activeSemester.id),
+      let preview = await previewScheduleReset(Number(activeSemester.id), targetSectionIds);
+      let changed = false;
+      for (;;) {
+        const confirmed = await confirm({
+          appearance: "workflow",
+          title: changed ? "Review Updated Reset" : "Permanently Delete Schedules",
+          message: <ResetConfirmationMessage summary={resetConfirmationSummary(preview, changed)} />,
+          eyebrow: "Irreversible Action",
+          confirmLabel: "Reset",
+          variant: "danger",
         });
-        releasedInstructors = Number(response.data?.instructors_released ?? 0);
-      } else if (validSchedules.length > 0) {
-        const response = await api.post<{ instructors_released?: number }>('/schedules/batch', {
-          operations: [],
-          delete_ids: validSchedules.map((s) => Number(s.id)),
-        });
-        releasedInstructors = Number(response.data?.instructors_released ?? 0);
+        if (!confirmed) return;
+        try {
+          const result = await confirmScheduleReset(preview);
+          setIsClearAllModalOpen(false);
+          setIsSubmitApprovalModalOpen(false);
+          setIsWithdrawSubmissionModalOpen(false);
+          setIsFinalizeSectionsModalOpen(false);
+          setIsReassignSectionsModalOpen(false);
+          setIsPrintModalOpen(false);
+          setIsRoomViewOpen(false);
+          setFacultyAssignmentPopup(null);
+          setPopupValidationError("");
+          setPopupConflictWarning("");
+          setDropContext(null);
+          setModalValidationError("");
+          setDeleteConfirmScheduleId(null);
+          setDragSubjectId(null);
+          setDraggedScheduleId(null);
+          setDragFromCell(null);
+          setHoveredCell(null);
+          setConflictInfo(null);
+          setPlacementSubjectId(null);
+          setMovingScheduleId(null);
+          const deleted = new Set(result.deleted_schedule_ids.map(String));
+          ++scheduleLoadSeqRef.current;
+          const resetSectionIds = new Set(result.sections.map((section) => String(section.id)));
+          setSections((previous) => {
+            const updated = previous.map((section) => resetSectionIds.has(section.id)
+              ? { ...section, resetSinceSubmission: true, revisionStatus: "reset" as const }
+              : section);
+            patchCachedData<SchedulerCacheData>(schedulerCacheKey, { sections: updated });
+            return updated;
+          });
+          setOccupancy((previous) => {
+            const updated = previous.filter((item) => !deleted.has(item.id));
+            patchCachedData<SchedulerCacheData>(schedulerCacheKey, { occupancy: updated });
+            return updated;
+          });
+          setSchedules((prev) => {
+            const updated = prev.filter((schedule) => !deleted.has(String(schedule.id)));
+            patchCachedData<SchedulerCacheData>(schedulerCacheKey, { schedules: updated });
+            return updated;
+          });
+          window.dispatchEvent(new CustomEvent("schedule-workspace-reset", { detail: {
+            departmentId: selectedDepartmentId,
+            semesterId: Number(activeSemester.id),
+            isEmpty: schedules.every((item) => !departmentSectionIds.has(item.sectionId) || deleted.has(item.id))
+              && occupancy.every((item) => !departmentSectionIds.has(item.sectionId) || deleted.has(item.id)),
+          } }));
+          const { counts } = result;
+          toast.success(
+            "Schedules Deleted",
+            `Permanently deleted ${counts.schedules} meeting${counts.schedules === 1 ? "" : "s"} from ${result.sections.length} section${result.sections.length === 1 ? "" : "s"}`
+              + (counts.instructor_assignments > 0
+                ? `, releasing ${counts.instructor_assignments} instructor assignment${counts.instructor_assignments === 1 ? "" : "s"}`
+                : "")
+              + ". Schedule History was not changed.",
+          );
+          invalidateCacheGroups('faculty', 'assignments');
+          await refreshData({ silent: true });
+          return;
+        } catch (err) {
+          const refreshed = changedResetPreview(err);
+          if (!refreshed) throw err;
+          // The reviewed target changed; nothing was deleted. Confirm the new counts or cancel.
+          preview = refreshed;
+          changed = true;
+        }
       }
-      toast.success(
-        "Schedules Reset",
-        `Reset schedules of ${selectedIds.size} selected section${selectedIds.size === 1 ? "" : "s"} (${clearedCount} loaded meeting${clearedCount === 1 ? "" : "s"}).`
-          + (releasedInstructors > 0
-            ? ` ${releasedInstructors} instructor assignment${releasedInstructors === 1 ? " was" : "s were"} released.`
-            : ""),
-      );
-      if (releasedInstructors > 0) invalidateCacheGroups('faculty', 'assignments');
-      await refreshData({ silent: true });
     } catch (err) {
       const apiMsg = getApiErrorMessage(err);
-      toast.error("Failed to reset schedules", apiMsg || "An error occurred.");
+      toast.error("Reset not completed", `${apiMsg || "An error occurred."} No schedules were deleted.`);
       await refreshSchedules();
     } finally {
       setIsClearingAll(false);
@@ -2071,16 +2161,16 @@ export const useScheduler = () => {
   const cancelClearAll = useCallback(() => setIsClearAllModalOpen(false), []);
 
   const handleSubmitForApproval = useCallback(async () => {
-    if (!selectedSectionId) return;
+    if (!selectedSectionId || !canSubmitSchedule || !departmentReadyToSubmit) return;
     if (!hasDean) {
       toast.error('Submission unavailable', DEAN_REQUIRED_MESSAGE);
       return;
     }
     setIsSubmitApprovalModalOpen(true);
-  }, [hasDean, selectedSectionId, toast]);
+  }, [hasDean, selectedSectionId, canSubmitSchedule, departmentReadyToSubmit, toast]);
 
   const confirmSubmitForApproval = async () => {
-    if (!selectedSectionId || isSubmittingSchedule) return;
+    if (!selectedSectionId || !canSubmitSchedule || isSubmittingSchedule || !departmentReadyToSubmit) return;
     const section = sections.find((s) => s.id === selectedSectionId);
     if (!section?.departmentId) {
       toast.error("Unable to Submit", "The selected section is not linked to a department.");
@@ -2090,6 +2180,7 @@ export const useScheduler = () => {
 
     const submitCount = submissionReadySections.length;
     const confirmedSubmit = await confirm({
+      appearance: "workflow",
       title: "Submit Schedule",
       message: `${submitCount} section${submitCount === 1 ? "" : "s"} will be sent to the Dean for review and locked from editing until approved, returned, or recalled.`,
       eyebrow: "Schedule Submission",
@@ -2121,9 +2212,9 @@ export const useScheduler = () => {
     } catch (err: unknown) {
       const apiError = err as { response?: { data?: { message?: string } } };
       toast.error("Failed to submit", apiError.response?.data?.message || "An error occurred.");
+      await refreshSchedules();
     } finally {
       setIsSubmittingSchedule(false);
-      setIsSubmitApprovalModalOpen(false);
     }
   };
 
@@ -2150,10 +2241,9 @@ export const useScheduler = () => {
 
     const recallCount = sectionIds.length;
     const confirmedRecall = await confirm({
+      appearance: "workflow",
       title: "Recall Schedule",
-      message: (departmentWithdrawalStage === "vpaa_approved"
-        ? `VPAA approval will be revoked for ${recallCount} section${recallCount === 1 ? "" : "s"} and they will return to revision.`
-        : `${recallCount} section${recallCount === 1 ? "" : "s"} will be pulled back from ${departmentWithdrawalStage === "vpaa_review" ? "VPAA" : "Dean"} review and returned to revision.`)
+      message: `${recallCount} section${recallCount === 1 ? "" : "s"} will be pulled back from ${departmentWithdrawalStage === "vpaa_review" ? "VPAA" : "Dean"} review and returned to revision.`
         + " They must be submitted again for approval.",
       eyebrow: "Schedule Submission",
       confirmLabel: "Recall",
@@ -2181,9 +2271,7 @@ export const useScheduler = () => {
 
       toast.success(
         "Submission Recalled",
-        (departmentWithdrawalStage === "vpaa_approved"
-          ? "VPAA approval was revoked and only the selected sections were unlocked for revision."
-          : "Only the selected sections were unlocked for revision.")
+        "Only the selected sections were unlocked for revision."
           + (released > 0
             ? ` ${released} instructor assignment${released === 1 ? " was" : "s were"} released.`
             : "")
@@ -2243,32 +2331,6 @@ export const useScheduler = () => {
       setIsEditingSection(false);
     }
   }, [isEditingSection, sectionReassignCandidates, applyUpdatedSchedules, refreshSchedules, toast]);
-
-  const handleResubmit = useCallback(async () => {
-    if (!selectedSectionId || isResubmittingSection) return;
-    const returnedRows = sectionSchedules.filter((s) => s.status === "rejected" || s.status === "rejected_by_dean");
-    if (returnedRows.length === 0) return;
-    try {
-      setIsResubmittingSection(true);
-      const ids = returnedRows.map((s) => Number(s.id));
-      await api.patch("/schedules/batch-status", { ids, status: "revision" });
-
-      const sectionScheduleIds = new Set(returnedRows.map((schedule) => schedule.id));
-      setSchedules((previousSchedules) =>
-        previousSchedules.map((schedule) =>
-          sectionScheduleIds.has(schedule.id)
-            ? { ...schedule, status: "revision" }
-            : schedule
-        )
-      );
-      toast.success("Resubmitted", "Schedule successfully returned under revision.");
-      refreshSchedules().catch(() => {});
-    } catch (err) {
-      toast.error("Failed to resubmit", getApiErrorMessage(err) ?? "An error occurred.");
-    } finally {
-      setIsResubmittingSection(false);
-    }
-  }, [selectedSectionId, isResubmittingSection, sectionSchedules, refreshSchedules, toast]);
 
   const handleFinalize = useCallback(async () => {
     if (!selectedSectionId || isFinalizing) return;
@@ -2739,8 +2801,11 @@ export const useScheduler = () => {
           return;
         }
         triggerConflictReminder();
+        const violations = getApiViolations(err);
         const apiMsg = getApiErrorMessage(err);
-        toast.error("Failed to relocate schedule", apiMsg || "An error occurred.");
+        toast.error("Failed to relocate schedule", violations.length > 0
+          ? violations.map((violation) => violation.message).join(" ")
+          : apiMsg || "An error occurred.");
       } finally {
         setMovingScheduleId(null);
         setConflictInfo(null);
@@ -2888,14 +2953,15 @@ export const useScheduler = () => {
     clearableDepartmentInstructorCount,
     departmentSectionProgress,
     departmentTotalSections,
+    departmentHasSchedules,
     departmentDoneSections,
     departmentRemainingSections,
     departmentReadyToSubmit,
+    departmentCorrectionsRequired,
     departmentHasSubmittedSchedule,
     departmentHasWithdrawableSubmission,
     departmentWithdrawalStage,
     dropSubject,
-    dropSubjectIsField,
     listCategories,
     filteredSubjects,
     sectionCourses,
@@ -2923,7 +2989,6 @@ export const useScheduler = () => {
     canSubmitSchedule,
     canAssignInstructor,
     canUpdateSchedule,
-    handleResubmit,
     handleFinalize,
     sectionFinalizeCandidates,
     sectionReassignCandidates,
@@ -2935,7 +3000,6 @@ export const useScheduler = () => {
     confirmFinalizeSections,
     handleEditSection,
     isEditingSection,
-    isResubmittingSection,
     isFinalizing,
     handlePopupFacultyChange,
     handleAssignFaculty,

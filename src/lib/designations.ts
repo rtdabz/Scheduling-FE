@@ -68,6 +68,8 @@ export interface DesignationHolder {
   last_name: string;
   middle_name: string | null;
   suffix: string | null;
+  honorific_prefix?: string | null;
+  credentials?: string | null;
   employment_type: 'full-time' | 'part-time';
   deload_units: number;
   status: string | null;
