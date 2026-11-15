@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, Pencil, UserCheck } from 'lucide-react';
 import InstructorAssignment from './InstructorAssignment';
 import type { InstructorAssignmentWorkspaceState } from './InstructorAssignment';
+import type { DraftScope } from './SchedulerPanel/hooks/useInstructorAssignmentDraft';
 import AutoAssignModal from './SchedulerPanel/Modals/AutoAssignModal';
 import { useScheduler } from './SchedulerPanel/hooks/useScheduler';
 import { INSTRUCTOR_ASSIGNABLE_STATUSES } from './SchedulerPanel/types';
@@ -44,6 +45,18 @@ export default function CrossDepartmentAssignments() {
         && (scheduler.userProgramId === null || Number(handedToProgram) === Number(scheduler.userProgramId));
     }),
     [scheduler.schedules, scheduler.subjects, scheduler.userDepartmentId, scheduler.userProgramId],
+  );
+  // The Assign list is auto-saved per offering department, apart from Schedule Management's own list.
+  const draftSemesterId = scheduler.activeSemester ? Number(scheduler.activeSemester.id) : null;
+  const draftScope = useMemo<DraftScope | null>(
+    () => (draftSemesterId !== null && scheduler.userDepartmentId !== null && workspaceState.selectedDepartmentId !== null
+      ? {
+          semesterId: draftSemesterId,
+          departmentId: Number(scheduler.userDepartmentId),
+          context: `cross_department:${Number(workspaceState.selectedDepartmentId)}`,
+        }
+      : null),
+    [draftSemesterId, scheduler.userDepartmentId, workspaceState.selectedDepartmentId],
   );
   const assignmentDone = completionOverride ?? workspaceState.assignmentDone;
   const allAssigned = workspaceState.allAssigned;
@@ -113,10 +126,10 @@ export default function CrossDepartmentAssignments() {
               type="button"
               onClick={() => setIsOpen(true)}
               disabled={assignmentDone || editableDelegatedSchedules.length === 0}
-              className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#4e0a10] px-3 text-xs font-black text-white shadow-sm transition hover:bg-[#6b1118] disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#C9952A] bg-[#C9952A] px-3 text-xs font-bold text-[#36060b] transition-colors hover:border-[#F5C842] hover:bg-[#F5C842] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <UserCheck className="h-4 w-4" />
-              Auto-Assign Instructor
+              <UserCheck className="h-3.5 w-3.5" />
+              <span>Assign</span>
             </button>
             {assignmentDone && (
               <button
@@ -159,6 +172,7 @@ export default function CrossDepartmentAssignments() {
         onAssign={handleAutoAssign}
         onRemoveAssignment={handleRemoveAssignment}
         allowExternalInstructors={false}
+        draftScope={draftScope}
       />
     </div>
   );

@@ -26,7 +26,7 @@ import WorkflowGuideButton from "../../../components/help/WorkflowGuideButton";
 import { builderGuideSteps } from "./workflowGuideContent";
 import { announceJoyrideStart } from "../../../onboarding/joyrideTour";
 import { useWorkflowDialog } from "./GenerateSchedule/useWorkflowDialog";
-import { reassignsRoomSchedulesFromFacilities } from "../../../lib/roles";
+import { normalizeRole, reassignsRoomSchedulesFromFacilities } from "../../../lib/roles";
 import { EDITABLE_STATUSES } from "../../../lib/scheduleStatuses";
 
 interface SchedulerPanelProps {
@@ -79,7 +79,16 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
     if (autoAssignReady) setIsAutoAssignOpen(true);
   }
 
+  // A Secretary keeps scheduling rights only for programs with no assigned Program Head. The server's
+  // writable-program list already excludes Program Head-owned programs, so a selected section outside it
+  // means its program has a Program Head. Other programs and other roles are unaffected.
+  const isSecretary = normalizeRole(getStoredUser()?.role) === "secretary";
+  const hasSelectedSection = scheduler.sections.some((section) => section.id === scheduler.selectedSectionId);
+  const secretaryDeferredToProgramHead = isSecretary && hasSelectedSection && !scheduler.ownsSelectedProgram;
+  const canGenerate = scheduler.canGenerateSchedule && !secretaryDeferredToProgramHead;
+
   const isCourseBankOpen =
+    !secretaryDeferredToProgramHead &&
     !scheduler.isWideView && isCourseBankAvailable(scheduler.isPhase2Active, scheduler.currentStatus);
 
   const guideContext = {
@@ -88,7 +97,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
     hasSections: scheduler.sections.length > 0,
     canPlot: scheduler.isEditable && isCourseBankAvailable(scheduler.isPhase2Active, scheduler.currentStatus),
     manualPlottingOpen: isCourseBankOpen,
-    canGenerate: scheduler.canGenerateSchedule,
+    canGenerate,
     canAssign: scheduler.canAssignInstructor,
   };
   const guideVariant = `${scheduler.currentStatus}:${scheduler.isEditable ? "edit" : "view"}:${scheduler.selectedSectionId ? "section" : "no-section"}`;
@@ -117,6 +126,14 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
   const { reloadSchedulingSettings } = scheduler;
 
   const assignDepartmentId = selectedSection?.departmentId ?? null;
+  // Assign Instructors progress is auto-saved per department and active semester.
+  const assignSemesterId = scheduler.activeSemester ? Number(scheduler.activeSemester.id) : null;
+  const assignDraftScope = useMemo(
+    () => assignDepartmentId !== null && assignSemesterId !== null
+      ? { departmentId: Number(assignDepartmentId), semesterId: assignSemesterId }
+      : null,
+    [assignDepartmentId, assignSemesterId],
+  );
   const ownDepartmentSchedules = useMemo(() => {
     if (assignDepartmentId === null) return scheduler.schedules;
     const teachingDepartmentByCourse = new Map(scheduler.subjects.map((subject) => [subject.id, subject.teachingDepartmentId ?? null]));
@@ -169,7 +186,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
             return next;
           });
         } : undefined}
-        onGenerateYearLevel={scheduler.canGenerateSchedule ? openGenerator : undefined}
+        onGenerateYearLevel={canGenerate ? openGenerator : undefined}
         onResetSchedules={scheduler.handleClearAll}
         canResetSchedules={scheduler.isEditable && scheduler.schedules.length > 0}
         onAutoAssign={scheduler.canAssignInstructor ? openAutoAssign : undefined}
@@ -180,7 +197,11 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         scheduler.refreshConflictCounts();
       }} />}
 
-      {scheduler.canUpdateSchedule && !scheduler.ownsSelectedProgram && (
+      {secretaryDeferredToProgramHead ? (
+        <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          Only the Program Head can create or edit schedules for this program.
+        </p>
+      ) : scheduler.canUpdateSchedule && !scheduler.ownsSelectedProgram && (
         <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
           Add the section first. <span className="font-bold">View-only</span> — just the Program Head or Secretary can edit its schedule.
         </p>
@@ -221,6 +242,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         <TimetableGrid
           {...scheduler}
           activeSemesterText={scheduler.activeSemesterText}
+          canOpenManualPlotting={!secretaryDeferredToProgramHead}
           savingMessage={isSavingGenerated ? "Saving the generated timetable…" : null}
           onOpenConflict={scheduler.activeSemester ? (scheduleId) => {
             const id = Number(scheduleId);
@@ -230,7 +252,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         />
       </div>
 
-      {scheduler.canGenerateSchedule && isGeneratorOpen && (
+      {canGenerate && isGeneratorOpen && (
         <div data-workflow-guide-scope="schedule-generator" className="scheduler-dialog-overlay fixed inset-0 z-50 flex items-center justify-center">
           <div ref={generatorDialogRef} role="dialog" aria-modal="true" aria-labelledby="schedule-generator-title" aria-describedby="schedule-generator-description" aria-busy={isSavingGenerated} tabIndex={-1} className="scheduler-dialog flex max-w-full overflow-hidden bg-white outline-none shadow-2xl" style={{ width: "fit-content" }}>
             <YearLevelGenerateScheduleWorkflow
@@ -278,6 +300,8 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         programId={scheduler.userProgramId}
         facultyActionSlotId={scheduler.facultyActionSlotId}
         canManageScheduleFaculty={scheduler.canManageScheduleFaculty}
+        isProgramHeadOnlyMajorSchedule={scheduler.isProgramHeadOnlyMajorSchedule}
+        draftScope={assignDraftScope}
         checkFacultyConflict={scheduler.checkFacultyConflict}
         onAssign={scheduler.handleBulkFacultyAssign}
         onRemoveAssignment={scheduler.handleRemoveFacultyFromClass}
@@ -362,7 +386,7 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         selectedSectionId={scheduler.selectedSectionId}
         activeSemester={scheduler.activeSemester}
       />
-      {scheduler.canGenerateSchedule && (
+      {canGenerate && (
         <GenerationProgressDrawer
           hidden={isGeneratorOpen}
           onOpenGenerator={openGenerator}

@@ -14,10 +14,10 @@ interface ImportRowDetailModalProps {
   onChange: (rowId: string, patch: Partial<DraftRow>) => void;
 }
 
-const field = 'h-10 rounded-lg border bg-white px-3 text-[14px] text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
+const field = 'h-10 rounded-lg border bg-white px-3 text-sm text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
 const okBorder = 'border-border';
 const badBorder = 'border-red-300 bg-red-50/60';
-const unitBox = `${field} w-16 shrink-0 px-0 text-center text-[16px] font-bold tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`;
+const unitBox = `${field} w-16 shrink-0 px-0 text-center text-base font-bold tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`;
 
 const creditValue = (value: string): number | null => (value.trim() === '' ? null : Number(value));
 const docValue = (value: number | null) => (value === null || Number.isNaN(value) ? 'blank' : String(value));
@@ -96,7 +96,7 @@ export default function ImportRowDetailModal({ row, issues, bytes, onClose, onCh
         )}
 
         <section aria-labelledby={`details-${id}`} className="rounded-xl border border-border bg-white p-4">
-          <h3 id={`details-${id}`} className="text-[15px] font-semibold text-text">Course details</h3>
+          <h3 id={`details-${id}`} className="text-sm font-semibold text-text">Course details</h3>
 
           <div className="mt-3 grid gap-4 sm:grid-cols-[11rem_minmax(0,1fr)]">
             <div>
@@ -150,7 +150,7 @@ export default function ImportRowDetailModal({ row, issues, bytes, onClose, onCh
                   ['total_units', 'Total', tu, source.tu],
                 ] as const).map(([key, label, value, original], index) => (
                   <div key={key} className="flex items-start gap-2">
-                    {index > 0 && <span aria-hidden="true" className="pt-2.5 text-[15px] text-muted">{index === 1 ? '+' : '='}</span>}
+                    {index > 0 && <span aria-hidden="true" className="pt-2.5 text-sm text-muted">{index === 1 ? '+' : '='}</span>}
                     <div className="flex flex-col items-center">
                       <input
                         type="number"
@@ -183,12 +183,12 @@ export default function ImportRowDetailModal({ row, issues, bytes, onClose, onCh
 
         <div className="grid gap-5 md:grid-cols-2">
           <section aria-labelledby={`source-${id}`} className="min-w-0">
-            <h3 id={`source-${id}`} className="mb-2 text-[15px] font-semibold text-text">From the document</h3>
+            <h3 id={`source-${id}`} className="mb-2 text-sm font-semibold text-text">From the document</h3>
             <SourceCropPreview bytes={bytes} source={source} />
           </section>
 
           <section aria-labelledby={`prerequisite-${id}`} className="min-w-0">
-            <h3 id={`prerequisite-${id}`} className="mb-2 text-[15px] font-semibold text-text">Prerequisite</h3>
+            <h3 id={`prerequisite-${id}`} className="mb-2 text-sm font-semibold text-text">Prerequisite</h3>
             <FieldLabel htmlFor={`prerequisites-${id}`} edited={prerequisitesEdited}>As written in the curriculum</FieldLabel>
             <textarea
               id={`prerequisites-${id}`}

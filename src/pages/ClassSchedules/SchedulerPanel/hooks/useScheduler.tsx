@@ -28,11 +28,13 @@ import type {
 import { DEAN_REQUIRED_MESSAGE } from "../../../../hooks/useDepartmentScheduleStatus";
 import { consecutiveMeetingSlots, courseInCurriculum, laboratoryComponentSlots, placeCourse, sortSplitMeetingsForEdit, type SchedulingRoomSettings } from "../courseSlotPlan";
 import { buildSectionClearCandidates } from "../sectionClearCandidates";
+import { coursesForSection as sharedCoursesForSection, normalizeSemester as normalizeSemesterLabel } from "../sectionCourses";
 import { changedResetPreview, confirmScheduleReset, previewScheduleReset, resetConfirmationSummary } from "../../../../lib/scheduleReset";
 import ResetConfirmationMessage from "../Modals/ResetConfirmationMessage";
 import { buildSectionFinalizeCandidates, buildSectionReassignCandidates } from "../sectionFinalizeCandidates";
 import { getSubjectTotalSlots } from "../types";
 import { isMajorSubject, majorTeachingDepartmentId } from "../facultyEligibility";
+import { isDepartmentOfficeRole, normalizeRole } from "../../../../lib/roles";
 
 import type { SubjectClassification } from "../constants";
 import type { InitialDataResponse, SchedulerCacheData } from "./initialDataMapper";
@@ -807,39 +809,13 @@ export const useScheduler = () => {
     setDragSubjectId(null);
   }
 
-  const normalizeSemester = useCallback((sem?: string | null): string => {
-    if (!sem) return "";
-    const s = String(sem).toLowerCase().trim();
-    if (s === "1" || s === "1st" || s.includes("first") || s.includes("1st")) return "1st";
-    if (s === "2" || s === "2nd" || s.includes("second") || s.includes("2nd")) return "2nd";
-    if (s.includes("summer")) return "summer";
-    return s;
-  }, []);
+  const normalizeSemester = useCallback((sem?: string | null): string => normalizeSemesterLabel(sem), []);
 
   // Each section reads its own curriculum, so two sections of one year level may differ.
-  const coursesForSection = useCallback((section: Section) => {
-    const sectionSemester = normalizeSemester(section.semester);
-    return rawSubjects.map((subject) => placeCourse(subject, section.curriculumId)).filter((s) => {
-      if (s.delegatedOnly) return false;
-      if (!courseInCurriculum(s, section.curriculumId)) return false;
-      const isMinor = s.category === "minor";
-      const matchesDept =
-        isMinor ||
-        s.departmentId === null ||
-        Number(s.departmentId) === Number(section.departmentId);
-      const matchesProgram =
-        isMinor ||
-        s.programId == null ||
-        section.programId == null ||
-        Number(s.programId) === Number(section.programId);
-      const matchesYear = Number(s.yearLevel) === Number(section.yearLevel);
-      const matchesSem =
-        !sectionSemester ||
-        !s.semester ||
-        normalizeSemester(s.semester) === sectionSemester;
-      return matchesDept && matchesProgram && matchesYear && matchesSem;
-    });
-  }, [rawSubjects, normalizeSemester]);
+  const coursesForSection = useCallback(
+    (section: Section) => sharedCoursesForSection(section, rawSubjects),
+    [rawSubjects],
+  );
 
   const sectionCourses = useMemo(
     () => (selectedSection ? coursesForSection(selectedSection) : subjects),
@@ -1014,10 +990,29 @@ export const useScheduler = () => {
     sundayClassesEnabled: manualSchedulingSettings?.sunday_classes_enabled ?? true,
   });
 
+  // The department office keeps major-course instructor assignment only for programs without a
+  // Program Head (the server's writable-program list). Minor and delegated-in classes are unaffected.
+  const isProgramHeadOnlyMajor = useCallback((schedule: ScheduleItem, subject: Subject | undefined): boolean => {
+    if (!isDepartmentOfficeRole(normalizeRole(user?.role)) || !isMajorSubject(subject) || !subject) return false;
+    if (Number(schedule.departmentId) !== Number(user?.department_id)) return false;
+    // A department-level major (no program on the course) belongs to the class's own section program.
+    const programId = subject.teachingProgramId
+      ?? (subject.teachingDepartmentId != null
+        ? null
+        : subject.programId ?? sections.find((section) => section.id === schedule.sectionId)?.programId);
+    return programId != null && !ownsProgram(Number(programId));
+  }, [ownsProgram, sections, user?.department_id, user?.role]);
+
+  const isProgramHeadOnlyMajorSchedule = useCallback(
+    (schedule: ScheduleItem): boolean => isProgramHeadOnlyMajor(schedule, subjects.find((item) => item.id === schedule.subjectId)),
+    [isProgramHeadOnlyMajor, subjects],
+  );
+
   const canManageScheduleFaculty = useCallback((schedule: ScheduleItem): boolean => {
     if (!canAssignInstructor) return false;
 
     const subject = subjects.find((item) => item.id === schedule.subjectId);
+    if (isProgramHeadOnlyMajor(schedule, subject)) return false;
 
     const assignedDepartmentId = isMajorSubject(subject)
       ? majorTeachingDepartmentId(subject, schedule.departmentId ?? null)
@@ -1031,10 +1026,14 @@ export const useScheduler = () => {
       user?.department_id &&
       Number(user.department_id) === Number(assignedDepartmentId)
     );
-  }, [canAssignInstructor, subjects, user?.department_id]);
+  }, [canAssignInstructor, isProgramHeadOnlyMajor, subjects, user?.department_id]);
 
   const getFacultyRestrictionMessage = useCallback((schedule: ScheduleItem): string => {
     const subject = subjects.find((item) => item.id === schedule.subjectId);
+
+    if (isProgramHeadOnlyMajor(schedule, subject)) {
+      return "Only the Program Head can assign instructors to this program's major courses.";
+    }
 
     if (isMajorSubject(subject)) {
       return "Only the department that offers this major can assign its instructor.";
@@ -1045,7 +1044,7 @@ export const useScheduler = () => {
       : subject?.teachingDepartmentName ?? "the college that offers this course";
 
     return `Only ${assignedDepartment} can assign instructors for this course.`;
-  }, [subjects]);
+  }, [isProgramHeadOnlyMajor, subjects]);
 
   const placed = useMemo(() => {
     const nextPlaced: Record<string, string> = {};
@@ -1246,11 +1245,13 @@ export const useScheduler = () => {
         setModalDay2Duration(0);
         setModalDay2RoomId("");
         if (savedRun.length > 0) {
-          setModalRoomId(savedRun[0].roomId || (savedRun[0].mode === "on-site" ? ROOM_TBA : savedRun[0].mode));
-          setModalClassMode(savedRun[0].mode ?? "on-site");
-          setModalDay1Index(savedRun[0].dayIndex);
-          setModalDay1StartSlot(savedRun[0].startSlot);
-          setModalDay1Duration(savedRun[0].durationSlots);
+          // Seed from the meeting that was opened: each day of a saved run keeps its own facts.
+          const seed = savedRun.find((s) => s.id === reopenedSchedule?.id) ?? savedRun[0];
+          setModalRoomId(seed.roomId || (seed.mode === "on-site" ? ROOM_TBA : seed.mode));
+          setModalClassMode(seed.mode ?? "on-site");
+          setModalDay1Index(seed.dayIndex);
+          setModalDay1StartSlot(seed.startSlot);
+          setModalDay1Duration(seed.durationSlots);
         } else {
           setModalDay1Index(runStartForDay(run, dropContext.dayIndex));
           // Every day of the run repeats the course's full Total Hours.
@@ -1373,6 +1374,19 @@ export const useScheduler = () => {
       : { dayCount: modalConsecutiveDays, preferredStartDay: null, runs: consecutiveDayRuns(modalConsecutiveDays, sundayEnabled) };
   }, [dropContext, selectedSectionId, manualSchedulingSettings, modalConsecutiveDays]);
 
+  // Reopening one meeting of a saved run edits only that meeting; its siblings keep their own
+  // day, time, modality and room. Changing the run's day count still re-plots the whole run.
+  const editedRunMeeting = useMemo<ScheduleItem | null>(() => {
+    if (!dropContext?.isRescheduling || !dropContext.scheduleId || !modalRun) return null;
+    const meeting = schedules.find((s) => s.id === dropContext.scheduleId);
+    return meeting?.splitGroupId && consecutiveDayCount(meeting.preferredPattern) === modalRun.dayCount ? meeting : null;
+  }, [dropContext, modalRun, schedules]);
+  const modalRunSiblingDays = useMemo<number[]>(() => (editedRunMeeting
+    ? schedules
+        .filter((s) => s.splitGroupId === editedRunMeeting.splitGroupId && s.id !== editedRunMeeting.id)
+        .map((s) => s.dayIndex)
+    : []), [editedRunMeeting, schedules]);
+
   const modalConflict = useMemo<string | null>(() => {
     if (!dropContext || !modalRoomId) return null;
 
@@ -1389,6 +1403,19 @@ export const useScheduler = () => {
     const singleSlots = totalSlots;
     const courseId = dropContext.courseId ?? dropContext.subjectId ?? "";
     const patternDays = parsePreferredPattern(modalPreferredPattern);
+
+    if (editedRunMeeting) {
+      // Judged like an individual move: only this meeting is excluded, so stationary siblings count.
+      const conflict = checkConflict(
+        courseId, selectedSectionId, editedRunMeeting.facultyId ?? null, modalRoomId,
+        modalDay1Index, modalDay1StartSlot, modalDay1Duration, editedRunMeeting.id,
+        editedRunMeeting.preferredPattern, modalRun?.dayCount ?? null
+      );
+      if (conflict) return conflict.message;
+      return modalRunSiblingDays.includes(modalDay1Index)
+        ? `${subject.code} already has a consecutive meeting on ${FULL_DAY_NAMES[modalDay1Index]}. Its meetings must be on different days.`
+        : null;
+    }
 
     if (modalRun) {
       const runDays = runStartingOn(modalRun, modalDay1Index);
@@ -1440,6 +1467,8 @@ export const useScheduler = () => {
     modalDay2StartSlot,
     modalDay2Duration,
     modalRun,
+    editedRunMeeting,
+    modalRunSiblingDays,
     schedules,
     selectedSectionId,
     subjects,
@@ -1608,6 +1637,48 @@ export const useScheduler = () => {
 
     const section = sections.find((s) => s.id === selectedSectionId);
     if (!section) return;
+
+    if (editedRunMeeting) {
+      // One day of a saved run: update that meeting alone, through the same endpoint an
+      // individual move uses. Siblings, the run link and its pattern are never sent.
+      if (modalDay1Duration <= 0) {
+        setModalValidationError("The meeting must have a duration greater than zero.");
+        return;
+      }
+      const isVirtual = modalClassMode === "online" || modalClassMode === "field";
+      const virtualRoom = isVirtual ? rooms.find((r) => r.roomType === modalClassMode) : null;
+      if (isVirtual && !virtualRoom) {
+        setModalValidationError(`No available ${modalClassMode} room assignment is configured.`);
+        return;
+      }
+      const roomId = virtualRoom ? virtualRoom.id : modalRoomId === ROOM_TBA ? null : modalRoomId;
+      setIsModalLoading(true);
+      try {
+        const response = await api.put<ApiScheduleRecord>(`/schedules/${editedRunMeeting.id}`, {
+          day: FULL_DAY_NAMES[modalDay1Index],
+          start_time: slotToTime24h(modalDay1StartSlot),
+          end_time: slotToTime24h(modalDay1StartSlot + modalDay1Duration),
+          mode: modalClassMode,
+          room_id: roomId === null || roomId === "" ? null : Number(roomId),
+        });
+        applyUpdatedSchedules(relocatedRows(response.data));
+        toast.success("Schedule Updated", "Only this day of the run was changed.");
+        setDropContext(null);
+        setConflictInfo(null);
+        void refreshSchedules();
+      } catch (err) {
+        triggerConflictReminder();
+        const violations = getApiViolations(err);
+        const message = violations.length > 0
+          ? violations.map((v) => v.message).join(" ")
+          : getApiErrorMessage(err) || "Could not save the schedule to the database.";
+        setModalValidationError(message);
+        toast.error(violations.length > 0 ? "Schedule Conflict" : "Operation Failed", message);
+      } finally {
+        setIsModalLoading(false);
+      }
+      return;
+    }
 
     const totalSlots = getSubjectTotalSlots(subject);
     const singleSlots = totalSlots;
@@ -2896,6 +2967,8 @@ export const useScheduler = () => {
     modalValidationError,
     setModalValidationError,
     modalConflict,
+    modalRunMeetingOnly: editedRunMeeting !== null,
+    modalRunSiblingDays,
     handleEditMovingSchedule,
     openScheduleInBuilder,
     facultyAssignmentPopup,
@@ -2976,6 +3049,7 @@ export const useScheduler = () => {
     setModalConsecutiveDays,
     checkFacultyConflict,
     canManageScheduleFaculty,
+    isProgramHeadOnlyMajorSchedule,
     getFacultyRestrictionMessage,
     getDragOverConflict,
     handleConfirmSchedule,

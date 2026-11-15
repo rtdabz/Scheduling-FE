@@ -1,4 +1,5 @@
 import { AlertTriangle, RotateCcw } from 'lucide-react';
+import { buttonClass } from './buttonStyles';
 
 interface LoadErrorBannerProps {
   message: string;
@@ -14,7 +15,7 @@ export default function LoadErrorBanner({ message, onRetry, className = '' }: Lo
       <button
         type="button"
         onClick={onRetry}
-        className="inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-white px-2.5 py-1.5 font-bold text-red-800 transition hover:bg-red-100"
+        className={buttonClass({ variant: 'dangerSoft', size: 'sm' })}
       >
         <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
       </button>

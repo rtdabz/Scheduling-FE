@@ -13,7 +13,8 @@ import { CROSS_DEPARTMENT_LOCKED_MESSAGE, useDepartmentScheduleStatus } from '..
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import { programLabel, programName } from '../../lib/programLabel';
 import { prefetchPage } from '../../lib/pagePrefetch';
-import { isDepartmentOfficeRole } from '../../lib/roles';
+import { isDepartmentOfficeRole, reassignsRoomSchedulesFromFacilities } from '../../lib/roles';
+import { getRecovery } from '../../lib/roomRecovery';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -91,7 +92,8 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
   const userDepartment = user?.department || departments.find(d => d.id === user?.department_id) || null;
   const deptLogo = userDepartment?.logo || null;
   const deptName = userDepartment?.department_name || (role === 'vpaa' ? 'Vice President for Academic Affairs' : null);
-  const sidebarProgramLabel = user?.program?.code || programName(user?.program, '') || null;
+  // Full registered program name (with major) from the user's program record; the code is only a fallback.
+  const sidebarProgramLabel = programName(user?.program, '') || user?.program?.code || null;
   const programTitle = user?.program ? programLabel(user.program, '') || undefined : undefined;
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
   const [isCountLoading, setIsCountLoading] = useState(false);
@@ -182,6 +184,33 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
     };
   }, [role, user?.department_id, roomsRevision, badgeScope]);
 
+  // Classes needing a room reassignment, shown on Facilities for roles that reassign from there.
+  const recoveryRevision = useLiveRevision(['rooms', 'schedules', 'approvals']);
+  const [reassignBadge, setReassignBadge] = useState({ scope: '', count: 0 });
+  const pendingReassignCount = reassignBadge.scope === badgeScope ? reassignBadge.count : 0;
+
+  useEffect(() => {
+    if (!reassignsRoomSchedulesFromFacilities(role)) return;
+
+    const controller = new AbortController();
+    const load = async () => {
+      try {
+        const { data } = await getRecovery(undefined, controller.signal, false);
+        if (!controller.signal.aborted) setReassignBadge({ scope: badgeScope, count: data.pending_count ?? 0 });
+      } catch {
+        if (!controller.signal.aborted) setReassignBadge({ scope: badgeScope, count: 0 });
+      }
+    };
+    const timeoutId = window.setTimeout(load, 0);
+    const poll = window.setInterval(load, 60000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.clearInterval(poll);
+      controller.abort();
+    };
+  }, [role, recoveryRevision, badgeScope]);
+
   useEffect(() => {
     if (role !== 'dean' && role !== 'vpaa') {
       return;
@@ -221,6 +250,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
     if (child.id === 'sidebar-schedule-approval') return pendingCount;
     if (child.id === 'sidebar-room-requests') return pendingRoomCount;
     if (child.id === 'sidebar-cross-department-assignments') return crossDepartmentPending;
+    if (child.id === 'sidebar-rooms') return pendingReassignCount;
     return 0;
   };
 
@@ -229,6 +259,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
     if (!item.children) {
       if (item.id === 'sidebar-schedule-approval') return pendingCount;
       if (item.id === 'sidebar-room-requests') return pendingRoomCount;
+      if (item.id === 'sidebar-rooms') return pendingReassignCount;
       return 0;
     }
     return item.children.reduce((sum, child) => sum + getChildNotificationCount(child), 0);
@@ -261,7 +292,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
   return (
     <div
       className={`
-        fixed left-0 top-0 z-40 h-screen
+        fixed left-0 top-0 z-[60] h-screen md:z-40
         bg-[#4e0a10]
         flex flex-col
         overflow-hidden
@@ -270,39 +301,41 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
         ${isOpen ? 'w-72 translate-x-0' : '-translate-x-full md:translate-x-0 md:w-16'}
       `}
     >
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      {/* The TCC campus photograph stays as the sidebar backdrop; one maroon wash keeps it legible. */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         <img
           src={campusBg}
-          alt="Campus Background"
-          className="w-full h-full object-cover opacity-35 filter contrast-105 saturate-110 object-center"
+          alt=""
+          className="h-full w-full object-cover object-center opacity-35 filter contrast-105 saturate-110"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-[#36060b] via-[#4e0a10]/80 to-[#5A1220]/70 mix-blend-multiply" />
         <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60" />
       </div>
 
-      <div className={`relative z-10 flex min-h-[4.25rem] py-3 flex-shrink-0 items-center border-b border-white/10 transition-all duration-300 ease-in-out ${isOpen ? 'justify-between px-4' : 'justify-center px-0'}`}>
+      <div className={`relative z-10 flex flex-shrink-0 items-center border-b border-white/10 transition-[padding] duration-300 ease-in-out ${isOpen ? 'min-h-16 justify-between py-1.5 pl-4 pr-2' : 'h-16 justify-center px-0'}`}>
         <div className="flex min-w-0 items-center">
           <img
             src={deptLogo || logo}
             alt={deptName || "TCC Logo"}
-            className="h-10 w-10 flex-shrink-0 rounded-full object-cover ring-2 ring-[#C9952A]/40 ring-offset-2 ring-offset-[#4e0a10] transition-transform duration-500 hover:rotate-12"
+            className="h-9 w-9 flex-shrink-0 rounded-full object-cover ring-2 ring-[#C9952A]/40 ring-offset-2 ring-offset-[#4e0a10]"
           />
-          <div className={`flex min-w-0 flex-col justify-center transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-w-[220px] opacity-100 ml-3' : 'max-w-0 opacity-0 ml-0 pointer-events-none'}`}>
-            <div className="flex items-baseline gap-1 whitespace-nowrap leading-none">
-              <span className="font-display bg-gradient-to-r from-white to-[#E8D5C4] bg-clip-text text-base font-extrabold tracking-wider text-transparent">TCC</span>
-              <span className="text-xs font-bold uppercase tracking-tight text-[#C9952A]">Scheduling</span>
+          <div className={`flex min-w-0 flex-col justify-center overflow-hidden transition-all duration-300 ease-in-out ${isOpen ? 'ml-3 w-[180px] shrink-0 opacity-100 md:w-[204px]' : 'hidden'}`}>
+            <div className="flex items-baseline gap-1.5 whitespace-nowrap leading-none">
+              <span className="bg-gradient-to-r from-white to-[#E8D5C4] bg-clip-text text-base font-extrabold tracking-wide text-transparent">TCC</span>
+              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#C9952A]">Scheduling</span>
             </div>
             {deptName && (
-              <span className="text-[10.5px] font-bold text-[#E8D5C4] tracking-wide leading-snug mt-1" title={deptName}>
+              <span className={`truncate font-medium leading-tight text-[#E8D5C4] ${sidebarProgramLabel ? 'mt-0.5 text-[11px]' : 'mt-1 text-[11px]'}`} title={deptName}>
                 {deptName}
               </span>
             )}
+            {/* Full program name, wrapped (never cut off with an ellipsis). */}
             {sidebarProgramLabel && (
               <span
-                className="mt-1 block truncate text-[9.5px] font-semibold uppercase tracking-wide text-[#C9952A]"
-                title={programTitle}
+                className="mt-0.5 whitespace-normal break-words text-[10px] font-medium leading-[1.2] text-[#C9952A]"
+                title={programTitle ?? sidebarProgramLabel}
               >
-                Program: {sidebarProgramLabel}
+                <span className="font-bold uppercase tracking-wide">Program:</span> {sidebarProgramLabel}
               </span>
             )}
           </div>
@@ -320,19 +353,19 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
         </button>
       </div>
 
-      <nav id="primary-navigation" aria-label="Primary navigation" className="relative z-10 flex-1 overflow-y-auto overscroll-contain px-3 py-5 text-[#E8D5C4] [scrollbar-width:thin] [scrollbar-color:rgba(232,213,196,0.3)_transparent]">
+      <nav id="primary-navigation" aria-label="Primary navigation" className="relative z-10 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-4 text-[#E8D5C4] [scrollbar-width:thin] [scrollbar-color:rgba(232,213,196,0.3)_transparent]">
         {navItems.map((section, sectionIdx) => (
-          <div key={section.section} className="mb-4 last:mb-0">
+          <div key={section.section}>
             {sectionIdx > 0 && (
-              <div className="my-3 border-t border-white/10 mx-1" />
+              <div className={`my-3 border-t border-white/10 ${isOpen ? 'mx-2' : 'mx-1'}`} role="separator" />
             )}
-            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isOpen ? 'max-h-6 opacity-100 mb-2 px-2' : 'max-h-0 opacity-0 mb-0 px-2 pointer-events-none'}`}>
-              <h4 className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.2em] text-[#E8D5C4]/40">
+            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isOpen ? 'mb-1.5 max-h-6 px-3 opacity-100' : 'pointer-events-none mb-0 max-h-0 px-3 opacity-0'}`}>
+              <h4 className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.14em] text-[#E8D5C4]/40">
                 {section.section}
               </h4>
             </div>
 
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-0.5">
               {section.items.map((item) => {
                 if (item.children) {
                   const expanded = isExpanded(item);
@@ -343,7 +376,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
                   const showNotif = notifCount > 0 || hasChildBadge;
 
                   return (
-                    <div key={item.label} className="flex flex-col gap-1">
+                    <div key={item.label} className="flex flex-col">
                       <button
                         type="button"
                         onClick={() => {
@@ -363,47 +396,43 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
                         })}
                         id={item.id}
                         className={`
-                          w-full flex items-center h-10 rounded-lg
-                          transition-all duration-300 ease-in-out cursor-pointer text-left overflow-hidden
-                          ${isOpen ? 'gap-3 px-3' : 'justify-center px-0'}
-                          ${hasActiveChild ? 'sidebar-parent-active' : 'sidebar-item-hover text-[#E8D5C4]'}
+                          flex h-9 cursor-pointer items-center overflow-hidden rounded-md text-left
+                          transition-colors duration-150 ease-out
+                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C9952A]/70
+                          ${isOpen ? 'w-full px-3' : 'mx-auto w-10 justify-center px-0'}
+                          ${hasActiveChild ? 'sidebar-parent-active' : 'sidebar-item-hover'}
+                          ${hasActiveChild && !isOpen ? 'sidebar-item-active' : ''}
                           ${item.isLocked ? 'opacity-50' : ''}
                         `}
                         aria-expanded={expanded}
                         title={item.isLocked ? (item.lockedMessage ?? `Locked: Requires permission`) : item.label}
                       >
-                        <div className="relative flex items-center justify-center w-5 h-5 shrink-0">
-                          {item.icon && <item.icon size={18} className="flex-shrink-0" aria-hidden="true" />}
+                        <div className="relative flex h-5 w-5 shrink-0 items-center justify-center">
+                          {item.icon && <item.icon size={18} strokeWidth={1.85} className="flex-shrink-0" aria-hidden="true" />}
                           {!isOpen && showNotif && (
-                            <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#C9952A] opacity-75" />
-                              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#C9952A] ring-1.5 ring-[#4e0a10]" />
-                            </span>
+                            <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[#C9952A] ring-2 ring-[#4e0a10]" aria-hidden="true" />
                           )}
                         </div>
-                        <span className={`whitespace-nowrap text-sm font-medium transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-w-[210px] opacity-100 ml-3' : 'max-w-0 opacity-0 ml-0 pointer-events-none'}`}>
+                        <span className={`overflow-hidden truncate whitespace-nowrap text-[13px] font-medium transition-all duration-300 ease-in-out ${isOpen ? 'ml-3 max-w-[180px] opacity-100' : 'pointer-events-none ml-0 max-w-0 opacity-0'}`}>
                           {item.label}
                         </span>
-                        <div className={`flex items-center gap-2 transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-w-[70px] opacity-100 ml-auto' : 'max-w-0 opacity-0 ml-0 pointer-events-none'}`}>
+                        <div className={`flex items-center gap-2 overflow-hidden transition-all duration-300 ease-in-out ${isOpen ? 'ml-auto max-w-[70px] pl-2 opacity-100' : 'pointer-events-none ml-0 max-w-0 opacity-0'}`}>
                           {showNotif && (
                             <span
-                              className="relative flex h-2 w-2"
+                              className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#C9952A]"
                               title={notifCount > 0 ? `${notifCount} pending notification${notifCount === 1 ? '' : 's'}` : 'New activity'}
-                            >
-                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#C9952A] opacity-75" />
-                              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#C9952A] shadow-[0_0_6px_#C9952A]" />
-                            </span>
+                            />
                           )}
-                          {item.isLocked && <Lock size={12} className="text-[#E8D5C4]/50 shrink-0" />}
+                          {item.isLocked && <Lock size={12} className="shrink-0 text-[#E8D5C4]/50" />}
                           <ChevronDown
-                            size={16}
+                            size={15}
                             className={`text-[#E8D5C4]/60 transition-transform duration-200 ${expanded ? '-rotate-180' : 'rotate-0'}`}
                           />
                         </div>
                       </button>
 
                       {expanded && isOpen && (
-                        <div className="mt-1 flex flex-col gap-1 overflow-hidden transition-all duration-300 ease-in-out">
+                        <div className="mb-1 ml-[1.375rem] mt-0.5 flex flex-col gap-0.5 border-l border-white/10 pl-2">
                           {item.children.map((child, childIdx) => {
                             const isChildPathActive = Boolean(child.path) && child.path === currentChildPath;
                             return (
@@ -417,9 +446,11 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
                                 style={{ animationDelay: `${childIdx * 45}ms` }}
                                 className={`
                                   sidebar-submenu-item
-                                  flex items-center h-9 rounded-lg pl-8 pr-3 gap-2.5
-                                  transition-all duration-300 ease-in-out overflow-hidden
-                                  ${isChildPathActive ? 'sidebar-item-active' : 'sidebar-item-hover text-[#E8D5C4]'}
+                                  relative flex min-h-8 min-w-0 items-center gap-2 rounded-md py-1.5 pl-3 pr-2
+                                  transition-colors duration-150 ease-out
+                                  before:absolute before:-left-[9px] before:top-1.5 before:bottom-1.5 before:w-[2px] before:rounded-full before:bg-transparent
+                                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C9952A]/70
+                                  ${isChildPathActive ? 'sidebar-subitem-active' : 'sidebar-item-hover'}
                                   ${child.isLocked ? 'sidebar-submenu-item-locked cursor-not-allowed hover:bg-transparent' : 'cursor-pointer'}
                                 `}
                                 onClick={(e) => {
@@ -436,37 +467,45 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
                               >
                                 {child.badge ? (
                                   <span className="flex min-w-0 flex-col leading-tight">
-                                    <span className="whitespace-nowrap text-xs font-medium">{child.label}</span>
-                                    <span className="mt-0.5 inline-flex items-center gap-1 whitespace-nowrap text-[9px] font-bold uppercase tracking-wide text-[#E8C27A]">
-                                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#C9952A]" aria-hidden="true" />
+                                    <span className="truncate text-xs">{child.label}</span>
+                                    <span className="mt-0.5 inline-flex items-center gap-1 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-[#E8C27A]">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-[#C9952A]" aria-hidden="true" />
                                       {child.badge}
                                     </span>
                                   </span>
                                 ) : (
-                                  <span className="whitespace-nowrap text-xs font-medium">
+                                  <span className="truncate text-xs">
                                     {child.label}
                                   </span>
                                 )}
                                 {child.isLocked && (
-                                  <Lock size={12} className="ml-auto text-[#E8D5C4]/50 shrink-0" />
+                                  <Lock size={12} className="ml-auto shrink-0 text-[#E8D5C4]/50" />
                                 )}
                                 {child.id === 'sidebar-schedule-approval' && (pendingCount > 0 || isCountLoading) && !child.isLocked && (
                                   isCountLoading ? (
                                     <Skeleton className="ml-auto h-4 w-6 rounded-full bg-white/20" />
                                   ) : (
-                                    <span className="ml-auto rounded-full bg-[#C9952A] px-1.5 py-0.5 text-[10px] font-bold text-[#4e0a10]">
+                                    <span className="ml-auto shrink-0 rounded-full bg-[#C9952A] px-1.5 text-[10px] font-bold leading-4 text-[#4e0a10]">
                                       {pendingCount > 9 ? '9+' : pendingCount}
                                     </span>
                                   )
                                 )}
                                 {child.id === 'sidebar-cross-department-assignments' && crossDepartmentPending > 0 && !child.isLocked && (
-                                  <span className="ml-auto rounded-full bg-[#C9952A] px-1.5 py-0.5 text-[10px] font-bold text-[#4e0a10]">
+                                  <span className="ml-auto shrink-0 rounded-full bg-[#C9952A] px-1.5 text-[10px] font-bold leading-4 text-[#4e0a10]">
                                     {crossDepartmentPending > 9 ? '9+' : crossDepartmentPending}
                                   </span>
                                 )}
                                 {child.id === 'sidebar-room-requests' && pendingRoomCount > 0 && !child.isLocked && (
-                                  <span className="ml-auto rounded-full bg-[#C9952A] px-1.5 py-0.5 text-[10px] font-bold text-[#4e0a10]">
-                                    {pendingRoomCount >= 9 ? '9+' : pendingRoomCount}
+                                  <span className="ml-auto shrink-0 rounded-full bg-[#C9952A] px-1.5 text-[10px] font-bold leading-4 text-[#4e0a10]">
+                                    {pendingRoomCount > 9 ? '9+' : pendingRoomCount}
+                                  </span>
+                                )}
+                                {child.id === 'sidebar-rooms' && pendingReassignCount > 0 && !child.isLocked && (
+                                  <span
+                                    className="ml-auto shrink-0 rounded-full bg-[#C9952A] px-1.5 text-[10px] font-bold leading-4 text-[#4e0a10]"
+                                    title={`${pendingReassignCount} class${pendingReassignCount === 1 ? '' : 'es'} need room reassignment`}
+                                  >
+                                    {pendingReassignCount > 9 ? '9+' : pendingReassignCount}
                                   </span>
                                 )}
                               </NavLink>
@@ -489,10 +528,11 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
                     onPointerEnter={() => { if (!item.isLocked) prefetchPage(item.path); }}
                     onFocus={() => { if (!item.isLocked) prefetchPage(item.path); }}
                     className={({ isActive }) => `
-                      flex items-center h-10 rounded-lg
-                      transition-all duration-300 ease-in-out overflow-hidden
-                      ${isOpen ? 'gap-3 px-3' : 'justify-center px-0'}
-                      ${isActive && !item.isLocked ? 'sidebar-item-active' : 'sidebar-item-hover text-[#E8D5C4]'}
+                      flex h-9 items-center overflow-hidden rounded-md
+                      transition-colors duration-150 ease-out
+                      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C9952A]/70
+                      ${isOpen ? 'w-full px-3' : 'mx-auto w-10 justify-center px-0'}
+                      ${isActive && !item.isLocked ? 'sidebar-item-active' : 'sidebar-item-hover'}
                       ${item.isLocked ? 'opacity-50 cursor-not-allowed hover:bg-transparent' : 'cursor-pointer'}
                     `}
                     onClick={(e) => {
@@ -507,29 +547,27 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
                     }}
                     title={item.isLocked ? `Locked: Requires permission` : item.label}
                   >
-                    <div className="relative flex items-center justify-center w-5 h-5 shrink-0">
-                      {item.icon && <item.icon size={18} className="flex-shrink-0" aria-hidden="true" />}
+                    <div className="relative flex h-5 w-5 shrink-0 items-center justify-center">
+                      {item.icon && <item.icon size={18} strokeWidth={1.85} className="flex-shrink-0" aria-hidden="true" />}
                       {!isOpen && showNotif && (
-                        <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#C9952A] opacity-75" />
-                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#C9952A] ring-1.5 ring-[#4e0a10]" />
-                        </span>
+                        <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[#C9952A] ring-2 ring-[#4e0a10]" aria-hidden="true" />
                       )}
                     </div>
-                    <span className={`whitespace-nowrap text-sm font-medium transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-w-[215px] opacity-100 ml-3' : 'max-w-0 opacity-0 ml-0 pointer-events-none'}`}>
+                    <span className={`overflow-hidden truncate whitespace-nowrap text-[13px] font-medium transition-all duration-300 ease-in-out ${isOpen ? 'ml-3 max-w-[190px] opacity-100' : 'pointer-events-none ml-0 max-w-0 opacity-0'}`}>
                       {item.label}
                     </span>
-                    <div className={`transition-all duration-300 ease-in-out overflow-hidden flex items-center gap-2 ${isOpen ? 'max-w-[70px] opacity-100 ml-auto' : 'max-w-0 opacity-0 ml-0 pointer-events-none'}`}>
+                    <div className={`flex items-center gap-2 overflow-hidden transition-all duration-300 ease-in-out ${isOpen ? 'ml-auto max-w-[70px] pl-2 opacity-100' : 'pointer-events-none ml-0 max-w-0 opacity-0'}`}>
                       {showNotif && (
                         <span
-                          className="flex items-center gap-1 rounded-full bg-[#C9952A] px-1.5 py-0.5 text-[10px] font-black text-[#4e0a10] shadow-[0_0_8px_rgba(201,149,42,0.4)]"
-                          title={`${notifCount} pending notification${notifCount === 1 ? '' : 's'}`}
+                          className="shrink-0 rounded-full bg-[#C9952A] px-1.5 text-[10px] font-bold leading-4 text-[#4e0a10]"
+                          title={item.id === 'sidebar-rooms'
+                            ? `${notifCount} class${notifCount === 1 ? '' : 'es'} need room reassignment`
+                            : `${notifCount} pending notification${notifCount === 1 ? '' : 's'}`}
                         >
-                          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#4e0a10]" />
-                          {notifCount >= 9 ? '9+' : notifCount}
+                          {notifCount > 9 ? '9+' : notifCount}
                         </span>
                       )}
-                      {item.isLocked && <Lock size={13} className="text-[#E8D5C4]/50 shrink-0" />}
+                      {item.isLocked && <Lock size={12} className="shrink-0 text-[#E8D5C4]/50" />}
                     </div>
                   </NavLink>
                 );

@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Modal from '../../components/ui/Modal';
-import { ModalButton } from '../../components/ui/ModalForm';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertCircle,
+  ArrowUpRight,
   Award,
+  BookOpen,
   Building2,
   CalendarDays,
+  Check,
   CheckCircle2,
   ChevronDown,
-  Clock,
+  Download,
   Eye,
   FlaskConical,
   FileSpreadsheet,
@@ -18,6 +20,7 @@ import {
   LayoutGrid,
   Printer,
   RefreshCw,
+  Search,
   ShieldCheck,
   Users,
 } from 'lucide-react';
@@ -25,30 +28,18 @@ import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import DashboardMetricCard from '../../components/overview/DashboardMetricCard';
-import DepartmentLogo from '../../components/ui/DepartmentLogo';
 import PrintSchedule from '../ClassSchedules/SchedulerPanel/PrintSchedule';
 import TeachingLoad from '../ClassSchedules/SchedulerPanel/TeachingLoad';
 import type { Room } from '../ClassSchedules/SchedulerPanel/types';
 import type { SchedulerCacheData } from '../ClassSchedules/SchedulerPanel/hooks/initialDataMapper';
 import { getDeptBadgeStyles } from '../../lib/departmentTheme';
 import api from '../../lib/api';
+import { buildExportFilename, downloadFile } from '../../lib/exportFile';
 import { getCachedData, hasCachedData, setCachedData } from '../../lib/dataCache';
 import { getStoredUser } from '../../lib/storedUser';
-import { basicLoadOf } from '../../lib/facultyLoad';
-import { dayNameToIndex } from '../../lib/timeGrid';
-import { openPdfPreview } from '../../lib/pdfPreview';
-import { fullSemesterLabel } from '../../lib/semesterLabel';
-import { buildRoomUtilizationPdf, getRoomUtilizationPdfFilename, type RoomUtilizationPdfInput } from '../../lib/roomUtilizationPdf';
+import { describeWindow } from '../../lib/roomRequests';
+import ReportCurriculumViewer from './ReportCurriculumViewer';
 import {
-  RoomRequestsTable,
-  RoomUtilizationTable,
-  ScheduleClassesTable,
-  ScheduleGroupsTable,
-  TeachingLoadTable,
-  type ReportRoom,
-} from '../../components/reports/ReportDetailTables';
-import {
-  defaultReportTerm,
   fetchReportData,
   fetchReportsOverview,
   type ReportDepartment,
@@ -56,18 +47,11 @@ import {
   type ReportsOverview,
 } from '../../lib/reports';
 
-export type ReportKind = 'schedule' | 'load' | 'room';
+export type ReportKind = 'schedule' | 'load' | 'room' | 'curriculum';
 
 interface PrintJob {
   kind: 'schedule' | 'load';
   data: SchedulerCacheData;
-}
-
-interface DetailState {
-  row: ReportRow;
-  kind: ReportKind;
-  data: ReportData;
-  generatedAt: Date;
 }
 
 interface ReportRow {
@@ -98,20 +82,27 @@ const TABS: { kind: ReportKind; label: string; description: string; icon: typeof
     description: 'Facilities occupancy, lecture vs laboratory capacity, and booked hours.',
     icon: Building2,
   },
+  {
+    kind: 'curriculum',
+    label: 'Curriculums & Courses',
+    description: 'Active curriculum course offerings, lecture/lab units, and scheduled sections.',
+    icon: BookOpen,
+  },
 ];
 
 const rowsFor = (department: ReportDepartment, kind: ReportKind): ReportRow[] => {
   const countOf = (item: { complete_section_count: number; instructor_count: number }) => {
     if (kind === 'schedule') return item.complete_section_count;
     if (kind === 'load') return item.instructor_count;
-    // Room use is measured from fully approved sections, so that is what makes the report ready.
+    if (kind === 'room' || kind === 'curriculum') return item.complete_section_count > 0 ? 1 : 0;
     return item.complete_section_count;
   };
 
   const suffix =
     kind === 'schedule' ? 'Class Schedule' :
     kind === 'load' ? 'Instructors Load' :
-    'Room Utilization';
+    kind === 'room' ? 'Room Utilization' :
+    'Curriculum Courses';
 
   if (!department.can_print_department) {
     return department.programs.map((program) => ({
@@ -136,46 +127,14 @@ const rowsFor = (department: ReportDepartment, kind: ReportKind): ReportRow[] =>
   }];
 };
 
-const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
-
-function readyDetail(kind: ReportKind, count: number): string {
-  if (kind === 'load') return `${plural(count, 'instructor')} with approved load`;
-  if (kind === 'room') return `From ${plural(count, 'approved section')}`;
-  return plural(count, 'approved section');
-}
-
-function notReadyReason(kind: ReportKind, noApprovedTerm: boolean): string {
-  if (noApprovedTerm) return 'No term has VPAA-approved schedules yet.';
-  if (kind === 'load') return 'No instructor has a VPAA-approved load this term.';
-  if (kind === 'room') return 'Needs a fully VPAA-approved section this term.';
-  return 'No section is fully VPAA-approved this term.';
-}
-
-function ReadinessBadge({ ready }: { ready: boolean }) {
-  return ready ? (
-    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-stage-done/20 bg-stage-done/10 px-2 py-0.5 text-[11px] font-semibold text-stage-done">
-      <CheckCircle2 size={12} aria-hidden="true" />
-      Ready
-    </span>
-  ) : (
-    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-parchment px-2 py-0.5 text-[11px] font-semibold text-muted">
-      <Clock size={12} aria-hidden="true" />
-      Not ready
-    </span>
-  );
-}
-
-const formatGeneratedAt = (date: Date) =>
-  date.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
-
 interface ReportDetailModalProps {
   row: ReportRow;
   kind: ReportKind;
   data: ReportData;
-  generatedAt: Date;
   onClose: () => void;
   onPrint?: () => void;
-  isPrinting?: boolean;
+  /** Omitted for reports without a CSV export, such as the curriculum viewer. */
+  onExportCsv?: () => void;
 }
 
 function reportRooms(data: SchedulerCacheData): Pick<Room, 'id' | 'name' | 'building' | 'roomType' | 'status'>[] {
@@ -189,201 +148,181 @@ function reportRooms(data: SchedulerCacheData): Pick<Room, 'id' | 'name' | 'buil
   return Array.from(rooms.values());
 }
 
-
-/** Every room in the report scope, including unused ones when the room summary lists them. */
-function roomInventory(data: ReportData): ReportRoom[] {
-  if (!data.roomSummary?.rooms) return reportRooms(data);
-  return data.roomSummary.rooms.map((room) => ({
-    id: String(room.id), name: room.room_code, building: room.building,
-    roomType: room.room_type, status: room.status,
-  }));
-}
-
-/** Scheduled class count and weekday-ordered short day names for one room. */
-function roomUsage(data: SchedulerCacheData, room: ReportRoom): { classCount: number; days: string } {
-  const schedules = data.schedules.filter(
-    (s) => (s.roomId && s.roomId === room.id) || (s.roomName && s.roomName === room.name),
-  );
-  const days = Array.from(new Set(schedules.map((s) => s.day).filter(Boolean)))
-    .sort((a, b) => dayNameToIndex(a) - dayNameToIndex(b))
-    .map((day) => day.slice(0, 3))
-    .join(', ');
-  return { classCount: schedules.length, days };
-}
-
-const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
-
-function ReportDetailModal({ row, kind, data, generatedAt, onClose, onPrint, isPrinting = false }: ReportDetailModalProps) {
-  const [scheduleView, setScheduleView] = useState<'classes' | 'sections' | 'instructors' | 'rooms'>('classes');
-  const [loadView, setLoadView] = useState<'instructors' | 'assigned' | 'overloaded' | 'average'>('instructors');
+function ReportDetailModal({ row, kind, data, onClose, onPrint, onExportCsv }: ReportDetailModalProps) {
+  const [query, setQuery] = useState('');
   const [showRoomRequests, setShowRoomRequests] = useState(false);
-  const [roomRequestOption, setRoomRequestOption] = useState<'requester' | 'requested_by' | null>(null);
-  const [roomInventoryView, setRoomInventoryView] = useState<'all' | 'laboratory' | 'unavailable' | null>(null);
+  const [roomRequestOption, setRoomRequestOption] = useState<'requester' | 'requestee' | null>(null);
+  const [roomInventoryView, setRoomInventoryView] = useState<'all' | 'laboratory' | null>(null);
 
-  const roomList = useMemo(
-    () => (roomInventoryView === null ? reportRooms(data) : roomInventory(data)),
-    [data, roomInventoryView],
-  );
+  const roomList = useMemo(() => {
+    if (roomInventoryView === null || !data.roomSummary?.rooms) return reportRooms(data);
+    return data.roomSummary.rooms.map((room) => ({
+      id: String(room.id), name: room.room_code, building: room.building,
+      roomType: room.room_type, status: room.status,
+    }));
+  }, [data, roomInventoryView]);
   const roomRequests = data.roomSummary?.requests.filter((request) =>
     request.direction === (roomRequestOption === 'requester' ? 'sent' : 'received'),
   ) ?? [];
-  const roomRequestTitle = roomRequestOption === 'requester' ? 'Requester requests' : 'Requestee requests';
+  const roomRequestTitle = roomRequestOption === 'requester' ? 'Requester requests' : 'Requestee By requests';
+
+  const q = query.trim().toLowerCase();
+
+  const filteredSchedules = useMemo(() => {
+    if (!q) return data.schedules;
+    return data.schedules.filter((s) =>
+      `${s.sectionName} ${s.courseCode} ${s.courseName} ${s.subjectCode} ${s.subjectName} ${s.roomName} ${s.facultyName} ${s.day}`
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [data.schedules, q]);
 
   const filteredFaculty = useMemo(() => {
-    const faculties = data.faculties.filter((f) => {
-      if (loadView === 'assigned' && (f.assignedUnits || 0) <= 0) return false;
-      if (loadView === 'overloaded' && (f.assignedUnits || 0) <= basicLoadOf(f.maxUnits, f.deloadUnits)) return false;
-      return true;
-    });
-    if (loadView === 'average') faculties.sort((a, b) => (b.assignedUnits || 0) - (a.assignedUnits || 0));
-    return faculties;
-  }, [data.faculties, loadView]);
-
-  const scheduleGroups = useMemo(() => {
-    if (scheduleView === 'classes') return [];
-    const field = scheduleView === 'sections' ? 'sectionName' : scheduleView === 'instructors' ? 'facultyName' : 'roomName';
-    const groups = new Map<string, { name: string; classCount: number; days: Set<string> }>();
-    for (const schedule of data.schedules) {
-      const name = schedule[field];
-      if (!name) continue;
-      const group = groups.get(name) ?? { name, classCount: 0, days: new Set<string>() };
-      group.classCount++;
-      if (schedule.day) group.days.add(schedule.day);
-      groups.set(name, group);
-    }
-    return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [data.schedules, scheduleView]);
-
-  const scheduleCards = [
-    { view: 'classes', label: 'Classes Scheduled', value: `Total ${data.schedules.length}`, icon: CalendarDays, iconClassName: 'text-[#4e0a10]' },
-    { view: 'sections', label: 'Active Sections', value: `Total ${new Set(data.schedules.map((s) => s.sectionName).filter(Boolean)).size}`, icon: LayoutGrid, iconClassName: 'text-emerald-600' },
-    { view: 'instructors', label: 'Instructors Teaching', value: `Total ${new Set(data.schedules.map((s) => s.facultyName).filter(Boolean)).size}`, icon: Users, iconClassName: 'text-sky-600' },
-    { view: 'rooms', label: 'Rooms Occupied', value: `Total ${new Set(data.schedules.map((s) => s.roomName).filter(Boolean)).size}`, icon: Building2, iconClassName: 'text-amber-600' },
-  ] as const;
-  const assignedUnits = data.faculties.reduce((sum, f) => sum + (f.assignedUnits || 0), 0);
-  const loadCards = [
-    { view: 'instructors', label: 'Instructors', value: `Total ${data.faculties.length}`, icon: Users, iconClassName: 'text-[#4e0a10]' },
-    { view: 'assigned', label: 'Assigned Units', value: `Total ${assignedUnits}`, icon: Award, iconClassName: 'text-emerald-600' },
-    { view: 'overloaded', label: 'Overloaded', value: `Total ${data.faculties.filter((f) => (f.assignedUnits || 0) > basicLoadOf(f.maxUnits, f.deloadUnits)).length}`, icon: GaugeCircle, iconClassName: 'text-amber-600' },
-    { view: 'average', label: 'Average Load', value: `${data.faculties.length ? (assignedUnits / data.faculties.length).toFixed(1) : 0} units`, icon: CheckCircle2, iconClassName: 'text-sky-600' },
-  ] as const;
-  const scheduleViewLabel = scheduleCards.find((card) => card.view === scheduleView)!.label;
-  const loadViewLabel = loadCards.find((card) => card.view === loadView)!.label;
-  const scheduleGroupHeading = scheduleView === 'sections' ? 'Section' : scheduleView === 'instructors' ? 'Instructor' : 'Room';
-  const summaryCardClass = (active: boolean) =>
-    `flex cursor-pointer items-center gap-2.5 rounded-lg border p-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${active ? 'border-primary/30 bg-primary/5 shadow-sm' : 'border-slate-100 bg-slate-50/50 hover:border-primary/30 hover:bg-primary/5'}`;
+    if (!q) return data.faculties;
+    return data.faculties.filter((f) => `${f.name} ${f.employmentType} ${f.status}`.toLowerCase().includes(q));
+  }, [data.faculties, q]);
 
   const filteredRooms = useMemo(() => {
-    return roomInventoryView === 'laboratory'
+    const rooms = roomInventoryView === 'laboratory'
       ? roomList.filter((room) => room.roomType === 'laboratory')
-      : roomInventoryView === 'unavailable'
-        ? roomList.filter((room) => room.status === 'not available')
-        : roomList;
-  }, [roomList, roomInventoryView]);
+      : roomList;
+    if (!q) return rooms;
+    return rooms.filter((r) => `${r.name} ${r.building || ''} ${r.roomType || ''}`.toLowerCase().includes(q));
+  }, [roomList, q, roomInventoryView]);
 
-  const roomRows = useMemo(
-    () => filteredRooms.map((room) => ({ room, ...roomUsage(data, room) })),
-    [data, filteredRooms],
-  );
-
-  const showRoomStatus = roomInventoryView === 'unavailable';
-
-  const selectRoomView = (view: 'all' | 'laboratory' | 'unavailable') => {
+  const selectRoomView = (view: 'all' | 'laboratory') => {
     setRoomInventoryView(view);
+    setQuery('');
     setShowRoomRequests(false);
     setRoomRequestOption(null);
   };
 
-  return (
-    <Modal
-      isOpen
-      onClose={onClose}
-      title={row.label}
-      description={row.description}
-      icon={kind === 'schedule' ? <CalendarDays size={18} /> : kind === 'load' ? <GraduationCap size={18} /> : <Building2 size={18} />}
-      size={kind === 'room' ? 'wide' : 'xl'}
-      bodyClassName="flex flex-col !overflow-hidden !bg-white"
-      footerClassName="!justify-between"
-      headerActions={onPrint && (
-        <button
-          type="button"
-          onClick={onPrint}
-          disabled={isPrinting}
-          title="Generate a printable PDF of this report"
-          className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-white px-3 text-xs font-bold text-[#4e0a10] transition-colors hover:bg-amber-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isPrinting ? <LoadingSpinner size={13} className="animate-spin" /> : <Printer size={13} aria-hidden="true" />}
-          {isPrinting ? 'Preparing PDF...' : 'Generate PDF'}
-        </button>
-      )}
-      footer={<>
-        <p className="min-w-0 flex-1 text-xs text-slate-500">
-          The PDF opens in a preview tab, where it can be printed or saved.
-        </p>
-        <ModalButton onClick={onClose}>Close</ModalButton>
-      </>}
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${row.label} - Detailed Report`}
+      className="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-slate-900/60 p-0 backdrop-blur-sm sm:p-4"
     >
-        <dl className="flex flex-wrap items-center gap-x-5 gap-y-1.5 border-b border-slate-100 bg-parchment/60 px-4 py-2 text-xs sm:px-5">
-          <div className="flex items-center gap-1.5">
-            <CalendarDays size={13} aria-hidden="true" className="text-primary/70" />
-            <dt className="sr-only">Academic term</dt>
-            <dd className="font-semibold text-text">{data.activeSemester ? fullSemesterLabel(data.activeSemester) : 'All terms'}</dd>
+      <div className="relative flex min-h-[100dvh] w-full max-w-5xl flex-col overflow-hidden bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-150 sm:my-auto sm:min-h-0 sm:max-h-[calc(100dvh-2rem)] sm:rounded-2xl sm:border sm:border-slate-200">
+        <div className="flex flex-col gap-4 border-b border-slate-100 bg-slate-50/70 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#4e0a10] text-white shadow-sm">
+              {kind === 'schedule' && <CalendarDays size={20} />}
+              {kind === 'load' && <GraduationCap size={20} />}
+              {kind === 'room' && <Building2 size={20} />}
+              {kind === 'curriculum' && <BookOpen size={20} />}
+            </span>
+            <div className="min-w-0">
+              <h2 className="truncate text-base font-extrabold text-slate-800">{row.label}</h2>
+              <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{row.description} &bull; Detailed breakdown</p>
+            </div>
           </div>
-          <div className="flex items-center gap-1.5">
-            <Clock size={13} aria-hidden="true" className="text-muted" />
-            <dt className="text-muted">Generated</dt>
-            <dd className="font-medium text-text">{formatGeneratedAt(generatedAt)}</dd>
+          {(onExportCsv || onPrint) && (
+          <div className="flex w-full items-center gap-2 sm:w-auto">
+            {onExportCsv && (
+              <button
+                type="button"
+                onClick={onExportCsv}
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 sm:flex-none"
+              >
+                <Download size={13} /> Export CSV
+              </button>
+            )}
+            {onPrint && (
+              <button
+                type="button"
+                onClick={onPrint}
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#4e0a10] px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-[#6b1520] sm:flex-none"
+              >
+                <Printer size={13} /> Print PDF
+              </button>
+            )}
           </div>
-          <div className="flex items-center gap-1.5">
-            <ShieldCheck size={13} aria-hidden="true" className="text-stage-done" />
-            <dt className="sr-only">Approval</dt>
-            <dd className="text-muted">
-              {kind === 'room' ? 'Class usage from VPAA-approved schedules' : 'VPAA-approved records; signatories from approval history'}
-            </dd>
-          </div>
-        </dl>
+          )}
+        </div>
+
         <div className={kind === 'room' ? 'min-h-0 flex-1 overflow-auto' : 'contents'}>
+        {kind !== 'curriculum' && (
         <>
         <div className="grid grid-cols-2 gap-2 border-b border-slate-100 bg-white px-4 py-3 sm:grid-cols-4 sm:gap-3 sm:px-5">
           {kind === 'schedule' && (
             <>
-              {scheduleCards.map(({ view, label, value, icon: Icon, iconClassName }) => (
-                <button
-                  key={view}
-                  type="button"
-                  aria-pressed={scheduleView === view}
-                  aria-controls="department-schedule-table"
-                  onClick={() => setScheduleView(view)}
-                  className={summaryCardClass(scheduleView === view)}
-                >
-                  <Icon size={16} className={`shrink-0 ${iconClassName}`} />
-                  <div>
-                    <div className="text-xs font-semibold leading-4 text-slate-500">{value}</div>
-                    <div className="font-display text-base font-bold leading-6 text-slate-800">{label}</div>
+              <div className="flex items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/50 p-2.5">
+                <CalendarDays size={16} className="text-[#4e0a10]" />
+                <div>
+                  <div className="text-xs font-black text-slate-800">{data.schedules.length}</div>
+                  <div className="text-[10px] font-semibold text-slate-500">Classes Scheduled</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/50 p-2.5">
+                <LayoutGrid size={16} className="text-emerald-600" />
+                <div>
+                  <div className="text-xs font-black text-slate-800">
+                    {new Set(data.schedules.map((s) => s.sectionName).filter(Boolean)).size}
                   </div>
-                </button>
-              ))}
+                  <div className="text-[10px] font-semibold text-slate-500">Active Sections</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/50 p-2.5">
+                <Users size={16} className="text-sky-600" />
+                <div>
+                  <div className="text-xs font-black text-slate-800">
+                    {new Set(data.schedules.map((s) => s.facultyName).filter(Boolean)).size}
+                  </div>
+                  <div className="text-[10px] font-semibold text-slate-500">Instructors Teaching</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/50 p-2.5">
+                <Building2 size={16} className="text-amber-600" />
+                <div>
+                  <div className="text-xs font-black text-slate-800">
+                    {new Set(data.schedules.map((s) => s.roomName).filter(Boolean)).size}
+                  </div>
+                  <div className="text-[10px] font-semibold text-slate-500">Rooms Occupied</div>
+                </div>
+              </div>
             </>
           )}
 
           {kind === 'load' && (
             <>
-              {loadCards.map(({ view, label, value, icon: Icon, iconClassName }) => (
-                <button
-                  key={view}
-                  type="button"
-                  aria-pressed={loadView === view}
-                  aria-controls="teaching-load-table"
-                  onClick={() => setLoadView(view)}
-                  className={summaryCardClass(loadView === view)}
-                >
-                  <Icon size={16} className={`shrink-0 ${iconClassName}`} />
-                  <div>
-                    <div className="text-xs font-semibold leading-4 text-slate-500">{value}</div>
-                    <div className="font-display text-base font-bold leading-6 text-slate-800">{label}</div>
+              <div className="flex items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/50 p-2.5">
+                <Users size={16} className="text-[#4e0a10]" />
+                <div>
+                  <div className="text-xs font-black text-slate-800">{data.faculties.length}</div>
+                  <div className="text-[10px] font-semibold text-slate-500">Total Instructors</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/50 p-2.5">
+                <Award size={16} className="text-emerald-600" />
+                <div>
+                  <div className="text-xs font-black text-slate-800">
+                    {data.faculties.reduce((sum, f) => sum + (f.assignedUnits || 0), 0)}
                   </div>
-                </button>
-              ))}
+                  <div className="text-[10px] font-semibold text-slate-500">Assigned Units</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/50 p-2.5">
+                <GaugeCircle size={16} className="text-amber-600" />
+                <div>
+                  <div className="text-xs font-black text-slate-800">
+                    {data.faculties.filter((f) => (f.assignedUnits || 0) > Math.max(0, (f.maxUnits || 0) - (f.deloadUnits || 0))).length}
+                  </div>
+                  <div className="text-[10px] font-semibold text-slate-500">Overloaded</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/50 p-2.5">
+                <CheckCircle2 size={16} className="text-sky-600" />
+                <div>
+                  <div className="text-xs font-black text-slate-800">
+                    {data.faculties.length
+                      ? (data.faculties.reduce((sum, f) => sum + (f.assignedUnits || 0), 0) / data.faculties.length).toFixed(1)
+                      : 0} units
+                  </div>
+                  <div className="text-[10px] font-semibold text-slate-500">Average Load</div>
+                </div>
+              </div>
             </>
           )}
 
@@ -398,8 +337,8 @@ function ReportDetailModal({ row, kind, data, generatedAt, onClose, onPrint, isP
               >
                 <Building2 size={16} className="text-[#4e0a10]" />
                 <div>
-                  <div className="text-xs font-semibold leading-4 text-slate-500">Total {data.roomSummary?.total_rooms ?? roomList.length}</div>
-                  <div className="font-display text-base font-bold leading-6 text-slate-800">Rooms</div>
+                  <div className="text-xs font-black text-slate-800">{data.roomSummary?.total_rooms ?? roomList.length}</div>
+                  <div className="text-[10px] font-semibold text-slate-500">Total Rooms</div>
                 </div>
               </button>
               <button
@@ -411,10 +350,10 @@ function ReportDetailModal({ row, kind, data, generatedAt, onClose, onPrint, isP
               >
                 <FlaskConical size={16} className="text-purple-600" />
                 <div>
-                  <div className="text-xs font-semibold leading-4 text-slate-500">
-                    Total {data.roomSummary?.total_laboratories ?? roomList.filter((r) => (r.roomType || '').toLowerCase().includes('lab')).length}
+                  <div className="text-xs font-black text-slate-800">
+                    {data.roomSummary?.total_laboratories ?? roomList.filter((r) => (r.roomType || '').toLowerCase().includes('lab')).length}
                   </div>
-                  <div className="font-display text-base font-bold leading-6 text-slate-800">Laboratory</div>
+                  <div className="text-[10px] font-semibold text-slate-500">Total Laboratory</div>
                 </div>
               </button>
               <button
@@ -430,61 +369,77 @@ function ReportDetailModal({ row, kind, data, generatedAt, onClose, onPrint, isP
               >
                 <CalendarDays size={16} className="shrink-0 text-sky-600" />
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-semibold leading-4 text-slate-500">
-                    Total {data.roomSummary?.requests.length ?? '—'}
+                  <div className="text-xs font-black text-slate-800">
+                    {data.roomSummary?.requests.length ?? '—'}
                   </div>
-                  <div className="font-display text-base font-bold leading-6 text-slate-800">Room Request</div>
+                  <div className="text-[10px] font-semibold text-slate-500">Room Request</div>
                 </div>
                 <ChevronDown size={14} aria-hidden="true" className={`shrink-0 text-slate-400 transition-transform ${showRoomRequests ? 'rotate-180' : ''}`} />
               </button>
-              <button
-                type="button"
-                aria-pressed={roomInventoryView === 'unavailable'}
-                aria-controls="room-utilization-table"
-                onClick={() => selectRoomView('unavailable')}
-                className={`flex items-center gap-2.5 rounded-lg border p-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 ${roomInventoryView === 'unavailable' ? 'border-amber-200 bg-amber-50' : 'border-slate-100 bg-slate-50/50 hover:border-amber-200 hover:bg-amber-50/50'}`}
-              >
+              <div className="flex items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/50 p-2.5">
                 <AlertCircle size={16} className="text-amber-600" />
                 <div>
-                  <div className="text-xs font-semibold leading-4 text-slate-500">
-                    Total {data.roomSummary?.unavailable_rooms ?? roomList.filter((r) => r.status === 'not available').length}
+                  <div className="text-xs font-black text-slate-800">
+                    {data.roomSummary?.unavailable_rooms ?? roomList.filter((r) => r.status === 'not available').length}
                   </div>
-                  <div className="font-display text-base font-bold leading-6 text-slate-800">Room/Lab Unavailable</div>
+                  <div className="text-[10px] font-semibold text-slate-500">Room Unavailable</div>
                 </div>
-              </button>
+              </div>
               {showRoomRequests && (
                 <>
-                <div className="col-span-2 sm:col-span-4">
-                <div className="w-max max-w-full space-y-1">
-                <div id="room-request-details" role="group" aria-label="Room request options" className="grid grid-cols-2 items-center gap-1 rounded-xl border border-gray-200 bg-gray-100/90 p-1">
+                <div id="room-request-details" role="group" aria-label="Room request options" className="col-span-2 flex gap-2 rounded-lg border border-sky-100 bg-sky-50/60 p-2 sm:col-span-4">
                   {([
-                    { key: 'requester', label: 'Requester', direction: 'sent' },
-                    { key: 'requested_by', label: 'Requestee', direction: 'received' },
+                    { key: 'requester', label: 'Requester' },
+                    { key: 'requestee', label: 'Requestee' },
                   ] as const).map((option) => (
                     <button
                       key={option.key}
                       type="button"
                       aria-pressed={roomRequestOption === option.key}
                       aria-controls="room-request-table"
-                      aria-describedby={`room-request-${option.key}-description`}
                       onClick={() => setRoomRequestOption(option.key)}
-                      className={`selection-indicator inline-flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-extrabold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220]/30 ${roomRequestOption === option.key ? 'shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
+                      className={`flex-1 rounded-md border px-3 py-1.5 text-[11px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 sm:flex-none ${roomRequestOption === option.key ? 'border-sky-200 bg-white text-sky-700 shadow-sm' : 'border-transparent text-slate-500 hover:bg-white/70 hover:text-sky-700'}`}
                     >
-                      <span className="inline-flex items-center gap-2">
-                        <span>{option.label}</span>
-                        <span className="selection-indicator-count min-w-5 rounded-full px-1.5 py-0.5 text-center text-[10px] font-bold">
-                          {data.roomSummary?.requests.filter((request) => request.direction === option.direction).length ?? 0}
-                        </span>
-                      </span>
+                      {option.label}
                     </button>
                   ))}
                 </div>
-                <div className="grid px-1 text-sm font-medium leading-5 text-gray-600">
-                  <p id="room-request-requester-description" className={`col-start-1 row-start-1 ${roomRequestOption === 'requester' ? '' : 'invisible'}`}>Sends a request</p>
-                  <p id="room-request-requested_by-description" className={`col-start-1 row-start-1 ${roomRequestOption === 'requested_by' ? '' : 'invisible'}`}>Receives a request</p>
-                </div>
-                </div>
-                </div>
+                {roomRequestOption && (
+                  <div key={roomRequestOption} id="room-request-table" role="region" aria-label={roomRequestTitle} className="col-span-2 max-h-56 overflow-auto rounded-lg border border-sky-100 sm:col-span-4">
+                    <table aria-label={roomRequestTitle} className={`w-full text-left text-xs ${roomRequestOption === 'requester' ? 'min-w-[520px]' : 'min-w-[400px]'}`}>
+                      <thead className="sticky top-0 bg-sky-50 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                        <tr>
+                          {roomRequestOption === 'requester' && <th scope="col" className="px-3 py-2">Room Owner</th>}
+                          <th scope="col" className="px-3 py-2">Room</th>
+                          <th scope="col" className="px-3 py-2">Timeslot</th>
+                          <th scope="col" className="px-3 py-2">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {roomRequests.length ? roomRequests.map((request) => (
+                          <tr key={request.id}>
+                            {roomRequestOption === 'requester' && <td className="px-3 py-2 text-slate-600">{request.owner_department || '—'}</td>}
+                            <td className="px-3 py-2 font-bold text-primary">{request.room_code || '—'}</td>
+                            <td className="px-3 py-2 whitespace-nowrap text-slate-600">
+                              {request.windows?.length ? request.windows.map((window) => (
+                                <div key={`${window.day}-${window.start_time}-${window.end_time}`}>{describeWindow(window)}</div>
+                              )) : '—'}
+                            </td>
+                            <td className="px-3 py-2">
+                              <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold capitalize text-slate-600">{request.status}</span>
+                            </td>
+                          </tr>
+                        )) : (
+                          <tr>
+                            <td colSpan={roomRequestOption === 'requester' ? 4 : 3} className="px-3 py-4 text-center text-xs text-slate-500">
+                              {!data.roomSummary ? 'Room request details are unavailable.' : roomRequestOption === 'requester' ? 'No outgoing room requests.' : 'No incoming room requests.'}
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
                 </>
               )}
             </>
@@ -492,65 +447,255 @@ function ReportDetailModal({ row, kind, data, generatedAt, onClose, onPrint, isP
 
         </div>
 
-        {!(kind === 'room' && showRoomRequests) && (
-        <div className="flex items-center border-b border-slate-200 bg-slate-50/50 px-4 py-3 sm:px-5 sm:py-2.5">
+        <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50/50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-5 sm:py-2.5">
+          <div className="relative w-full sm:max-w-sm sm:flex-1">
+            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="search"
+              aria-label="Search report records"
+              placeholder="Search records in this report..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-3 text-xs text-slate-700 outline-none transition focus:border-primary/40 focus:ring-1 focus:ring-primary/10"
+            />
+          </div>
           <span className="text-xs font-bold text-slate-500">
-            {kind === 'schedule' && (scheduleView === 'classes' ? `${data.schedules.length} classes` : `${scheduleGroups.length} ${scheduleView}`)}
-            {kind === 'load' && `${filteredFaculty.length} instructors${loadView === 'average' ? ' · Highest load first' : ''}`}
-            {kind === 'room' && `${filteredRooms.length} ${roomInventoryView === 'laboratory' ? 'laboratories' : roomInventoryView === 'unavailable' ? 'unavailable rooms' : 'rooms'}`}
+            {kind === 'schedule' && `${filteredSchedules.length} classes`}
+            {kind === 'load' && `${filteredFaculty.length} instructors`}
+            {kind === 'room' && `${filteredRooms.length} ${roomInventoryView === 'laboratory' ? 'laboratories' : 'rooms'}`}
           </span>
         </div>
-        )}
         </>
+        )}
 
-        <div
-          role={kind !== 'room' ? 'region' : undefined}
-          aria-label={kind === 'schedule' ? `${scheduleViewLabel} table` : kind === 'load' ? `${loadViewLabel} table` : undefined}
-          tabIndex={kind !== 'room' ? 0 : undefined}
-          className="min-h-0 min-w-0 flex-1 overflow-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40"
-        >
-          {kind === 'schedule' && scheduleView !== 'classes' && (
-            <ScheduleGroupsTable
-              id="department-schedule-table"
-              label={scheduleViewLabel}
-              heading={scheduleGroupHeading}
-              groups={scheduleGroups}
-              emptyTitle={`No ${scheduleView} available.`}
-            />
-          )}
-          {kind === 'schedule' && scheduleView === 'classes' && (
-            <ScheduleClassesTable id="department-schedule-table" label={scheduleViewLabel} schedules={data.schedules} />
+        <div className="min-h-0 flex-1 overflow-auto">
+          {kind === 'schedule' && (
+            <table className="min-w-[760px] w-full text-left border-collapse text-xs">
+              <thead className="sticky top-0 z-10 bg-slate-100/90 backdrop-blur-sm border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th className="px-4 py-2.5">Section</th>
+                  <th className="px-4 py-2.5">Course Code & Title</th>
+                  <th className="px-4 py-2.5">Schedule Slot</th>
+                  <th className="px-4 py-2.5">Room</th>
+                  <th className="px-4 py-2.5">Instructor</th>
+                  <th className="px-4 py-2.5">Mode</th>
+                  <th className="px-4 py-2.5 text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredSchedules.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-xs italic text-slate-400">
+                      No schedule records matched your query.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredSchedules.map((item) => (
+                    <tr key={item.id} className="hover:bg-slate-50/80 transition">
+                      <td className="px-4 py-2.5 font-bold text-slate-800 whitespace-nowrap">{item.sectionName}</td>
+                      <td className="px-4 py-2.5">
+                        <span className="font-bold text-primary">{item.courseCode || item.subjectCode}</span>
+                        <span className="block text-[11px] text-slate-500 truncate max-w-xs">{item.courseName || item.subjectName}</span>
+                      </td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                          {item.day}
+                        </span>
+                        <span className="block text-[11px] text-slate-600 mt-0.5 font-semibold">
+                          {item.startTime} - {item.endTime}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-700">
+                          <Building2 size={11} /> {item.roomName || 'TBA'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 font-semibold text-slate-700">
+                        {item.facultyName || <span className="italic text-slate-400">Unassigned</span>}
+                      </td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            item.mode?.toLowerCase().includes('online')
+                              ? 'bg-sky-50 text-sky-700'
+                              : item.mode?.toLowerCase().includes('field')
+                              ? 'bg-amber-50 text-amber-700'
+                              : 'bg-emerald-50 text-emerald-700'
+                          }`}
+                        >
+                          {item.mode || 'on-site'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                          <CheckCircle2 size={11} /> Approved
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           )}
 
           {kind === 'load' && (
-            <TeachingLoadTable
-              id="teaching-load-table"
-              label={loadViewLabel}
-              faculties={filteredFaculty}
-              schedules={data.schedules}
-              emptyTitle={loadView === 'overloaded' ? 'No overloaded instructors.' : loadView === 'assigned' ? 'No instructors have assigned units.' : 'No instructor records available.'}
-            />
+            <table className="min-w-[720px] w-full text-left border-collapse text-xs">
+              <thead className="sticky top-0 z-10 bg-slate-100/90 backdrop-blur-sm border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th className="px-4 py-2.5">Instructor</th>
+                  <th className="px-4 py-2.5">Employment</th>
+                  <th className="px-4 py-2.5 text-right">Max Units</th>
+                  <th className="px-4 py-2.5 text-right">Deload</th>
+                  <th className="px-4 py-2.5 text-right">Basic Load</th>
+                  <th className="px-4 py-2.5 text-right">Assigned Units</th>
+                  <th className="px-4 py-2.5 text-right">Load Status</th>
+                  <th className="px-4 py-2.5 text-right">Classes</th>
+                  <th className="px-4 py-2.5 text-right">Standing</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredFaculty.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-8 text-center text-xs italic text-slate-400">
+                      No instructor records matched your query.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredFaculty.map((f) => {
+                    const max = f.maxUnits || 0;
+                    const deload = f.deloadUnits || 0;
+                    const basic = Math.max(0, max - deload);
+                    const assigned = f.assignedUnits || 0;
+                    const over = Math.max(0, assigned - basic);
+                    const remaining = Math.max(0, basic - assigned);
+                    const classCount = data.schedules.filter((s) => s.facultyId === f.id || s.facultyName === f.name).length;
+
+                    return (
+                      <tr key={f.id} className="hover:bg-slate-50/80 transition">
+                        <td className="px-4 py-2.5 font-bold text-slate-800">{f.name}</td>
+                        <td className="px-4 py-2.5">
+                          <span className="inline-flex items-center rounded bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 capitalize">
+                            {f.employmentType || 'full-time'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-slate-600">{max}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-slate-500">
+                          {deload > 0 ? `-${deload}` : '0'}
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums font-bold text-slate-700">{basic}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums font-black text-primary">{assigned}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">
+                          {over > 0 ? (
+                            <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                              +{over} overload
+                            </span>
+                          ) : remaining > 0 ? (
+                            <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                              {remaining} available
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                              Complete
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-slate-600">{classCount}</td>
+                        <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                          <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                            {f.status || 'Active'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           )}
 
-          {kind === 'room' && showRoomRequests && roomRequestOption && (
-            <div key={roomRequestOption} id="room-request-table" role="region" aria-label={roomRequestTitle}>
-              <RoomRequestsTable
-                label={roomRequestTitle}
-                requests={roomRequests}
-                showOwner={roomRequestOption === 'requester'}
-                emptyTitle={!data.roomSummary ? 'Room request details are unavailable.' : roomRequestOption === 'requester' ? 'No outgoing room requests.' : 'No incoming room requests.'}
-              />
-            </div>
+          {kind === 'room' && (
+            <table id="room-utilization-table" aria-label="Room utilization" className="min-w-[620px] w-full text-left border-collapse text-xs">
+              <thead className="sticky top-0 z-10 bg-slate-100/90 backdrop-blur-sm border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th className="px-4 py-2.5">Room Code</th>
+                  <th className="px-4 py-2.5">Building</th>
+                  <th className="px-4 py-2.5">Room Type</th>
+                  <th className="px-4 py-2.5 text-right">Scheduled Classes</th>
+                  <th className="px-4 py-2.5">Days Utilized</th>
+                  <th className="px-4 py-2.5 text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredRooms.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-xs italic text-slate-400">
+                      No room records matched your query.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredRooms.map((r) => {
+                    const classCount = data.schedules.filter(
+                      (s) => (s.roomId && s.roomId === r.id) || (s.roomName && s.roomName === r.name)
+                    ).length;
+                    const days = Array.from(
+                      new Set(
+                        data.schedules
+                          .filter((s) => (s.roomId && s.roomId === r.id) || (s.roomName && s.roomName === r.name))
+                          .map((s) => s.day)
+                          .filter(Boolean)
+                      )
+                    ).join(', ');
+
+                    return (
+                      <tr key={r.id || r.name} className="hover:bg-slate-50/80 transition">
+                        <td className="px-4 py-2.5 font-bold text-primary">{r.name}</td>
+                        <td className="px-4 py-2.5 text-slate-600">{r.building || 'Main Campus'}</td>
+                        <td className="px-4 py-2.5">
+                          <span className="inline-flex items-center rounded bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                            {r.roomType || 'Lecture Room'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums font-black text-slate-800">{classCount}</td>
+                        <td className="px-4 py-2.5 text-slate-500 text-[11px]">{days || '—'}</td>
+                        <td className="px-4 py-2.5 text-right">
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+                              r.status === 'not available' ? 'bg-amber-50 text-amber-700' : classCount > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                            }`}
+                          >
+                            {r.status === 'not available' ? 'Unavailable' : classCount > 0 ? 'In Use' : 'Available'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           )}
 
-          {kind === 'room' && !showRoomRequests && (
-            <RoomUtilizationTable id="room-utilization-table" rows={roomRows} showStatus={showRoomStatus} />
+          {kind === 'curriculum' && (
+            <ReportCurriculumViewer departmentId={row.departmentId} programId={row.programId} />
           )}
-
         </div>
 
         </div>
-    </Modal>
+
+        <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/80 px-5 py-3">
+          <p className="text-[11px] font-medium text-slate-500">
+            Source: Official VPAA validated academic repository &bull; {kind === 'curriculum' ? 'Curriculum Module records' : 'Generated from live schedule data'}
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -561,132 +706,128 @@ export default function Reports() {
   const [isLoading, setIsLoading] = useState(() => !hasCachedData(cacheKey));
   const [kind, setKind] = useState<ReportKind>('schedule');
   const [loadingRowKey, setLoadingRowKey] = useState<string | null>(null);
+  const [exportingRowKey, setExportingRowKey] = useState<string | null>(null);
   const [loadingDetailKey, setLoadingDetailKey] = useState<string | null>(null);
-  const [detailData, setDetailData] = useState<DetailState | null>(null);
+  const [detailData, setDetailData] = useState<{ row: ReportRow; data: ReportData } | null>(null);
   const [job, setJob] = useState<PrintJob | null>(null);
   const [isPrintOpen, setIsPrintOpen] = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const initialTermId = useRef(overview?.semester?.id ?? null);
 
-  /** Loads the directory for one term; without one, opens on the default term once the term list is known. */
   const load = useCallback(
-    async (requestedTermId: number | null) => {
-      try {
-        let data = await fetchReportsOverview(requestedTermId);
-        const terms = data.terms;
-        const stillListed = requestedTermId !== null && terms?.some((term) => term.id === requestedTermId);
-        if (terms && terms.length > 0 && !stillListed) {
-          const term = defaultReportTerm(terms);
-          if (term && term.id !== requestedTermId) data = await fetchReportsOverview(term.id);
-        }
-        setCachedData(cacheKey, data);
-        setOverview(data);
-        setLoadError(false);
-      } catch {
-        setLoadError(true);
-        toast.error('Reports Unavailable', 'The report list could not be loaded.');
-      } finally {
-        setIsLoading(false);
-      }
-    },
+    () =>
+      fetchReportsOverview()
+        .then((data) => { setCachedData(cacheKey, data); setOverview(data); setLoadError(false); })
+        .catch(() => {
+          setLoadError(true);
+          toast.error('Reports Unavailable', 'The report list could not be loaded.');
+        })
+        .finally(() => setIsLoading(false)),
     [cacheKey, toast],
   );
 
   useEffect(() => {
-    void load(initialTermId.current);
+    void load();
   }, [load]);
-
-  const terms = overview?.terms;
-  const selectedTerm = overview?.semester ?? null;
-  // Older API responses carry no term list; their counts already span every term.
-  const termsSupported = terms !== undefined;
-  const noApprovedTerm = termsSupported && terms.length === 0;
-  const isBusy = loadingRowKey !== null || loadingDetailKey !== null;
 
   const refresh = () => {
     setIsLoading(true);
-    void load(selectedTerm?.id ?? null);
+    void load();
   };
 
-  const changeTerm = (termId: number) => {
-    if (termId === selectedTerm?.id) return;
-    setIsLoading(true);
-    void load(termId);
-  };
-
-  const logDownload = (row: ReportRow, reportKind: ReportKind, data: ReportData) => {
-    void api
-      .post('/reports/log-download', {
-        report_type: reportKind,
-        department_id: row.departmentId,
-        program_id: row.programId,
-        semester_id: data.activeSemester?.id ?? null,
-      })
-      .catch(() => {});
-  };
-
-  /** The room PDF is generated here and shown in a preview tab opened before any await. */
-  const printRoomPdf = async (row: ReportRow, data: ReportData) => {
-    const preview = openPdfPreview();
+  const print = async (row: ReportRow) => {
+    if (loadingRowKey || exportingRowKey || loadingDetailKey) return;
     setLoadingRowKey(row.key);
     try {
-      const input: RoomUtilizationPdfInput = {
-        title: row.label,
-        academicYear: data.activeSemester?.academic_year,
-        semester: data.activeSemester?.semester,
-        totals: {
-          rooms: data.roomSummary?.total_rooms ?? reportRooms(data).length,
-          laboratories: data.roomSummary?.total_laboratories ?? reportRooms(data).filter((r) => r.roomType === 'laboratory').length,
-          unavailable: data.roomSummary?.unavailable_rooms ?? reportRooms(data).filter((r) => r.status === 'not available').length,
-        },
-        rows: roomInventory(data).map((room) => {
-          const { classCount, days } = roomUsage(data, room);
-          return {
-            code: room.name,
-            building: room.building || 'Main Campus',
-            roomType: capitalize(room.roomType || 'Lecture Room'),
-            scheduledClasses: classCount,
-            daysUtilized: days,
-            status: room.status === 'not available' ? 'Unavailable' : classCount > 0 ? 'In Use' : 'Available',
-          };
-        }),
-      };
-      await preview.show(await buildRoomUtilizationPdf(input), getRoomUtilizationPdfFilename(input));
-      logDownload(row, 'room', data);
+      const data = await fetchReportData(row.departmentId, row.programId);
+      if (kind === 'schedule' && data.sections.length === 0) {
+        toast.warning('Nothing to Print', 'No section in this scope has a fully approved schedule yet.');
+        return;
+      }
+      setJob({ kind: kind === 'load' ? 'load' : 'schedule', data });
+      setIsPrintOpen(true);
+      void api
+        .post('/reports/log-download', {
+          report_type: kind,
+          department_id: row.departmentId,
+          program_id: row.programId,
+        })
+        .catch(() => {});
     } catch {
-      preview.close();
-      toast.error('PDF Not Generated', 'The room utilization PDF could not be generated.');
+      toast.error('Print Failed', 'The report data could not be loaded.');
     } finally {
       setLoadingRowKey(null);
     }
   };
 
-  /** Generates the PDF from the data shown in the preview, so the document matches what was reviewed. */
-  const generatePdf = async ({ row, kind: reportKind, data }: DetailState) => {
-    if (loadingRowKey) return;
-    if (reportKind === 'room') {
-      await printRoomPdf(row, data);
-      return;
-    }
-    if (reportKind === 'schedule' && data.sections.length === 0) {
-      toast.warning('Nothing to Print', 'No section in this scope has a fully approved schedule for this term.');
-      return;
-    }
-    setJob({ kind: reportKind, data });
-    setIsPrintOpen(true);
-    logDownload(row, reportKind, data);
-  };
-
   const openDetail = async (row: ReportRow) => {
-    if (isBusy) return;
+    if (loadingRowKey || exportingRowKey || loadingDetailKey) return;
     setLoadingDetailKey(row.key);
     try {
-      const data = await fetchReportData(row.departmentId, row.programId, selectedTerm?.id ?? null);
-      setDetailData({ row, kind, data, generatedAt: new Date() });
+      const data = await fetchReportData(row.departmentId, row.programId);
+      setDetailData({ row, data });
     } catch {
-      toast.error('Could Not Open Report', 'The report data could not be loaded.');
+      toast.error('Could Not Open Report', 'The detailed report data could not be loaded.');
     } finally {
       setLoadingDetailKey(null);
+    }
+  };
+
+  const exportCsv = async (row: ReportRow) => {
+    if (loadingRowKey || exportingRowKey || loadingDetailKey) return;
+    setExportingRowKey(row.key);
+    try {
+      const data = await fetchReportData(row.departmentId, row.programId);
+      const csvLines: string[] = [];
+
+      if (kind === 'schedule') {
+        csvLines.push(['Department', 'Section', 'Course Code', 'Course Title', 'Day', 'Time', 'Room', 'Instructor', 'Mode'].join(','));
+        data.schedules.forEach((s) => {
+          const dept = data.departments.find((d) => Number(d.id) === Number(s.departmentId))?.department_code ?? '';
+          const sec = s.sectionName || '';
+          const code = s.courseCode || s.subjectCode || '';
+          const title = s.courseName || s.subjectName || '';
+          const day = s.day || '';
+          const time = `${s.startTime || ''} - ${s.endTime || ''}`;
+          const room = s.roomName || '';
+          const faculty = s.facultyName || '';
+          const mode = s.mode || 'on-site';
+
+          csvLines.push([`"${dept}"`, `"${sec}"`, `"${code}"`, `"${title}"`, `"${day}"`, `"${time}"`, `"${room}"`, `"${faculty}"`, `"${mode}"`].join(','));
+        });
+      } else if (kind === 'load') {
+        csvLines.push(['Instructor Name', 'Employment Type', 'Max Units', 'Deload Units', 'Basic Load', 'Assigned Units', 'Status'].join(','));
+        data.faculties.forEach((f) => {
+          const basic = Math.max(0, (f.maxUnits || 0) - (f.deloadUnits || 0));
+          csvLines.push([
+            `"${f.name || ''}"`,
+            `"${f.employmentType || 'full-time'}"`,
+            `"${f.maxUnits || 0}"`,
+            `"${f.deloadUnits || 0}"`,
+            `"${basic}"`,
+            `"${f.assignedUnits || 0}"`,
+            `"${f.status || 'Active'}"`,
+          ].join(','));
+        });
+      } else if (kind === 'room') {
+        csvLines.push(['Room Code', 'Building', 'Room Type', 'Classes Scheduled', 'Status'].join(','));
+        const roomMap = new Map<string, number>();
+        data.schedules.forEach((s) => {
+          if (s.roomName) roomMap.set(s.roomName, (roomMap.get(s.roomName) || 0) + 1);
+        });
+        const rList = reportRooms(data);
+        rList.forEach((r) => {
+          const count = roomMap.get(r.name) || 0;
+          csvLines.push([`"${r.name}"`, `"${r.building || 'Main Campus'}"`, `"${r.roomType || 'Lecture Room'}"`, `"${count}"`, `"${r.status === 'not available' ? 'Unavailable' : count > 0 ? 'In Use' : 'Available'}"`].join(','));
+        });
+      }
+
+      const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      downloadFile(blob, buildExportFilename('csv', row.label, data.activeSemester?.academic_year, data.activeSemester?.semester));
+      toast.success('Export Complete', `${row.label} data exported to CSV.`);
+    } catch {
+      toast.error('Export Failed', 'Could not export CSV data.');
+    } finally {
+      setExportingRowKey(null);
     }
   };
 
@@ -697,141 +838,132 @@ export default function Reports() {
     .filter((group) => group.rows.length > 0);
   const availableCount = reportGroups.reduce((total, group) => total + group.rows.filter((row) => row.count > 0).length, 0);
   const totalScopeCount = reportGroups.reduce((total, group) => total + group.rows.length, 0);
-  const totalSectionsCount = departments.reduce((acc, d) => acc + d.complete_section_count, 0);
-  const totalInstructorsCount = departments.reduce((acc, d) => acc + d.instructor_count, 0);
-  const metricsLoading = isLoading && !overview;
-  const termText = selectedTerm ? fullSemesterLabel(selectedTerm) : termsSupported ? null : 'All terms';
+
+  const totalSectionsCount = useMemo(
+    () => departments.reduce((acc, d) => acc + d.complete_section_count, 0),
+    [departments]
+  );
+  const totalInstructorsCount = useMemo(
+    () => departments.reduce((acc, d) => acc + d.instructor_count, 0),
+    [departments]
+  );
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 rounded-xl border border-border bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <ShieldCheck size={16} aria-hidden="true" />
-          </span>
-          <div className="min-w-0">
-            <h2 className="text-sm font-bold text-text">Institutional reports</h2>
-            <p className="mt-0.5 text-xs leading-snug text-muted">
-              Built only from VPAA-approved schedules and assigned workloads.
-            </p>
+    <div className="space-y-6">
+      <div className="relative overflow-hidden rounded-xl border border-[#4e0a10]/15 bg-gradient-to-br from-[#4e0a10] to-[#721823] px-4 py-3 text-white shadow-sm sm:px-5">
+        <div className="pointer-events-none absolute -right-8 -top-12 h-24 w-24 rounded-full bg-white/5" />
+        <div className="relative flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/15">
+              <FileSpreadsheet size={16} />
+            </span>
+            <div>
+              <h2 className="text-base font-extrabold leading-tight tracking-tight sm:text-lg">Institutional reports</h2>
+              <p className="mt-0.5 max-w-2xl text-[11px] leading-snug text-white/75 sm:text-xs">
+                Review approved schedules, teaching loads, facilities, and curricula across departments.
+              </p>
+            </div>
           </div>
-        </div>
-        <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
-          {termsSupported && (
-            <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold text-muted sm:flex-row sm:items-center sm:gap-2">
-              <span className="shrink-0">Academic term</span>
-              <select
-                value={selectedTerm?.id ?? ''}
-                onChange={(event) => changeTerm(Number(event.target.value))}
-                disabled={noApprovedTerm || isLoading || isBusy}
-                className="h-9 w-full min-w-0 cursor-pointer rounded-lg border border-border bg-white px-2.5 text-xs font-semibold text-text transition-colors hover:border-primary/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60 sm:w-[17rem]"
-              >
-                {noApprovedTerm && <option value="">No approved terms yet</option>}
-                {terms.map((term) => (
-                  <option key={term.id} value={term.id}>
-                    {fullSemesterLabel(term)}{term.is_active ? ' (current)' : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
           <button
             type="button"
             aria-label="Refresh"
-            title="Refresh reports"
             onClick={refresh}
             disabled={isLoading}
-            className="inline-flex h-9 w-full shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border bg-white px-3 sm:w-auto text-xs font-semibold text-text transition-colors hover:border-primary/30 hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-white/20 disabled:opacity-60 sm:w-auto"
           >
-            <RefreshCw size={14} aria-hidden="true" className={isLoading ? 'animate-spin' : ''} />
-            <span>{isLoading ? 'Refreshing' : 'Refresh'}</span>
+            <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+            {isLoading ? 'Refreshing reports' : 'Refresh reports'}
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
         <DashboardMetricCard
           label="Approved Sections"
-          value={totalSectionsCount}
-          detail="Every class VPAA-approved"
+          value={isLoading && !overview ? '—' : totalSectionsCount}
+          detail="VPAA verified sections"
           icon={LayoutGrid}
           tone="brand"
-          loading={metricsLoading}
         />
         <DashboardMetricCard
           label="Active Instructors"
-          value={totalInstructorsCount}
-          detail="With an approved teaching load"
+          value={isLoading && !overview ? '—' : totalInstructorsCount}
+          detail="Instructors with approved load"
           icon={Users}
           tone="accent"
-          loading={metricsLoading}
         />
         <DashboardMetricCard
           label="Reports Ready"
-          value={availableCount}
-          detail={`${availableCount} of ${totalScopeCount} ${activeTab.label} report${totalScopeCount === 1 ? '' : 's'}`}
+          value={isLoading && !overview ? '—' : availableCount}
+          detail={`${totalScopeCount} total scope${totalScopeCount === 1 ? '' : 's'} across ${departments.length} department${departments.length === 1 ? '' : 's'}`}
           icon={FileSpreadsheet}
           tone="good"
-          loading={metricsLoading}
         />
       </div>
 
       <div
         role="tablist"
         aria-label="Report type"
-        className="-mx-4 flex snap-x gap-2.5 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-3 sm:gap-3 sm:overflow-visible sm:px-0 sm:pb-0"
+        className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-2 lg:mx-0 lg:grid lg:grid-cols-4 lg:overflow-visible lg:px-0 lg:pb-0"
       >
-        {TABS.map(({ kind: tabKind, label, description, icon: Icon }) => {
-          const selected = kind === tabKind;
-          return (
-            <button
-              key={tabKind}
-              id={`report-tab-${tabKind}`}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              aria-controls="report-directory"
-              tabIndex={selected ? 0 : -1}
-              onKeyDown={(event) => {
-                if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-                event.preventDefault();
-                const currentIndex = TABS.findIndex((t) => t.kind === tabKind);
-                let nextIndex = currentIndex;
-                if (event.key === 'Home') nextIndex = 0;
-                else if (event.key === 'End') nextIndex = TABS.length - 1;
-                else if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % TABS.length;
-                else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + TABS.length) % TABS.length;
-                const nextKind = TABS[nextIndex].kind;
-                setKind(nextKind);
-                document.getElementById(`report-tab-${nextKind}`)?.focus();
-              }}
-              onClick={() => setKind(tabKind)}
-              disabled={isBusy}
-              className={`flex h-full w-[240px] shrink-0 snap-start cursor-pointer items-start gap-3 rounded-xl border p-3.5 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto ${
-                selected
-                  ? 'border-primary/35 bg-primary/[0.04]'
-                  : 'border-border bg-white hover:border-primary/20 hover:bg-parchment'
-              }`}
-            >
+        {TABS.map(({ kind: tabKind, label, description, icon: Icon }) => (
+          <button
+            key={tabKind}
+            id={`report-tab-${tabKind}`}
+            type="button"
+            role="tab"
+            aria-selected={kind === tabKind}
+            aria-controls="report-directory"
+            tabIndex={kind === tabKind ? 0 : -1}
+            onKeyDown={(event) => {
+              if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+              event.preventDefault();
+              const currentIndex = TABS.findIndex((t) => t.kind === tabKind);
+              let nextIndex = currentIndex;
+              if (event.key === 'Home') nextIndex = 0;
+              else if (event.key === 'End') nextIndex = TABS.length - 1;
+              else if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % TABS.length;
+              else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + TABS.length) % TABS.length;
+              const nextKind = TABS[nextIndex].kind;
+              setKind(nextKind);
+              document.getElementById(`report-tab-${nextKind}`)?.focus();
+            }}
+            onClick={() => setKind(tabKind)}
+            disabled={loadingRowKey !== null || exportingRowKey !== null || loadingDetailKey !== null}
+            className={`group flex w-[180px] shrink-0 snap-start flex-col justify-between rounded-xl border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] disabled:opacity-60 sm:w-[210px] lg:w-auto ${
+              kind === tabKind
+                ? 'border-[#4e0a10]/30 bg-[#4e0a10]/5 ring-1 ring-[#4e0a10]/15 shadow-sm'
+                : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
               <span
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors ${
-                  selected ? 'bg-primary text-white' : 'bg-parchment text-primary/70'
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition ${
+                  kind === tabKind ? 'bg-[#4e0a10] text-white shadow-sm' : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'
                 }`}
               >
-                <Icon size={17} aria-hidden="true" />
+                <Icon size={18} />
               </span>
-              <span className="min-w-0">
-                <span className={`block text-sm font-bold leading-5 ${selected ? 'text-primary' : 'text-text'}`}>{label}</span>
-                <span className="mt-0.5 block text-xs leading-snug text-muted line-clamp-2">{description}</span>
+              <span
+                aria-hidden="true"
+                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                  kind === tabKind ? 'border-[#4e0a10] bg-[#4e0a10] text-white' : 'border-slate-300'
+                }`}
+              >
+                {kind === tabKind && <Check size={10} />}
               </span>
-            </button>
-          );
-        })}
+            </div>
+            <div className="mt-2.5">
+              <span className="block text-xs font-extrabold text-[#4e0a10]">{label}</span>
+              <span className="mt-0.5 block text-[10px] leading-snug text-slate-500 line-clamp-2">{description}</span>
+            </div>
+          </button>
+        ))}
       </div>
 
       {loadError && (
         <div role="alert" className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
-          <AlertCircle size={16} className="shrink-0" aria-hidden="true" />
+          <AlertCircle size={16} className="shrink-0" />
           <p>{overview ? 'The report list could not be refreshed. Previously loaded reports are shown.' : 'The report list could not be loaded. Use Refresh to try again.'}</p>
         </div>
       )}
@@ -841,98 +973,149 @@ export default function Reports() {
         role="tabpanel"
         aria-labelledby={`report-tab-${kind}`}
         aria-busy={isLoading}
-        className="overflow-hidden rounded-xl border border-border bg-white"
+        className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
       >
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border px-4 py-3 sm:px-5">
-          <h2 className="text-sm font-bold text-text">{activeTab.label} reports</h2>
-          {termText && (
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted">
-              <CalendarDays size={13} aria-hidden="true" />
-              {termText}
-            </span>
-          )}
+        <div className="border-b border-slate-100 px-4 py-4 sm:px-5">
+          <h2 className="text-sm font-extrabold text-slate-800">{activeTab.label} reports</h2>
         </div>
 
         {isLoading && !overview ? (
-          <div role="status" aria-label="Loading reports" className="divide-y divide-border/70">
-            {[0, 1, 2].map((rowIndex) => (
-              <div key={rowIndex} className="flex items-center gap-3 px-4 py-3.5 sm:px-5">
-                <Skeleton className="h-9 w-11 shrink-0 rounded-lg" />
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <Skeleton className="h-3.5 w-48 rounded" />
-                  <Skeleton className="h-3 w-72 max-w-full rounded" />
+          <div role="status" aria-label="Loading reports" className="divide-y divide-slate-100">
+            {[0, 1].map((deptIndex) => (
+              <div key={deptIndex} className="grid lg:grid-cols-[minmax(220px,0.85fr)_minmax(0,2fr)]">
+                <div className="flex items-start gap-3 bg-slate-50/50 px-4 py-4 sm:px-5 lg:border-r lg:border-slate-100">
+                  <Skeleton className="h-10 w-10 shrink-0 rounded-xl" />
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <Skeleton className="h-4 w-32 rounded" />
+                    <Skeleton className="h-3 w-16 rounded" />
+                  </div>
                 </div>
-                <Skeleton className="hidden h-6 w-20 shrink-0 rounded-full sm:block" />
-                <Skeleton className="h-8 w-20 shrink-0 rounded-lg" />
+                <div className="divide-y divide-slate-100">
+                  {[0, 1].map((rowIndex) => (
+                    <div key={rowIndex} className="flex items-center gap-3 px-4 py-4 sm:px-5">
+                      <Skeleton className="hidden h-9 w-8 shrink-0 rounded-lg sm:flex" />
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <Skeleton className="h-3.5 w-48 rounded" />
+                        <Skeleton className="h-3 w-64 max-w-full rounded" />
+                        <Skeleton className="h-2.5 w-28 rounded" />
+                      </div>
+                      <Skeleton className="h-8 w-24 shrink-0 rounded-lg" />
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
         ) : !overview && loadError ? (
-          <div className="px-5 py-10 text-center text-sm text-muted">Reports are temporarily unavailable.</div>
+          <div className="px-5 py-12 text-center text-sm text-slate-500">Reports are temporarily unavailable.</div>
         ) : reportGroups.length === 0 ? (
-          <div className="flex flex-col items-center px-5 py-10 text-center">
-            <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-parchment text-muted">
-              <FileText size={21} aria-hidden="true" />
+          <div className="flex flex-col items-center px-5 py-12 text-center">
+            <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+              <FileText size={23} />
             </span>
-            <p className="text-sm font-bold text-text">
+            <p className="text-sm font-bold text-slate-700">
               {departments.length === 0 ? 'No departments available' : 'No reports available'}
             </p>
-            <p className="mt-1 max-w-sm text-xs leading-relaxed text-muted">
-              Reports appear here once departments and programs are set up.
+            <p className="mt-1 max-w-sm text-xs leading-relaxed text-slate-500">
+              Reports will appear here when departments and programs are available.
             </p>
           </div>
         ) : (
-          <div className="divide-y divide-border">
+          <div className="divide-y divide-slate-200">
             {reportGroups.map(({ department, rows }) => (
-              <section key={department.id} aria-label={department.name}>
-                <ul className="divide-y divide-border/70">
+              <section key={department.id} aria-label={department.name} className="grid lg:grid-cols-[minmax(220px,0.85fr)_minmax(0,2fr)]">
+                <header className="flex items-start gap-3 bg-slate-50/50 px-4 py-4 sm:px-5 lg:border-r lg:border-slate-100">
+                  <span className={`inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-xl border px-2 text-[11px] font-black ${getDeptBadgeStyles(department.code, department.name)}`}>
+                    {department.code}
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-xs font-bold leading-relaxed text-slate-700">{department.name}</h3>
+                    <p className="mt-1 text-[10px] font-semibold text-slate-400">
+                      {rows.length} scope{rows.length === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                </header>
+
+                <ul className="min-w-0 divide-y divide-slate-100">
                   {rows.map((row) => {
-                    const ready = row.count > 0;
+                    const isBusy = loadingRowKey === row.key;
+                    const isExporting = exportingRowKey === row.key;
                     const isDetailLoading = loadingDetailKey === row.key;
+                    const unit =
+                      kind === 'schedule' ? 'approved section' :
+                      kind === 'load' ? 'instructor' :
+                      kind === 'room' ? 'room' :
+                      'curriculum offering';
+
                     return (
-                      <li
-                        key={row.key}
-                        className="grid gap-x-4 gap-y-2.5 px-4 py-3.5 sm:px-5 md:grid-cols-[minmax(0,1fr)_7rem] md:items-center lg:grid-cols-[minmax(0,1fr)_minmax(14rem,19rem)_7rem]"
-                      >
-                        <div className="flex min-w-0 items-start gap-3">
-                          <DepartmentLogo
-                            name={department.name}
-                            logo={department.logo}
-                            className="h-10 w-10"
-                            iconSize={18}
-                            fallbackClassName={getDeptBadgeStyles(department.code, department.name)}
-                          />
-                          <div className="min-w-0">
-                            <h3 className="text-sm font-bold leading-5 text-text">{row.label}</h3>
-                            <p className="mt-0.5 text-xs leading-snug text-muted">
-                              <span>{department.name}</span>
-                              <span aria-hidden="true">, </span>
-                              <span>{row.description}</span>
-                            </p>
-                          </div>
+                      <li key={row.key} className="flex flex-col items-stretch gap-3 px-4 py-4 transition hover:bg-slate-50/70 sm:flex-row sm:items-center sm:px-5">
+                        <span
+                          className={`hidden h-9 w-8 shrink-0 items-center justify-center rounded-lg border sm:flex ${
+                            row.count > 0 ? 'border-[#4e0a10]/10 bg-[#4e0a10]/5 text-[#4e0a10]' : 'border-slate-100 bg-slate-50 text-slate-300'
+                          }`}
+                        >
+                          <FileText size={17} />
+                        </span>
+
+                        <div className="min-w-0 flex-1 basis-36">
+                          <p className="text-xs font-bold text-slate-800">{row.label}</p>
+                          <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{row.description}</p>
+                          <p className={`mt-1.5 flex items-center gap-1 text-[10px] font-semibold ${row.count > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
+                            {row.count > 0 && <CheckCircle2 size={11} />}
+                            {row.count > 0 ? `${row.count} ${unit}${row.count === 1 ? '' : 's'}` : 'Awaiting approved schedules'}
+                          </p>
                         </div>
 
-                        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pl-[3.25rem] md:col-start-1 md:row-start-2 lg:col-start-2 lg:row-start-1 lg:pl-0">
-                          <ReadinessBadge ready={ready} />
-                          <span className="min-w-0 text-xs leading-snug text-muted">
-                            {ready ? readyDetail(kind, row.count) : notReadyReason(kind, noApprovedTerm)}
+                        {row.count === 0 ? (
+                          <span className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-500 sm:ml-auto sm:w-auto">
+                            <AlertCircle size={13} />
+                            Not ready
                           </span>
-                        </div>
-
-                        <div className="flex justify-end pl-[3.25rem] md:col-start-2 md:row-span-2 md:row-start-1 md:pl-0 lg:col-start-3 lg:row-span-1">
-                          {ready && (
+                        ) : (
+                          <div className={`grid w-full shrink-0 gap-2 sm:ml-auto sm:flex sm:w-auto ${kind === 'schedule' || kind === 'load' ? 'grid-cols-3' : kind === 'curriculum' ? 'grid-cols-1' : 'grid-cols-2'}`}>
                             <button
                               type="button"
                               onClick={() => void openDetail(row)}
-                              disabled={isBusy}
-                              aria-label={`Preview: ${row.label}`}
-                              className="inline-flex h-8 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border bg-white px-3 text-xs font-semibold text-text transition-colors hover:border-primary/30 hover:bg-primary/[0.04] hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                              disabled={loadingRowKey !== null || exportingRowKey !== null || loadingDetailKey !== null}
+                              aria-label={`View Details: ${row.label}`}
+                              title="View detailed report breakdown"
+                              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2.5 text-[11px] font-bold text-slate-700 shadow-sm transition hover:border-[#4e0a10]/40 hover:bg-[#4e0a10]/5 hover:text-[#4e0a10] disabled:cursor-not-allowed disabled:opacity-40 sm:py-2"
                             >
-                              {isDetailLoading ? <LoadingSpinner size={13} className="animate-spin" /> : <Eye size={13} aria-hidden="true" className="text-primary" />}
-                              Preview
+                              {isDetailLoading ? <LoadingSpinner size={13} className="animate-spin" /> : <Eye size={13} className="text-[#4e0a10]" />}
+                              <span className="sm:hidden">View</span>
+                              <span className="hidden sm:inline">View Details</span>
                             </button>
-                          )}
-                        </div>
+
+                            {kind !== 'curriculum' && (
+                            <button
+                              type="button"
+                              onClick={() => void exportCsv(row)}
+                              disabled={loadingRowKey !== null || exportingRowKey !== null || loadingDetailKey !== null}
+                              aria-label={`Export CSV: ${row.label}`}
+                              title="Export CSV data"
+                              className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-2.5 text-[11px] font-bold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 sm:py-2"
+                            >
+                              {isExporting ? <LoadingSpinner size={13} className="animate-spin" /> : <Download size={13} />}
+                              <span className="hidden sm:inline">CSV</span>
+                            </button>
+                            )}
+
+                            {(kind === 'schedule' || kind === 'load') && (
+                              <button
+                                type="button"
+                                onClick={() => void print(row)}
+                                disabled={loadingRowKey !== null || exportingRowKey !== null || loadingDetailKey !== null}
+                                aria-label={`Open PDF: ${row.label}`}
+                                title="Open PDF"
+                                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#4e0a10] px-3 py-2.5 text-[11px] font-bold text-white shadow-sm transition hover:bg-[#6b1520] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none sm:py-2"
+                              >
+                                {isBusy ? <LoadingSpinner size={14} className="animate-spin" /> : <Printer size={14} />}
+                                {isBusy ? 'Preparing...' : <><span className="sm:hidden">PDF</span><span className="hidden sm:inline">Open PDF</span></>}
+                                {!isBusy && <ArrowUpRight size={12} className="hidden sm:block" />}
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </li>
                     );
                   })}
@@ -942,10 +1125,10 @@ export default function Reports() {
           </div>
         )}
 
-        <div className="flex items-start gap-2 border-t border-border bg-parchment/60 px-4 py-2.5 sm:px-5">
-          <ShieldCheck size={14} className="mt-0.5 shrink-0 text-stage-done" aria-hidden="true" />
-          <p className="text-xs leading-relaxed text-muted">
-            Only VPAA-approved schedules and officially assigned workloads are reported. Signatories use the identities recorded in approval history.
+        <div className="flex items-start gap-2 border-t border-slate-100 bg-slate-50/60 px-4 py-3 sm:px-5">
+          <ShieldCheck size={15} className="mt-0.5 shrink-0 text-emerald-600" />
+          <p className="text-[11px] leading-relaxed text-slate-500">
+            Only VPAA-approved schedules and officially assigned workloads are reported. Signatories are dynamically attached from Institution Settings.
           </p>
         </div>
       </section>
@@ -953,12 +1136,11 @@ export default function Reports() {
       {detailData && (
         <ReportDetailModal
           row={detailData.row}
-          kind={detailData.kind}
+          kind={kind}
           data={detailData.data}
-          generatedAt={detailData.generatedAt}
           onClose={() => setDetailData(null)}
-          onPrint={() => { void generatePdf(detailData); }}
-          isPrinting={loadingRowKey === detailData.row.key}
+          onPrint={kind === 'schedule' || kind === 'load' ? () => { void print(detailData.row); } : undefined}
+          onExportCsv={kind === 'curriculum' ? undefined : () => { void exportCsv(detailData.row); }}
         />
       )}
 

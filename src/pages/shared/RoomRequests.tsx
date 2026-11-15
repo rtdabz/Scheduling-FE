@@ -1,3 +1,4 @@
+import { buttonClass } from '../../components/ui/buttonStyles';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { useSearchParams } from 'react-router-dom';
@@ -822,7 +823,7 @@ function RequestsButton({
       type="button"
       onClick={onClick}
       title={title}
-      className="inline-flex items-center gap-2 rounded-lg border border-[#5A1220]/20 bg-[#5A1220]/[0.04] px-3 py-2 text-xs font-extrabold text-[#5A1220] transition hover:bg-[#5A1220]/[0.1] cursor-pointer"
+      className={buttonClass({ variant: 'secondary' })}
     >
       <Icon size={14} />
       {label}

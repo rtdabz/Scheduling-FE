@@ -22,6 +22,8 @@ interface FacultyModalProps {
   handleRemoveFaculty: () => void;
   canManageScheduleFaculty: (schedule: ScheduleItem) => boolean;
   getFacultyRestrictionMessage: (schedule: ScheduleItem) => string;
+  /** True for a major class only its Program Head may staff: the edit controls are hidden, not just disabled. */
+  isProgramHeadOnlyMajorSchedule?: (schedule: ScheduleItem) => boolean;
   checkFacultyConflict: (facultyId: string, scheduleId: string) => string | null;
   subjects: Subject[];
   faculties: Faculty[];
@@ -39,6 +41,7 @@ export default function FacultyModal({
   handleRemoveFaculty,
   canManageScheduleFaculty,
   getFacultyRestrictionMessage,
+  isProgramHeadOnlyMajorSchedule,
   checkFacultyConflict,
   subjects,
   faculties,
@@ -79,6 +82,7 @@ export default function FacultyModal({
   const selectedFaculty = faculties.find((faculty) => faculty.id === facultyAssignmentPopup.facultyId);
   const canManageFaculty = canManageScheduleFaculty(schedule);
   const restrictionMessage = getFacultyRestrictionMessage(schedule);
+  const programHeadOnly = isProgramHeadOnlyMajorSchedule?.(schedule) ?? false;
   const assignedTeachingDepartmentLabel = subject?.teachingDepartmentCode
     ? `${subject.teachingDepartmentCode} Only`
     : subject?.teachingDepartmentName
@@ -268,7 +272,9 @@ export default function FacultyModal({
 
             {!canManageFaculty && (
               <p className="text-xs font-semibold text-slate-500">
-                {restrictionMessage} You can view the assignment, but only that department can change the instructor.
+                {programHeadOnly
+                  ? `${restrictionMessage} You can view the assignment.`
+                  : `${restrictionMessage} You can view the assignment, but only that department can change the instructor.`}
               </p>
             )}
           </section>
@@ -320,7 +326,7 @@ export default function FacultyModal({
           )}
 
           </div>
-          <div className="scheduler-dialog-footer flex gap-2 max-sm:flex-col">
+          {!programHeadOnly && <div className="scheduler-dialog-footer flex gap-2 max-sm:flex-col">
             <button
               type="submit"
               disabled={isSavingFaculty || !canManageFaculty || isSameAssignedFaculty || Boolean(popupConflictWarning) || loadBlocked}
@@ -347,7 +353,7 @@ export default function FacultyModal({
                 {isSavingFaculty ? <LoadingSpinner className="w-3.5 h-3.5" /> : "Remove"}
               </button>
             )}
-          </div>
+          </div>}
         </form>
       </div>
       {pickerScheduleId === schedule.id && canManageFaculty && (

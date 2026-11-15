@@ -1,3 +1,4 @@
+import { buttonClass } from '../ui/buttonStyles';
 import { useMemo } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Eye, Pencil, UserRound, Archive } from 'lucide-react';
@@ -189,7 +190,7 @@ export default function FacultyListTable<T extends FacultyListRow>({
             <button
               type="button"
               onClick={() => onView(f)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-[#5A1220] hover:border-[#C9952A] hover:bg-amber-50 hover:text-[#410b15] cursor-pointer"
+              className={buttonClass({ variant: 'infoTint', size: 'sm', iconOnly: true })}
               aria-label="View Details"
               title="View Details"
               data-tour={viewDetailsTourId && index === 0 ? viewDetailsTourId : undefined}

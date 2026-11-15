@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -68,6 +68,8 @@ import {
   isFieldSchedulingEligible,
 } from "../schedulingConfigurationEligibility";
 import { useGenerationRun, type GenerationResult } from "../hooks/useGenerationRun";
+import { useServerDraft } from "../hooks/useServerDraft";
+import AutoSaveIndicator from "../AutoSaveIndicator";
 import {
   getCachedData,
   hasCachedData,
@@ -155,6 +157,38 @@ interface Props {
   onSavingChange?: (saving: boolean) => void;
 }
 
+type WizardProps = Props & {
+  /** Reopens the wizard on this browser's copy (after it was replaced by a newer server copy). */
+  onReloadFromLocal?: () => void;
+};
+
+/** Wizard progress kept on the server; a generated timetable stays on its run until saved. */
+interface GeneratorDraftPayload {
+  step: number;
+  year_level: number | null;
+  active_section_id: string | null;
+  target_section_ids: string[] | null;
+  configs: Record<string, SectionConfig>;
+  setup_draft: SetupDraft;
+  course_defaults: CourseDefaults | null;
+  run_id: string | null;
+  /** Client time of the save, compared with this browser's local copy on restore. */
+  saved_at: number | null;
+}
+
+/** Saved wizard progress as kept in this browser (and mapped from the server copy). */
+interface SavedProgress {
+  step?: Step;
+  yearLevel?: number;
+  activeSectionId?: string;
+  targetSectionIds?: string[] | null;
+  configs?: Record<string, SectionConfig>;
+  setupDraft?: Partial<SetupDraft>;
+  savedAt?: number;
+  /** Generation run to re-attach; set only when this copy was taken from the server copy. */
+  runId?: string;
+}
+
 const wizardSteps: Array<{ id: Step; title: string }> = [
   { id: 1, title: "Configuration" },
   { id: 2, title: "Setup Courses" },
@@ -210,7 +244,18 @@ const formatSemester = (semester: Semester | null) =>
 const normalizeGecPattern = (value: string | undefined): GecSplitPattern =>
   value === "MW" || value === "TTh" ? value : "auto";
 
-export default function YearLevelGenerateScheduleWorkflow({
+/**
+ * Generate Schedule. Progress is auto-saved; when a newer copy saved elsewhere is found on
+ * opening, the wizard is reopened on it so it restores through its usual path.
+ */
+export default function YearLevelGenerateScheduleWorkflow(props: Props) {
+  const [opening, setOpening] = useState(0);
+  const reload = useCallback(() => setOpening((current) => current + 1), []);
+
+  return <GenerateScheduleWizard key={opening} {...props} onReloadFromLocal={opening === 0 ? reload : undefined} />;
+}
+
+function GenerateScheduleWizard({
   onClose,
   sections,
   courses,
@@ -221,7 +266,8 @@ export default function YearLevelGenerateScheduleWorkflow({
   onAccepted,
   onSectionsChanged,
   onSavingChange,
-}: Props) {
+  onReloadFromLocal,
+}: WizardProps) {
   const { toast, confirm } = useToast();
   const [step, setStep] = useState<Step>(1);
   const [stepDirection, setStepDirection] = useState<"forward" | "back">(
@@ -240,6 +286,8 @@ export default function YearLevelGenerateScheduleWorkflow({
   const [guideOpen, setGuideOpen] = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [applying, setApplying] = useState(false);
+  const applyingRef = useRef(false);
+  const startingGenerationRef = useRef(false);
   const [rooms, setRooms] = useState<ApiRoomRecord[]>([]);
   const run = useGenerationRun();
   const generating = run.isActive;
@@ -523,6 +571,70 @@ export default function YearLevelGenerateScheduleWorkflow({
   runYearLevelRef.current = runYearLevel;
   const [restoredDraftKey, setRestoredDraftKey] = useState<string | null>(null);
 
+  // Progress is auto-saved to the server (per user, department and semester) and restored on reopen.
+  const semesterIdForDraft = activeSemester ? Number(activeSemester.id) : null;
+  const serverDraftParams = useMemo(
+    () => departmentId !== null && semesterIdForDraft !== null
+      ? { department_id: Number(departmentId), semester_id: semesterIdForDraft }
+      : null,
+    [departmentId, semesterIdForDraft],
+  );
+  const serverDraft = useServerDraft<GeneratorDraftPayload>("/schedule-generation-draft", serverDraftParams, true);
+  const savedRunIdRef = useRef<string | null>(null);
+  const runStatusRef = useRef(run.status);
+  useEffect(() => { runStatusRef.current = run.status; }, [run.status]);
+  // When the local copy was written, and whether the user has started working in this opening.
+  const localSavedAtRef = useRef(0);
+  const lastLocalJsonRef = useRef<string | null>(null);
+  const interactedRef = useRef(false);
+  const [serverSyncedKey, setServerSyncedKey] = useState<string | null>(null);
+
+  /** Puts saved progress into the form; false when it no longer fits the available year levels. */
+  const applySavedProgress = (
+    parsed: SavedProgress,
+    years: number[],
+    savedDefaults: CourseDefaults,
+    keepCourseChoices: boolean,
+  ): boolean => {
+    if (
+      !parsed.yearLevel ||
+      !years.includes(Number(parsed.yearLevel)) ||
+      (runYearLevelRef.current !== null && Number(parsed.yearLevel) !== runYearLevelRef.current)
+    ) {
+      return false;
+    }
+    setYearLevel(Number(parsed.yearLevel));
+    const savedStep: Step =
+      parsed.step && parsed.step >= 1 && parsed.step <= lastStep
+        ? parsed.step
+        : 1;
+    // The summary needs a generation result. Without a run attached, resume at Review & Generate;
+    // a re-attached run moves the wizard on by itself. Generation never re-runs here.
+    setStep(savedStep === lastStep && runStatusRef.current === "idle" && !savedRunIdRef.current ? 3 : savedStep);
+    setActiveSectionId(parsed.activeSectionId ?? "");
+    setTargetSectionIds(
+      Array.isArray(parsed.targetSectionIds)
+        ? stringList(parsed.targetSectionIds)
+        : null,
+    );
+    setConfigs(keepCourseChoices ? (parsed.configs ?? {}) : {});
+    setSetupDraft({
+      ...defaultSetupDraft,
+      ...parsed.setupDraft,
+      preferredDays: orderDays(
+        Array.isArray(parsed.setupDraft?.preferredDays)
+          ? parsed.setupDraft.preferredDays
+          : [],
+      ),
+      courseDefaults: savedDefaults,
+      excludedCourseIds: keepCourseChoices
+        ? stringList(parsed.setupDraft?.excludedCourseIds)
+        : [],
+    });
+    return true;
+  };
+
+  // Restore immediately from this browser's copy, as before.
   useEffect(() => {
     const years = availableYearsKey === "" ? [] : availableYearsKey.split(",").map(Number);
     if (years.length === 0) return;
@@ -532,52 +644,19 @@ export default function YearLevelGenerateScheduleWorkflow({
         ? runYearLevelRef.current
         : (pendingYear ?? years[0]);
     const savedDefaults = readSavedCourseDefaults(defaultsStorageKey);
-    const keepCourseChoices = runYearLevelRef.current !== null;
     let restored = false;
+    localSavedAtRef.current = 0;
     try {
       const saved = window.localStorage.getItem(storageKey);
       if (saved) {
-        const parsed = JSON.parse(saved) as {
-          step?: Step;
-          yearLevel?: number;
-          activeSectionId?: string;
-          targetSectionIds?: string[] | null;
-          configs?: Record<string, SectionConfig>;
-          setupDraft?: Partial<SetupDraft>;
-        };
-        if (
-          parsed.yearLevel &&
-          years.includes(Number(parsed.yearLevel)) &&
-          (runYearLevelRef.current === null || Number(parsed.yearLevel) === runYearLevelRef.current)
-        ) {
-          setYearLevel(Number(parsed.yearLevel));
-          setStep(
-            parsed.step && parsed.step >= 1 && parsed.step <= lastStep
-              ? parsed.step
-              : 1,
-          );
-          setActiveSectionId(parsed.activeSectionId ?? "");
-          setTargetSectionIds(
-            Array.isArray(parsed.targetSectionIds)
-              ? stringList(parsed.targetSectionIds)
-              : null,
-          );
-          setConfigs(keepCourseChoices ? (parsed.configs ?? {}) : {});
-          setSetupDraft({
-            ...defaultSetupDraft,
-            ...parsed.setupDraft,
-            preferredDays: orderDays(
-              Array.isArray(parsed.setupDraft?.preferredDays)
-                ? parsed.setupDraft.preferredDays
-                : [],
-            ),
-            courseDefaults: savedDefaults,
-            excludedCourseIds: keepCourseChoices
-              ? stringList(parsed.setupDraft?.excludedCourseIds)
-              : [],
-          });
-          restored = true;
-        }
+        const parsed = JSON.parse(saved) as SavedProgress;
+        localSavedAtRef.current = Number(parsed.savedAt) || 0;
+        // A run id is present only when this copy was adopted from the server copy.
+        if (parsed.runId) savedRunIdRef.current = parsed.runId;
+        const { step: s, yearLevel: y, activeSectionId: a, targetSectionIds: t, configs: c, setupDraft: d } = parsed;
+        lastLocalJsonRef.current = JSON.stringify({ step: s, yearLevel: y, activeSectionId: a, targetSectionIds: t, configs: c, setupDraft: d });
+        // Course choices belong to a generation run, so they are kept only alongside one.
+        restored = applySavedProgress(parsed, years, savedDefaults, runYearLevelRef.current !== null || Boolean(parsed.runId));
       }
     } catch {
       restored = false;
@@ -593,6 +672,52 @@ export default function YearLevelGenerateScheduleWorkflow({
     }
     setRestoredDraftKey(storageKey);
   }, [availableYearsKey, defaultsStorageKey, storageKey]);
+
+  // Then compare with the server copy. When it is newer (e.g. saved on another device) and the
+  // user has not started working here, it becomes this browser's copy and the wizard reopens on
+  // it, through the same restore as above. Server saves wait for this check, so an older local
+  // copy never overwrites newer progress.
+  useEffect(() => {
+    if (restoredDraftKey !== storageKey || serverSyncedKey === storageKey) return;
+    if (serverDraftParams === null || !serverDraft.loaded) return;
+    const server = serverDraft.loadFailed ? null : serverDraft.draft;
+    const serverSavedAt = Number(server?.saved_at) || 0;
+    if (server && onReloadFromLocal && !interactedRef.current && serverSavedAt > localSavedAtRef.current) {
+      try {
+        window.localStorage.setItem(storageKey, JSON.stringify({
+          step: server.step as Step,
+          yearLevel: server.year_level ?? undefined,
+          activeSectionId: server.active_section_id ?? "",
+          targetSectionIds: server.target_section_ids,
+          configs: server.configs,
+          setupDraft: server.setup_draft,
+          savedAt: serverSavedAt,
+          runId: server.run_id ?? undefined,
+        } satisfies SavedProgress));
+        if (server.course_defaults) {
+          window.localStorage.setItem(defaultsStorageKey, JSON.stringify(server.course_defaults));
+        }
+        onReloadFromLocal();
+        return;
+      } catch {
+        // Storage unavailable: keep the wizard as it is.
+      }
+    }
+    setServerSyncedKey(storageKey);
+  }, [defaultsStorageKey, onReloadFromLocal, restoredDraftKey, serverDraft.draft, serverDraft.loaded, serverDraft.loadFailed, serverDraftParams, serverSyncedKey, storageKey]);
+
+  // Re-attach the generation run the user was reviewing (also from another device). This only
+  // reads the stored run; it never starts a new generation.
+  const resumedRunRef = useRef(false);
+  useEffect(() => {
+    if (resumedRunRef.current || !run.restored || restoredDraftKey !== storageKey) return;
+    if (serverDraftParams !== null && serverSyncedKey !== storageKey) return;
+    resumedRunRef.current = true;
+    const runId = savedRunIdRef.current;
+    const settle = () => { savedRunIdRef.current = null; };
+    if (runId && run.status === "idle") void run.resume(runId).finally(settle);
+    else settle();
+  }, [restoredDraftKey, run, serverDraftParams, serverSyncedKey, storageKey]);
 
   useEffect(() => {
     if (runYearLevel !== null && availableYears.includes(runYearLevel)) {
@@ -783,11 +908,38 @@ export default function YearLevelGenerateScheduleWorkflow({
 
   useEffect(() => {
     if (restoredDraftKey !== storageKey) return;
-    window.localStorage.setItem(
-      storageKey,
-      JSON.stringify({ step, yearLevel, activeSectionId, targetSectionIds, configs, setupDraft }),
-    );
-  }, [activeSectionId, configs, restoredDraftKey, setupDraft, step, storageKey, targetSectionIds, yearLevel]);
+    const progressJson = JSON.stringify({ step, yearLevel, activeSectionId, targetSectionIds, configs, setupDraft });
+    // Local mirror (opens instantly, offline fallback); the server copy follows the user across devices.
+    // Unchanged progress keeps its stored time, so re-renders never make an old copy look new.
+    let savedAt = localSavedAtRef.current || Date.now();
+    if (lastLocalJsonRef.current !== progressJson) {
+      // The wizard tidies restored progress on its own; that is not newer work and must not make
+      // this copy outrank a newer server copy. Only the user's own changes, or any change once the
+      // copies have been compared, get a new time.
+      const newWork = serverDraftParams === null || serverSyncedKey === storageKey || interactedRef.current;
+      savedAt = newWork ? Date.now() : localSavedAtRef.current;
+      localSavedAtRef.current = savedAt;
+      lastLocalJsonRef.current = progressJson;
+      window.localStorage.setItem(
+        storageKey,
+        JSON.stringify({ step, yearLevel, activeSectionId, targetSectionIds, configs, setupDraft, savedAt }),
+      );
+    }
+    if (serverSyncedKey !== storageKey) return;
+    serverDraft.save({
+      step,
+      year_level: yearLevel || null,
+      active_section_id: activeSectionId || null,
+      target_section_ids: targetSectionIds,
+      configs,
+      setup_draft: setupDraft,
+      course_defaults: setupDraft.courseDefaults,
+      run_id: run.runId ?? savedRunIdRef.current,
+      saved_at: savedAt,
+    });
+    // serverDraft.save is stable per load; the saved fields are listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSectionId, configs, restoredDraftKey, setupDraft, step, storageKey, targetSectionIds, yearLevel, run.runId, serverDraft.save, serverSyncedKey]);
 
   useEffect(() => {
     if (!yearLevelGenerationAllowed && step !== 1) {
@@ -913,6 +1065,22 @@ export default function YearLevelGenerateScheduleWorkflow({
   ) => {
     if (!activeSemester || departmentId === null) return;
     if (!yearLevelGenerationAllowed) return;
+    // One generation request at a time, even on a fast double click.
+    if (startingGenerationRef.current || run.isActive) return;
+    startingGenerationRef.current = true;
+    try {
+      await generateNow(configsOverride, draftOverride, selectedAdjustments);
+    } finally {
+      startingGenerationRef.current = false;
+    }
+  };
+
+  const generateNow = async (
+    configsOverride?: Record<string, SectionConfig>,
+    draftOverride?: SetupDraft,
+    selectedAdjustments?: GenerationAdjustment[],
+  ) => {
+    if (!activeSemester || departmentId === null) return;
     const activeConfigs = configsOverride ?? configs;
     const activeDraft = draftOverride ?? setupDraft;
     const configuredFieldCourseIds = includedCourses
@@ -1218,6 +1386,17 @@ export default function YearLevelGenerateScheduleWorkflow({
         : null;
 
   const apply = async () => {
+    // One save at a time, even on a fast double click.
+    if (applyingRef.current) return;
+    applyingRef.current = true;
+    try {
+      await applyNow();
+    } finally {
+      applyingRef.current = false;
+    }
+  };
+
+  const applyNow = async () => {
     if (remainingUnplaced.length > 0) {
       const count = remainingUnplaced.length;
       const confirmed = await confirm({
@@ -1340,6 +1519,8 @@ export default function YearLevelGenerateScheduleWorkflow({
         },
       );
       window.localStorage.removeItem(storageKey);
+      // The timetable is saved: the stored progress is finished with.
+      void serverDraft.clear();
       run.clear();
       const releasedInstructors = Number(response.data.instructors_released ?? 0);
       toast.success(
@@ -1503,6 +1684,9 @@ export default function YearLevelGenerateScheduleWorkflow({
 
   return (
     <div
+      // Any real input means the user is working here; a newer server copy then no longer replaces the form.
+      onPointerDownCapture={() => { interactedRef.current = true; }}
+      onKeyDownCapture={() => { interactedRef.current = true; }}
       className={`scheduler-generator-workspace flex min-h-0 min-w-0 w-[calc(100vw-1rem)] flex-col overflow-hidden bg-white transition-[width] duration-300 ease-out ${stepWidths[step]}`}
     >
       <header className="scheduler-dialog-header scheduler-brand-header relative flex shrink-0 flex-wrap items-center gap-3 px-4 py-4 sm:px-5">
@@ -1522,6 +1706,14 @@ export default function YearLevelGenerateScheduleWorkflow({
           </div>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1">
+        {serverDraftParams && (
+          <AutoSaveIndicator
+            state={serverDraft.saveState}
+            loading={!serverDraft.loaded}
+            loadFailed={serverDraft.loadFailed}
+            onRetry={serverDraft.retry}
+          />
+        )}
         <HelpButton
           title={wizardSteps[step - 1].title}
           text={helpText[step]}

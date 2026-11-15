@@ -21,7 +21,7 @@ interface ImportConfigureTermTableProps {
 
 const CATEGORY_LABELS: Record<CourseCategory, string> = { major: 'Major', minor: 'Minor' };
 
-const control = 'h-8 w-full rounded-md border px-1.5 text-[12.5px] focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
+const control = 'h-8 w-full rounded-md border px-1.5 text-[13px] focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
 const neutral = 'border-border bg-white text-text hover:border-muted/50';
 const bad = 'border-red-300 bg-red-50/60 text-text';
 const STATUS_TONE: Record<ConfigureStatus, string> = {

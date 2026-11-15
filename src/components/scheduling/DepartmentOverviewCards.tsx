@@ -153,7 +153,7 @@ export default function DepartmentOverviewCards({ departments, departmentLogos, 
 
             <div className="mt-4">
               <div className="flex items-baseline justify-between">
-                <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Sections scheduled</p>
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Sections scheduled</p>
                 <p className="text-xs font-bold text-slate-600">
                   {department.sections_scheduled} / {department.sections_total}
                 </p>

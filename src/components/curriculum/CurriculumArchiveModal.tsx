@@ -7,6 +7,7 @@ import DataTable from '../ui/DataTable';
 import { useDataTable } from '../ui/useDataTable';
 import type { Curriculum } from '../../types/curriculum';
 import SearchInput from '../ui/SearchInput';
+import { buttonClass } from '../ui/buttonStyles';
 
 interface CurriculumArchiveModalProps {
   isOpen: boolean;
@@ -79,7 +80,7 @@ export default function CurriculumArchiveModal({
         <button
           type="button"
           onClick={() => handleRestoreClick(row.original.id)}
-          className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#4e0a10]/10 hover:bg-[#4e0a10] hover:text-white text-[#4e0a10] text-[10px] font-bold uppercase rounded-lg border border-[#4e0a10]/20 transition-all duration-200 cursor-pointer disabled:opacity-50"
+          className={buttonClass({ variant: 'successTint', size: 'sm' })}
           title="Restore to Deactivated"
         >
           <RotateCcw size={11} />

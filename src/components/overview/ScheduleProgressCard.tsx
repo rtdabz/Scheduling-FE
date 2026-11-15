@@ -1,6 +1,7 @@
 import { ArrowRight } from 'lucide-react';
 import SectionHeader from './SectionHeader';
 import type { LucideIcon } from 'lucide-react';
+import { buttonClass } from '../ui/buttonStyles';
 
 export interface ProgressStage {
   id: string;
@@ -94,7 +95,7 @@ export default function ScheduleProgressCard({
               <button
                 type="button"
                 onClick={onAction}
-                className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#5A1220]/5 hover:bg-[#5A1220]/10 text-[#5A1220] text-sm font-bold border border-[#5A1220]/10 transition-colors"
+                className={buttonClass({ variant: 'accentSoft', size: 'lg', fullWidth: true })}
               >
                 {actionLabel}
                 <ArrowRight size={14} />

@@ -86,9 +86,11 @@ describe('Course Teaching program selection', () => {
     fireEvent.change(select, { target: { value: '11' } });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select GEC 2' }));
     fireEvent.click(screen.getByRole('button', { name: /College of Information Technology/ }));
-    expect(programSelect().value).toBe('');
+    // CIT has one program, so there is nothing to choose: it is selected automatically.
+    expect(programSelect().value).toBe('61');
+    expect(programSelect().disabled).toBe(true);
     expect(Array.from(programSelect().options, (option) => option.text)).toEqual([
-      'Any Program', 'BSIT — Bachelor of Science in Information Technology',
+      'BSIT — Bachelor of Science in Information Technology',
     ]);
     expect((screen.getByRole('checkbox', { name: 'Select GEC 2' }) as HTMLInputElement).checked).toBe(false);
     expect(post).not.toHaveBeenCalled();
@@ -110,9 +112,68 @@ describe('Course Teaching program selection', () => {
     expect(within(courseRow('PATH FIT 2')).getByText('BPED')).toBeTruthy();
     expect(within(courseRow('PATH FIT 2')).getByText('Assigned')).toBeTruthy();
     expect((screen.getByRole('checkbox', { name: 'Select PATH FIT 2' }) as HTMLInputElement).disabled).toBe(true);
-    const cached = getCachedData<{ courses: Array<{ id: number; teaching_program_id: number | null }> }>('page:course-teaching-assignments:v12');
+    const cached = getCachedData<{ courses: Array<{ id: number; teaching_program_id: number | null }> }>('page:course-teaching-assignments:v13');
     expect(cached?.courses.find((course) => course.id === 101)?.teaching_program_id).toBe(programId);
     expect(cached?.courses.find((course) => course.id === 102)).toEqual(courses[1]);
+  });
+
+  it('leaves out the own department when it has only one program', async () => {
+    get.mockResolvedValue({ data: {
+      courses, departments, programs, current_department_id: 6, has_active_curriculum: true, active_semester: null,
+      assignment_restrictions: { department_id: 6, own_program_ids: [61], own_department_excluded: true, requires_program: false },
+    } });
+    await openPage();
+    expect(screen.queryByRole('button', { name: /College of Information Technology/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /College of Arts and Sciences/ })).toBeTruthy();
+    expect(screen.getByText('CIT is not listed: its courses are managed within the department.')).toBeTruthy();
+  });
+
+  it('never offers the own program, and needs another program within the own department', async () => {
+    get.mockResolvedValue({ data: {
+      courses, departments,
+      programs: [
+        ...programs,
+        { id: 62, department_id: 6, code: 'BSCS', name: 'Computer Science' },
+        { id: 63, department_id: 6, code: 'BSIS', name: 'Information Systems' },
+      ],
+      current_department_id: 6, has_active_curriculum: true, active_semester: null,
+      assignment_restrictions: { department_id: 6, own_program_ids: [61], own_department_excluded: false, requires_program: true },
+    } });
+    await openPage();
+    fireEvent.click(screen.getByRole('button', { name: /College of Information Technology/ }));
+    expect(Array.from(programSelect().options, (option) => option.text)).toEqual([
+      'Select a program', 'BSCS — Computer Science', 'BSIS — Information Systems',
+    ]);
+    const gec = screen.getByRole('checkbox', { name: 'Select GEC 2' }) as HTMLInputElement;
+    expect(gec.disabled).toBe(true);
+    expect(within(courseRow('GEC 2')).getByText('Select another program')).toBeTruthy();
+
+    fireEvent.change(programSelect(), { target: { value: '62' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select GEC 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Assign 1 to BSCS' }));
+    await waitFor(() => expect(post).toHaveBeenCalledExactlyOnceWith('/course-teaching-assignments/batch', {
+      course_ids: [101], teaching_department_id: 6, teaching_program_id: 62,
+    }));
+  });
+
+  it('selects the only remaining program of the own department automatically', async () => {
+    get.mockResolvedValue({ data: {
+      courses, departments,
+      programs: [...programs, { id: 62, department_id: 6, code: 'BSCS', name: 'Computer Science' }],
+      current_department_id: 6, has_active_curriculum: true, active_semester: null,
+      assignment_restrictions: { department_id: 6, own_program_ids: [61], own_department_excluded: false, requires_program: true },
+    } });
+    await openPage();
+    fireEvent.click(screen.getByRole('button', { name: /College of Information Technology/ }));
+    expect(programSelect().value).toBe('62');
+    expect(programSelect().disabled).toBe(true);
+    expect(Array.from(programSelect().options, (option) => option.text)).toEqual(['BSCS — Computer Science']);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select GEC 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Assign 1 to BSCS' }));
+    await waitFor(() => expect(post).toHaveBeenCalledExactlyOnceWith('/course-teaching-assignments/batch', {
+      course_ids: [101], teaching_department_id: 6, teaching_program_id: 62,
+    }));
   });
 
   it('preserves course sorting, searching, and filtering in the existing table', async () => {

@@ -1,16 +1,17 @@
-import TableActionButton from "../../components/ui/TableActionButton";
+import { buttonClass } from '../../components/ui/buttonStyles';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
-  Building2,
   CalendarDays,
   CalendarRange,
   CheckCircle2,
-  Eye,
-  Inbox,
+  ChevronRight,
+  Clock3,
   LayoutList,
+  Lock,
   Search,
+  ShieldCheck,
   UserMinus,
 } from "lucide-react";
 import axios from "axios";
@@ -40,6 +41,7 @@ const instructorConflictFrom = (err: unknown): string | null => {
   return messages.length > 0 ? [...new Set(messages)].join(" ") : null;
 };
 import Skeleton from "../../components/ui/Skeleton";
+import DepartmentLogo from "../../components/ui/DepartmentLogo";
 import DataTable from "../../components/ui/DataTable";
 import { useDataTable } from "../../components/ui/useDataTable";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -68,7 +70,6 @@ import {
 import type { ZoomLevel } from "../vpaa/calendar/ganttPresentation";
 import FacultyModal from "./SchedulerPanel/Modals/FacultyModal";
 import AssignmentWorklist from "./AssignmentWorklist";
-import IncomingCoursesModal, { type IncomingCourse } from "./IncomingCoursesModal";
 import type { WorklistClass } from "./AssignmentWorklist";
 import { eligibleFacultiesForSubject, requiredTeachingProgramId } from "./SchedulerPanel/facultyEligibility";
 import type {
@@ -188,7 +189,6 @@ interface AssignmentResponse {
   subjects: ApiSubject[];
   faculties: ApiFaculty[];
   schedules: ApiSchedule[];
-  incoming_courses?: IncomingCourse[];
 }
 
 interface AssignmentWarning {
@@ -371,6 +371,70 @@ function InstructorAssignmentTimetableSkeleton({
   );
 }
 
+interface ClassProgress {
+  total: number;
+  assigned: number;
+  done: number;
+}
+
+/** One class is a section's course; its meeting blocks are assigned (and marked done) together. */
+const classProgress = (rows: ApiSchedule[]): ClassProgress => {
+  const classes = new Map<string, { assigned: boolean; done: boolean }>();
+  for (const row of rows) {
+    const key = [row.semester_id, row.section_id ?? row.section?.section_name ?? "none", row.course_id ?? row.subject_id ?? 0].join(":");
+    const current = classes.get(key) ?? { assigned: true, done: true };
+    classes.set(key, {
+      assigned: current.assigned && row.faculty_id !== null,
+      done: current.done && Boolean(row.faculty_assignment_done),
+    });
+  }
+  const values = [...classes.values()];
+  return {
+    total: values.length,
+    assigned: values.filter((item) => item.assigned).length,
+    done: values.filter((item) => item.done).length,
+  };
+};
+
+const assignmentStatusOf = ({ total, assigned, done }: ClassProgress) => {
+  if (total > 0 && done === total) return { label: "Done", tone: "border-emerald-200 bg-emerald-50 text-emerald-800", Icon: Lock };
+  if (total > 0 && assigned === total) return { label: "Fully assigned", tone: "border-emerald-200 bg-emerald-50 text-emerald-700", Icon: CheckCircle2 };
+  if (assigned === 0) return { label: "Not started", tone: "border-slate-200 bg-slate-50 text-slate-600", Icon: Clock3 };
+  return { label: "In progress", tone: "border-amber-200 bg-amber-50 text-amber-800", Icon: Clock3 };
+};
+
+function AssignmentStatusPill({ progress }: { progress: ClassProgress }) {
+  const { label, tone, Icon } = assignmentStatusOf(progress);
+  return (
+    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-bold ${tone}`}>
+      <Icon className="h-3 w-3" aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
+function ProgressBar({ assigned, total, className = "w-36" }: { assigned: number; total: number; className?: string }) {
+  const percent = total === 0 ? 0 : Math.round((assigned / total) * 100);
+  return (
+    <div className={`flex items-center gap-2 ${className}`}>
+      <div
+        className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        aria-label={`${assigned} of ${total} classes assigned`}
+      >
+        <div
+          className={`h-full rounded-full transition-[width] duration-300 ${percent === 100 ? "bg-emerald-500" : "bg-[#C9952A]"}`}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+      <span className="w-9 text-right text-[11px] font-bold tabular-nums text-slate-500">{percent}%</span>
+    </div>
+  );
+}
+
 interface ClearSectionResponse {
   schedules_updated: number;
   courses_cleared: number;
@@ -400,14 +464,12 @@ export interface InstructorAssignmentWorkspaceState {
 export default function InstructorAssignment({ assignmentLocked, headerActions, footerActions, onWorkspaceStateChange, workflowGuideId = "instructor-assignment", workflowGuideReady = true, onWorkflowReady, refreshToken = 0, scrollableTimetable = true }: InstructorAssignmentProps = {}) {
   const { toast } = useToast();
   const user = getStoredUser();
-  const assignmentsCacheKey = `page:instructor-assignments:v6:${user.department_id ?? "all"}:${user.program_id ?? "all"}`;
+  const assignmentsCacheKey = `page:instructor-assignments:v7:${user.department_id ?? "all"}:${user.program_id ?? "all"}`;
   const cachedAssignmentData = getCachedData<AssignmentResponse>(assignmentsCacheKey);
   const [departments, setDepartments] = useState<ApiDepartment[]>(cachedAssignmentData?.departments ?? []);
   const [subjects, setSubjects] = useState<ApiSubject[]>(cachedAssignmentData?.subjects ?? []);
   const [faculties, setFaculties] = useState<ApiFaculty[]>(cachedAssignmentData?.faculties ?? []);
   const [schedules, setSchedules] = useState<ApiSchedule[]>(cachedAssignmentData?.schedules ?? []);
-  const [incomingCourses, setIncomingCourses] = useState<IncomingCourse[]>(cachedAssignmentData?.incoming_courses ?? []);
-  const [incomingModalOpen, setIncomingModalOpen] = useState(false);
   const [activeSemester, setActiveSemester] = useState<ApiSemester | null>(cachedAssignmentData?.active_semester ?? null);
   const [currentDepartmentId, setCurrentDepartmentId] = useState<number | null>(user.department_id ?? null);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | null>(null);
@@ -464,7 +526,6 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
         setSubjects(data.subjects);
         setFaculties(data.faculties);
         setSchedules(data.schedules);
-        setIncomingCourses(data.incoming_courses ?? []);
         setActiveSemester(data.active_semester);
         setCurrentDepartmentId(data.current_department_id ?? user.department_id ?? null);
       } catch (loadError) {
@@ -533,7 +594,9 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
       !subject ||
       !department ||
       Number(subject.teaching_department_id ?? subject.department_id) !== Number(currentDepartmentId) ||
-      (!ASSIGNMENT_STATUSES.includes(schedule.status) && schedule.faculty_id === null)
+      // VPAA approval is the source of truth: Draft, Submitted and Dean-review rows stay out of
+      // view even when they already carry a retained instructor.
+      !ASSIGNMENT_STATUSES.includes(schedule.status)
     ) {
       return [];
     }
@@ -544,79 +607,75 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     return isCrossDepartment || isCrossProgram ? [{ ...schedule, subject, department }] : [];
   }), [currentDepartmentId, departmentMap, schedules, subjectMap, user.program_id, user.role]);
 
-  const awaitingIncomingCourses = useMemo(
-    () => incomingCourses.filter((course) => !assignmentSchedules.some(
-      (schedule) => Number(schedule.course_id ?? schedule.subject_id ?? 0) === Number(course.id),
-    )),
-    [assignmentSchedules, incomingCourses],
-  );
-
   const offeringDepartments = useMemo(() => departments
-    .map((department) => ({
-      department,
-      schedules: assignmentSchedules.filter(
+    .map((department) => {
+      const departmentRows = assignmentSchedules.filter(
         (schedule) => Number(schedule.department_id) === Number(department.id),
-      ),
-    }))
+      );
+      return { department, schedules: departmentRows, progress: classProgress(departmentRows) };
+    })
     .filter((item) => item.schedules.length > 0), [assignmentSchedules, departments]);
-  const departmentColumns = useMemo<ColumnDef<(typeof offeringDepartments)[number]>[]>(() => {
-    const pendingOf = (items: AssignmentSchedule[]) => items.filter((schedule) => !schedule.faculty_id).length;
-    return [
-      {
-        id: "department",
-        header: "Department",
-        accessorFn: (row) => row.department.department_code,
-        cell: ({ row: { original: { department } } }) => (
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#4e0a10] text-[#E8D5C4]">
-              {department.logo ? <img src={department.logo} alt="" className="h-full w-full object-cover" /> : <Building2 className="h-4 w-4" />}
-            </div>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-[#4e0a10]">{department.department_code}</div>
-              <div className="text-xs font-medium text-gray-500">{department.department_name}</div>
-            </div>
+  const departmentColumns = useMemo<ColumnDef<(typeof offeringDepartments)[number]>[]>(() => [
+    {
+      id: "department",
+      header: "Offering department",
+      accessorFn: (row) => row.department.department_code,
+      cell: ({ row: { original: { department } } }) => (
+        <div className="flex min-w-0 items-center gap-3">
+          <DepartmentLogo name={department.department_name} logo={department.logo} className="h-9 w-9" iconSize={16} />
+          <div className="min-w-0">
+            <div className="truncate text-sm font-bold text-slate-900">{department.department_name}</div>
+            <div className="text-xs font-medium text-slate-500">{department.department_code}</div>
           </div>
-        ),
-      },
-      {
-        id: "schedules",
-        header: "Schedules",
-        accessorFn: (row) => row.schedules.length,
-        meta: { align: "right", cellClassName: "tabular-nums" },
-      },
-      {
-        id: "pending",
-        header: "Pending",
-        accessorFn: (row) => pendingOf(row.schedules),
-        meta: { align: "right", cellClassName: "tabular-nums" },
-        cell: ({ getValue }) => <span className={getValue<number>() ? "font-semibold text-amber-700" : "text-gray-400"}>{getValue<number>()}</span>,
-      },
-      {
-        id: "assigned",
-        header: "Assigned",
-        accessorFn: (row) => row.schedules.length - pendingOf(row.schedules),
-        meta: { align: "right", cellClassName: "tabular-nums" },
-        cell: ({ getValue }) => <span className={getValue<number>() ? "font-semibold text-emerald-700" : "text-gray-400"}>{getValue<number>()}</span>,
-      },
-      {
-        id: "actions",
-        header: "Action",
-        enableSorting: false,
-        meta: { align: "right", stopRowClick: true },
-        cell: ({ row: { original: { department } } }) => (
-          <div className="flex justify-end">
-            <TableActionButton
-              label={`View ${department.department_code} timetable`}
-              variant="view"
-              onClick={() => openDepartment(department.id)}
-            >
-              <Eye size={17} />
-            </TableActionButton>
-          </div>
-        ),
-      },
-    ];
-  }, []);
+        </div>
+      ),
+    },
+    {
+      id: "classes",
+      header: "Classes",
+      accessorFn: (row) => row.progress.total,
+      meta: { align: "right", cellClassName: "tabular-nums font-semibold text-slate-700", hideBelow: "sm" },
+    },
+    {
+      id: "pending",
+      header: "Needs instructor",
+      accessorFn: (row) => row.progress.total - row.progress.assigned,
+      meta: { align: "right", cellClassName: "tabular-nums", hideBelow: "md" },
+      cell: ({ getValue }) => (
+        <span className={getValue<number>() ? "font-bold text-amber-700" : "text-slate-400"}>{getValue<number>()}</span>
+      ),
+    },
+    {
+      id: "progress",
+      header: "Progress",
+      accessorFn: (row) => (row.progress.total === 0 ? 0 : row.progress.assigned / row.progress.total),
+      meta: { hideBelow: "lg" },
+      cell: ({ row: { original: { progress } } }) => <ProgressBar assigned={progress.assigned} total={progress.total} />,
+    },
+    {
+      id: "status",
+      header: "Status",
+      accessorFn: (row) => assignmentStatusOf(row.progress).label,
+      cell: ({ row: { original: { progress } } }) => <AssignmentStatusPill progress={progress} />,
+    },
+    {
+      id: "actions",
+      header: () => <span className="sr-only">Action</span>,
+      enableSorting: false,
+      meta: { align: "right", stopRowClick: true },
+      cell: ({ row: { original: { department } } }) => (
+        <button
+          type="button"
+          aria-label={`View ${department.department_code} timetable`}
+          onClick={() => openDepartment(department.id)}
+          className={buttonClass({ variant: 'infoTint', size: 'sm' })}
+        >
+          Open
+          <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      ),
+    },
+  ], []);
   const departmentTable = useDataTable({
     data: offeringDepartments,
     columns: departmentColumns,
@@ -624,8 +683,8 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     getRowId: (row) => String(row.department.id),
   });
 
-  const offeredSchedules = useMemo(
-    () => offeringDepartments.flatMap((item) => item.schedules),
+  const overallProgress = useMemo(
+    () => classProgress(offeringDepartments.flatMap((item) => item.schedules)),
     [offeringDepartments],
   );
 
@@ -895,7 +954,6 @@ const selectedSchedule = assignmentSchedules.find(
         subjects,
         faculties: nextFaculties,
         schedules: nextSchedules,
-        incoming_courses: incomingCourses,
       });
 
       invalidateAssignmentDependents();
@@ -1009,7 +1067,6 @@ const selectedSchedule = assignmentSchedules.find(
         subjects,
         faculties: nextFaculties,
         schedules: nextSchedules,
-        incoming_courses: incomingCourses,
       });
       setClearSectionTarget(null);
       toast.success(
@@ -1134,7 +1191,7 @@ const selectedSchedule = assignmentSchedules.find(
     steps: () => {
       if (facultyAssignmentPopup) return [{ id: 'assignment-dialog', element: '[aria-labelledby="faculty-modal-title"]', title: 'Review the instructor assignment', description: 'Review eligible instructors, meetings and conflict messages. The form’s normal save action persists the assignment; finishing help does not choose or save an instructor.' }];
       if (error) return [{ id: 'unavailable', element: '#instructor-assignment-page', title: 'Review the assignment message', description: 'The page reports a loading or assignment error. Check that message and reload to retry unavailable data. Help does not retry or save an instructor assignment.' }];
-      if (!selectedDepartment && offeringDepartments.length === 0) return [{ id: 'empty', element: '#instructor-assignment-overview', title: 'No approved classes are available', description: awaitingIncomingCourses.length ? 'Incoming courses are waiting for schedules and approval. Open Incoming to review them; instructors can be assigned after approved classes become available.' : 'Courses assigned to your department appear here after their schedules are created and approved. There is no instructor assignment to perform yet.' }];
+      if (!selectedDepartment && offeringDepartments.length === 0) return [{ id: 'empty', element: '#instructor-assignment-overview', title: 'No approved classes are available', description: 'Courses assigned to your department appear here automatically once the offering department’s timetable is approved by the VPAA. There is no instructor assignment to perform yet.' }];
       return [
         ...(!selectedDepartment ? [
           { id: 'overview', element: '#instructor-assignment-overview', title: 'Review incoming teaching work', description: 'The overview counts approved classes offered to your department and their instructor assignment status.' },
@@ -1201,44 +1258,53 @@ const selectedSchedule = assignmentSchedules.find(
   return (
     <div id="instructor-assignment-page" className={selectedDepartment ? "space-y-3" : "space-y-6"}>
       {!selectedDepartment && (
-        <header id="instructor-assignment-overview" className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:grid-cols-[1.3fr_1fr]">
-          <div className="flex items-start gap-3">
-            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-[#C9952A]/25 bg-[#C9952A]/10 text-[#4e0a10]">
-              <CalendarDays className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Active assignment semester</p>
-              <div className="mt-1 flex items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-200/80 text-xs font-bold shadow-2xs">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                  {activeSemester ? `${activeSemester.semester} Semester · AY ${activeSemester.academic_year}` : "No active semester selected"}
-                </span>
+        <header id="instructor-assignment-overview" className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-4 p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-[#C9952A]/25 bg-[#C9952A]/10 text-[#4e0a10]">
+                <CalendarDays className="h-5 w-5" />
               </div>
-              <p className="mt-2 text-xs font-medium leading-relaxed text-slate-500">
-                Assign your instructors to approved schedules and review existing cross-department assignments.
-              </p>
-              {workflowGuideId === "instructor-assignment" && <WorkflowGuideButton guideId="instructor-assignment" />}
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-sm font-extrabold text-slate-900">Delegated teaching</h2>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200/80 bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-900">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                    {activeSemester ? `${activeSemester.semester} Semester · AY ${activeSemester.academic_year}` : "No active semester selected"}
+                  </span>
+                </div>
+                <p className="mt-1 max-w-xl text-xs font-medium leading-relaxed text-slate-500">
+                  Assign your instructors to courses other departments have handed to you.
+                </p>
+                <p className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                  <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                  Classes appear automatically once the offering department&apos;s timetable is VPAA-approved.
+                </p>
+                {workflowGuideId === "instructor-assignment" && <WorkflowGuideButton guideId="instructor-assignment" />}
+              </div>
             </div>
-          </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
-              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Departments</p>
-              <p className="mt-1 text-lg font-black text-slate-900">{offeringDepartments.length}</p>
-            </div>
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
-              <p className="text-[9px] font-black uppercase tracking-wider text-amber-600">Pending</p>
-              <p className="mt-1 text-lg font-black text-amber-700">
-                {offeredSchedules.filter((schedule) => !schedule.faculty_id).length}
-              </p>
-            </div>
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
-              <p className="text-[9px] font-black uppercase tracking-wider text-emerald-600">Assigned</p>
-              <p className="mt-1 text-lg font-black text-emerald-700">
-                {offeredSchedules.filter((schedule) => schedule.faculty_id).length}
-              </p>
-            </div>
+            <dl className="grid grid-cols-3 gap-2 lg:w-[26rem] lg:flex-shrink-0">
+              {[
+                { label: "Departments", value: offeringDepartments.length, tone: "text-slate-900", accent: "bg-slate-300" },
+                { label: "Needs instructor", value: overallProgress.total - overallProgress.assigned, tone: "text-amber-700", accent: "bg-[#C9952A]" },
+                { label: "Assigned", value: overallProgress.assigned, tone: "text-emerald-700", accent: "bg-emerald-500" },
+              ].map(({ label, value, tone, accent }) => (
+                <div key={label} className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5">
+                  <span className={`absolute inset-y-0 left-0 w-0.5 ${accent}`} aria-hidden="true" />
+                  <dt className="truncate text-[10px] font-bold uppercase tracking-wider text-slate-500">{label}</dt>
+                  <dd className={`mt-0.5 text-xl font-black tabular-nums ${tone}`}>{value}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
+          {overallProgress.total > 0 && (
+            <div className="flex flex-col gap-1.5 border-t border-slate-100 px-4 py-2.5 sm:flex-row sm:items-center sm:gap-4 sm:px-5">
+              <span className="text-[11px] font-bold text-slate-600">
+                {overallProgress.assigned} of {overallProgress.total} classes staffed
+              </span>
+              <ProgressBar assigned={overallProgress.assigned} total={overallProgress.total} className="w-full sm:max-w-md sm:flex-1" />
+            </div>
+          )}
         </header>
       )}
 
@@ -1271,42 +1337,33 @@ const selectedSchedule = assignmentSchedules.find(
       )}
 
       {!selectedDepartment ? (
-        <section>
-          <div id="instructor-assignment-departments" className="mb-3 flex items-end justify-between gap-3">
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div id="instructor-assignment-departments" className="flex flex-col gap-1 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <div>
-              <h2 className="text-base font-extrabold text-slate-900">Receiving Departments</h2>
-              <p className="text-xs font-medium text-slate-500">Open a source department timetable to assign your instructors to courses assigned to your department.</p>
+              <h2 className="text-sm font-extrabold text-slate-900">Offering departments</h2>
+              <p className="text-xs font-medium text-slate-500">Open a department&apos;s approved timetable to staff the courses assigned to you.</p>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="whitespace-nowrap text-xs font-bold text-slate-500">{offeringDepartments.length} departments</span>
-              {awaitingIncomingCourses.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setIncomingModalOpen(true)}
-                  className="inline-flex items-center gap-2 whitespace-nowrap rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 transition-colors hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-[#C9952A]"
-                >
-                  <Inbox className="h-3.5 w-3.5" />
-                  Incoming
-                  <span className="rounded-full bg-amber-600 px-1.5 py-0.5 text-[10px] font-black leading-none text-white">{awaitingIncomingCourses.length}</span>
-                </button>
-              )}
-            </div>
+            <span className="whitespace-nowrap text-xs font-bold text-slate-500">
+              {offeringDepartments.length} {offeringDepartments.length === 1 ? "department" : "departments"}
+            </span>
           </div>
 
-          <IncomingCoursesModal
-            isOpen={incomingModalOpen}
-            onClose={() => setIncomingModalOpen(false)}
-            courses={awaitingIncomingCourses}
-          />
           {offeringDepartments.length === 0 ? (
-            awaitingIncomingCourses.length === 0 ? (
-              <div className="py-10 text-center"><h3 className="text-sm font-black text-[#4e0a10]">No incoming courses or approved schedules yet.</h3><p className="mt-1 text-xs font-medium text-slate-500">Assigned courses will appear here after a schedule is created and approved.</p></div>
-            ) : (
-              <div className="py-10 text-center"><h3 className="text-sm font-black text-[#4e0a10]">No approved schedules yet.</h3><p className="mt-1 text-xs font-medium text-slate-500">{awaitingIncomingCourses.length} incoming {awaitingIncomingCourses.length === 1 ? 'course is' : 'courses are'} waiting for a schedule. Open Incoming to see them.</p></div>
-            )
+            <div className="flex flex-col items-center px-6 py-14 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-400">
+                <ShieldCheck className="h-6 w-6" aria-hidden="true" />
+              </div>
+              <h3 className="mt-3 text-sm font-black text-[#4e0a10]">No approved classes yet.</h3>
+              <p className="mt-1 max-w-md text-xs font-medium leading-relaxed text-slate-500">
+                Courses assigned to your department appear here automatically once the offering department&apos;s timetable is approved by the VPAA.
+                Draft, submitted and Dean-reviewed schedules stay hidden.
+              </p>
+            </div>
           ) : (
             <DataTable
               table={departmentTable}
+              variant="embedded"
+              density="compact"
               ariaLabel="Departments with approved schedules"
               onRowClick={(row) => openDepartment(row.department.id)}
               getRowAttributes={() => ({ 'data-tour': 'department-card' })}
@@ -1315,8 +1372,8 @@ const selectedSchedule = assignmentSchedules.find(
         </section>
       ) : (
         <section id="instructor-assignment-workspace" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/70 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-3 border-b border-slate-200 bg-white px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
                 onClick={() => setSelectedDepartmentId(null)}
@@ -1350,13 +1407,16 @@ const selectedSchedule = assignmentSchedules.find(
                     `${selectedDepartment.department_code} Instructor Assignment`
                   )}
                 </h2>
-                <div className="mt-1 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-500">
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-semibold text-slate-500">
                   {activeSemester && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200/80 text-[10px] font-bold">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-200/80 bg-amber-50 px-2.5 py-0.5 text-[10px] font-bold text-amber-900">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
                       {activeSemester.semester} Semester &bull; AY {activeSemester.academic_year}
                     </span>
                   )}
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                    <ShieldCheck className="h-3 w-3" aria-hidden="true" /> VPAA-approved
+                  </span>
                   <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#C9952A]" /> Needs instructor</span>
                   <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-600" /> Assigned</span>
                 </div>
@@ -1365,15 +1425,21 @@ const selectedSchedule = assignmentSchedules.find(
             <div className="flex flex-wrap items-center gap-2">
               {headerActions}
               {workflowGuideId === 'instructor-assignment' && <WorkflowGuideButton guideId="instructor-assignment" />}
-              <span className="flex h-9 items-center rounded-xl bg-[#4e0a10] px-3 text-xs font-bold text-[#E8D5C4]">
-                {departmentClassTotals.assigned} of {departmentClassTotals.total} classes assigned
-              </span>
+              <div className="flex h-9 items-center gap-2.5 rounded-xl bg-[#4e0a10] px-3 text-xs font-bold text-[#E8D5C4]">
+                <span>{departmentClassTotals.assigned} of {departmentClassTotals.total} classes assigned</span>
+                <span className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-white/15 sm:block" aria-hidden="true">
+                  <span
+                    className="block h-full rounded-full bg-[#C9952A] transition-[width] duration-300"
+                    style={{ width: `${departmentClassTotals.total === 0 ? 0 : Math.round((departmentClassTotals.assigned / departmentClassTotals.total) * 100)}%` }}
+                  />
+                </span>
+              </div>
             </div>
           </div>
 
-          <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-2.5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50/60 px-4 py-2.5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="relative">
+              <div className="relative w-full sm:w-auto">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <label className="sr-only" htmlFor="assignment-search">Search classes</label>
                 <input
@@ -1382,7 +1448,7 @@ const selectedSchedule = assignmentSchedules.find(
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
                   placeholder="Search course, section, room, instructor"
-                  className="h-9 w-64 rounded-xl border border-slate-200 bg-white pl-8 pr-3 text-xs font-semibold text-slate-700 outline-none focus:border-[#C9952A]"
+                  className="h-9 w-full rounded-xl border border-slate-200 bg-white pl-8 pr-3 text-xs font-semibold text-slate-700 outline-none transition-colors focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/20 sm:w-64"
                 />
               </div>
               <label className="sr-only" htmlFor="assignment-status-filter">Assignment status</label>
@@ -1452,7 +1518,7 @@ const selectedSchedule = assignmentSchedules.find(
               )}
             </div>
 
-            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-0.5">
+            <div className="flex items-center gap-1 self-start rounded-xl border border-slate-200 bg-white p-0.5 lg:self-auto">
               {([
                 { id: "list" as const, label: "List", Icon: LayoutList },
                 { id: "grid" as const, label: "Grid", Icon: CalendarRange },

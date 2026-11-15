@@ -19,12 +19,20 @@
   flex-shrink: 0;
 }
 
-/* Fixed column widths (table-fixed); select, units and actions are sized in the column defs. */
-.course-teaching-table th.course-teaching-col-course { width: 28%; }
-.course-teaching-table th.course-teaching-col-program { width: 22%; }
-.course-teaching-table th.course-teaching-col-owner { width: 9%; }
-.course-teaching-table th.course-teaching-col-teacher { width: 13%; }
-.course-teaching-table th.course-teaching-col-status { width: 17%; }
+/* Fixed column widths (table-fixed); select, units and actions are sized in the column defs.
+   TanStack gives every column a default size of 150, which DataTable writes as an inline
+   `width: 150px` on each <th>, so these need !important to take effect.
+   Course is `auto`: it absorbs whatever the other columns leave, so the columns always add
+   up to the table width (no dead space, no horizontal overflow).
+   Origin only ever shows a department code, so it gets a compact pixel width and Taught by
+   sits right next to it. */
+@container (min-width: 768px) {
+  .course-teaching-table th.course-teaching-col-course { width: auto !important; }
+  .course-teaching-table th.course-teaching-col-program { width: 18% !important; }
+  .course-teaching-table th.course-teaching-col-owner { width: 76px !important; }
+  .course-teaching-table th.course-teaching-col-teacher { width: 17% !important; }
+  .course-teaching-table th.course-teaching-col-status { width: 16% !important; }
+}
 
 .course-teaching-table td {
   padding-block: 0.625rem;

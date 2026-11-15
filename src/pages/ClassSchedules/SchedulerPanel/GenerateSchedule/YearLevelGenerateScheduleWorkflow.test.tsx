@@ -21,6 +21,10 @@ vi.mock("../../../../lib/api", () => ({
     get,
     patch: vi.fn(),
     post,
+    // Auto-saved wizard progress.
+    put: vi.fn().mockResolvedValue({ data: {} }),
+    delete: vi.fn().mockResolvedValue({ data: {} }),
+    defaults: { baseURL: "/api" },
   },
 }));
 
@@ -1621,5 +1625,100 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
         }),
       ),
     );
+  });
+});
+
+describe("YearLevelGenerateScheduleWorkflow auto-save", () => {
+  const serverDraftUrl = "/schedule-generation-draft";
+  const currentStep = () =>
+    screen.getByRole("navigation", { name: "Schedule generator steps" }).querySelector('[aria-current="step"]')?.textContent ?? "";
+  const workflow = () => (
+    <YearLevelGenerateScheduleWorkflow
+      onClose={vi.fn()}
+      sections={sections}
+      courses={courses}
+      activeSemester={activeSemester}
+      departmentId={2}
+      existingSchedules={[]}
+      onAccepted={vi.fn()}
+    />
+  );
+  const answer = (draft: unknown) => (url: string) => {
+    if (url === serverDraftUrl) return Promise.resolve({ data: draft });
+    if (url === "/scheduling-settings") return Promise.resolve({ data: { forced_day_rules: [], field_course_codes: [] } });
+    if (url === "/rooms") return Promise.resolve({ data: [] });
+    if (url.startsWith("/schedule-recommendations/generation-runs/")) {
+      return Promise.resolve({ data: {
+        run_id: "run-42", status: "completed", year_level: 1, created_at: "2026-11-15T00:00:00Z",
+        result: { status: "completed", schedules: [{ id: 1, section_id: 10, course_id: 20, day: "Monday", start_time: "07:00", end_time: "08:30", mode: "on-site" }] },
+      } });
+    }
+    if (url === "/schedule-recommendations/active-generation-run") return Promise.resolve({ data: { run: null } });
+    return curriculumEndpoints(url) ?? Promise.resolve({ data: {} });
+  };
+
+  beforeEach(() => {
+    localStorage.clear();
+    clearDataCache();
+    get.mockReset();
+    post.mockReset();
+  });
+
+  it("resumes newer progress saved on another device without generating again", async () => {
+    get.mockImplementation(answer({
+      revision: 50,
+      payload: {
+        step: 2, year_level: 1, active_section_id: "10", target_section_ids: null, configs: {},
+        setup_draft: { completed: true, preferredDays: ["Monday"], excludedCourseIds: [] },
+        course_defaults: null, run_id: null, saved_at: Date.now(),
+      },
+    }));
+
+    renderWorkflow(workflow());
+
+    await waitFor(() => expect(currentStep()).toContain("Setup Courses"), { timeout: 5000 });
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("keeps this browser's newer copy over an older server copy", async () => {
+    localStorage.setItem("wicars.year-level-wizard.v5.2.1", JSON.stringify({
+      step: 2, yearLevel: 1, activeSectionId: "10", configs: {},
+      setupDraft: { completed: true, preferredDays: ["Monday"] }, savedAt: Date.now(),
+    }));
+    get.mockImplementation(answer({
+      revision: 5,
+      payload: {
+        step: 1, year_level: 1, active_section_id: null, target_section_ids: null, configs: {},
+        setup_draft: { completed: false, preferredDays: [], excludedCourseIds: [] },
+        course_defaults: null, run_id: null, saved_at: 1,
+      },
+    }));
+
+    renderWorkflow(workflow());
+
+    expect(currentStep()).toContain("Setup Courses");
+    await waitFor(() => expect(get).toHaveBeenCalledWith(serverDraftUrl, expect.anything()), { timeout: 5000 });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+    expect(currentStep()).toContain("Setup Courses");
+  });
+
+  it("re-attaches the saved generation run by reading it, never by queueing a new one", async () => {
+    get.mockImplementation(answer({
+      revision: 60,
+      payload: {
+        step: 4, year_level: 1, active_section_id: "10", target_section_ids: null, configs: {},
+        setup_draft: { completed: true, preferredDays: ["Monday"], excludedCourseIds: [] },
+        course_defaults: null, run_id: "run-42", saved_at: Date.now(),
+      },
+    }));
+
+    renderWorkflow(workflow());
+
+    await waitFor(
+      () => expect(get).toHaveBeenCalledWith("/schedule-recommendations/generation-runs/run-42"),
+      { timeout: 5000 },
+    );
+    await waitFor(() => expect(currentStep()).toContain("Schedule Summary"), { timeout: 5000 });
+    expect(post).not.toHaveBeenCalled();
   });
 });

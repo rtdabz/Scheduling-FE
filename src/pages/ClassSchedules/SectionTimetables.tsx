@@ -23,10 +23,14 @@ import {
   type SchedulerCacheData,
 } from "./SchedulerPanel/hooks/initialDataMapper";
 import type { ScheduleItem } from "./SchedulerPanel/types";
+import { coursesForSection } from "./SchedulerPanel/sectionCourses";
 import { yearLevelLabel } from "../../lib/semesterLabel";
 import TruncatedDataNotice from "../../components/ui/TruncatedDataNotice";
 
 type DeliveryModeFilter = "all" | ScheduleItem["mode"];
+
+/** Section selector value that shows every section's classes at once. */
+const ALL_SECTIONS = "all";
 
 const emptyData: SchedulerCacheData = {
   rooms: [],
@@ -63,7 +67,7 @@ export default function SectionTimetables() {
   const cacheKey = `scheduler:section-timetables:${user?.department_id ?? "all"}`;
   const [cached] = useState(() => getCachedData<SchedulerCacheData>(cacheKey));
   const [data, setData] = useState<SchedulerCacheData>(cached ?? emptyData);
-  const [selectedSectionId, setSelectedSectionId] = useState(cached?.sections[0]?.id ?? "");
+  const [selectedSectionId, setSelectedSectionId] = useState<string>(ALL_SECTIONS);
   const [mode, setMode] = useState<DeliveryModeFilter>("all");
   const [isLoading, setIsLoading] = useState(!cached);
   const [error, setError] = useState("");
@@ -86,17 +90,28 @@ export default function SectionTimetables() {
           isVpaa: false,
           userDepartmentId: user?.department_id ?? null,
         });
-        const sortedSections = [...mapped.sections].sort((left, right) => (
+        // Only this department's sections and classes; other departments' rows are left out.
+        const departmentId = user?.department_id ?? null;
+        const ownSections = departmentId == null
+          ? mapped.sections
+          : mapped.sections.filter((section) => Number(section.departmentId) === Number(departmentId));
+        const ownSectionIds = new Set(ownSections.map((section) => section.id));
+        const ownSchedules = departmentId == null
+          ? mapped.schedules
+          : mapped.schedules.filter((schedule) => (
+            Number(schedule.departmentId) === Number(departmentId) || ownSectionIds.has(schedule.sectionId)
+          ));
+        const sortedSections = [...ownSections].sort((left, right) => (
           left.yearLevel - right.yearLevel || left.name.localeCompare(right.name)
         ));
 
-        const next = { ...mapped, sections: sortedSections };
+        const next = { ...mapped, sections: sortedSections, schedules: ownSchedules };
         setCachedData<SchedulerCacheData>(cacheKey, next);
         setData(next);
         setSelectedSectionId((current) => (
-          sortedSections.some((section) => section.id === current)
+          current === ALL_SECTIONS || sortedSections.some((section) => section.id === current)
             ? current
-            : sortedSections[0]?.id ?? ""
+            : ALL_SECTIONS
         ));
       } catch {
         if (controller.signal.aborted) return;
@@ -115,24 +130,42 @@ export default function SectionTimetables() {
     [data.sections, selectedSectionId],
   );
 
+  const showAllSections = selectedSectionId === ALL_SECTIONS;
+
   const approvedSchedules = useMemo(() => filterVpaaApprovedSchedules(data.schedules), [data.schedules]);
   const sectionSchedules = useMemo(() => approvedSchedules.filter((schedule) => (
-    schedule.sectionId === selectedSectionId && (mode === "all" || schedule.mode === mode)
-  )), [approvedSchedules, mode, selectedSectionId]);
+    (showAllSections || schedule.sectionId === selectedSectionId) && (mode === "all" || schedule.mode === mode)
+  )), [approvedSchedules, mode, selectedSectionId, showAllSections]);
 
   const visibleSchedules = useMemo(() => approvedSchedules.filter((schedule) => (
     mode === "all" || schedule.mode === mode
   )), [approvedSchedules, mode]);
 
-  const totalSubjects = useMemo(() => {
-    if (!selectedSection) return 0;
-    return data.subjects.filter((subject) => (
-      subject.yearLevel === selectedSection.yearLevel
-      && subject.semester === selectedSection.semester
-    )).length;
-  }, [data.subjects, selectedSection]);
+  // Placement uses the Schedule Builder's rule for a section's required courses (its curriculum,
+  // program and year/semester). In the all-sections view, counts are summed per section. The mode
+  // filter only narrows the chart; it does not change what counts as placed.
+  const countedSections = useMemo(
+    () => (showAllSections ? data.sections : selectedSection ? [selectedSection] : []),
+    [data.sections, selectedSection, showAllSections],
+  );
 
-  const totalScheduled = new Set(sectionSchedules.map((schedule) => schedule.subjectId)).size;
+  const { totalSubjects, totalScheduled } = useMemo(() => {
+    const placedBySection = new Map<string, Set<string>>();
+    for (const schedule of approvedSchedules) {
+      const placed = placedBySection.get(schedule.sectionId) ?? new Set<string>();
+      placed.add(String(schedule.courseId ?? schedule.subjectId));
+      placedBySection.set(schedule.sectionId, placed);
+    }
+    let required = 0;
+    let placed = 0;
+    for (const section of countedSections) {
+      const courses = coursesForSection(section, data.subjects);
+      const placedIds = placedBySection.get(section.id);
+      required += courses.length;
+      placed += courses.filter((course) => placedIds?.has(String(course.id))).length;
+    }
+    return { totalSubjects: required, totalScheduled: placed };
+  }, [approvedSchedules, countedSections, data.subjects]);
   const unplaced = Math.max(0, totalSubjects - totalScheduled);
   const placedPercent = totalSubjects > 0 ? Math.min(100, Math.round((totalScheduled / totalSubjects) * 100)) : 0;
 
@@ -183,7 +216,9 @@ export default function SectionTimetables() {
               disabled={isLoading || data.sections.length === 0}
               className="h-9 min-w-0 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 outline-none focus:border-[#4e0a10] disabled:bg-slate-100 sm:min-w-56"
             >
-              {data.sections.length === 0 && <option value="">No sections available</option>}
+              {data.sections.length === 0
+                ? <option value={ALL_SECTIONS}>No sections available</option>
+                : <option value={ALL_SECTIONS}>All Sections</option>}
               {data.sections.map((section) => (
                 <option key={section.id} value={section.id}>
                   {section.name} - {yearLevelLabel(section.yearLevel)}
@@ -243,8 +278,10 @@ export default function SectionTimetables() {
         <section aria-label="Section timetable" className="rounded-xl border border-border bg-white p-5">
           <header className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
             <div className="min-w-0">
-              <h2 className="truncate font-sans text-[15px] font-semibold leading-5 tracking-tight text-text">
-                {selectedSection ? `${selectedSection.name} · ${yearLevelLabel(selectedSection.yearLevel)}` : "No section selected"}
+              <h2 className="truncate font-sans text-sm font-semibold leading-5 tracking-tight text-text">
+                {showAllSections
+                  ? "All Sections"
+                  : selectedSection ? `${selectedSection.name} · ${yearLevelLabel(selectedSection.yearLevel)}` : "No section selected"}
               </h2>
               <p className="mt-1 text-xs text-muted">{formatActiveSemester(data)}</p>
             </div>

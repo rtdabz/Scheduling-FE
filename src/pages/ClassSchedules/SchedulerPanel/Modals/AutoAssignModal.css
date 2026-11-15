@@ -10,11 +10,11 @@
 .assign-modal .border-slate-200 { border-color: #e2d9d0; }
 .assign-modal button { touch-action: manipulation; }
 
-/* ── Header (deep maroon via .scheduler-brand-header) ── */
+/* â”€â”€ Header (deep maroon via .scheduler-brand-header) â”€â”€ */
 .assign-modal-header { display: flex; flex-shrink: 0; align-items: center; gap: 14px; padding: 14px 20px; }
 .assign-modal-header button { display: flex; align-items: center; justify-content: center; }
 
-/* ── Stepper: maroon progress, amber halo on the active step ── */
+/* â”€â”€ Stepper: maroon progress, amber halo on the active step â”€â”€ */
 .assign-progress { display: flex; flex-shrink: 0; align-items: center; gap: 20px; padding: 10px 20px; border-bottom: 1px solid var(--gen-line); background: #fff; }
 .assign-progress ol { display: flex; flex: 1; align-items: center; max-width: 640px; margin: 0; padding: 0; list-style: none; }
 .assign-progress li { display: flex; flex: 1; min-width: 0; align-items: center; gap: 8px; color: #625a54; font-size: 12px; font-weight: 500; }
@@ -29,12 +29,12 @@
 .assign-progress [aria-current='step'] .assign-step-number { border-color: var(--gen-deep); background: var(--gen-deep); color: #fff; box-shadow: 0 0 0 3px rgb(245 166 35 / 35%); }
 .assign-step-count { margin-left: auto; color: #625a54; font-size: 12px; white-space: nowrap; }
 
-/* ── Body ── */
+/* â”€â”€ Body â”€â”€ */
 .assign-modal-body { position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: hidden; padding: 16px; background: var(--gen-neutral); }
 .assign-columns { display: grid; grid-template-columns: minmax(280px, 3fr) minmax(0, 7fr); flex: 1; min-height: 0; gap: 14px; }
 .assign-instructor-panel, .assign-review-instructors, .assign-course-panel { display: flex; min-height: 0; min-width: 0; flex-direction: column; overflow: hidden; border: 1px solid var(--gen-line); border-radius: 12px; background: #fff; box-shadow: 0 1px 2px rgb(74 13 22 / 4%); }
 
-/* ── Shared panel pieces ── */
+/* â”€â”€ Shared panel pieces â”€â”€ */
 .assign-panel-heading, .assign-panel-title { display: flex; flex-shrink: 0; align-items: center; gap: 8px; color: #1a1410; font-size: 13px; font-weight: 600; }
 .assign-panel-heading { min-height: 44px; padding: 10px 14px 6px; }
 .assign-count-pill { display: inline-flex; min-width: 22px; justify-content: center; margin-left: auto; border-radius: 999px; padding: 1px 8px; background: var(--gen-neutral); color: #5b4f48; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -44,7 +44,7 @@
 .assign-input:focus { border-color: var(--gen-primary); box-shadow: 0 0 0 3px rgb(112 21 34 / 12%); }
 .assign-modal .assign-input:focus-visible { outline: none; }
 
-/* ── Instructor panel ── */
+/* â”€â”€ Instructor panel â”€â”€ */
 .assign-tabs { display: flex; flex-shrink: 0; gap: 18px; padding: 0 14px; border-bottom: 1px solid var(--gen-line); }
 .assign-tab { position: relative; margin-bottom: -1px; padding: 9px 0 8px; border-bottom: 2px solid transparent; color: #625a54; font-size: 12px; font-weight: 600; white-space: nowrap; transition: color 150ms, border-color 150ms; }
 .assign-tab:hover { color: var(--gen-deep); }
@@ -77,11 +77,11 @@
 .assign-load-track-lg { height: 6px; }
 .assign-load-notice { flex-shrink: 0; font-size: 10px; font-weight: 600; white-space: nowrap; }
 
-/* ── Course filters ── */
+/* â”€â”€ Course filters â”€â”€ */
 .assign-course-filters { display: grid; flex-shrink: 0; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--gen-line); background: #fff; }
 .assign-course-filters > label { color: #5b4f48; text-transform: none; letter-spacing: normal; font-size: 11px; font-weight: 600; }
 
-/* ── Section table ── */
+/* â”€â”€ Section table â”€â”€ */
 .assign-section-panel { display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: hidden; }
 .assign-sections-heading { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; min-height: 46px; padding: 8px 14px; }
 .assign-sections-tools { display: flex; align-items: center; gap: 10px; }
@@ -128,7 +128,7 @@
 .assign-modal .assign-sections-table tbody > tr.assign-row-locked { background-color: #fcfbf9 !important; }
 .assign-modal .assign-sections-table tbody > tr.assign-row-locked :is(.assign-section-name, .assign-section-units, .assign-section-meetings) { color: #7a6e67; }
 
-/* ── Selection summary (sits under the table's scroll area, never over rows) ── */
+/* â”€â”€ Selection summary (sits under the table's scroll area, never over rows) â”€â”€ */
 .assign-selection-actions { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--gen-line); background: var(--gen-neutral); }
 .assign-selection-actions[data-selected='true'] { background: linear-gradient(0deg, var(--gen-neutral), #fbf6f6); box-shadow: inset 0 1px 0 rgb(112 21 34 / 12%); }
 .assign-selection-summary { display: flex; min-width: 0; flex: 1; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
@@ -142,21 +142,22 @@
 .assign-tier-chip { flex-shrink: 0; border: 1px solid; border-radius: 6px; padding: 2px 7px; font-size: 11px; font-weight: 600; white-space: nowrap; }
 .assign-selection-empty { margin-right: auto; color: #625a54; font-size: 12px; font-weight: 500; }
 
-/* ── Buttons ── */
-.assign-button { display: inline-flex; min-height: 40px; flex-shrink: 0; align-items: center; justify-content: center; gap: 7px; border: 1px solid transparent; border-radius: 10px; padding: 8px 16px; font-size: 13px; font-weight: 600; line-height: 1.5; transition: background-color 150ms, border-color 150ms, color 150ms, box-shadow 150ms; }
-.assign-button-primary { border-color: var(--gen-deep); background: var(--gen-deep); color: #fff; box-shadow: 0 1px 2px rgb(74 13 22 / 25%); }
-.assign-button-primary:hover:not(:disabled) { border-color: var(--gen-primary); background: var(--gen-primary); }
-.assign-button-secondary { border-color: var(--gen-line-strong); background: #fff; color: #3f342e; box-shadow: 0 1px 1px rgb(74 13 22 / 4%); }
-.assign-button-secondary:hover:not(:disabled) { border-color: rgb(112 21 34 / 30%); background: var(--gen-soft); color: var(--gen-deep); }
-.assign-button:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+/* â”€â”€ Buttons â”€â”€ */
+.assign-button { display: inline-flex; min-height: var(--btn-h-lg); flex-shrink: 0; align-items: center; justify-content: center; gap: 8px; border: 1px solid transparent; border-radius: var(--btn-radius); padding: 8px 16px; font-size: var(--btn-font-size); cursor: pointer; font-weight: 600; line-height: 1.5; transition: background-color 150ms, border-color 150ms, color 150ms, box-shadow 150ms; }
+.assign-button-primary { border-color: var(--btn-primary); background: var(--btn-primary); color: #fff; box-shadow: 0 1px 2px rgb(15 23 42 / 10%); }
+.assign-button-primary:hover:not(:disabled) { border-color: var(--btn-primary-hover); background: var(--btn-primary-hover); }
+.assign-button-primary:active:not(:disabled) { background: var(--btn-primary-active); }
+.assign-button-secondary { border-color: var(--btn-secondary-border); background: var(--btn-secondary-bg); color: var(--btn-secondary-text); box-shadow: 0 1px 2px rgb(15 23 42 / 6%); }
+.assign-button-secondary:hover:not(:disabled) { border-color: #94a3b8; background: var(--btn-secondary-hover); }
+.assign-button:disabled { cursor: not-allowed; border-color: var(--btn-disabled-border); background: var(--btn-disabled-bg); color: var(--btn-disabled-text); box-shadow: none; }
 
-/* ── Modal footer ── */
+/* â”€â”€ Modal footer â”€â”€ */
 .assign-modal-footer { position: relative; display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 20px; border-top: 1px solid var(--gen-line); background: var(--gen-neutral); }
 .assign-footer-help, .assign-pending-summary { display: flex; flex: 1; min-width: 0; align-items: center; gap: 7px; color: #625a54; font-size: 12px; }
 .assign-pending-summary { color: var(--gen-deep); font-weight: 600; }
 .assign-footer-buttons { display: flex; flex-shrink: 0; align-items: center; gap: 8px; margin-left: auto; }
 
-/* ── Review & Confirm ── */
+/* â”€â”€ Review & Confirm â”€â”€ */
 .assign-review-heading { display: grid; flex-shrink: 0; grid-template-columns: minmax(0, 1fr) 170px auto; align-items: center; gap: 14px; padding: 14px; border-bottom: 1px solid var(--gen-line); }
 .assign-review-heading img, .assign-review-heading > div:first-child > span:first-child { width: 36px; height: 36px; }
 .assign-course-name { margin-top: 3px; overflow-wrap: anywhere; color: #625a54; font-size: 12px; font-weight: 400; }

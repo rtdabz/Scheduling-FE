@@ -1,5 +1,18 @@
-import { defineConfig, loadEnv } from 'vite'
+import { createLogger, defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+
+// A client dropping its live-updates socket (tab closed, laptop asleep, dev tunnel
+// recycled) aborts the proxied WebSocket mid-write. Vite already handles the error,
+// but logs a full stack trace for it ("write ECONNABORTED"). Those disconnects are
+// normal, so keep them out of the log; every other proxy error is still printed.
+const CLIENT_DISCONNECT_CODES = new Set(['ECONNABORTED', 'ECONNRESET', 'EPIPE'])
+const logger = createLogger()
+const logError = logger.error.bind(logger)
+logger.error = (msg, options) => {
+  const code = (options?.error as NodeJS.ErrnoException | undefined)?.code
+  if (code && CLIENT_DISCONNECT_CODES.has(code) && msg.includes('ws proxy')) return
+  logError(msg, options)
+}
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -7,6 +20,7 @@ export default defineConfig(({ mode }) => {
   const hmrHost = env.VITE_HMR_HOST
 
   return {
+    customLogger: logger,
     plugins: [react()],
     // Loaded only through dynamic import(), so the dev server would otherwise discover them mid-session,
     // re-bundle, and fail the in-flight import with "504 Outdated Optimize Dep".

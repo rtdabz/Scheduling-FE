@@ -132,7 +132,9 @@ export default function SecretarySections() {
 
   // Sections in scope before the year-level filter, so each year button can show its count.
   const scopedSections = useMemo(() => {
-    let list = sections;
+    // Sections belong to a single semester; only the active semester's sections are shown.
+    if (!activeSemester) return [];
+    let list = sections.filter(s => Number(s.semester_id) === Number(activeSemester.id));
     if (!isVpaa) {
       if (!user?.department_id) return [];
       list = list.filter(s => s.department_id !== null && Number(s.department_id) === Number(user.department_id));
@@ -147,7 +149,7 @@ export default function SecretarySections() {
     }
 
     return list;
-  }, [sections, isVpaa, user?.department_id, user?.program_id, isProgramHead, programFilter]);
+  }, [sections, activeSemester, isVpaa, user?.department_id, user?.program_id, isProgramHead, programFilter]);
 
   const yearLevelCounts = useMemo(() => {
     const counts: Record<string, number> = { all: scopedSections.length, '1': 0, '2': 0, '3': 0, '4': 0 };

@@ -78,6 +78,10 @@ const schedule = (id: string, sectionId: string, mode: ScheduleItem["mode"]): Sc
   roomId: "1",
 });
 
+const course = (id: string, yearLevel: number, programId: number | null = null) => ({
+  id, yearLevel, semester: "1st", category: "major", departmentId: 7, programId,
+});
+
 describe("SectionTimetables", () => {
   afterEach(cleanup);
   beforeEach(() => {
@@ -102,12 +106,18 @@ describe("SectionTimetables", () => {
   it("loads the authorized data and switches the shared Gantt chart by section and mode", async () => {
     render(<SectionTimetables />);
 
+    // Defaults to every section's classes.
     const gantt = await screen.findByTestId("gantt-probe");
-    expect(gantt.getAttribute("data-sections")).toBe("1");
-    expect(gantt.getAttribute("data-count")).toBe("1");
+    expect((screen.getByLabelText("Section") as HTMLSelectElement).value).toBe("all");
+    expect(gantt.getAttribute("data-sections")).toBe("1,2");
+    expect(gantt.getAttribute("data-count")).toBe("2");
     expect(mocks.get).toHaveBeenCalledWith("/initial-data", expect.objectContaining({
       params: { schedule_limit: 2000, view: "gantt" },
     }));
+
+    fireEvent.change(screen.getByLabelText("Section"), { target: { value: "1" } });
+    await waitFor(() => expect(screen.getByTestId("gantt-probe").getAttribute("data-sections")).toBe("1"));
+    expect(screen.getByTestId("gantt-probe").getAttribute("data-count")).toBe("1");
 
     fireEvent.change(screen.getByLabelText("Section"), { target: { value: "2" } });
     await waitFor(() => expect(screen.getByTestId("gantt-probe").getAttribute("data-sections")).toBe("2"));
@@ -116,14 +126,41 @@ describe("SectionTimetables", () => {
     await waitFor(() => expect(screen.getByTestId("gantt-probe").getAttribute("data-count")).toBe("0"));
   });
 
+  it("leaves out other departments' sections and classes", async () => {
+    const data = mocks.mapInitialData();
+    mocks.mapInitialData.mockReturnValue({ ...data,
+      sections: [...data.sections, { ...section("3", "BSN-1A", 1), departmentId: 8 }],
+      schedules: [...data.schedules, { ...schedule("30", "3", "on-site"), departmentId: 8 }],
+    });
+    render(<SectionTimetables />);
+    await waitFor(() => expect(screen.getByTestId("gantt-probe").getAttribute("data-sections")).toBe("1,2"));
+    expect(screen.getByTestId("gantt-probe").getAttribute("data-count")).toBe("2");
+    expect(screen.queryByRole("option", { name: /BSN-1A/ })).toBeNull();
+  });
+
   it("excludes unapproved schedules from blocks and placement counts", async () => {
     const data = mocks.mapInitialData();
     mocks.mapInitialData.mockReturnValue({ ...data,
-      subjects: [{ id: "10", yearLevel: 1, semester: "1st" }, { id: "11", yearLevel: 1, semester: "1st" }],
+      subjects: [course("10", 1), course("11", 1)],
       schedules: [schedule("10", "1", "on-site"), { ...schedule("11", "1", "on-site"), status: "approved_by_dean" }],
     });
     render(<SectionTimetables />);
     await waitFor(() => expect(screen.getByTestId("gantt-probe").getAttribute("data-count")).toBe("1"));
     expect(screen.getByRole("progressbar", { name: "Courses placed" }).getAttribute("aria-valuenow")).toBe("1");
+  });
+
+  it("counts only each section's own program courses as required", async () => {
+    const data = mocks.mapInitialData();
+    mocks.mapInitialData.mockReturnValue({ ...data,
+      sections: [{ ...section("1", "BSIT-1A", 1), programId: 1 }],
+      // Course 12 belongs to another program at the same year level and must not inflate the total.
+      subjects: [course("10", 1, 1), course("11", 1, 1), course("12", 1, 2)],
+      schedules: [schedule("10", "1", "on-site")],
+    });
+    render(<SectionTimetables />);
+    await waitFor(() => expect(screen.getByTestId("gantt-probe").getAttribute("data-count")).toBe("1"));
+    const progress = screen.getByRole("progressbar", { name: "Courses placed" });
+    expect(progress.getAttribute("aria-valuemax")).toBe("2");
+    expect(progress.getAttribute("aria-valuenow")).toBe("1");
   });
 });

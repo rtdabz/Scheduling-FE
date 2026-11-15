@@ -39,7 +39,7 @@ const courseDefaults = {
 const course = (id: number, overrides: Partial<typeof courseDefaults> = {}) => ({ ...courseDefaults, id, ...overrides });
 const scheduleDefaults = {
   id: 1, semester_id: 1, department_id: 7, course_id: 1, section_id: 31, faculty_id: 10 as number | null,
-  faculty_assignment_done: false, status: 'submitted', day: 'Monday', start_time: '08:00:00', end_time: '09:30:00',
+  faculty_assignment_done: false, status: 'approved', day: 'Monday', start_time: '08:00:00', end_time: '09:30:00',
   section: { section_name: 'BLIS 1A' }, room: { room_code: 'LIB-101' },
   faculty: { first_name: 'IT', last_name: 'Instructor' } as { first_name: string; last_name: string } | null,
 };
@@ -55,6 +55,7 @@ const scheduler = {
   subjects: [] as Array<{ id: string; teachingDepartmentId: number; teachingProgramId: number | null; programId: number | null }>,
   faculties: [{ id: '10', departmentId: 6 }], userDepartmentId: 6, userProgramId: null,
   isLoading: false, facultyActionSlotId: null, canManageScheduleFaculty: () => true,
+  activeSemester: { id: 4 },
   checkFacultyConflict: () => null, handleBulkFacultyAssign: vi.fn(),
   handleRemoveFacultyFromClass: vi.fn(), handleFacultyAssignmentDone: vi.fn(),
 };
@@ -137,10 +138,22 @@ describe('assignment help context', () => {
 });
 
 describe('cross-department assignment visibility', () => {
-  it.each(['submitted', 'revision', 'approved_by_dean', 'finalized'])('retains assigned %s classes read-only without duplicate courses or unassigned preapproval rows', async (status) => {
-    payload.subjects.push(course(2, { course_code: 'HIDDEN', teaching_department_id: 8 }));
+  it.each(['draft', 'submitted', 'revision', 'approved_by_dean', 'conditionally_approved'])('keeps %s classes out of view even with a retained instructor', async (status) => {
     payload.schedules = [
       schedule(1, { status }), schedule(2, { status, day: 'Tuesday' }),
+      schedule(3, { status, faculty_id: null, faculty: null, section_id: 32, section: { section_name: 'BLIS 1B' } }),
+    ];
+    render(<InstructorAssignment />);
+    await screen.findByText('No approved classes yet.');
+    expect(screen.queryByRole('button', { name: 'View CLIS timetable' })).toBeNull();
+    expect(screen.queryByText(/incoming/i)).toBeNull();
+    expect(patch).not.toHaveBeenCalled(); expect(post).not.toHaveBeenCalled();
+  });
+
+  it('shows finalized classes read-only without duplicate courses or other teaching departments', async () => {
+    payload.subjects.push(course(2, { course_code: 'HIDDEN', teaching_department_id: 8 }));
+    payload.schedules = [
+      schedule(1, { status: 'finalized' }), schedule(2, { status: 'finalized', day: 'Tuesday' }),
       schedule(3, { status: 'submitted', faculty_id: null, faculty: null, section_id: 32, section: { section_name: 'BLIS 1B' } }),
       schedule(4, { status: 'approved', course_id: 2 }),
     ];
@@ -149,37 +162,35 @@ describe('cross-department assignment visibility', () => {
     await openDepartment(); expandSection();
     expect(screen.getAllByText('IT 101')).toHaveLength(1);
     expect(screen.getByText('IT Instructor')).toBeTruthy();
-    expect(screen.getByText('LIB-101')).toBeTruthy();
     expect(screen.queryByText('HIDDEN')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Section BLIS 1B' })).toBeNull();
     expect(screen.queryByRole('combobox', { name: 'Instructor for IT 101 BLIS 1A' })).toBeNull();
     expect((screen.getByRole('button', { name: 'Clear All Instructors' }) as HTMLButtonElement).disabled).toBe(true);
     expect(workspace.mock.calls.at(-1)?.[0].scheduleIds).toEqual([1, 2]);
     fireEvent.click(screen.getByRole('button', { name: 'Grid' }));
-    if (status === 'finalized') fireEvent.click(screen.getByRole('button', { name: 'Class 1' }));
-    else expect(screen.queryByRole('button', { name: 'Class 1' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Class 1' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(patch).not.toHaveBeenCalled(); expect(post).not.toHaveBeenCalled();
   });
 
-  it('keeps retained assignments in List while showing only final VPAA-approved classes in Grid', async () => {
+  it('lists only VPAA-approved classes in both List and Grid and counts classes, not meeting blocks', async () => {
     payload.schedules = [
       schedule(1, { status: 'submitted' }),
       schedule(2, { status: 'approved', section_id: 32, section: { section_name: 'BLIS 1B' } }),
+      schedule(5, { status: 'approved', section_id: 32, section: { section_name: 'BLIS 1B' }, day: 'Wednesday' }),
       schedule(3, { status: 'approved_by_dean', section_id: 33, section: { section_name: 'BLIS 1C' } }),
     ];
     render(<InstructorAssignment />);
+    expect(await screen.findByText('1 of 1 classes staffed')).toBeTruthy();
     await openDepartment();
-    expect(screen.getByRole('button', { name: 'Section BLIS 1A' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Section BLIS 1C' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Section BLIS 1A' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Section BLIS 1C' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Section BLIS 1B' })).toBeTruthy();
+    expect(screen.getByText('1 of 1 classes assigned')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Grid' }));
     expect(screen.getByRole('button', { name: 'Class 2' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Class 1' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Class 3' })).toBeNull();
-    expect(screen.getByText('1 of 1 classes assigned')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'List' }));
-    expect(screen.getByRole('button', { name: 'Section BLIS 1A' })).toBeTruthy();
-    expect(screen.getByText('3 of 3 classes assigned')).toBeTruthy();
   });
 
   it('keeps approved assignments in other departments editable', async () => {
@@ -222,30 +233,32 @@ describe('cross-department assignment visibility', () => {
     payload.subjects = [course(1, { department_id: 6, program_id: 12, teaching_program_id: 11 })];
     payload.schedules = [schedule(1, { department_id: 6, status: 'approved' })];
     render(<InstructorAssignment />);
-    await screen.findByText('No incoming courses or approved schedules yet.');
+    await screen.findByText('No approved classes yet.');
     expect(screen.queryByRole('button', { name: 'View CIT timetable' })).toBeNull();
   });
 });
 
 describe('Cross-Department bulk actions', () => {
-  it('keeps retained submitted assignments out of Done and Auto-Assign', async () => {
+  it('offers no bulk actions while the source timetable awaits VPAA approval', async () => {
+    payload.schedules[0].status = 'submitted'; syncScheduler();
     render(<CrossDepartmentAssignments />);
-    await openDepartment();
-    expect((screen.getByRole('button', { name: 'Done Assigning' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: 'Auto-Assign Instructor' }) as HTMLButtonElement).disabled).toBe(true);
-    expect(autoAssign.mock.calls.at(-1)?.[0].schedules).toEqual([]);
+    await screen.findByText('No approved classes yet.');
+    expect(screen.queryByRole('button', { name: 'Done Assigning' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Assign' })).toBeNull();
     expect(scheduler.handleFacultyAssignmentDone).not.toHaveBeenCalled();
   });
 
   it('offers only approved rows from a mixed timetable and rejects retained row mutations', async () => {
+    payload.schedules[0].status = 'submitted';
     payload.schedules.push(schedule(2, { status: 'approved', section_id: 32, section: { section_name: 'BLIS 1B' } }));
     syncScheduler();
     render(<CrossDepartmentAssignments />);
     await openDepartment();
-    expect((screen.getByRole('button', { name: 'Done Assigning' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: 'Auto-Assign Instructor' }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole('button', { name: 'Assign' }) as HTMLButtonElement).disabled).toBe(false);
     const modal = autoAssign.mock.calls.at(-1)?.[0];
     expect(modal.schedules.map((row: { id: string }) => row.id)).toEqual(['2']);
+    // The list is auto-saved per offering department, apart from Schedule Management's list.
+    expect(modal.draftScope).toEqual({ semesterId: 4, departmentId: 6, context: 'cross_department:7' });
     await act(async () => {
       expect(await modal.onAssign([{ scheduleIds: ['1'], facultyId: '10' }])).toBe(false);
       expect(await modal.onRemoveAssignment(['1'])).toBe(false);

@@ -1,3 +1,4 @@
+import { buttonClass } from '../../ui/buttonStyles';
 import { useMemo, useRef, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import Modal from '../../ui/Modal';
@@ -146,7 +147,7 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
             aria-invalid={error ? true : undefined}
             aria-describedby={error ? `${id}-error` : undefined}
             onChange={(event) => setValue(event.target.value)}
-            className="h-full w-16 rounded-l-lg bg-transparent pl-3 text-[15px] font-bold tabular-nums text-text focus:outline-none disabled:cursor-not-allowed disabled:text-muted [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            className="h-full w-16 rounded-l-lg bg-transparent pl-3 text-sm font-bold tabular-nums text-text focus:outline-none disabled:cursor-not-allowed disabled:text-muted [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
           />
           <span className="pr-3 text-xs text-muted">hr</span>
         </div>
@@ -186,7 +187,7 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
         {message && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800">{message}</p>}
 
         <section aria-labelledby="conversion-heading">
-          <h3 id="conversion-heading" className="text-[15px] font-semibold text-text">Credit-to-time conversion</h3>
+          <h3 id="conversion-heading" className="text-sm font-semibold text-text">Credit-to-time conversion</h3>
           <p className="mt-0.5 text-[13px] text-muted">How many hours of class each credit unit becomes in future imports.</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {conversion('lecture_minutes_per_unit', 'Lecture', lectureHours, setLectureHours, lectureError)}
@@ -200,7 +201,7 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
         <section aria-labelledby="rules-heading">
           <div className="flex flex-wrap items-end justify-between gap-2">
             <div>
-              <h3 id="rules-heading" className="text-[15px] font-semibold text-text">
+              <h3 id="rules-heading" className="text-sm font-semibold text-text">
                 Classification rules <span className="font-sans text-[13px] font-normal text-muted tabular-nums">{rules.length}</span>
               </h3>
               <p className="mt-0.5 text-[13px] text-muted">Suggest Major or Minor from the start of the course code. The longest matching prefix wins.</p>
@@ -257,7 +258,7 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
                       </td>
                       <td className="px-3 py-2 text-right">
                         {!readOnly && (
-                          <button type="button" onClick={() => void removeRule(rule)} aria-label={`Delete rule ${index + 1}${rule.match_value ? `, ${normalizeCode(rule.match_value)}` : ''}`} title="Delete rule" className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+                          <button type="button" onClick={() => void removeRule(rule)} aria-label={`Delete rule ${index + 1}${rule.match_value ? `, ${normalizeCode(rule.match_value)}` : ''}`} title="Delete rule" className={buttonClass({ variant: 'dangerTint', size: 'md', iconOnly: true })}>
                             <Trash2 size={15} aria-hidden="true" />
                           </button>
                         )}

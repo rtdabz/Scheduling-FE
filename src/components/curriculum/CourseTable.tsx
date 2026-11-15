@@ -1,3 +1,4 @@
+import { buttonClass } from '../ui/buttonStyles';
 import { useMemo } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { BookOpen, Pencil, AlertTriangle, X, Clock } from 'lucide-react';
@@ -142,7 +143,7 @@ export default function CourseTable({
             <button
               onClick={onCancelRemove}
               title="Cancel course removal"
-              className="px-2 py-1 text-[10px] font-bold text-gray-500 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+              className={buttonClass({ variant: 'neutralTint', size: 'xs' })}
             >
               Cancel
             </button>

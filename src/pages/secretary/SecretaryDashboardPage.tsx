@@ -867,7 +867,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
 function Panel({title, children, action, onAction, headerExtra, className = ''}:{title:string; children:ReactNode; action?:string; onAction?:() => void; headerExtra?:ReactNode; className?:string}) {
   return <section className={`min-w-0 rounded-xl border border-border bg-white p-5 ${className}`}>
     <div className="mb-4 flex min-h-[28px] items-center justify-between gap-3">
-      <h2 className="min-w-0 truncate font-jakarta text-[15px] font-semibold leading-5 tracking-tight text-text" title={title}>{title}</h2>
+      <h2 className="min-w-0 truncate font-jakarta text-sm font-semibold leading-5 tracking-tight text-text" title={title}>{title}</h2>
       <div className="flex shrink-0 items-center gap-2">
         {action && <button type="button" onClick={onAction} className="-mr-1.5 inline-flex h-7 shrink-0 items-center gap-0.5 whitespace-nowrap rounded-md pl-2 pr-1 text-xs font-semibold text-primary transition-colors hover:bg-primary/[0.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">{action}<ChevronRight className="h-3.5 w-3.5"/></button>}
         {headerExtra}

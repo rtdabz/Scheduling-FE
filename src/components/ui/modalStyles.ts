@@ -3,6 +3,7 @@
  * buttons read the same in every module. Use these with `Modal`; the scheduler's
  * workflow dialogs keep their own `scheduler-dialog-*` classes.
  */
+import { buttonClass } from './buttonStyles';
 
 /** Standard padded body. Dialogs that pin a table or preview pass their own layout instead. */
 export const modalBody = 'space-y-4 px-4 py-4 sm:px-5 sm:py-5';
@@ -27,15 +28,15 @@ const controlTone = (hasError: boolean) =>
 export const modalControl = (hasError = false) => `h-10 ${controlBase} ${controlTone(hasError)}`;
 export const modalTextarea = (hasError = false) => `resize-none py-2 leading-5 ${controlBase} ${controlTone(hasError)}`;
 
-const buttonBase =
-  'inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-4 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer';
-
+/** Dialog footer buttons: the shared recipe at the 40px `lg` size. */
 export const modalButton = {
-  primary: `${buttonBase} bg-[#4e0a10] font-bold text-white hover:bg-[#6b0e17] focus-visible:ring-[#4e0a10]`,
-  secondary: `${buttonBase} border border-slate-300 bg-white font-semibold text-slate-700 hover:bg-slate-100 focus-visible:ring-slate-400`,
-  danger: `${buttonBase} bg-red-600 font-bold text-white hover:bg-red-700 focus-visible:ring-red-500`,
-  dangerOutline: `${buttonBase} border border-red-300 bg-white font-semibold text-red-600 hover:bg-red-50 focus-visible:ring-red-400`,
-  ghost: `${buttonBase} font-semibold text-[#4e0a10] hover:bg-[#4e0a10]/5 focus-visible:ring-[#4e0a10]`,
+  primary: buttonClass({ variant: 'primary', size: 'lg' }),
+  secondary: buttonClass({ variant: 'secondary', size: 'lg' }),
+  danger: buttonClass({ variant: 'danger', size: 'lg' }),
+  dangerOutline: buttonClass({ variant: 'dangerSoft', size: 'lg' }),
+  success: buttonClass({ variant: 'success', size: 'lg' }),
+  warning: buttonClass({ variant: 'warning', size: 'lg' }),
+  ghost: buttonClass({ variant: 'ghost', size: 'lg' }),
 } as const;
 
 export const modalNotice = {

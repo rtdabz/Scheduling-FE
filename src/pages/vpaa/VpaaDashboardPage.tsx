@@ -507,7 +507,7 @@ export default function VpaaDashboardPage() {
     <div className={isFullscreen ? 'fixed inset-0 z-[1000] flex flex-col overflow-auto bg-parchment p-4 font-jakarta text-text sm:p-6' : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
       <section aria-label="Institutional master timetable" className="flex min-h-0 flex-1 flex-col rounded-xl border border-border bg-white p-5">
         <header className="flex shrink-0 flex-wrap items-center gap-2">
-          <h2 className="font-jakarta text-[15px] font-semibold leading-5 tracking-tight text-text">Master timetable</h2>
+          <h2 className="font-jakarta text-sm font-semibold leading-5 tracking-tight text-text">Master timetable</h2>
           <span title="Preview of VPAA-approved classes" className="rounded-full bg-parchment px-2 py-0.5 text-[11px] font-medium text-muted">Preview</span>
           <button type="button" aria-label="Timetable filters" aria-expanded={showTimetableFilters} aria-controls="dashboard-timetable-filters" onClick={() => setShowTimetableFilters(open => !open)}
             data-active={showTimetableFilters || activeTimetableFilterCount > 0}
@@ -578,7 +578,7 @@ export default function VpaaDashboardPage() {
 
   const dashboardLoading = loading || insightsLoading || activityLoading;
   const metrics = (
-    <section id="dashboard-metrics" data-skeleton={dashboardLoading ? 'metrics' : undefined} className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-7">
+    <section id="dashboard-metrics" data-skeleton={dashboardLoading ? 'metrics' : undefined} className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
       {kpis.map(({ label, value, detail, icon, path, tone }) => <DashboardMetricCard loading={dashboardLoading} key={label} label={label} value={value} detail={detail} icon={icon} tone={tone} onClick={() => navigate(path)} />)}
 
       <DashboardMetricCard
@@ -661,7 +661,7 @@ export default function VpaaDashboardPage() {
             {totals.pendingVpaa ? <AlertTriangle className="h-[18px] w-[18px]" /> : <CheckCircle2 className="h-[18px] w-[18px]" />}
           </span>
           <div className="min-w-0 flex-1">
-            <div className="text-[15px] font-semibold leading-tight tracking-tight text-primary">
+            <div className="text-sm font-semibold leading-tight tracking-tight text-primary">
               {grouped(totals.pendingVpaa)} {totals.pendingVpaa === 1 ? 'Section' : 'Sections'} Awaiting VPAA Review
             </div>
             <p className="mt-1 text-xs leading-tight text-text/75">
@@ -726,7 +726,7 @@ export default function VpaaDashboardPage() {
 
     {visitedTabs.has('progress') && <div role="tabpanel" id="dashboard-panel-progress" aria-labelledby="dashboard-tab-progress" hidden={tab !== 'progress'}><div className="space-y-4">
     <section>
-      <div className="grid items-stretch gap-4 xl:grid-cols-2">
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <FacultyLoadPanel
           slices={facultySlices}
           total={faculties.length}
@@ -740,7 +740,7 @@ export default function VpaaDashboardPage() {
           action="View readiness"
           onAction={() => navigate('/departments')}
         >
-          <div className="grid gap-4 sm:grid-cols-[128px_1fr] sm:items-center">
+          <div className="grid gap-4 sm:grid-cols-[128px_minmax(0,22rem)] sm:items-center sm:gap-6">
             <Donut slices={readinessSlices} headline={departments.length} caption="Departments" />
             <DonutLegend slices={readinessSlices} total={departments.length} />
           </div>

@@ -1,3 +1,4 @@
+import { buttonClass } from '../../ui/buttonStyles';
 import { useCallback, useMemo } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import DataTable from '../../ui/DataTable';
@@ -81,7 +82,7 @@ export default function ImportDraftTable({ editing = false, rows, issuesByRow, o
                 <p className="mt-0.5 max-w-[8.5rem] text-[11px] font-semibold leading-snug text-amber-800" title={reason}>
                   <span className="block truncate">{reason}</span>
                   {suggestion && editing && (
-                    <button type="button" onClick={() => onChange(row.original.row_id, { code: suggestion })} className="mt-0.5 rounded border border-amber-600/50 bg-white px-1.5 py-px font-bold text-amber-900 hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+                    <button type="button" onClick={() => onChange(row.original.row_id, { code: suggestion })} className={buttonClass({ variant: 'warningTint', size: 'xs', className: 'mt-0.5' })}>
                       Use {suggestion}
                     </button>
                   )}
@@ -169,7 +170,7 @@ export default function ImportDraftTable({ editing = false, rows, issuesByRow, o
           );
           return (
             <div className="whitespace-nowrap text-center">
-              <p className="text-[14px] tabular-nums text-text" aria-label={`${lec ?? 'blank'} lecture plus ${lab ?? 'blank'} laboratory equals ${tu ?? 'blank'} total units`}>
+              <p className="text-sm tabular-nums text-text" aria-label={`${lec ?? 'blank'} lecture plus ${lab ?? 'blank'} laboratory equals ${tu ?? 'blank'} total units`}>
                 {figure(lec)}<span aria-hidden="true" className="px-1 text-muted">+</span>{figure(lab)}<span aria-hidden="true" className="px-1 text-muted">=</span><span className="font-bold">{figure(tu, mismatch)}</span>
               </p>
               {notes}

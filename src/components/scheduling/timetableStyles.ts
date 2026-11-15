@@ -3,6 +3,7 @@
  * timetable. Grids, cells, blocks and legends import these instead of restating classes,
  * so a timetable anywhere in the system reads the same as the scheduler's.
  */
+import { buttonClass } from "../ui/buttonStyles";
 import { slotMinutes } from "../../lib/timeGrid";
 
 const BAND_MINUTES = 90;
@@ -47,10 +48,9 @@ export const TIMETABLE_BLOCK_TITLE = "text-[11px] font-black uppercase leading-t
 export const TIMETABLE_BLOCK_META = "text-[10.5px] font-medium leading-tight";
 
 /** Buttons on the timetable's maroon title bar. Pair with TIMETABLE_HEADER_BUTTON_PRESSED for toggles. */
-export const TIMETABLE_HEADER_BUTTON =
-  "inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors cursor-pointer border-white/20 bg-white/10 text-white hover:border-white/35 hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A]/60";
-/** A toggle shows its state, not priority: pressed is a brighter fill. */
-export const TIMETABLE_HEADER_BUTTON_PRESSED = "!border-white/45 !bg-white/25";
+export const TIMETABLE_HEADER_BUTTON = buttonClass({ variant: "onDarkMuted", size: "md", className: "!gap-1.5 !text-xs" });
+/** A toggle shows its state, not priority: pressed turns solid white with maroon text. */
+export const TIMETABLE_HEADER_BUTTON_PRESSED = "!border-white !bg-white !text-[#4e0a10]";
 
 /** Legend swatches, in the same order and colours as the scheduler's legend. */
 export const TIMETABLE_SWATCH = {

@@ -4,6 +4,7 @@ import { Bell, CheckCheck } from 'lucide-react';
 import { useSystemNotifications } from '../../hooks/useSystemNotifications';
 import type { ActivityFeedItem } from '../overview';
 import Skeleton from '../ui/Skeleton';
+import { HEADER_BELL_BUTTON_IDLE, HEADER_BELL_BUTTON_OPEN, HEADER_ICON_BUTTON_SHAPE } from '../layout/headerStyles';
 
 export default function NotificationBell() {
   const { feedItems, unreadCount, isLoading, markAsRead, markAllAsRead } = useSystemNotifications();
@@ -65,11 +66,11 @@ export default function NotificationBell() {
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
-        className={`relative flex h-10 w-10 items-center justify-center rounded-full border shadow-sm transition ${open ? 'border-[#4e0a10] bg-[#4e0a10] text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-[#4e0a10]/40 hover:text-[#4e0a10]'}`}
+        className={`relative ${HEADER_ICON_BUTTON_SHAPE} ${open ? HEADER_BELL_BUTTON_OPEN : HEADER_BELL_BUTTON_IDLE}`}
       >
-        <Bell className="h-[18px] w-[18px]" />
+        <Bell className="h-[18px] w-[18px]" strokeWidth={2} />
         {unreadCount > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex min-w-[16px] items-center justify-center rounded-full bg-[#b3261e] px-1 text-[9px] font-bold leading-4 text-white ring-2 ring-[#F7F4F0]">
+          <span className="absolute -right-1 -top-1 flex min-w-[16px] items-center justify-center rounded-full bg-[#b3261e] px-1 text-[10px] font-bold leading-4 text-white ring-2 ring-[#F7F4F0]">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
@@ -83,7 +84,7 @@ export default function NotificationBell() {
         >
           <div className="shrink-0 border-b border-[#4e0a10]/10 px-3 pb-2 pt-2.5">
             <div className="flex items-center justify-between gap-2">
-              <h2 className="text-[15px] font-bold text-[#4e0a10]">Notifications</h2>
+              <h2 className="text-sm font-bold text-[#4e0a10]">Notifications</h2>
               {unreadCount > 0 && (
                 <button
                   type="button"

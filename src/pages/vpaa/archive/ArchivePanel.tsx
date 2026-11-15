@@ -1,3 +1,4 @@
+import { buttonClass } from '../../../components/ui/buttonStyles';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { AlertTriangle, Archive as ArchiveIcon, ChevronLeft, ChevronRight, Eye, RefreshCw, RotateCcw, X } from 'lucide-react';
@@ -27,7 +28,7 @@ import {
 
 const controlClass = 'w-full rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-xs font-semibold text-gray-800 focus:border-[#5A1220] focus:outline-none focus:ring-2 focus:ring-[#5A1220]/30';
 const labelClass = 'text-[10px] font-bold uppercase tracking-wider text-gray-500';
-const buttonClass = 'inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220] disabled:cursor-not-allowed disabled:opacity-50';
+const archiveButton = 'inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220] disabled:cursor-not-allowed disabled:opacity-50';
 
 function RestoreCondition({ record }: { record: ArchiveRecord }) {
   const { state, blockers } = record.restore;
@@ -151,14 +152,14 @@ export default function ArchivePanel({ module, onRestored }: ArchivePanelProps) 
       meta: { align: 'right', cellClassName: 'whitespace-nowrap' },
       cell: ({ row: { original: record } }) => (
         <div className="flex flex-col items-end gap-1.5 sm:flex-row sm:justify-end">
-          <button type="button" onClick={() => openRecord(record, 'details')} aria-label={`View details for ${record.label}`} className={buttonClass}>
+          <button type="button" onClick={() => openRecord(record, 'details')} aria-label={`View details for ${record.label}`} className={buttonClass({ variant: 'infoTint', size: 'sm' })}>
             <Eye size={14} aria-hidden="true" /> <span>Details</span>
           </button>
           <button
             type="button"
             onClick={() => openRecord(record, record.restore.state === 'blocked' ? 'details' : 'confirm')}
             aria-label={record.restore.state === 'blocked' ? `Restore ${record.label} (blocked, view reasons)` : `Restore ${record.label}`}
-            className={`${buttonClass} border-[#5A1220]/40 text-[#5A1220] hover:bg-[#5A1220]/5`}
+            className={buttonClass({ variant: 'successTint', size: 'sm' })}
           >
             <RotateCcw size={14} aria-hidden="true" /> <span>Restore</span>
           </button>
@@ -255,10 +256,10 @@ export default function ArchivePanel({ module, onRestored }: ArchivePanelProps) 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3">
           <p ref={summaryRef} tabIndex={-1} role="status" aria-live="polite" className="rounded text-xs font-semibold text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220]">{initialLoad ? 'Loading archived records…' : resultSummary}</p>
           <div className="flex gap-2">
-            <button type="button" onClick={() => { setSearchDraft(''); clearFilters(); }} disabled={!hasFilters} className={buttonClass}>
+            <button type="button" onClick={() => { setSearchDraft(''); clearFilters(); }} disabled={!hasFilters} className={archiveButton}>
               <X size={14} aria-hidden="true" /> Clear filters
             </button>
-            <button type="button" onClick={() => void refresh()} disabled={loading} className={buttonClass}>
+            <button type="button" onClick={() => void refresh()} disabled={loading} className={archiveButton}>
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} aria-hidden="true" /> {loading ? 'Refreshing…' : 'Refresh'}
             </button>
           </div>
@@ -293,7 +294,7 @@ export default function ArchivePanel({ module, onRestored }: ArchivePanelProps) 
                 <ArchiveIcon className="mx-auto mb-3 text-gray-300" size={36} aria-hidden="true" />
                 <p className="text-sm font-semibold text-gray-700">No records match these filters</p>
                 <p className="mt-1 text-xs text-gray-500">{page?.total_archived ?? 0} archived records exist. Change or clear the filters to see them.</p>
-                <button type="button" onClick={() => { setSearchDraft(''); clearFilters(); }} className={`${buttonClass} mt-3`}>Clear filters</button>
+                <button type="button" onClick={() => { setSearchDraft(''); clearFilters(); }} className={`${archiveButton} mt-3`}>Clear filters</button>
               </div>
             )}
           />

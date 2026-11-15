@@ -1,3 +1,4 @@
+import { buttonClass } from '../../components/ui/buttonStyles';
 import { getPhilippineNowParts } from '../../lib/philippineTime';
 import { buildExportFilename, printWithTitle } from '../../lib/exportFile';
 
@@ -914,7 +915,7 @@ export default function Rooms() {
                       <div className="flex justify-end gap-2 border-t border-gray-100 pt-3 relative z-10" onClick={e => e.stopPropagation()}>
                         <button
                           onClick={() => openBuildingEdit(building.name)}
-                          className="flex items-center gap-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100"
+                          className={buttonClass({ variant: 'accentSoft', size: 'sm' })}
                         >
                           <Pencil size={13} />
                           <span>Edit</span>
@@ -1053,7 +1054,7 @@ export default function Rooms() {
                           setSelectedRoomIdForDetail(room.id);
                           setIsDetailModalOpen(true);
                         }}
-                        className="flex items-center gap-1 rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 transition-colors hover:bg-sky-100"
+                        className={buttonClass({ variant: 'secondary', size: 'sm' })}
                       >
                         <Eye size={13} />
                         <span>Details</span>
@@ -1062,7 +1063,7 @@ export default function Rooms() {
                       <>
                         <button
                           onClick={() => handleEditClick(room)}
-                          className="flex items-center gap-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100"
+                          className={buttonClass({ variant: 'accentSoft', size: 'sm' })}
                         >
                           <Pencil size={13} />
                           <span>Edit</span>
@@ -1072,7 +1073,7 @@ export default function Rooms() {
                             title={room.status === 'available' ? 'Mark Unavailable' : 'Mark Available'}
                             aria-label={room.status === 'available' ? 'Mark Unavailable' : 'Mark Available'}
                             onClick={() => setRecoveryRoomId(String(room.id))}
-                            className={`flex min-w-0 items-center gap-1 rounded-xl border px-2 py-1.5 text-xs font-semibold transition-colors ${room.status === 'available' ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'}`}
+                            className={buttonClass({ variant: room.status === 'available' ? 'dangerSoft' : 'successSoft', size: 'sm', className: 'min-w-0' })}
                           >
                             {room.status === 'available' ? <Ban size={13} className="shrink-0" /> : <CheckCircle2 size={13} className="shrink-0" />}
                             <span className="truncate">{room.status === 'available' ? 'Mark Unavailable' : 'Mark Available'}</span>

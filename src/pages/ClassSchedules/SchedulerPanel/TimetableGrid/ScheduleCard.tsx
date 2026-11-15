@@ -91,7 +91,8 @@ const ScheduleCard = memo(function ScheduleCard({
     rawRoomName.toLowerCase() === "online" ||
     rawRoomName.toLowerCase() === "field" ||
     rawRoomName.toLowerCase() === "unassigned room";
-  const roomDisplayName = isRedundantRoomName ? "" : rawRoomName;
+  // The card already labels the line "Room:", so "Room TBA" would repeat the word.
+  const roomDisplayName = isRedundantRoomName ? "" : rawRoomName === "Room TBA" ? "TBA" : rawRoomName;
 
   const isCompact = !isWideView && schedule.durationSlots <= 2;
   const isMedium = !isWideView && schedule.durationSlots === 3;
@@ -214,7 +215,7 @@ const ScheduleCard = memo(function ScheduleCard({
             </div>
           ) : (
             <div className="space-y-2 border-t border-slate-800 pt-2">
-              <p className="flex items-center gap-1.5 text-[10.5px] text-slate-400">
+              <p className="flex items-center gap-1.5 text-[11px] text-slate-400">
                 <Move className="h-3 w-3 shrink-0 text-[#c9952a]" />
                 Click an empty slot to move it here.
               </p>
@@ -300,7 +301,7 @@ const ScheduleCard = memo(function ScheduleCard({
           <div className={`flex items-start justify-between min-w-0 ${isWideView ? "gap-1.5" : "gap-1"}`}>
             <span
               className={`max-w-full shrink-0 truncate whitespace-nowrap font-black uppercase tracking-tight ${
-                isWideView ? "text-[14px]" : "text-[12px] leading-tight"
+                isWideView ? "text-sm" : "text-[12px] leading-tight"
               } ${gridStyles.text}`}
               title={subject.code}
             >
@@ -321,7 +322,7 @@ const ScheduleCard = memo(function ScheduleCard({
                 <span className="font-medium text-slate-400">Room: </span>{roomDisplayName}
               </div>
             ) : <span />}
-            <span className={`shrink-0 rounded px-1 py-0.5 font-bold leading-none ${isWideView ? "text-[10.5px]" : "text-[10px]"} ${gridStyles.badgeText}`}>
+            <span className={`shrink-0 rounded px-1 py-0.5 font-bold leading-none ${isWideView ? "text-[11px]" : "text-[10px]"} ${gridStyles.badgeText}`}>
               {subject.units} {subject.units === 1 ? "unit" : "units"}
             </span>
           </div>
@@ -347,7 +348,7 @@ const ScheduleCard = memo(function ScheduleCard({
               </span>
             </div>
           ) : (
-          <div className={`text-slate-500 font-medium mt-auto pt-0.5 break-words ${isWideView ? "text-[12px] leading-none" : "text-[10.5px] whitespace-normal leading-tight"}`}>
+          <div className={`text-slate-500 font-medium mt-auto pt-0.5 break-words ${isWideView ? "text-[12px] leading-none" : "text-[11px] whitespace-normal leading-tight"}`}>
             {hasFaculty && schedule.facultyName ? (
               <div className="truncate font-bold text-emerald-800" title={schedule.facultyName}>
                 {schedule.facultyName}

@@ -8,6 +8,7 @@ import api from '../../lib/api';
 import LoadingSpinner from './LoadingSpinner';
 import { getStoredUser } from '../../lib/storedUser';
 import { officePath } from '../../lib/roles';
+import { buttonClass } from './buttonStyles';
 
 interface DepartmentScheduleStatusProps {
   departmentId: number;
@@ -214,7 +215,7 @@ export default function DepartmentScheduleStatus({ departmentId }: DepartmentSch
                 {!yl.isComplete && (
                   <button
                     onClick={() => navigate(officePath(getStoredUser()?.role, '/secretary/schedule-management'))}
-                    className="text-[10px] font-bold text-[#4e0a10] bg-[#4e0a10]/5 hover:bg-[#4e0a10]/10 border border-[#4e0a10]/10 px-2.5 py-1 rounded-lg transition-colors"
+                    className={buttonClass({ variant: 'accentSoft', size: 'sm' })}
                   >
                     Continue drafting
                   </button>

@@ -59,8 +59,8 @@ export default function SubmitApprovalModal({
       icon={<Send size={21} />}
       busy={isSubmittingSchedule}
       closeLabel="Close submission review"
-      className="max-w-[640px]"
-      bodyClassName="scheduler-dialog-body"
+      className="max-w-[720px]"
+      bodyClassName="scheduler-submit-body"
       footer={
         <>
           <button type="button" data-autofocus onClick={cancelSubmitForApproval}
@@ -76,22 +76,20 @@ export default function SubmitApprovalModal({
         </>
       }
     >
-      <div className="space-y-5">
-        <div className="rounded-xl border border-[#e8e1d9] bg-[#faf8f5] p-4 sm:p-5">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold text-[#71665e]">Department readiness</p>
-              <p className="mt-1 flex items-baseline gap-1.5 text-[#291a19]">
-                <span className="text-3xl font-semibold tabular-nums tracking-tight">{departmentDoneSections}</span>
-                <span className="text-sm text-[#71665e]">of {departmentTotalSections} sections done</span>
-              </p>
-            </div>
+      <div className="space-y-3">
+        <div className="rounded-xl border border-[#e8e1d9] bg-[#faf8f5] px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+            <p className="flex items-baseline gap-1.5 text-[#291a19]">
+              <span className="text-[11px] font-semibold uppercase tracking-[.08em] text-[#806630]">Readiness</span>
+              <span className="ml-1 text-2xl font-semibold tabular-nums leading-none tracking-tight">{departmentDoneSections}</span>
+              <span className="text-xs text-[#71665e]">of {departmentTotalSections} sections done</span>
+            </p>
             <span className={`scheduler-dialog-badge ${departmentReadyToSubmit ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>
               {departmentReadyToSubmit ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
               {departmentReadyToSubmit ? "Ready for review" : "Action needed"}
             </span>
           </div>
-          <div className="scheduler-readiness-track mt-4" role="progressbar" aria-label="Department sections done"
+          <div className="scheduler-readiness-track mt-2.5" role="progressbar" aria-label="Department sections done"
             aria-valuemin={0} aria-valuemax={departmentTotalSections || 1} aria-valuenow={Math.min(departmentDoneSections, departmentTotalSections)}
             aria-valuetext={`${departmentDoneSections} of ${departmentTotalSections} sections done`}>
             <div className="scheduler-readiness-fill" style={{ width: `${completionPercent}%` }} />
@@ -126,12 +124,12 @@ export default function SubmitApprovalModal({
           </div>
         )}
 
-        <section aria-label="Department workflow status" className="scheduler-dialog-panel">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e8e1d9] bg-[#faf8f5] px-4 py-3">
+        <section aria-label="Department workflow status">
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
             <h3 className="font-sans text-xs font-semibold text-[#4e443c]">Department workflow status</h3>
-            <span className="text-[11px] text-[#71665e]">{departmentSectionProgress.length} sections</span>
+            <span className="text-[11px] tabular-nums text-[#71665e]">{departmentSectionProgress.length} sections</span>
           </div>
-          <ul className="scheduler-dialog-list">
+          <ul className="scheduler-submit-grid">
             {departmentSectionProgress.map((section) => {
               const protectedSection = isProtected(section);
               const willSubmit = section.isDone && !protectedSection;
@@ -140,10 +138,11 @@ export default function SubmitApprovalModal({
               const statusLabel = protectedSection ? section.status === "finalized" ? "Finalized" : "Unchanged"
                 : willSubmit ? unchangedReturn ? "Will submit unchanged" : "Will submit" : "Not ready";
               return (
-                <li key={section.sectionId} className="scheduler-dialog-row">
+                <li key={section.sectionId} className="scheduler-submit-card"
+                  data-state={willSubmit ? "submit" : protectedSection ? "locked" : "pending"}>
                   <div className="min-w-0">
-                    <p className="break-words text-sm font-semibold text-[#291a19]">{section.sectionName}</p>
-                    <p className="mt-1 text-xs text-[#71665e]">{section.plottedSubjects ?? section.plottedCourses}/{section.requiredSubjects ?? section.requiredCourses} subjects plotted</p>
+                    <p className="truncate text-[13px] font-semibold leading-5 text-[#291a19]" title={section.sectionName}>{section.sectionName}</p>
+                    <p className="text-[11px] leading-4 tabular-nums text-[#71665e]">{section.plottedSubjects ?? section.plottedCourses}/{section.requiredSubjects ?? section.requiredCourses} subjects plotted</p>
                   </div>
                   <span className={`scheduler-dialog-badge ${willSubmit ? "bg-emerald-50 text-emerald-800" : protectedSection ? "bg-[#f1ede8] text-[#625a54]" : "bg-amber-50 text-amber-800"}`}>
                     {willSubmit ? <CheckCircle2 size={12} /> : protectedSection ? <LockKeyhole size={12} /> : <AlertTriangle size={12} />}
@@ -152,10 +151,10 @@ export default function SubmitApprovalModal({
                 </li>
               );
             })}
-            {departmentSectionProgress.length === 0 && <li className="px-4 py-6 text-center text-sm text-[#71665e]">No sections are available for submission.</li>}
+            {departmentSectionProgress.length === 0 && <li className="col-span-full rounded-[10px] border border-dashed border-[#e8e1d9] px-4 py-5 text-center text-sm text-[#71665e]">No sections are available for submission.</li>}
           </ul>
         </section>
-        {protectedCount > 0 && <p className="flex items-start gap-2 text-xs leading-5 text-[#71665e]"><LockKeyhole size={14} className="mt-0.5 shrink-0" />{protectedCount} protected section{protectedCount === 1 ? " keeps its" : "s keep their"} current workflow status.</p>}
+        {protectedCount > 0 && <p className="flex items-start gap-1.5 text-[11px] leading-4 text-[#71665e]"><LockKeyhole size={12} className="mt-0.5 shrink-0" />{protectedCount} protected section{protectedCount === 1 ? " keeps its" : "s keep their"} current workflow status.</p>}
       </div>
     </Modal>
   );

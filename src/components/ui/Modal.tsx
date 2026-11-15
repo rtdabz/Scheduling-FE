@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useId, useRef, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { X } from 'lucide-react';
+import { buttonClass } from './buttonStyles';
 import { useModalScrollLock } from '../../hooks/useModalScrollLock';
 
 export interface ModalProps {
@@ -190,7 +191,7 @@ export default function Modal({
                 type="button"
                 onClick={onClose}
                 disabled={busy}
-                className={workflow ? 'scheduler-dialog-close' : 'flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] cursor-pointer disabled:cursor-not-allowed disabled:opacity-50'}
+                className={workflow ? 'scheduler-dialog-close' : buttonClass({ variant: 'onDarkMuted', size: 'sm', iconOnly: true })}
                 aria-label={closeLabel}
               >
                 <X size={16} />

@@ -3,8 +3,7 @@ export interface StoredUser {
   name?: string;
   email?: string;
   department_id?: number;
-  program_id?: number;
-  role?: string;
+  program_id?: number;  role?: string;
   permissions?: string[];
   capability_catalog?: Array<{
     id: string;

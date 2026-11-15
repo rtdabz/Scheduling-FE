@@ -63,7 +63,7 @@ function PanelFrame({ className = '', children, action = true, subtitle = true, 
     <section className={`min-w-0 rounded-xl border border-border bg-white p-5 ${className}`}>
       <div className={`mb-4 flex min-h-[28px] justify-between gap-3 ${subtitle ? 'items-start' : 'items-center'}`}>
         <div className="min-w-0 flex-1">
-          {title ? <div className={`relative font-jakarta text-[15px] font-semibold leading-5 tracking-tight ${subtitle ? '' : 'truncate'}`}>
+          {title ? <div className={`relative font-jakarta text-sm font-semibold leading-5 tracking-tight ${subtitle ? '' : 'truncate'}`}>
             <span className="invisible">{title}</span>
             <Skeleton className="absolute left-0 top-1/2 h-3 w-40 max-w-full -translate-y-1/2 rounded" />
           </div> : <TextLine line="h-5" className="h-3 w-40 max-w-full" />}
@@ -678,10 +678,10 @@ function VpaaSkeleton({ tab, metrics }: { tab: DashboardTab; metrics?: ReactNode
 
   return (
     <>
-      <div className="grid items-stretch gap-4 xl:grid-cols-2">
-        <PanelFrame title="Instructor Load Overview" description="Teaching load spread across all active instructors." actionLabel="View instructor loads" className="flex flex-col">
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <PanelFrame title="Instructor Load Overview" description="Teaching load spread across all active instructors." actionLabel="View instructor loads">
           <DonutSkeleton legendRows={4} />
-          <div className="mt-auto pt-4"><TextLine className="w-36" /></div>
+          <div className="mt-3"><TextLine className="w-36" /></div>
         </PanelFrame>
         <PanelFrame title="Institutional Readiness" description="Departments by approval stage." actionLabel="View readiness">
           <DonutSkeleton legendRows={6} />

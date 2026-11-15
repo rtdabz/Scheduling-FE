@@ -103,6 +103,10 @@ type GenerationRunContextValue = GenerationRunSnapshot & {
   markReviewed: () => void;
   clear: () => void;
   cancel: () => Promise<void>;
+  /** True once this browser's own run lookup has finished. */
+  restored: boolean;
+  /** Re-attaches a saved run by id: reads its stored result or progress; never generates again. */
+  resume: (runId: string) => Promise<void>;
 };
 
 const GenerationRunContext = createContext<GenerationRunContextValue | null>(
@@ -120,6 +124,7 @@ export function GenerationRunProvider({
 }) {
   const [snapshot, setSnapshot] = useState<GenerationRunSnapshot>(idleSnapshot);
   const [reviewed, setReviewed] = useState(true);
+  const [restoredKey, setRestoredKey] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const requestIdRef = useRef(0);
   const storageKey = storageKeyFor(departmentId, semesterId);
@@ -264,6 +269,29 @@ export function GenerationRunProvider({
 
   const markReviewed = useCallback(() => setReviewed(true), []);
 
+  const resume = useCallback(async (runId: string) => {
+    if (snapshot.status !== "idle" || snapshot.runId === runId) return;
+    const requestId = ++requestIdRef.current;
+    try {
+      const { data } = await api.get<GenerationRunRecord>(
+        `/schedule-recommendations/generation-runs/${encodeURIComponent(runId)}`,
+      );
+      if (requestIdRef.current !== requestId) return;
+      persistRunId(data.run_id);
+      setReviewed(false);
+      setSnapshot({
+        ...idleSnapshot,
+        runId: data.run_id,
+        status: "queued",
+        meta: data.year_level ? { yearLevel: Number(data.year_level), sectionCount: 0 } : null,
+        queuedAtMs: data.created_at ? new Date(data.created_at).getTime() : Date.now(),
+      });
+      applyRun(data);
+    } catch {
+      // The run is gone or belongs to someone else: the saved form still restores without it.
+    }
+  }, [applyRun, persistRunId, snapshot.runId, snapshot.status]);
+
   useEffect(() => {
     if (departmentId === null || semesterId === null) return;
     let cancelled = false;
@@ -328,7 +356,9 @@ export function GenerationRunProvider({
       }
     };
 
-    void restore();
+    void restore().finally(() => {
+      if (!cancelled) setRestoredKey(storageKey);
+    });
 
     return () => {
       cancelled = true;
@@ -419,8 +449,10 @@ export function GenerationRunProvider({
       markReviewed,
       clear,
       cancel,
+      restored: restoredKey === storageKey,
+      resume,
     }),
-    [active, cancel, clear, elapsedMs, markReviewed, reviewed, snapshot, start],
+    [active, cancel, clear, elapsedMs, markReviewed, restoredKey, resume, reviewed, snapshot, start, storageKey],
   );
 
   return (

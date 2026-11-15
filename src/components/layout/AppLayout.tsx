@@ -89,12 +89,12 @@ export default function AppLayout() {
   }, [sidebarOpen])
 
   return (
-    <div className="fixed inset-0 flex overflow-hidden bg-[#F7F4F0] print:static print:h-auto print:w-full print:overflow-visible print:bg-white">
+    <div className="fixed inset-0 flex overflow-hidden bg-[#F7F5F2] print:static print:h-auto print:w-full print:overflow-visible print:bg-white">
 
       <SessionTimeoutGuard />
 
       <div
-        className={`fixed inset-0 z-30 bg-black/50 transition-opacity duration-300 ease-in-out md:hidden print:hidden ${sidebarOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
+        className={`fixed inset-0 z-[55] bg-black/50 transition-opacity duration-300 ease-in-out md:hidden print:hidden ${sidebarOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
         onClick={() => setSidebarOpen(false)}
         aria-hidden="true"
       />

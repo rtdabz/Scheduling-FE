@@ -13,6 +13,8 @@ import { LOAD_TIER_LABELS, basicLoadOf, loadTierForUnits, type LoadAllowances, t
 import { employmentLabel } from "../EmploymentBadge";
 import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
 import { useWorkflowDialog } from "../GenerateSchedule/useWorkflowDialog";
+import { useInstructorAssignmentDraft, type DraftScope, type InstructorAssignmentDraftPayload } from "../hooks/useInstructorAssignmentDraft";
+import AutoSaveIndicator from "../AutoSaveIndicator";
 import './AutoAssignModal.css';
 
 /* eslint-disable react-hooks/set-state-in-effect */
@@ -32,10 +34,14 @@ interface AutoAssignModalProps {
   programId?: number | null;
   facultyActionSlotId: string | null;
   canManageScheduleFaculty: (schedule: ScheduleItem) => boolean;
+  /** True for a major class only its Program Head may staff. */
+  isProgramHeadOnlyMajorSchedule?: (schedule: ScheduleItem) => boolean;
   checkFacultyConflict: (facultyId: string, scheduleId: string) => string | null;
   onAssign: (assignments: AssignmentBatch[]) => Promise<boolean>;
   onRemoveAssignment?: (scheduleIds: string[]) => Promise<boolean>;
   allowExternalInstructors?: boolean;
+  /** When set, the list is auto-saved to the server for this department and semester and restored on reopen. */
+  draftScope?: DraftScope | null;
 }
 
 interface SectionGroup {
@@ -200,10 +206,12 @@ export default function AutoAssignModal({
   programId = null,
   facultyActionSlotId,
   canManageScheduleFaculty,
+  isProgramHeadOnlyMajorSchedule,
   checkFacultyConflict,
   onAssign,
   onRemoveAssignment,
   allowExternalInstructors = true,
+  draftScope = null,
 }: AutoAssignModalProps) {
   const { confirm, toast } = useToast();
   const faculties = useMemo(
@@ -219,7 +227,14 @@ export default function AutoAssignModal({
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [assignments, setAssignments] = useState<QueuedAssignment[]>([]);
   const dialogRef = useRef<HTMLDivElement>(null);
-  useWorkflowDialog(dialogRef, isOpen, onClose, facultyActionSlotId === "bulk");
+  const draftStore = useInstructorAssignmentDraft(draftScope, isOpen);
+  // Auto-save starts only once the saved progress has been restored into the form.
+  const [draftReady, setDraftReady] = useState(false);
+  const handleClose = () => {
+    draftStore.flush();
+    onClose();
+  };
+  useWorkflowDialog(dialogRef, isOpen, handleClose, facultyActionSlotId === "bulk");
 
   const groups = useMemo<SectionGroup[]>(() => {
     const map = new Map<string, SectionGroup>();
@@ -309,25 +324,100 @@ export default function AutoAssignModal({
     });
   }, [assignments, checkFacultyConflict, schedules]);
 
+  /**
+   * Rebuilds the saved list, keeping only unfinished work: classes that still exist, still have
+   * unassigned meetings this user may staff, and are not listed twice. Classes assigned since
+   * the draft was saved are dropped rather than overwritten.
+   */
+  function restoreAssignments(saved: InstructorAssignmentDraftPayload): QueuedAssignment[] {
+    const restored: QueuedAssignment[] = [];
+    const seenKeys = new Set<string>();
+    const seenSchedules = new Set<string>();
+    for (const item of saved.assignments ?? []) {
+      if (seenKeys.has(item.key)) continue;
+      const group = groups.find((candidate) => candidate.key === item.key);
+      const faculty = faculties.find((candidate) => candidate.id === item.faculty_id);
+      if (!group || !faculty || group.assignedFacultyId) continue;
+      const open = new Set(group.schedules
+        .filter((schedule) => !schedule.facultyId && canManageScheduleFaculty(schedule))
+        .map((schedule) => schedule.id));
+      const scheduleIds = item.schedule_ids.map(String).filter((id) => open.has(id) && !seenSchedules.has(id));
+      if (scheduleIds.length === 0) continue;
+      seenKeys.add(item.key);
+      scheduleIds.forEach((id) => seenSchedules.add(id));
+      restored.push({
+        key: group.key,
+        facultyId: faculty.id,
+        facultyName: faculty.name,
+        courseCode: group.courseCode,
+        courseName: group.courseName,
+        sectionName: group.sectionName,
+        units: group.units,
+        schedule: scheduleLabel(group),
+        mode: modesLabel(group),
+        scheduleIds,
+        conflict: null,
+      });
+    }
+    return restored;
+  }
+
   const initializedForRef = useRef<string | null>(null);
   useEffect(() => {
     if (!isOpen) {
       initializedForRef.current = null;
+      setDraftReady(false);
       return;
     }
+    // With auto-save, wait for the saved progress before filling the form.
+    if (draftScope && !draftStore.loaded) return;
     const initKey = String(departmentId);
     if (initializedForRef.current === initKey) return;
     if (groups.length > 0) initializedForRef.current = initKey;
-    setStep(1);
-    setAssignments([]);
-    setFacultyId(faculties.find((faculty) => departmentId !== null && Number(faculty.departmentId) === Number(departmentId))?.id ?? faculties[0]?.id ?? "");
+    const defaultFacultyId = faculties.find((faculty) => departmentId !== null && Number(faculty.departmentId) === Number(departmentId))?.id ?? faculties[0]?.id ?? "";
+    const firstCourseFor = (level: number) => {
+      const ids = new Set(groups.filter((group) => group.yearLevel === level).map((group) => group.courseId));
+      return subjects.filter((subject) => ids.has(subject.id)).sort((left, right) => left.code.localeCompare(right.code))[0]?.id ?? "";
+    };
     const initialYearLevel = [1, 2, 3, 4].find((level) => groups.some((group) => group.yearLevel === level)) ?? 1;
-    const initialCourseIds = new Set(groups.filter((group) => group.yearLevel === initialYearLevel).map((group) => group.courseId));
-    const initialCourse = subjects.filter((subject) => initialCourseIds.has(subject.id)).sort((left, right) => left.code.localeCompare(right.code))[0];
-    setYearLevel(String(initialYearLevel));
-    setCourseId(initialCourse?.id ?? "");
+
+    const saved = draftScope ? draftStore.draft : null;
+    const restored = saved ? restoreAssignments(saved) : [];
+    const savedYear = Number(saved?.year_level);
+    const yearLevelToUse = saved && groups.some((group) => group.yearLevel === savedYear) ? savedYear : initialYearLevel;
+    const savedCourseValid = Boolean(saved?.course_id)
+      && groups.some((group) => group.yearLevel === yearLevelToUse && group.courseId === saved?.course_id);
+
+    setStep(restored.length > 0 ? Math.min(3, Math.max(1, Number(saved?.step) || 1)) : 1);
+    setAssignments(restored);
+    setFacultyId(saved?.faculty_id && faculties.some((faculty) => faculty.id === saved.faculty_id) ? saved.faculty_id : defaultFacultyId);
+    setYearLevel(String(yearLevelToUse));
+    setCourseId(savedCourseValid ? saved!.course_id! : firstCourseFor(yearLevelToUse));
     setSelectedKeys([]);
-  }, [departmentId, isOpen, faculties, groups, subjects]);
+    if (groups.length > 0) setDraftReady(true);
+    // restoreAssignments reads the same groups, faculties and permissions listed here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [departmentId, isOpen, faculties, groups, subjects, draftScope, draftStore.loaded, draftStore.draft]);
+
+
+
+  // Auto-save every change once the form holds the restored progress.
+  useEffect(() => {
+    if (!isOpen || !draftScope || !draftReady) return;
+    draftStore.save({
+      step,
+      faculty_id: facultyId || null,
+      year_level: yearLevel || null,
+      course_id: courseId || null,
+      assignments: assignments.map((assignment) => ({
+        key: assignment.key,
+        faculty_id: assignment.facultyId,
+        schedule_ids: assignment.scheduleIds.map(Number),
+      })),
+    });
+    // draftStore.save is stable for a given load; the saved fields are listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, draftScope, draftReady, step, facultyId, yearLevel, courseId, assignments, draftStore.save]);
 
   const selectedFaculty = faculties.find((faculty) => faculty.id === facultyId);
   const currentLoad = facultyLoads.get(facultyId) ?? 0;
@@ -349,7 +439,11 @@ export default function AutoAssignModal({
       return queuedName ? `Queued to ${queuedName}` : QUEUED_ISSUE;
     }
     const pendingSchedules = group.schedules.filter((schedule) => !schedule.facultyId);
-    if (!pendingSchedules.every(canManageScheduleFaculty)) return "Assigned teaching department only";
+    if (!pendingSchedules.every(canManageScheduleFaculty)) {
+      return pendingSchedules.some((schedule) => isProgramHeadOnlyMajorSchedule?.(schedule))
+        ? "Assigned teaching program only"
+        : "Assigned teaching department only";
+    }
 
     if (selectedFaculty) {
       const subject = subjects.find((item) => item.id === group.courseId);
@@ -511,7 +605,11 @@ export default function AutoAssignModal({
     const assigned = group.schedules.filter((schedule) => schedule.facultyId);
     if (assigned.some((schedule) => schedule.status === "finalized")) return "A finalized schedule cannot be changed.";
     if (assigned.some((schedule) => schedule.facultyAssignmentDone)) return "Assignments are marked done. Choose Reassignment first.";
-    if (!assigned.every(canManageScheduleFaculty)) return "Only the assigned teaching department can change this instructor.";
+    if (!assigned.every(canManageScheduleFaculty)) {
+      return assigned.some((schedule) => isProgramHeadOnlyMajorSchedule?.(schedule))
+        ? "Only the Program Head can change this instructor."
+        : "Only the assigned teaching department can change this instructor.";
+    }
     return null;
   };
 
@@ -546,13 +644,18 @@ export default function AutoAssignModal({
       else byFaculty.set(assignment.facultyId, { facultyId: assignment.facultyId, scheduleIds: [...assignment.scheduleIds] });
     });
     const success = await onAssign([...byFaculty.values()]);
-    if (success) onClose();
+    if (success) {
+      // The list is applied: stop auto-saving and clear the stored progress.
+      setDraftReady(false);
+      if (draftScope) await draftStore.clear();
+      onClose();
+    }
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="assign-modal-overlay scheduler-dialog-overlay" onClick={(event) => event.target === event.currentTarget && !isSaving && onClose()}>
+    <div className="assign-modal-overlay scheduler-dialog-overlay" onClick={(event) => event.target === event.currentTarget && !isSaving && handleClose()}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="auto-assign-title" aria-describedby="auto-assign-description" aria-busy={isSaving} tabIndex={-1} className="assign-modal scheduler-dialog">
         <header className="assign-modal-header scheduler-dialog-header scheduler-brand-header">
           <span className="scheduler-dialog-icon"><UserCheck className="h-6 w-6" /></span>
@@ -560,9 +663,10 @@ export default function AutoAssignModal({
             <p className="scheduler-dialog-eyebrow">Instructor assignment</p>
             <h2 id="auto-assign-title" className="scheduler-dialog-title">Assign Instructors</h2>
             <p id="auto-assign-description" className="scheduler-dialog-description">Build your list, review teaching loads, then save the assignments.</p>
-            <p className="sr-only">{steps[step - 1].title}. Step {step} of {steps.length}. Nothing is saved until you confirm.</p>
+            <p className="sr-only">{steps[step - 1].title}. Step {step} of {steps.length}. {draftScope ? "Your list is saved automatically; instructors are assigned when you confirm." : "Nothing is saved until you confirm."}</p>
           </div>
-          <button type="button" onClick={onClose} disabled={isSaving} aria-label="Close auto-assign" className="scheduler-dialog-close"><X className="h-5 w-5" /></button>
+          {draftScope && <AutoSaveIndicator state={draftStore.saveState} loading={!draftStore.loaded} loadFailed={draftStore.loadFailed} onRetry={draftStore.retry} />}
+          <button type="button" onClick={handleClose} disabled={isSaving} aria-label="Close auto-assign" className="scheduler-dialog-close"><X className="h-5 w-5" /></button>
         </header>
 
         <nav className="assign-progress" aria-label="Auto-assign instructor steps">
@@ -638,7 +742,7 @@ export default function AutoAssignModal({
             <p className="assign-footer-help">{STEP_HELP[step]}</p>
           )}
           <div className="assign-footer-buttons">
-            <button type="button" onClick={() => step > 1 ? setStep((current) => current - 1) : onClose()} disabled={isSaving} className="assign-button assign-button-secondary">
+            <button type="button" onClick={() => step > 1 ? setStep((current) => current - 1) : handleClose()} disabled={isSaving} className="assign-button assign-button-secondary">
               {step > 1 ? <><ChevronLeft className="h-4 w-4" /> Back</> : "Cancel"}
             </button>
             {step === 1 && (

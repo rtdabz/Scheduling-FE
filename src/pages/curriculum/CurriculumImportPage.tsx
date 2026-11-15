@@ -1,3 +1,4 @@
+import { buttonClass } from '../../components/ui/buttonStyles';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AlertOctagon, ArrowLeft, ArrowRight,Check, CheckCircle2, Clock3, FileText, List, ListChecks, Pencil, Settings2, ShieldCheck } from 'lucide-react';
@@ -61,14 +62,14 @@ const issueControl = (code: string, field: string | null): 'category' | null => 
 const CONTROL_LABELS = { category: 'Category for' } as const;
 
 const inputClass = 'h-9 w-full rounded-lg border border-border bg-white px-3 text-[13px] text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-parchment disabled:text-muted';
-const primaryButton = 'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 text-[13px] font-bold text-white hover:bg-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50';
-const secondaryButton = 'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-primary bg-white px-4 text-[13px] font-bold text-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50';
+const primaryButton = buttonClass({ variant: 'primary' });
+const secondaryButton = buttonClass({ variant: 'secondary' });
 // Light-on-maroon controls for the gradient header.
-const headerControl = 'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-white/30 bg-white/10 text-[13px] font-bold text-white hover:border-white/50 hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-[#4e0a10] disabled:cursor-not-allowed disabled:opacity-50';
-const headerButton = `${headerControl} px-4`;
+const headerControl = buttonClass({ variant: 'onDarkMuted', iconOnly: true });
+const headerButton = buttonClass({ variant: 'onDarkMuted' });
 // The step's main action in its heading: solid white on the maroon gradient.
-const headerPrimary = 'inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-white px-4 text-[13px] font-bold text-primary hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-[#4e0a10] disabled:cursor-not-allowed disabled:opacity-60';
-const quietButton = 'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-border bg-white px-4 text-[13px] font-bold text-text hover:bg-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50';
+const headerPrimary = buttonClass({ variant: 'onDark' });
+const quietButton = buttonClass({ variant: 'secondary' });
 
 const newRequestKey = () => (typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join(''));
 
@@ -575,7 +576,7 @@ export default function CurriculumImportPage() {
             )}
           </button>
           {metadataNeedsFix && (
-            <button type="button" onClick={() => openDetails(metadataIssues[0].field)} className="inline-flex h-7 items-center gap-1 rounded-full bg-red-50 px-2.5 text-xs font-bold text-red-700 ring-1 ring-red-200 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+            <button type="button" onClick={() => openDetails(metadataIssues[0].field)} className={buttonClass({ variant: 'dangerSoft', size: 'sm' })}>
               <AlertOctagon size={13} aria-hidden="true" /> Needs correction
             </button>
           )}
@@ -919,7 +920,7 @@ export default function CurriculumImportPage() {
                   <div className="mt-5 rounded-xl border border-border bg-parchment/60 px-4 py-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate text-[15px] font-semibold text-text">{draft.metadata.name}</p>
+                        <p className="truncate text-sm font-semibold text-text">{draft.metadata.name}</p>
                         <p className="text-[13px] text-muted">
                           <span aria-label="Assigned internal code" className="font-semibold text-text">{validation.metadata.code}</span>
                           {' · '}{program ? programLabel(program) : 'All programs in the department'} · {draft.metadata.effective_school_year} · created deactivated

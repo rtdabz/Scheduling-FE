@@ -1,3 +1,4 @@
+import { buttonClass } from '../../components/ui/buttonStyles';
 import React, { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import NumberInput from '../../components/ui/NumberInput';
 import SegmentedLoadBar from '../../components/faculty/SegmentedLoadBar';
@@ -953,27 +954,27 @@ export default function Faculty() {
                       <div className="space-y-2 pt-2 border-t border-gray-50 font-sans">
                         {f.assigned_subjects.length > 0 && (
                           <div className="flex flex-wrap gap-1 items-center">
-                            <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mr-1">Subjects:</span>
+                            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mr-1">Subjects:</span>
                             {f.assigned_subjects.slice(0, 3).map(sub => (
-                              <span key={sub.id} className="text-[9px] bg-slate-50 border border-slate-200 text-slate-600 rounded px-1 py-0.5 font-mono uppercase font-semibold">
+                              <span key={sub.id} className="text-[10px] bg-slate-50 border border-slate-200 text-slate-600 rounded px-1 py-0.5 font-mono uppercase font-semibold">
                                 {sub.course_code || sub.subject_code}
                               </span>
                             ))}
                             {f.assigned_subjects.length > 3 && (
-                              <span className="text-[9px] text-gray-400 font-semibold">+{f.assigned_subjects.length - 3} more</span>
+                              <span className="text-[10px] text-gray-400 font-semibold">+{f.assigned_subjects.length - 3} more</span>
                             )}
                           </div>
                         )}
                         {f.assigned_classes.length > 0 && (
                           <div className="flex flex-wrap gap-1 items-center">
-                            <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mr-1">Classes:</span>
+                            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mr-1">Classes:</span>
                             {f.assigned_classes.slice(0, 3).map(c => (
-                              <span key={c.id} className="text-[9px] bg-slate-50 border border-slate-200 text-slate-600 rounded px-1 py-0.5 font-mono uppercase font-semibold">
+                              <span key={c.id} className="text-[10px] bg-slate-50 border border-slate-200 text-slate-600 rounded px-1 py-0.5 font-mono uppercase font-semibold">
                                 {c.section_name}
                               </span>
                             ))}
                             {f.assigned_classes.length > 3 && (
-                              <span className="text-[9px] text-gray-400 font-semibold">+{f.assigned_classes.length - 3} more</span>
+                              <span className="text-[10px] text-gray-400 font-semibold">+{f.assigned_classes.length - 3} more</span>
                             )}
                           </div>
                         )}
@@ -1001,14 +1002,14 @@ export default function Faculty() {
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleEditClick(f)}
-                          className="rounded-lg border border-amber-200 bg-amber-50 p-1.5 text-amber-700 transition-colors hover:bg-amber-100"
+                          className={buttonClass({ variant: 'accentSoft', size: 'sm', iconOnly: true })}
                           title="Edit Instructor"
                         >
                           <Pencil size={15} />
                         </button>
                         <button
                           onClick={() => { void triggerDeleteConfirmation(f.id); }}
-                          className="rounded-lg border border-stone-300 bg-stone-100 p-1.5 text-stone-700 transition-colors hover:bg-stone-200"
+                          className={buttonClass({ variant: 'secondary', size: 'sm', iconOnly: true })}
                           title="Archive Instructor"
                         >
                           <Archive size={15} />

@@ -203,7 +203,7 @@ export default function HelperBuddyChat({ draftCount = 0 }: { draftCount?: numbe
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4 text-[#f2c66d]" />
               <span className="text-sm font-bold">TCC Scheduling Buddy</span>
-              <span className="rounded-full border border-[#f2c66d]/70 bg-[#C9952A]/25 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-[#fff3cf]">Beta</span>
+              <span className="rounded-full border border-[#f2c66d]/70 bg-[#C9952A]/25 px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-[#fff3cf]">Beta</span>
             </div>
             <button type="button" onClick={() => setOpen(false)} className="rounded p-1 text-white/70 hover:bg-white/10 hover:text-white" aria-label="Minimize TCC Scheduling Buddy"><ChevronDown className="h-4 w-4" /></button>
           </header>
@@ -227,7 +227,7 @@ export default function HelperBuddyChat({ draftCount = 0 }: { draftCount?: numbe
       )}
       <button type="button" onClick={toggleBuddy} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={finishDrag} onPointerCancel={finishDrag} className="group relative h-24 w-[72px] touch-none cursor-grab select-none border-0 bg-transparent p-0 transition hover:scale-105 active:cursor-grabbing" aria-label={open ? "Move or close TCC Scheduling Buddy" : "Move or open TCC Scheduling Buddy"} title="Drag to move or click to open TCC Scheduling Buddy">
         <BuddySprite animation={animation} />
-        <span className="absolute left-0 top-1 rounded-full border border-[#C9952A] bg-[#4e0a10] px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-[#fff3cf] shadow-md">Beta</span>
+        <span className="absolute left-0 top-1 rounded-full border border-[#C9952A] bg-[#4e0a10] px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-[#fff3cf] shadow-md">Beta</span>
         {open && <span className="absolute right-0 top-0 rounded-md bg-[#4e0a10] p-1 text-white shadow"><X className="h-3 w-3" /></span>}
       </button>
     </div>

@@ -8,6 +8,7 @@ import { logoutCurrentSession } from '../../lib/authSession';
 import ProfileAvatar from '../ui/ProfileAvatar';
 import UserProfileModal, { type ProfileUser as StoredUser } from './UserProfileModal';
 import { roleLabel as formatRoleLabel } from '../../lib/roles';
+import { HEADER_PROFILE_BUTTON } from './headerStyles';
 
 const roleLabel = (role?: string) => formatRoleLabel(role);
 
@@ -60,9 +61,9 @@ export default function UserProfileMenu() {
   };
 
   return <div ref={wrapper} className="relative">
-    <button id="sidebar-profile" type="button" onClick={() => setMenuOpen(!open)} aria-label="Open user profile menu" aria-haspopup="menu" aria-expanded={open} title={`${user?.name || 'Administrator'} · ${roleLabel(user?.role)}`} className="relative flex h-11 w-11 items-center justify-center rounded-full transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A]">
-      <ProfileAvatar src={photo} alt={user?.name || 'User'} className="h-10 w-10 rounded-full ring-2 ring-white/20" />
-      <span className="absolute bottom-0 right-0 flex h-4 w-4 items-center justify-center rounded-full border-2 border-[#4e0a10] bg-slate-700 text-white shadow-sm" aria-hidden="true">
+    <button id="sidebar-profile" type="button" onClick={() => setMenuOpen(!open)} aria-label="Open user profile menu" aria-haspopup="menu" aria-expanded={open} title={`${user?.name || 'Administrator'} · ${roleLabel(user?.role)}`} className={`relative ${HEADER_PROFILE_BUTTON} overflow-visible p-0`}>
+      <ProfileAvatar src={photo} alt={user?.name || 'User'} className="h-[34px] w-[34px] rounded-full ring-2 ring-white/20" />
+      <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-slate-700 text-white ring-2 ring-[#4e0a10]" aria-hidden="true">
         <ChevronDown className={`h-2.5 w-2.5 transition-transform ${open ? 'rotate-180' : ''}`} strokeWidth={3} />
       </span>
     </button>

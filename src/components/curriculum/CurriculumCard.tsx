@@ -2,6 +2,7 @@ import { Eye, Pencil, Copy, CheckCircle2, Archive, BookOpen, Users } from 'lucid
 import type { Curriculum } from '../../types/curriculum';
 import { curriculumLifecycleBadge } from '../../types/curriculum';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
+import { buttonClass } from '../ui/buttonStyles';
 
 interface CurriculumCardProps {
   curriculum: Curriculum;
@@ -117,7 +118,7 @@ export default function CurriculumCard({
         <button
           onClick={() => onView(curriculum.id)}
           title="View curriculum details"
-          className="flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700 transition-colors hover:bg-sky-100"
+          className={buttonClass({ variant: 'secondary', size: 'sm' })}
         >
           <Eye size={14} />
           View
@@ -128,7 +129,7 @@ export default function CurriculumCard({
             <button
               onClick={() => onEdit(curriculum)}
               title="Edit curriculum information"
-              className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 transition-colors hover:bg-amber-100"
+              className={buttonClass({ variant: 'accentSoft', size: 'sm' })}
             >
               <Pencil size={14} />
               Edit
@@ -136,7 +137,7 @@ export default function CurriculumCard({
             <button
               onClick={() => onDuplicate(curriculum.id)}
               title="Create a deactivated copy of this curriculum"
-              className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-100"
+              className={buttonClass({ variant: 'secondary', size: 'sm' })}
             >
               <Copy size={14} />
               Duplicate
@@ -151,11 +152,7 @@ export default function CurriculumCard({
                     : blockedReason
                   : 'Publish this curriculum. Other active curricula in this department stay active — each year level chooses which one it follows.'
               }
-              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                curriculum.status === 'active'
-                  ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
-                  : 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'
-              }`}
+              className={buttonClass({ variant: curriculum.status === 'active' ? 'dangerSoft' : 'successSoft', size: 'sm' })}
             >
               <CheckCircle2 size={14} />
               {curriculum.status === 'active' ? 'Deactivate' : 'Activate'}
@@ -169,7 +166,7 @@ export default function CurriculumCard({
                     ? 'Archive this curriculum'
                     : blockedReason
                 }
-                className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                className={buttonClass({ variant: 'dangerSoft', size: 'sm' })}
               >
                 <Archive size={14} />
                 Archive

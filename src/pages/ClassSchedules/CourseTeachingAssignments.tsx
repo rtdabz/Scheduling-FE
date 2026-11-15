@@ -1,4 +1,5 @@
-import { useEffect, useId, useMemo, useState } from 'react';
+import { buttonClass } from '../../components/ui/buttonStyles';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { BookOpen, Building2, Check, ChevronRight, Info, Lock, Save, TriangleAlert, X } from 'lucide-react';
 import api from '../../lib/api';
@@ -56,11 +57,25 @@ interface SectionAssignment {
   instructor_name: string | null;
   status: 'Assigned' | 'Partially assigned' | 'Awaiting instructor' | string;
 }
-const SECTION_STATUS_TONES: Record<string, string> = {
-  Assigned: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  'Partially assigned': 'bg-amber-50 text-amber-700 border-amber-200',
-  'Awaiting instructor': 'bg-slate-100 text-slate-600 border-slate-200',
+/** Section chip styling per status: a coloured dot carries the state, the chip stays quiet. */
+const SECTION_STATUS_STYLES: Record<string, { dot: string; chip: string }> = {
+  Assigned: { dot: 'bg-emerald-500', chip: 'border-slate-200 bg-white text-slate-700' },
+  'Partially assigned': { dot: 'bg-amber-500', chip: 'border-amber-200 bg-amber-50 text-amber-900' },
+  'Awaiting instructor': { dot: 'bg-slate-300', chip: 'border-dashed border-slate-300 bg-slate-50 text-slate-500' },
 };
+const sectionStyleOf = (status: string) => SECTION_STATUS_STYLES[status] ?? SECTION_STATUS_STYLES['Awaiting instructor'];
+/**
+ * Mirrors the backend rule (CourseTeachingAssignmentController::targetRestrictions):
+ * Program Heads and the department office never give their department's courses to
+ * their own program, and a single-program department is not a target at all. The
+ * backend enforces it on every write; this only keeps invalid targets out of reach.
+ */
+interface AssignmentRestrictions {
+  department_id: number;
+  own_program_ids: number[];
+  own_department_excluded: boolean;
+  requires_program: boolean;
+}
 interface PageData {
   courses: CourseRow[];
   departments: DepartmentOption[];
@@ -68,6 +83,7 @@ interface PageData {
   currentDepartmentId: number | null;
   hasActiveCurriculum: boolean;
   activeSemester: ActiveSemester | null;
+  restrictions: AssignmentRestrictions | null;
 }
 
 interface ActiveSemester {
@@ -83,9 +99,10 @@ interface IndexResponse {
   has_active_curriculum?: boolean;
   active_semester?: ActiveSemester | null;
   programs?: PageData['programs'];
+  assignment_restrictions?: AssignmentRestrictions | null;
 }
 
-const cacheKey = 'page:course-teaching-assignments:v12';
+const cacheKey = 'page:course-teaching-assignments:v13';
 
 const SEMESTER_LABELS: Record<string, string> = { '1st': '1st Semester', '2nd': '2nd Semester', summer: 'Summer' };
 const fullSemesterLabel = (semester: ActiveSemester | null) => (semester
@@ -131,6 +148,7 @@ export default function CourseTeachingAssignments() {
   const [currentDepartmentId, setCurrentDepartmentId] = useState<number | null>(cached?.currentDepartmentId ?? null);
   const [hasActiveCurriculum, setHasActiveCurriculum] = useState(cached?.hasActiveCurriculum ?? true);
   const [activeSemester, setActiveSemester] = useState<ActiveSemester | null>(cached?.activeSemester ?? null);
+  const [restrictions, setRestrictions] = useState<AssignmentRestrictions | null>(cached?.restrictions ?? null);
   const [target, setTarget] = useState<string | null>(null);
   const [targetProgramId, setTargetProgramId] = useState('');
   const [yearLevel, setYearLevel] = useState<number | null>(null);
@@ -157,6 +175,7 @@ export default function CourseTeachingAssignments() {
         currentDepartmentId: response.data.current_department_id ?? null,
         hasActiveCurriculum: response.data.has_active_curriculum ?? false,
         activeSemester: response.data.active_semester ?? null,
+        restrictions: response.data.assignment_restrictions ?? null,
       };
     }, true).then((data) => {
       if (!active) return;
@@ -166,6 +185,7 @@ export default function CourseTeachingAssignments() {
       setCurrentDepartmentId(data.currentDepartmentId);
       setHasActiveCurriculum(data.hasActiveCurriculum);
       setActiveSemester(data.activeSemester);
+      setRestrictions(data.restrictions);
       setError(null);
     }).catch((loadError) => {
       if (active) setError(errorMessage(loadError, 'Unable to load course teaching assignments.'));
@@ -174,16 +194,27 @@ export default function CourseTeachingAssignments() {
   }, [liveRevision]);
 
   const ownDepartment = departments.find((department) => department.id === currentDepartmentId) ?? null;
-  const availableDepartments = useMemo(() => departments, [departments]);
+  const availableDepartments = useMemo(
+    () => (restrictions?.own_department_excluded
+      ? departments.filter((department) => department.id !== restrictions.department_id)
+      : departments),
+    [departments, restrictions],
+  );
   const activeTarget = target && availableDepartments.some((department) => String(department.id) === target)
     ? target
     : String(availableDepartments[0]?.id ?? '');
   const targetDepartment = availableDepartments.find((department) => String(department.id) === activeTarget) ?? null;
+  // Targeting one's own department: own programs are never offered, and "Any Program"
+  // is not allowed because it would include them.
+  const ownTargetRestricted = Boolean(restrictions?.requires_program && targetDepartment?.id === restrictions.department_id);
   const targetPrograms = useMemo(
-    () => programs.filter((program) => Number(program.department_id) === Number(targetDepartment?.id)),
-    [programs, targetDepartment?.id],
+    () => programs.filter((program) => Number(program.department_id) === Number(targetDepartment?.id)
+      && !(restrictions?.own_program_ids ?? []).includes(program.id)),
+    [programs, targetDepartment?.id, restrictions],
   );
-  const selectedProgram = targetPrograms.find((program) => String(program.id) === targetProgramId) ?? null;
+  // With only one eligible program there is nothing to choose, so it is selected automatically.
+  const onlyProgram = targetPrograms.length === 1 ? targetPrograms[0] : null;
+  const selectedProgram = targetPrograms.find((program) => String(program.id) === targetProgramId) ?? onlyProgram;
   const effectiveTargetDepartment = selectedProgram
     ? departments.find((department) => department.id === selectedProgram.department_id) ?? targetDepartment
     : targetDepartment;
@@ -254,6 +285,8 @@ export default function CourseTeachingAssignments() {
     }
     if (instructorClassesOf(course) > 0) return 'Has an instructor';
     if (!effectiveTargetDepartment) return 'Select a department or program';
+    if (ownTargetRestricted && !selectedProgram
+      && (course.department_id == null || course.department_id === restrictions?.department_id)) return 'Select another program';
     if (course.is_major && course.department_id != null && Number(effectiveTargetDepartment.id) === Number(course.department_id)) {
       if (!selectedProgram) return 'Select a program for majors';
       if (selectedProgram.id === (course.curriculum_program_id ?? course.program_id)) return 'Already its program';
@@ -299,12 +332,12 @@ export default function CourseTeachingAssignments() {
 
     setCourses(next);
     invalidateCacheGroups('schedules');
-    setCachedData<PageData>(cacheKey, { courses: next, departments, programs, currentDepartmentId, hasActiveCurriculum, activeSemester });
+    setCachedData<PageData>(cacheKey, { courses: next, departments, programs, currentDepartmentId, hasActiveCurriculum, activeSemester, restrictions });
     setSelectedIds((current) => current.filter((id) => !savedIds.includes(id)));
   };
 
   const saveAssignments = async () => {
-    if (!effectiveTargetDepartment || selectedCourses.length === 0) return;
+    if (!effectiveTargetDepartment || selectedCourses.length === 0 || (ownTargetRestricted && !selectedProgram)) return;
 
     const target = selectedProgram?.code ?? effectiveTargetDepartment.department_name ?? effectiveTargetDepartment.department_code;
     const codes = selectedCourses.map((course) => course.course_code);
@@ -371,7 +404,7 @@ export default function CourseTeachingAssignments() {
         : row));
       setCourses(next);
       invalidateCacheGroups('schedules');
-      setCachedData<PageData>(cacheKey, { courses: next, departments, programs, currentDepartmentId, hasActiveCurriculum, activeSemester });
+      setCachedData<PageData>(cacheKey, { courses: next, departments, programs, currentDepartmentId, hasActiveCurriculum, activeSemester, restrictions });
       toast.success('Assignment removed', `${course.course_code} is no longer assigned to ${teacher}.`);
     } catch (removeError) {
       toast.error('Not removed', errorMessage(removeError, 'Failed to remove the assignment.'));
@@ -417,7 +450,7 @@ export default function CourseTeachingAssignments() {
         : row));
       setCourses(next);
       invalidateCacheGroups('schedules');
-      setCachedData<PageData>(cacheKey, { courses: next, departments, programs, currentDepartmentId, hasActiveCurriculum, activeSemester });
+      setCachedData<PageData>(cacheKey, { courses: next, departments, programs, currentDepartmentId, hasActiveCurriculum, activeSemester, restrictions });
       const skipped = response.data.locked_course_ids?.length ?? 0;
       toast.success(
         'Assignments removed',
@@ -587,7 +620,7 @@ export default function CourseTeachingAssignments() {
               onClick={() => setSummaryOpen(true)}
               aria-haspopup="dialog"
               title="View a summary of assigned courses"
-              className="relative inline-flex items-center gap-1.5 rounded-xl border border-[#4e0a10]/15 bg-[#4e0a10]/10 px-3 py-2 text-xs font-bold text-[#4e0a10] transition-colors hover:bg-[#4e0a10]/15 focus:outline-none focus:ring-2 focus:ring-[#C9952A]/40"
+              className={buttonClass({ variant: 'accentSoft', size: 'md', className: 'relative' })}
             >
               {assignedInDepartment > 0 && (
                 <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5" aria-hidden="true">
@@ -624,7 +657,7 @@ export default function CourseTeachingAssignments() {
               {loading && departments.length === 0
                 ? Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-[60px] animate-pulse rounded-lg bg-slate-100" />)
                 : availableDepartments.map((department) => {
-                  const selected = selectedProgram === null && activeTarget === String(department.id);
+                  const selected = activeTarget === String(department.id);
                   const inTarget = activeTarget === String(department.id);
                   const assigned = assignedCounts.get(department.id) ?? 0;
 
@@ -662,6 +695,12 @@ export default function CourseTeachingAssignments() {
                 })}
               {!loading && availableDepartments.length === 0 && (
                 <p className="p-6 text-center text-sm font-semibold text-slate-500">No departments available.</p>
+              )}
+              {restrictions?.own_department_excluded && ownDepartment && (
+                <p className="flex items-start gap-1.5 px-2 py-2 text-[11px] leading-4 text-slate-500">
+                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  {ownDepartment.department_code} is not listed: its courses are managed within the department.
+                </p>
               )}
             </div>
           </aside>
@@ -713,9 +752,12 @@ export default function CourseTeachingAssignments() {
                   id="course-teaching-program"
                   label="Teaching Program (Optional)"
                   description="Select a program, or allow the college to choose an instructor."
-                  value={targetProgramId}
+                  value={selectedProgram ? String(selectedProgram.id) : ''}
                   onChange={(value) => { setTargetProgramId(value); setSelectedIds([]); }}
-                  options={[['', 'Any Program'], ...targetPrograms.map((program) => [String(program.id), programLabel(program)])]}
+                  disabled={onlyProgram !== null}
+                  options={onlyProgram
+                    ? [[String(onlyProgram.id), programLabel(onlyProgram)]]
+                    : [['', ownTargetRestricted ? 'Select a program' : 'Any Program'], ...targetPrograms.map((program) => [String(program.id), programLabel(program)])]}
                 />
               </div>
             </div>
@@ -800,82 +842,24 @@ export default function CourseTeachingAssignments() {
         isOpen={summaryOpen}
         onClose={() => setSummaryOpen(false)}
         title="Assigned courses"
-        className="course-teaching-summary"
+        className="course-teaching-summary sm:!max-h-[85vh]"
         description={`${assignedInDepartment} course${assignedInDepartment === 1 ? '' : 's'} · ${assignedUnits} unit${assignedUnits === 1 ? '' : 's'} across ${assignedSummary.length} college${assignedSummary.length === 1 ? '' : 's'}${activeSemester ? ` · ${fullSemesterLabel(activeSemester)}` : ''}`}
-        size="lg"
+        size="wide"
+        bodyClassName="[scrollbar-width:thin] overscroll-contain"
       >
-        <div className="flex flex-col gap-3 p-4 sm:p-5">
-          {assignedSummary.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm font-semibold text-slate-500">
-              No courses are assigned to another college or program yet.
-            </p>
-          ) : assignedSummary.map((group) => (
-            <section key={group.code + group.name} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-              <header className="flex items-center gap-3 border-b border-slate-100 px-4 py-2.5">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-slate-500">
-                  {group.department?.logo ? <img src={group.department.logo} alt="" className="h-full w-full object-cover" /> : <Building2 className="h-4 w-4" />}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-black text-slate-900">{group.name}</p>
-                  <p className="text-[11px] text-slate-500">{group.code}</p>
-                </div>
-                <span className="shrink-0 text-right text-[11px] font-semibold text-slate-500">
-                  <span className="block text-sm font-black tabular-nums text-[#4e0a10]">{group.courses.length}</span>
-                  {group.units} unit{group.units === 1 ? '' : 's'}
-                </span>
-              </header>
-              <ul className="divide-y divide-slate-100">
-                {group.courses.map((course) => {
-                  const sections = course.section_assignments ?? [];
-                  return (
-                    <li key={course.id} className="flex flex-col gap-2 px-4 py-2.5 text-xs sm:flex-row sm:items-start sm:gap-3">
-                      <span className="w-14 shrink-0 pt-0.5 font-semibold text-slate-500">{YEAR_LABELS[yearOf(course)] ?? '—'}</span>
-                      <span className="min-w-0 sm:w-48 sm:shrink-0">
-                        <span className="flex flex-wrap items-center gap-1.5">
-                          <span className="font-black text-slate-900">{course.course_code}</span>
-                          <span className="font-bold tabular-nums text-slate-500">· {unitsOf(course)} {unitsOf(course) === 1 ? 'unit' : 'units'}</span>
-                          {course.teaching_program_code && (
-                            <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-700" title="Teaching program">{course.teaching_program_code}</span>
-                          )}
-                        </span>
-                        <span className="block truncate text-slate-500">{course.course_name}</span>
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        {sections.length === 0 ? (
-                          <p className="pt-0.5 italic text-slate-400">No section scheduled yet</p>
-                        ) : (
-                          <ul className="flex flex-col gap-1">
-                            {sections.map((section) => (
-                              <li key={section.section_id} className="grid grid-cols-[4.5rem_auto_1fr] items-center gap-2">
-                                <span className="font-bold text-slate-800">{section.section_name}</span>
-                                <span className={`w-fit whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-bold ${SECTION_STATUS_TONES[section.status] ?? SECTION_STATUS_TONES['Awaiting instructor']}`}>{section.status}</span>
-                                <span className={`truncate ${section.instructor_name ? 'font-semibold text-slate-700' : 'italic text-slate-400'}`} title={section.instructor_name ?? undefined}>
-                                  {section.instructor_name ?? 'Unassigned'}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          ))}
-        </div>
+        <AssignedCoursesSummary groups={assignedSummary} />
       </Modal>
     </div>
   );
 }
 
-function Select({ id, label, description, value, onChange, options }: { id: string; label: string; description?: string; value: string; onChange: (value: string) => void; options: string[][] }) {
+function Select({ id, label, description, value, onChange, options, disabled = false }: { id: string; label: string; description?: string; value: string; onChange: (value: string) => void; options: string[][]; disabled?: boolean }) {
   const descriptionId = useId();
   return (
     <div className="min-w-0">
       <label className="block text-[11px] font-bold uppercase tracking-wide text-slate-500">
         {label}
-        <select id={id} value={value} aria-describedby={description ? descriptionId : undefined} onChange={(event) => onChange(event.target.value)} className="mt-1 h-9 w-full cursor-pointer rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-semibold normal-case tracking-normal text-slate-800 outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/25">
+        <select id={id} value={value} disabled={disabled} aria-describedby={description ? descriptionId : undefined} onChange={(event) => onChange(event.target.value)} className="mt-1 h-9 w-full cursor-pointer rounded-lg disabled:cursor-default disabled:bg-slate-50 border border-slate-200 bg-white px-3 text-[13px] font-semibold normal-case tracking-normal text-slate-800 outline-none transition focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/25">
           {options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}
         </select>
       </label>
@@ -916,5 +900,221 @@ function StatusPill({ tone, label, note, title, locked = false, muted = false }:
         </span>
       )}
     </span>
+  );
+}
+
+interface SummaryGroup {
+  department: DepartmentOption | null;
+  code: string;
+  name: string;
+  courses: CourseRow[];
+  units: number;
+}
+
+const compareNatural = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+
+const tallySections = (courses: CourseRow[]) => courses.reduce((tally, course) => {
+  (course.section_assignments ?? []).forEach((section) => {
+    tally.total += 1;
+    if (section.status === 'Assigned') tally.assigned += 1;
+    else if (section.status === 'Partially assigned') tally.partial += 1;
+    else tally.awaiting += 1;
+  });
+  return tally;
+}, { total: 0, assigned: 0, partial: 0, awaiting: 0 });
+
+const initialsOf = (name: string) => name
+  .replace(/[^A-Za-z\s.-]/g, '')
+  .split(/[\s.-]+/)
+  .filter(Boolean)
+  .slice(0, 2)
+  .map((part) => part[0]?.toUpperCase())
+  .join('') || '?';
+
+/** Sections of one course gathered under their instructor; sections still awaiting one come last. */
+const sectionsByInstructor = (sections: SectionAssignment[]) => {
+  const groups = new Map<string | null, SectionAssignment[]>();
+  sections.forEach((section) => {
+    const key = section.instructor_name?.trim() || null;
+    groups.set(key, [...(groups.get(key) ?? []), section]);
+  });
+  return [...groups.entries()]
+    .map(([instructor, items]) => ({ instructor, sections: [...items].sort((a, b) => compareNatural(a.section_name, b.section_name)) }))
+    .sort((a, b) => (a.instructor === null ? 1 : b.instructor === null ? -1 : compareNatural(a.instructor, b.instructor)));
+};
+
+function StaffingMeter({ staffed, total }: { staffed: number; total: number }) {
+  const percent = total === 0 ? 0 : Math.round((staffed / total) * 100);
+  return (
+    <span className="inline-flex items-center gap-1.5" title={`${staffed} of ${total} section${total === 1 ? '' : 's'} have an instructor`}>
+      <span className="h-1.5 w-14 overflow-hidden rounded-full bg-slate-200" aria-hidden="true">
+        <span className={`block h-full rounded-full ${percent === 100 ? 'bg-emerald-500' : 'bg-[#C9952A]'}`} style={{ width: `${percent}%` }} />
+      </span>
+      <span className="text-[11px] font-semibold tabular-nums text-slate-600">{staffed}/{total}</span>
+      <span className="sr-only">sections have an instructor</span>
+    </span>
+  );
+}
+
+function SectionChip({ section }: { section: SectionAssignment }) {
+  const style = sectionStyleOf(section.status);
+  return (
+    <li
+      className={`inline-flex h-6 items-center gap-1.5 rounded-md border px-2 text-[11px] font-semibold ${style.chip}`}
+      title={`${section.section_name} · ${section.status}${section.instructor_name ? ` · ${section.instructor_name}` : ''}`}
+    >
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${style.dot}`} aria-hidden="true" />
+      {section.section_name}
+      <span className="sr-only">, {section.status}</span>
+    </li>
+  );
+}
+
+function AssignedCourseRow({ course }: { course: CourseRow }) {
+  const sections = course.section_assignments ?? [];
+  const tally = tallySections([course]);
+  const groups = sectionsByInstructor(sections);
+  const units = unitsOf(course);
+
+  return (
+    <li className="grid gap-x-5 gap-y-2 px-4 py-3 md:grid-cols-[15rem_minmax(0,1fr)]">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[13px] font-bold text-slate-900">{course.course_code}</span>
+          {course.teaching_program_code && (
+            <span className="rounded bg-[#4e0a10]/[0.07] px-1.5 py-px text-[10px] font-bold text-[#4e0a10]" title="Teaching program">{course.teaching_program_code}</span>
+          )}
+        </div>
+        <p className="truncate text-xs text-slate-600" title={course.course_name}>{course.course_name}</p>
+        <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-500">
+          <span>{YEAR_LABELS[yearOf(course)] ?? 'No year level'}</span>
+          <span aria-hidden="true">·</span>
+          <span className="tabular-nums">{units} {units === 1 ? 'unit' : 'units'}</span>
+          {tally.total > 0 && (
+            <>
+              <span aria-hidden="true">·</span>
+              <StaffingMeter staffed={tally.assigned + tally.partial} total={tally.total} />
+            </>
+          )}
+        </p>
+      </div>
+
+      {sections.length === 0 ? (
+        <p className="self-center text-xs italic text-slate-400">No sections scheduled yet</p>
+      ) : (
+        <ul className="flex min-w-0 flex-col gap-1.5" aria-label={`${course.course_code} sections`}>
+          {groups.map(({ instructor, sections: items }) => (
+            <li key={instructor ?? '__awaiting'} className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-start sm:gap-3">
+              <span className="flex min-w-0 items-center gap-2 sm:w-52 sm:shrink-0 sm:pt-0.5">
+                {instructor ? (
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#4e0a10]/10 text-[10px] font-bold text-[#4e0a10]" aria-hidden="true">{initialsOf(instructor)}</span>
+                ) : (
+                  <span className="h-5 w-5 shrink-0 rounded-full border border-dashed border-slate-300" aria-hidden="true" />
+                )}
+                <span className={`truncate text-xs ${instructor ? 'font-semibold text-slate-800' : 'italic text-slate-500'}`} title={instructor ?? undefined}>
+                  {instructor ?? 'Awaiting instructor'}
+                </span>
+                {items.length > 1 && <span className="shrink-0 text-[10px] font-semibold tabular-nums text-slate-400">×{items.length}</span>}
+              </span>
+              <ul className="flex min-w-0 flex-wrap gap-1">
+                {items.map((section) => <SectionChip key={section.section_id} section={section} />)}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+function AssignedCoursesSummary({ groups }: { groups: SummaryGroup[] }) {
+  const sectionRefs = useRef(new Map<string, HTMLElement>());
+  const overall = useMemo(() => tallySections(groups.flatMap((group) => group.courses)), [groups]);
+
+  if (groups.length === 0) {
+    return (
+      <div className="p-4 sm:p-5">
+        <p className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm font-semibold text-slate-500">
+          No courses are assigned to another college or program yet.
+        </p>
+      </div>
+    );
+  }
+
+  const stats = [
+    { label: 'Sections', value: overall.total, dot: null },
+    { label: 'Assigned', value: overall.assigned, dot: SECTION_STATUS_STYLES.Assigned.dot },
+    ...(overall.partial > 0 ? [{ label: 'Partially assigned', value: overall.partial, dot: SECTION_STATUS_STYLES['Partially assigned'].dot }] : []),
+    { label: 'Awaiting instructor', value: overall.awaiting, dot: SECTION_STATUS_STYLES['Awaiting instructor'].dot },
+  ];
+
+  return (
+    <div className="flex flex-col">
+      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-black/5 bg-[#F7F4F0]/95 px-4 py-2.5 backdrop-blur sm:px-5">
+        <dl className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          {stats.map((stat) => (
+            <div key={stat.label} className="flex items-center gap-1.5 text-xs">
+              {stat.dot && <span className={`h-2 w-2 rounded-full ${stat.dot}`} aria-hidden="true" />}
+              <dt className="text-slate-500">{stat.label}</dt>
+              <dd className="font-bold tabular-nums text-slate-900">{stat.value}</dd>
+            </div>
+          ))}
+        </dl>
+        {groups.length > 1 && (
+          <nav className="flex flex-wrap gap-1" aria-label="Jump to college">
+            {groups.map((group) => (
+              <button
+                key={group.code + group.name}
+                type="button"
+                onClick={() => sectionRefs.current.get(group.code + group.name)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                title={`Jump to ${group.name}`}
+                className="inline-flex h-6 items-center gap-1 rounded-full border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50"
+              >
+                {group.code}
+                <span className="tabular-nums text-slate-400">{group.courses.length}</span>
+              </button>
+            ))}
+          </nav>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-3 p-4 sm:p-5">
+        {groups.map((group) => {
+          const key = group.code + group.name;
+          const tally = tallySections(group.courses);
+          return (
+            <section
+              key={key}
+              ref={(element) => { if (element) sectionRefs.current.set(key, element); else sectionRefs.current.delete(key); }}
+              aria-label={group.name}
+              className="scroll-mt-16 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
+            >
+              <header className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50/70 px-4 py-2.5">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-white text-slate-400">
+                  {group.department?.logo ? <img src={group.department.logo} alt="" className="h-full w-full object-cover" /> : <Building2 className="h-4 w-4" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h3 className="truncate text-[13px] font-bold text-slate-900">{group.name}</h3>
+                  <p className="text-[11px] text-slate-500">
+                    <span className="font-bold tracking-wide text-[#4e0a10]">{group.code}</span>
+                    {' · '}{group.courses.length} course{group.courses.length === 1 ? '' : 's'}
+                    {' · '}{group.units} unit{group.units === 1 ? '' : 's'}
+                  </p>
+                </div>
+                {tally.total > 0 && (
+                  <span className="flex shrink-0 items-center gap-2 text-[11px] text-slate-500">
+                    Staffed
+                    <StaffingMeter staffed={tally.assigned + tally.partial} total={tally.total} />
+                  </span>
+                )}
+              </header>
+              <ul className="divide-y divide-slate-100">
+                {group.courses.map((course) => <AssignedCourseRow key={course.id} course={course} />)}
+              </ul>
+            </section>
+          );
+        })}
+      </div>
+    </div>
   );
 }

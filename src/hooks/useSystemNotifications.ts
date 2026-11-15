@@ -85,7 +85,7 @@ const buildActionText = (notification: SystemNotification): string => {
     case 'incoming_cross_department_courses':
       return notification.message;
     case 'incoming_cross_department_course':
-      return `${notification.message} Open Incoming Cross-Department Courses to assign instructors and schedule it.`;
+      return `${notification.message} Its classes appear in Cross-Department once the schedule is VPAA-approved.`;
     case 'schedule_submitted':
       return `${actor} submitted ${departmentName} for ${semester}. ${scheduleText} sent for Dean review.`;
     case 'schedule_withdrawn':

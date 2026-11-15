@@ -1,4 +1,4 @@
-import type { DragEvent } from 'react';
+import type { DragEvent, FormEvent } from 'react';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearDataCache } from '../../../../lib/dataCache';
@@ -6,11 +6,11 @@ import type { ApiScheduleRecord } from '../types';
 import type { InitialDataResponse } from './initialDataMapper';
 import { useScheduler } from './useScheduler';
 
-const { get, put, toast, confirm } = vi.hoisted(() => ({
-  get: vi.fn(), put: vi.fn(),
+const { get, put, post, toast, confirm } = vi.hoisted(() => ({
+  get: vi.fn(), put: vi.fn(), post: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() }, confirm: vi.fn(),
 }));
-vi.mock('../../../../lib/api', () => ({ default: { get, put, patch: vi.fn() } }));
+vi.mock('../../../../lib/api', () => ({ default: { get, put, post, patch: vi.fn() } }));
 vi.mock('../../../../context/ToastContext', () => ({ useToast: () => ({ toast, confirm }) }));
 vi.mock('../../../../hooks/useLiveRefresh', () => ({ useLiveRefresh: vi.fn() }));
 vi.mock('../../../../lib/conflicts', () => ({
@@ -134,5 +134,67 @@ describe.each(['drag', 'click-to-move'])('consecutive schedule relocation via %s
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.any(String), message));
     expect(put).toHaveBeenCalledTimes(1);
     expect(hook.result.current.schedules).toEqual(before);
+  });
+});
+
+describe('editing one day of a consecutive run in the builder', () => {
+  const lecture = {
+    ...course, id: 22, course_code: 'NCM 101', course_category: 'minor',
+    lecture_hours: 3, lab_hours: 0, room_type_required: 'lecture',
+  } as const;
+  const lectureRoom = { id: 6, room_code: 'LEC-1', room_type: 'lecture', status: 'available', department_id: 6 } as const;
+  const onlineRoom = { id: 7, room_code: 'ONLINE', room_type: 'online', status: 'available', department_id: null } as const;
+  const lectureMeeting = (id: number, day: string, extra: Partial<ApiScheduleRecord> = {}) => meeting(id, day, {
+    course_id: 22, course: lecture, room_id: 7, room: onlineRoom, mode: 'online', split_group_id: 'lecture-run', ...extra,
+  });
+
+  beforeEach(() => {
+    payload.courses = [{ ...lecture }];
+    payload.rooms = [lectureRoom, onlineRoom];
+    // Friday was already moved on its own; the run's days and times no longer line up.
+    payload.schedules = [
+      lectureMeeting(11, 'Thursday'),
+      lectureMeeting(12, 'Friday', { start_time: '13:00:00', end_time: '16:00:00' }),
+      lectureMeeting(13, 'Saturday'),
+    ];
+    // Like the API, answer with the room relation that matches the saved room_id.
+    put.mockImplementation((url: string, changes: Partial<ApiScheduleRecord>) => {
+      const id = Number(url.split('/').pop());
+      const savedRoom = [lectureRoom, onlineRoom].find((r) => r.id === changes.room_id);
+      payload.schedules = payload.schedules.map((row) => row.id === id ? { ...row, ...changes, ...(savedRoom ? { room: savedRoom } : {}) } : row);
+      return Promise.resolve({ data: payload.schedules.find((row) => row.id === id) });
+    });
+  });
+
+  it("changes only the opened day's modality and room, leaving every sibling where it is", async () => {
+    const hook = await loadScheduler();
+    const { result } = hook;
+    act(() => { result.current.handleSectionSelect('30'); });
+    const before = result.current.schedules.filter((row) => row.id !== '12');
+
+    act(() => { expect(result.current.openScheduleInBuilder('12')).toBe(true); });
+    await waitFor(() => expect(result.current.modalRunMeetingOnly).toBe(true));
+    // The dialog is seeded from the opened meeting, not from the run's first day.
+    expect(result.current.modalDay1Index).toBe(4);
+    expect(result.current.modalDay1StartSlot).toBe(12);
+    expect(result.current.modalClassMode).toBe('online');
+
+    act(() => {
+      result.current.setModalClassMode('on-site');
+      result.current.setModalRoomId('6');
+    });
+    await waitFor(() => expect(result.current.modalConflict).toBeNull());
+    await act(async () => {
+      result.current.handleModalConfirm({ preventDefault: vi.fn() } as unknown as FormEvent);
+    });
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(post).not.toHaveBeenCalled();
+    expect(put).toHaveBeenCalledExactlyOnceWith('/schedules/12', {
+      day: 'Friday', start_time: '13:00', end_time: '16:00', mode: 'on-site', room_id: 6,
+    });
+    const friday = result.current.schedules.find((row) => row.id === '12');
+    expect([friday?.mode, friday?.roomId, friday?.startSlot]).toEqual(['on-site', '6', 12]);
+    expect(result.current.schedules.filter((row) => row.id !== '12')).toEqual(before);
   });
 });

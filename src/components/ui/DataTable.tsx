@@ -118,6 +118,9 @@ export default function DataTable<T>({
   const surface = variant === 'card'
     ? 'overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm'
     : 'bg-white';
+  // A card clips its overflow, so a table wider than the card must scroll inside it at every width;
+  // otherwise its last columns are cut off and unreachable. Embedded tables scroll with their host on desktop.
+  const scrollFallback = variant === 'card' ? 'overflow-x-auto' : 'max-lg:overflow-x-auto';
 
   const handleRowClick = (event: MouseEvent<HTMLTableRowElement>, row: T) => {
     if (!onRowClick) return;
@@ -142,7 +145,7 @@ export default function DataTable<T>({
 
   return (
     <div className={`${surface} ${className}`}>
-      <div role={scrollAriaLabel ? 'region' : undefined} aria-label={scrollAriaLabel} tabIndex={scrollAriaLabel ? 0 : undefined} className={`${scrollClassName.includes('overflow-') ? '' : 'max-lg:overflow-x-auto'} ${scrollClassName}`}>
+      <div role={scrollAriaLabel ? 'region' : undefined} aria-label={scrollAriaLabel} tabIndex={scrollAriaLabel ? 0 : undefined} className={`${scrollClassName.includes('overflow-') ? '' : scrollFallback} ${scrollClassName}`}>
         <table id={tableId} className={`w-full min-w-full border-collapse text-left ${tableClassName}`} aria-label={ariaLabel} aria-busy={isLoading || undefined}>
           <thead id={headerId} className="sticky top-0 z-10 bg-gray-50">
             {table.getHeaderGroups().map((headerGroup) => (

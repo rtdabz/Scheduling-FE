@@ -16,6 +16,33 @@
     --color-text:         #1A1410;
     --color-muted:        #7A6E67;
     --color-border:       #E2D9D0;
+
+    /* Application shell (system header + sidebar). */
+    --shell-maroon:       #4e0a10;
+    --shell-maroon-deep:  #36060b;
+    --shell-gold:         #C9952A;
+    --shell-content-bg:   #F7F5F2;
+
+    /* Action buttons. Mirrors components/ui/buttonStyles.ts so CSS-styled buttons
+       (scheduler dialogs, auto-assign, room transfer) match the Tailwind ones. */
+    --btn-radius:          8px;
+    --btn-h-sm:            32px;
+    --btn-h-md:            36px;
+    --btn-h-lg:            40px;
+    --btn-font-size:       13px;
+    --btn-primary:         #4e0a10;
+    --btn-primary-hover:   #640d14;
+    --btn-primary-active:  #34070a;
+    --btn-secondary-bg:    #FFFFFF;
+    --btn-secondary-hover: #F1F5F9;
+    --btn-secondary-border:#CBD5E1;
+    --btn-secondary-text:  #1E293B;
+    --btn-danger:          #DC2626;
+    --btn-danger-hover:    #B91C1C;
+    --btn-disabled-bg:     #F1F5F9;
+    --btn-disabled-border: #E2E8F0;
+    --btn-disabled-text:   #94A3B8;
+    --btn-focus:           #C9952A;
   }
 
   * {
@@ -138,10 +165,30 @@ body:has(#dashboard-overview.font-jakarta) :is(main :is(h1, h2, h3), [role="tool
     outline-offset: 2px;
   }
 
+  /* Sidebar nav states (cream text, gold accents). Indicators are overlaid pseudo-elements, not borders,
+     so hovering or activating an item never shifts its icon and label sideways. */
   .sidebar-item-active {
+    position: relative;
     background: linear-gradient(90deg, rgba(201,149,42,0.15) 0%, rgba(201,149,42,0.05) 100%);
-    border-left: 3px solid #C9952A;
     color: #F5C842;
+  }
+  .sidebar-item-active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--shell-gold);
+  }
+  .sidebar-subitem-active {
+    background: linear-gradient(90deg, rgba(201,149,42,0.15) 0%, rgba(201,149,42,0.05) 100%);
+    color: #F5C842;
+    font-weight: 600;
+  }
+  .sidebar-subitem-active::before {
+    background: var(--shell-gold) !important;
   }
   .sidebar-parent-active {
     color: #F5C842;
@@ -151,7 +198,9 @@ body:has(#dashboard-overview.font-jakarta) :is(main :is(h1, h2, h3), [role="tool
   }
   .sidebar-item-hover:hover {
     background: rgba(255,255,255,0.05);
-    border-left: 3px solid rgba(201,149,42,0.4);
+    color: #E8D5C4;
+  }
+  .sidebar-item-hover {
     color: #E8D5C4;
   }
   .glass {

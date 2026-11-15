@@ -53,12 +53,13 @@
 .transfer-workflow { display: flex; min-height: 0; flex-direction: column; overflow: hidden; border: 1px solid #e2d9d0; border-radius: 8px; background: #fff; }
 .transfer-finder { flex-shrink: 0; padding: 15px 16px; border-bottom: 1px solid #eee7e0; }
 .transfer-time-option { display: flex; align-items: center; gap: 9px; min-height: 32px; font-size: 13px; font-weight: 600; cursor: pointer; }
-.transfer-button { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; border: 1px solid transparent; border-radius: 6px; padding: 10px 12px; font-size: 13px; line-height: 1.5; font-weight: 600; transition: background-color 150ms; }
-.transfer-button-primary { background: #4e0a10; color: #fff; }
-.transfer-button-primary:hover:not(:disabled) { background: #34070a; }
-.transfer-button-secondary { border-color: #cfc2b8; background: #fff; color: #4e0a10; }
-.transfer-button-secondary:hover:not(:disabled) { background: #f7f4f0; }
-.transfer-button:disabled { opacity: .5; cursor: not-allowed; }
+.transfer-button { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; border: 1px solid transparent; border-radius: var(--btn-radius); padding: 10px 12px; font-size: var(--btn-font-size); line-height: 1.5; font-weight: 600; cursor: pointer; transition: background-color 150ms, border-color 150ms; }
+.transfer-button-primary { border-color: var(--btn-primary); background: var(--btn-primary); color: #fff; }
+.transfer-button-primary:hover:not(:disabled) { border-color: var(--btn-primary-hover); background: var(--btn-primary-hover); }
+.transfer-button-primary:active:not(:disabled) { background: var(--btn-primary-active); }
+.transfer-button-secondary { border-color: var(--btn-secondary-border); background: var(--btn-secondary-bg); color: var(--btn-secondary-text); }
+.transfer-button-secondary:hover:not(:disabled) { border-color: #94a3b8; background: var(--btn-secondary-hover); }
+.transfer-button:disabled { cursor: not-allowed; border-color: var(--btn-disabled-border); background: var(--btn-disabled-bg); color: var(--btn-disabled-text); }
 .transfer-finder .transfer-button { margin-top: 14px; }
 .transfer-results { display: flex; flex-direction: column; min-height: 0; padding: 14px 16px 16px; }
 .transfer-results-heading { display: flex; flex-shrink: 0; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 11px; }

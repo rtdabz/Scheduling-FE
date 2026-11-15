@@ -45,7 +45,7 @@ const perUnitHours = (minutes: number) => {
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
     <section aria-labelledby={id} className="border-t border-border pt-4 first:border-t-0 first:pt-0">
-      <h3 id={id} className="text-[15px] font-semibold text-text">{title}</h3>
+      <h3 id={id} className="text-sm font-semibold text-text">{title}</h3>
       <div className="mt-2">{children}</div>
     </section>
   );

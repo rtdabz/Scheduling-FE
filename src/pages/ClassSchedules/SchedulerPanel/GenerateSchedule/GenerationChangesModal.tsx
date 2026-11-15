@@ -1,3 +1,4 @@
+import { buttonClass } from '../../../../components/ui/buttonStyles';
 import { useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronRight, ListChecks } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -77,7 +78,7 @@ function ChangeRecords({
           type="button"
           onClick={() => onFocusClass(row.original)}
           title="Show this class in the table"
-          className="inline-flex items-center gap-0.5 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-semibold text-[#4e0a10] hover:bg-[#4e0a10]/10 focus:outline-none focus:ring-2 focus:ring-[#C9952A]"
+          className={buttonClass({ variant: 'infoTint', size: 'xs' })}
         >
           Show <ChevronRight className="h-3 w-3" />
         </button>

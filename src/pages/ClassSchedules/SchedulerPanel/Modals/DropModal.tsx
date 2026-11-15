@@ -115,6 +115,10 @@ interface DropModalProps {
   modalRun?: ConsecutivePlacement | null;
   modalConsecutiveDays?: number | null;
   setModalConsecutiveDays?: (value: number | null) => void;
+  /** Editing one saved meeting of a run: changes apply to that day only. */
+  modalRunMeetingOnly?: boolean;
+  /** Days held by the run's other meetings while one meeting is edited. */
+  modalRunSiblingDays?: number[];
   checkConflict: (
     subjectId: string,
     sectionId: string,
@@ -187,6 +191,8 @@ export default function DropModal({
   handleModalConfirm,
   modalRun = null,
   setModalConsecutiveDays,
+  modalRunMeetingOnly = false,
+  modalRunSiblingDays = [],
 }: DropModalProps) {
   const availableDays = DAYS;
   const hasBoth = dropSubject && Number(dropSubject.lectureHours ?? 0) > 0 && Number(dropSubject.labHours ?? 0) > 0;
@@ -215,7 +221,8 @@ export default function DropModal({
   const canUseRecommendations = canGenerateSchedule;
   const hasConflict = !!modalConflict;
   const hasSaveError = !!modalValidationError;
-  const shouldShowAlternatives = canUseRecommendations && hasConflict;
+  // Alternatives re-plot a whole run, so they are not offered while one run day is edited.
+  const shouldShowAlternatives = canUseRecommendations && hasConflict && !modalRunMeetingOnly;
   const isTwoMeetingPattern = modalIsHybrid || modalSplitEnabled;
   if (slotMeeting !== "first" && (!isTwoMeetingPattern || modalDay2Duration <= 0)) {
     setSlotMeeting("first");
@@ -223,7 +230,7 @@ export default function DropModal({
   if (roomFilter !== ALL_ROOMS && !availableSlotRooms.some((room) => slotRoomKey(room) === roomFilter)) {
     setRoomFilter(ALL_ROOMS);
   }
-  const currentRun = modalRun ? runStartingOn(modalRun, modalDay1Index) : null;
+  const currentRun = modalRun && !modalRunMeetingOnly ? runStartingOn(modalRun, modalDay1Index) : null;
   const preferredRun = modalRun ? tickedRun(modalRun) : null;
   const isSameTimePair = isTwoMeetingPattern && !hasLaboratoryUnits;
   const isIntegrated = Boolean(modalIsHybrid && hasBoth);
@@ -765,7 +772,7 @@ export default function DropModal({
   const secondMeetingTitle = modalIsHybrid ? "Lecture Meeting" : "Second Meeting";
   const scheduleTimeLabel = modalPreferredPattern
     ? `${slotToTimeStr(modalDay1StartSlot)} · ${slotsToHours(modalDay1Duration + modalDay2Duration)} contact hrs total`
-    : `${slotToTimeStr(modalDay1StartSlot)} – ${slotToTimeStr(modalDay1StartSlot + modalDay1Duration)}${modalRun
+    : `${slotToTimeStr(modalDay1StartSlot)} – ${slotToTimeStr(modalDay1StartSlot + modalDay1Duration)}${modalRun && !modalRunMeetingOnly
       ? ` each day · ${slotsToHours(modalDay1Duration)} hrs/day × ${modalRun.dayCount} days = ${slotsToHours(modalDay1Duration * modalRun.dayCount)} hrs`
       : ""}`;
 
@@ -965,7 +972,9 @@ export default function DropModal({
               })}
             </div>
             <p className="mt-2 text-[11px] leading-snug text-slate-500">
-              {meetingShape === "consecutive" && preferredRun
+              {meetingShape === "consecutive" && modalRunMeetingOnly
+                ? `Changes apply to ${FULL_DAY_NAMES[modalDay1Index]} only. The run's other days keep their own modality, room and time.`
+                : meetingShape === "consecutive" && preferredRun
                 ? `Meets on its ticked days, ${runLabel(preferredRun)}, at one time and room.`
                 : meetingShapeOptions.find((option) => option.value === meetingShape)?.hint}
             </p>
@@ -1048,7 +1057,11 @@ export default function DropModal({
           <div className={`grid grid-cols-1 gap-4 ${isTwoMeetingPattern ? "lg:grid-cols-2" : ""}`}>
             <MeetingCard
               showFieldMode={fieldEligible}
-              title={modalRun ? `Each day of the run (${modalRun.dayCount} days)` : firstMeetingTitle}
+              title={modalRun
+                ? modalRunMeetingOnly
+                  ? `This day only (1 of a ${modalRun.dayCount}-day run)`
+                  : `Each day of the run (${modalRun.dayCount} days)`
+                : firstMeetingTitle}
               mode={modalClassMode}
               isModeDisabled={(mode) =>
                 (modalIsHybrid && mode !== "on-site")
@@ -1064,10 +1077,15 @@ export default function DropModal({
               hasRoomError={modalClassMode === "on-site" && roomMissing(modalRoomId)}
               allowsRoomTba={Boolean(allowsRoomTba)}
               roomOptions={onSiteRoomOptions}
-              dayAriaLabel={modalRun ? "Starting day" : "First meeting day"}
+              dayAriaLabel={modalRunMeetingOnly ? "Meeting day" : modalRun ? "Starting day" : "First meeting day"}
               dayValue={modalDay1Index}
               dayDisabled={modalRun ? false : isTwoMeetingPattern ? modalSplitEnabled || modalForceDayEnabled : modalForceDayEnabled}
               dayOptions={availableDays.map((day, index) => {
+                if (modalRunMeetingOnly) {
+                  return modalRunSiblingDays.includes(index)
+                    ? { value: index, label: `${day} (another day of this run)`, disabled: true }
+                    : { value: index, label: day };
+                }
                 if (modalRun) {
                   const run = runStartingOn(modalRun, index);
                   if (!run) return { value: index, label: `${day} (runs past the week)`, disabled: true };
@@ -1084,7 +1102,7 @@ export default function DropModal({
               startOptionCount={gridSlotCount}
               onStartChange={setModalDay1StartSlot}
               durationSlots={modalDay1Duration}
-              endLabelSuffix={modalRun ? "(each day)" : undefined}
+              endLabelSuffix={modalRun && !modalRunMeetingOnly ? "(each day)" : undefined}
             />
 
             {isTwoMeetingPattern && (

@@ -10,6 +10,14 @@ export default {
   ],
   theme: {
     extend: {
+      // Sidebar-aware desktop breakpoints. Page content is the viewport minus the 288px sidebar, so the
+      // stock `xl` (1280px) switched to wide layouts while only ~1000px was available (1366px laptops at
+      // 100% zoom). `xl` and `2xl` now mean "the content area is at least 1280px / 1536px wide".
+      // See docs/typography-and-layout-standards.md.
+      screens: {
+        xl: '1568px',
+        '2xl': '1824px',
+      },
       fontFamily: {
         // The system uses one typeface (the dashboard's); `font-display` is kept so existing headings follow it.
         display: ['"Plus Jakarta Sans"', '"DM Sans"', 'system-ui', 'sans-serif'],

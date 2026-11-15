@@ -1,3 +1,4 @@
+import { buttonClass } from '../../components/ui/buttonStyles';
 import { formatPhilippineDate } from '../../lib/philippineTime';
 import { NAME_SUFFIXES, capitalizeNameInput } from '../../lib/formatters';
 
@@ -1128,7 +1129,7 @@ export default function VpaaUsers() {
                           e.stopPropagation();
                           handleEditClick(u);
                         }}
-                        className="p-1.5 text-[#C9952A] hover:bg-[#C9952A]/10 rounded-lg transition-colors cursor-pointer"
+                        className={buttonClass({ variant: 'accentTint', size: 'sm', iconOnly: true })}
                         title="Edit User"
                       >
                         <Pencil size={16} />
@@ -1138,9 +1139,7 @@ export default function VpaaUsers() {
                           e.stopPropagation();
                           void toggleActive(u);
                         }}
-                        className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                          u.status === 'Active' ? 'text-gray-500 hover:bg-gray-100' : 'text-green-600 hover:bg-green-50'
-                        }`}
+                        className={buttonClass({ variant: u.status === 'Active' ? 'dangerTint' : 'successTint', size: 'sm', iconOnly: true })}
                         title={u.status === 'Active' ? 'Deactivate User' : 'Activate User'}
                       >
                         <Power size={16} />
@@ -1150,7 +1149,7 @@ export default function VpaaUsers() {
                           e.stopPropagation();
                           void triggerDeleteConfirmation(u.id);
                         }}
-                        className="p-1.5 text-stone-600 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer"
+                        className={buttonClass({ variant: 'warningTint', size: 'sm', iconOnly: true })}
                         title="Archive User"
                       >
                         <Archive size={16} />

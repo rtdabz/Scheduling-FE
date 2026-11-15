@@ -139,7 +139,7 @@ export default function MarkSectionsDoneModal({
       busy={isMarking}
       closeLabel={copy.closeLabel}
       size="lg"
-      bodyClassName="scheduler-dialog-body"
+      bodyClassName="scheduler-submit-body"
       footer={<>
         <span className="mr-auto text-xs font-medium text-[#71665c]">
           {selectedCandidates.length > 0
@@ -168,7 +168,7 @@ export default function MarkSectionsDoneModal({
         </button>
       </>}
     >
-      {contextText && <p className="mb-4 text-sm font-medium text-[#71665c]">{contextText}</p>}
+      {contextText && <p className="mb-2.5 text-xs font-semibold text-[#71665c]">{contextText}</p>}
       {variant === "clear" && <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <p>{RESET_WARNING} You will review the exact counts before anything is deleted.</p>
@@ -187,7 +187,7 @@ export default function MarkSectionsDoneModal({
             </div>
           )}
           <div className="overflow-hidden rounded-xl border border-[#e8ded4] bg-white">
-            <label className="flex cursor-pointer flex-wrap items-center justify-between gap-3 border-b border-[#e8ded4] bg-[#faf7f2] px-4 py-3.5">
+            <label className="flex cursor-pointer flex-wrap items-center justify-between gap-3 border-b border-[#e8ded4] bg-[#faf7f2] px-3.5 py-2.5">
               <span className="text-xs font-bold text-slate-700">
                 {allReadySelected ? "Deselect all" : copy.selectAll}
               </span>
@@ -203,10 +203,12 @@ export default function MarkSectionsDoneModal({
                 />
               </span>
             </label>
-            <div>
+            <div className="scheduler-submit-grid p-2">
               {[...readySections, ...blockedSections].map((candidate) => {
                 const checked = selectedIds.includes(candidate.sectionId);
                 const remaining = Math.max(0, candidate.requiredSubjects - candidate.plottedSubjects);
+                const detail = `${copy.progress(candidate.plottedSubjects, candidate.requiredSubjects)} · ${
+                  candidate.isReady ? copy.lockNote(candidate.scheduleIds.length) : candidate.blockedReason}`;
                 return (
                   <button
                     key={candidate.sectionId}
@@ -214,45 +216,37 @@ export default function MarkSectionsDoneModal({
                     onClick={() => candidate.isReady && toggleSection(candidate.sectionId)}
                     disabled={isMarking || !candidate.isReady}
                     aria-pressed={checked}
-                    className={`flex w-full items-center justify-between gap-3 border-b border-[#f0e9e1] px-4 py-4 text-left last:border-b-0 transition-colors disabled:cursor-not-allowed ${
-                      !candidate.isReady
-                        ? "bg-[#faf8f5] opacity-70"
-                        : checked
-                          ? "bg-[#4e0a10]/5"
-                          : "bg-white hover:bg-[#faf7f2]"
-                    }`}
+                    className="scheduler-select-card"
+                    data-state={!candidate.isReady ? "locked" : checked ? "selected" : "idle"}
                   >
-                    <span className="min-w-0">
-                      <span className="flex flex-wrap items-center gap-2">
-                        <span className="break-words text-sm font-bold text-slate-800">{candidate.sectionName}</span>
-                        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">
+                    <span className="min-w-0 flex-1">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-[13px] font-bold leading-5 text-slate-800" title={candidate.sectionName}>{candidate.sectionName}</span>
+                        <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-px text-[10px] font-bold text-slate-500">
                           {yearLevelLabel(candidate.yearLevel)}
                         </span>
                         {candidate.sectionId === selectedSectionId && (
-                          <span className="shrink-0 rounded-full bg-[#4e0a10]/10 px-2 py-0.5 text-[10px] font-bold text-[#4e0a10]">
+                          <span className="shrink-0 rounded-full bg-[#4e0a10]/10 px-1.5 py-px text-[10px] font-bold text-[#4e0a10]">
                             Open
                           </span>
                         )}
                       </span>
-                      <span className="mt-1.5 block text-xs font-medium leading-5 text-slate-500">
-                        {copy.progress(candidate.plottedSubjects, candidate.requiredSubjects)}
-                        {candidate.isReady
-                          ? ` · ${copy.lockNote(candidate.scheduleIds.length)}`
-                          : ` · ${candidate.blockedReason}`}
+                      <span className="line-clamp-2 block text-[11px] font-medium leading-4 text-slate-500" title={detail}>
+                        {detail}
                       </span>
                     </span>
                     {candidate.isReady ? (
-                      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
+                      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
                         checked ? "border-[#4e0a10] bg-[#4e0a10] text-white" : "border-[#d6c8bb] bg-white text-transparent"
                       }`}>
-                        <CheckCircle2 size={15} />
+                        <CheckCircle2 size={13} />
                       </span>
                     ) : (
                       <span
-                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-slate-400"
+                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-slate-400"
                         title={variant === "done" && remaining > 0 ? `${remaining} course${remaining === 1 ? "" : "s"} still unplaced` : candidate.blockedReason}
                       >
-                        <Lock size={13} />
+                        <Lock size={11} />
                       </span>
                     )}
                   </button>

@@ -60,6 +60,8 @@ interface TimetableGridProps {
   isWideView?: boolean;
   handleToggleWideView?: () => void;
   isReadOnlyViewer?: boolean;
+  /** False hides the Manual Plotting toggle, e.g. for a Secretary viewing a Program Head's program. */
+  canOpenManualPlotting?: boolean;
   onOpenConflict?: (scheduleId: string) => void;
   savingMessage?: string | null;
 }
@@ -103,6 +105,7 @@ export default function TimetableGrid({
   isWideView = false,
   handleToggleWideView,
   isReadOnlyViewer = false,
+  canOpenManualPlotting = true,
   onOpenConflict,
   savingMessage = null,
 }: TimetableGridProps) {
@@ -133,7 +136,7 @@ export default function TimetableGrid({
         detail={activeSemesterText}
         actions={!isReadOnlyViewer && (
           <>
-            {!isFacultyAssignment && (isLoading ? <Skeleton className="h-9 w-32 rounded-lg" /> : (
+            {!isFacultyAssignment && canOpenManualPlotting && (isLoading ? <Skeleton className="h-9 w-32 rounded-lg" /> : (
               <button
                 id="schedule-builder-course-bank-toggle"
                 type="button"
@@ -142,7 +145,7 @@ export default function TimetableGrid({
                 title={isWideView ? "Show the Manual Plotting panel" : "Hide the Manual Plotting panel"}
                 className={`${TIMETABLE_HEADER_BUTTON} ${isWideView ? "" : TIMETABLE_HEADER_BUTTON_PRESSED}`}
               >
-                <BookOpen className={`h-3.5 w-3.5 ${isWideView ? "" : "text-[#F5C842]"}`} />
+                <BookOpen className={`h-3.5 w-3.5 ${isWideView ? "" : "text-[#A8761A]"}`} />
                 Manual Plotting
               </button>
             ))}

@@ -21,7 +21,7 @@ export function DashboardContext({ term, status, statusTone, summary, action }: 
   return (
     <section aria-label="Semester status" className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border border-border bg-white px-5 py-3.5">
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1.5">
-        <span className="text-[14px] font-semibold text-text">{term}</span>
+        <span className="text-sm font-semibold text-text">{term}</span>
         {status && statusTone && <StatusTag tone={statusTone}>{status}</StatusTag>}
         {summary && <span className="min-w-0 text-[13px] text-muted">{summary}</span>}
       </div>
