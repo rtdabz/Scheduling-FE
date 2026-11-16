@@ -1,0 +1,1 @@
+var e=[`approved`,`faculty_assignment`,`reassignment`,`finalized`],t=t=>e.includes((t??``).trim().toLowerCase());export{t};

@@ -1,0 +1,1 @@
+function e(e,t,n){let r=(e??``).toLowerCase(),i=(n??``).toLowerCase(),a=(t??``).trim();return r===`online`||i===`online`||a.toLowerCase()===`online`?`Online`:r===`field`||i===`field`||a.toLowerCase()===`field`?`Field`:a||`Room TBA`}export{e as t};

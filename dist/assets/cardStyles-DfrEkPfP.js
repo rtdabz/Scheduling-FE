@@ -1,0 +1,1 @@
+var e=`transition-all duration-200 hover:border-[#C9952A] hover:scale-[1.02] hover:z-10 motion-reduce:transition-none motion-reduce:hover:scale-100`;export{e as t};
