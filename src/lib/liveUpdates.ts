@@ -42,9 +42,7 @@ const RESYNC_DELAY_JITTER_MS = 2000;
 interface RealtimeConfig {
   enabled: boolean;
   key: string | null;
-  host: string | null;
-  port: number | null;
-  scheme: string | null;
+  cluster: string | null;
 }
 
 const isLiveTopic = (value: unknown): value is LiveTopic =>
@@ -126,22 +124,14 @@ export const startLiveUpdates = (userId: number): Promise<void> => {
   starting = (async () => {
     try {
       const { data: config } = await api.get<RealtimeConfig>('/realtime-config');
-      if (!config.enabled || !config.key || startedForUser !== userId) return;
+      if (!config.enabled || !config.key || !config.cluster || startedForUser !== userId) return;
 
       const { default: PusherClient } = await import('pusher-js');
       if (startedForUser !== userId) return;
 
-      const secure = (config.scheme ?? window.location.protocol.replace(':', '')) === 'https';
-      const port = config.port ?? (Number(window.location.port) || (secure ? 443 : 80));
-
       const pusher = new PusherClient(config.key, {
-        cluster: '',
-        wsHost: config.host ?? window.location.hostname,
-        wsPort: port,
-        wssPort: port,
-        forceTLS: secure,
-        enabledTransports: ['ws', 'wss'],
-        disableStats: true,
+        cluster: config.cluster,
+        forceTLS: true,
         channelAuthorization: {
           endpoint: '/broadcasting/auth',
           transport: 'ajax',

@@ -64,9 +64,9 @@ function Start-WicarsProcess {
     return Start-Process @options
 }
 
-# The queue worker and Reverb start hidden, so closing this window leaves them
-# running. A worker left from an earlier start keeps the PHP code it loaded and
-# still takes generation jobs, so backend changes would silently not apply.
+# The queue worker starts hidden, so closing this window leaves it running.
+# A worker left from an earlier start keeps the PHP code it loaded and still
+# takes generation jobs, so backend changes would silently not apply.
 # Stop every WICARS backend process from earlier starts before starting fresh.
 # Stop the worker supervisor loops first, or they would restart the workers below.
 $staleSupervisors = Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" |
@@ -83,7 +83,7 @@ $staleProcesses = Get-CimInstance Win32_Process -Filter "Name = 'php.exe'" |
     Where-Object {
         $_.CommandLine -and
         $_.CommandLine.Contains($backendRoot) -and
-        $_.CommandLine -match 'queue:work|reverb:start|artisan"?\s+serve|server\.php'
+        $_.CommandLine -match 'queue:work|artisan"?\s+serve|server\.php'
     }
 foreach ($process in $staleProcesses) {
     Write-Host "Stopping earlier WICARS process $($process.ProcessId)"
@@ -118,13 +118,22 @@ $queueWorker = Start-WicarsProcess `
     -WorkingDirectory $backendRoot `
     -Hidden
 
-# Live updates: the WebSocket server browsers subscribe to. The app keeps
-# working without it, but pages then only refresh on navigation.
-$reverb = Start-WicarsProcess `
-    -FilePath $php `
-    -ArgumentList @((Join-Path $backendRoot 'artisan'), 'reverb:start') `
-    -WorkingDirectory $backendRoot `
-    -Hidden
+# Live updates go through hosted Pusher Channels (PUSHER_* in the backend .env),
+# so there is no local WebSocket server to start. Warn when it is not set up:
+# the app still works, but pages only refresh on navigation.
+$envFile = Join-Path $backendRoot '.env'
+$envValues = @{}
+if (Test-Path -LiteralPath $envFile) {
+    foreach ($line in Get-Content -LiteralPath $envFile) {
+        if ($line -match '^\s*([A-Z_]+)\s*=\s*"?([^"]*)"?\s*$') { $envValues[$Matches[1]] = $Matches[2] }
+    }
+}
+$liveUpdatesReady = $envValues['BROADCAST_CONNECTION'] -eq 'pusher' -and
+    $envValues['PUSHER_APP_KEY'] -and $envValues['PUSHER_APP_SECRET'] -and
+    $envValues['PUSHER_APP_ID'] -and $envValues['PUSHER_APP_CLUSTER']
+if (-not $liveUpdatesReady) {
+    Write-Warning "Live updates are off: set BROADCAST_CONNECTION=pusher and PUSHER_APP_ID/KEY/SECRET/CLUSTER in $envFile"
+}
 
 $vite = Start-WicarsProcess `
     -FilePath 'npm.cmd' `
@@ -134,6 +143,6 @@ $vite = Start-WicarsProcess `
 Write-Host "WICARS development services started."
 Write-Host "Laravel server PID: $($backendServer.Id)"
 Write-Host "Scheduling worker supervisor PID: $($queueWorker.Id) (log: $workerLog)"
-Write-Host "Live updates (Reverb) PID: $($reverb.Id)"
 Write-Host "Vite server PID: $($vite.Id)"
+Write-Host "Live updates (Pusher): $(if ($liveUpdatesReady) { 'configured' } else { 'not configured' })"
 Write-Host "Keep this window open while developing."
