@@ -42,6 +42,9 @@ export interface ModalProps {
   role?: 'dialog' | 'alertdialog';
   /** Preserve the original opener when an asynchronous action temporarily takes focus. */
   returnFocusTo?: HTMLElement | null;
+  /** Ids of a title/description rendered inside the body, for dialogs that draw their own header. */
+  labelledBy?: string;
+  describedBy?: string;
 }
 
 const FOCUSABLE = 'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex]:not([tabindex="-1"]):not(:disabled)';
@@ -87,6 +90,8 @@ export default function Modal({
   closeLabel = 'Close modal',
   role = 'dialog',
   returnFocusTo,
+  labelledBy,
+  describedBy,
 }: ModalProps) {
   const titleId = useId();
   const descriptionId = useId();
@@ -173,8 +178,8 @@ export default function Modal({
         aria-hidden={inert || undefined}
         aria-modal={inert ? undefined : true}
         aria-busy={busy || undefined}
-        aria-labelledby={title ? titleId : undefined}
-        aria-describedby={description ? descriptionId : undefined}
+        aria-labelledby={title ? titleId : labelledBy}
+        aria-describedby={description ? descriptionId : describedBy}
       >
         {(title || description || showCloseButton) && (
           <header className={`flex shrink-0 items-start justify-between gap-3 px-4 py-3 sm:gap-4 sm:px-5 sm:py-4 ${workflow ? 'scheduler-dialog-header' : headerClassName}`}>

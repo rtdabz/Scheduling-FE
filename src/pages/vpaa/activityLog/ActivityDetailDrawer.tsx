@@ -197,7 +197,7 @@ export default function ActivityDetailDrawer({ entry, departments, semesters, on
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-medium text-white/70">Activity record</p>
-              <h2 id={titleId} className="mt-0.5 font-jakarta text-lg font-bold leading-snug">{entryLabel(entry)}</h2>
+              <h2 id={titleId} className="mt-0.5 text-lg font-bold leading-snug">{entryLabel(entry)}</h2>
             </div>
             <button
               ref={closeRef}

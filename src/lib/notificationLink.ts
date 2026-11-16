@@ -28,6 +28,7 @@ const pageFor = (type: string, role: Role): string | null => {
     case 'schedule_returned_by_vpaa':
     case 'schedule_withdrawn':
       return isDepartmentScheduler(role) ? 'schedule-management' : 'schedules';
+    case 'cross_department_sections_returned':
     case 'instructor_assigned':
     case 'instructor_assignment_released':
     case 'instructor_assignment_completed':

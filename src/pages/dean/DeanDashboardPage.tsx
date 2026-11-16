@@ -508,7 +508,7 @@ export default function DeanDashboardPage() {
   ];
 
   const timetablePanel = (
-    <div className={isFullscreen ? 'fixed inset-0 z-[999999] flex flex-col overflow-auto bg-parchment p-4 font-jakarta text-text sm:p-6' : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
+    <div className={isFullscreen ? 'fixed inset-0 z-[999999] flex flex-col overflow-auto bg-parchment p-4 text-text sm:p-6' : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
       <Panel
         title="Department Academic Timetable"
         subtitle="Overview of department timetable."
@@ -614,7 +614,7 @@ export default function DeanDashboardPage() {
 
   if (dashboardLoading) return <DashboardSkeleton metrics={metrics} variant="dean" tab={tab} />;
 
-  return <div id="dashboard-overview" className="space-y-4 pb-8 font-jakarta text-text">
+  return <div id="dashboard-overview" className="space-y-4 pb-8 text-text">
     {(loadError || statusError) && <div className="flex flex-wrap items-center gap-3 rounded-xl bg-accent/[0.12] px-4 py-3 text-[13px] font-medium text-stage-warnText">
       <AlertTriangle className="h-4 w-4 shrink-0" />
       <span className="flex-1">{loadError || statusError}</span>

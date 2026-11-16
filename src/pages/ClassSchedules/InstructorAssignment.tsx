@@ -12,6 +12,7 @@ import {
   Lock,
   Search,
   ShieldCheck,
+  Undo2,
   UserMinus,
 } from "lucide-react";
 import axios from "axios";
@@ -71,7 +72,7 @@ import type { ZoomLevel } from "../vpaa/calendar/ganttPresentation";
 import FacultyModal from "./SchedulerPanel/Modals/FacultyModal";
 import AssignmentWorklist from "./AssignmentWorklist";
 import type { WorklistClass } from "./AssignmentWorklist";
-import { eligibleFacultiesForSubject, requiredTeachingProgramId } from "./SchedulerPanel/facultyEligibility";
+import { eligibleFacultiesForSubject, requiredTeachingProgramId, subjectForSchedule } from "./SchedulerPanel/facultyEligibility";
 import type {
   Faculty,
   FacultyAssignmentPopupState,
@@ -166,6 +167,9 @@ interface ApiSchedule {
   subject_id?: number;
   faculty_id: number | null;
   faculty_assignment_done?: boolean | number;
+  delegation_returned_from_department_id?: number | null;
+  section_teaching_department_id?: number | null;
+  section_teaching_program_id?: number | null;
   section_id?: number;
   room_id?: number | null;
   day: string;
@@ -499,6 +503,8 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     name: string;
     assignedCount: number;
   } | null>(null);
+  const [isReturningSections, setIsReturningSections] = useState(false);
+  const [returnSectionsOpen, setReturnSectionsOpen] = useState(false);
   const [error, setError] = useState("");
   const [warnings, setWarnings] = useState<AssignmentWarning[]>([]);
 
@@ -590,10 +596,15 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
       ?? (subject?.department_id != null ? departmentMap.get(Number(subject.department_id)) : null)
       ?? subject?.department
       ?? null;
+    // Per class (mirrors SchedulingPolicy::courseForRow): a returned section follows its own
+    // section-level assignment instead of the course-level one.
+    const detached = schedule.delegation_returned_from_department_id != null;
+    const teachingDepartmentId = detached ? schedule.section_teaching_department_id ?? null : subject?.teaching_department_id ?? null;
+    const teachingProgramId = detached ? schedule.section_teaching_program_id ?? null : subject?.teaching_program_id ?? null;
     if (
       !subject ||
       !department ||
-      Number(subject.teaching_department_id ?? subject.department_id) !== Number(currentDepartmentId) ||
+      Number(teachingDepartmentId ?? subject.department_id) !== Number(currentDepartmentId) ||
       // VPAA approval is the source of truth: Draft, Submitted and Dean-review rows stay out of
       // view even when they already carry a retained instructor.
       !ASSIGNMENT_STATUSES.includes(schedule.status)
@@ -601,9 +612,9 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
       return [];
     }
     const isCrossDepartment = Number(schedule.department_id) !== Number(currentDepartmentId);
-    const isCrossProgram = subject.teaching_program_id != null
-      && Number(subject.teaching_program_id) !== Number(subject.program_id ?? 0)
-      && (user.role !== "program_head" || Number(subject.teaching_program_id) === Number(user.program_id));
+    const isCrossProgram = teachingProgramId != null
+      && Number(teachingProgramId) !== Number(subject.program_id ?? 0)
+      && (user.role !== "program_head" || Number(teachingProgramId) === Number(user.program_id));
     return isCrossDepartment || isCrossProgram ? [{ ...schedule, subject, department }] : [];
   }), [currentDepartmentId, departmentMap, schedules, subjectMap, user.program_id, user.role]);
 
@@ -739,6 +750,21 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
       getFacultyName(schedule),
     ].some((field) => (field ?? "").toLowerCase().includes(query));
   });
+  // Sections this department could not staff can go back to the offering department. Only a
+  // class with no instructor on any meeting qualifies; a staffed class stays here.
+  const returnableClasses = useMemo(() => {
+    const classes = new Map<string, AssignmentSchedule[]>();
+    for (const schedule of sectionSchedules) {
+      const key = `${schedule.section_id ?? schedule.section?.section_name ?? "none"}:${schedule.subject.id}`;
+      classes.set(key, [...(classes.get(key) ?? []), schedule]);
+    }
+    return [...classes.values()]
+      .filter((meetings) => meetings.every((meeting) => meeting.faculty_id === null && isAssignmentEditable(meeting)))
+      .map((meetings) => ({
+        scheduleId: meetings[0].id,
+        label: `${meetings[0].subject.course_code ?? meetings[0].subject.subject_code ?? "Course"} (${meetings[0].section?.section_name ?? "section"})`,
+      }));
+  }, [sectionSchedules]);
   const clearableSectionSchedules = sectionSchedules.filter((schedule) => (
     schedule.faculty_id !== null
     && isAssignmentEditable(schedule)
@@ -871,6 +897,9 @@ const selectedSchedule = assignmentSchedules.find(
       facultyName: getFacultyName(schedule),
       facultyId: schedule.faculty_id === null ? null : String(schedule.faculty_id),
       facultyAssignmentDone: Boolean(schedule.faculty_assignment_done),
+      delegationReturnedFromDepartmentId: schedule.delegation_returned_from_department_id ?? null,
+      sectionTeachingDepartmentId: schedule.section_teaching_department_id ?? null,
+      sectionTeachingProgramId: schedule.section_teaching_program_id ?? null,
       status: schedule.status as ScheduleItem["status"],
       dayIndex: DAYS.indexOf(schedule.day),
       startSlot: Math.max(0, Math.floor((startMinutes - gridOpeningMinutes()) / slotMinutes())),
@@ -1081,6 +1110,40 @@ const selectedSchedule = assignmentSchedules.find(
     }
   };
 
+  const returnUnassignedSections = async () => {
+    if (isReturningSections || assignmentLocked || returnableClasses.length === 0) return;
+    setIsReturningSections(true);
+    setError("");
+    try {
+      const response = await api.post<{ schedules: ApiSchedule[]; sections_returned: number; message: string }>(
+        "/instructor-assignments/return-sections",
+        { schedule_ids: returnableClasses.map((item) => Number(item.scheduleId)) },
+      );
+      // Returned rows carry the return mark, which drops them from this workspace.
+      const updatedScheduleMap = new Map(response.data.schedules.map((schedule) => [schedule.id, schedule]));
+      const nextSchedules = schedules.map((schedule) => updatedScheduleMap.get(schedule.id) ?? schedule);
+      setSchedules(nextSchedules);
+      setCachedData<AssignmentResponse>(assignmentsCacheKey, {
+        active_semester: activeSemester,
+        current_department_id: currentDepartmentId,
+        departments,
+        subjects,
+        faculties,
+        schedules: nextSchedules,
+      });
+      setReturnSectionsOpen(false);
+      toast.success("Sections Returned", response.data.message);
+      invalidateCacheGroups("assignments");
+      invalidateAssignmentDependents();
+      publishLiveTopics(["assignments"]);
+    } catch (err) {
+      setError(apiErrorMessage(err, "Unable to return the sections. Please try again."));
+      setReturnSectionsOpen(false);
+    } finally {
+      setIsReturningSections(false);
+    }
+  };
+
   const handlePopupFacultyChange = (facultyId: string) => {
     if (!facultyAssignmentPopup) return;
     setFacultyAssignmentPopup({ ...facultyAssignmentPopup, facultyId });
@@ -1130,7 +1193,12 @@ const selectedSchedule = assignmentSchedules.find(
 
     return [...grouped.entries()].map(([key, meetings]) => {
       const [primary] = meetings;
-      const subject = modalSubjects.find((item) => item.id === String(primary.subject.id)) ?? null;
+      // Per class: a returned section handed here on its own is judged by its own assignment.
+      const subject = subjectForSchedule(modalSubjects.find((item) => item.id === String(primary.subject.id)), {
+        delegationReturnedFromDepartmentId: primary.delegation_returned_from_department_id ?? null,
+        sectionTeachingDepartmentId: primary.section_teaching_department_id ?? null,
+        sectionTeachingProgramId: primary.section_teaching_program_id ?? null,
+      }) ?? null;
       const eligible = eligibleFacultiesForSubject(
         modalFaculties,
         subject,
@@ -1291,7 +1359,7 @@ const selectedSchedule = assignmentSchedules.find(
               ].map(({ label, value, tone, accent }) => (
                 <div key={label} className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5">
                   <span className={`absolute inset-y-0 left-0 w-0.5 ${accent}`} aria-hidden="true" />
-                  <dt className="truncate text-[10px] font-bold uppercase tracking-wider text-slate-500">{label}</dt>
+                  <dt className="truncate text-[9px] font-bold uppercase tracking-wider text-slate-500">{label}</dt>
                   <dd className={`mt-0.5 text-xl font-black tabular-nums ${tone}`}>{value}</dd>
                 </div>
               ))}
@@ -1340,7 +1408,7 @@ const selectedSchedule = assignmentSchedules.find(
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div id="instructor-assignment-departments" className="flex flex-col gap-1 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <div>
-              <h2 className="text-sm font-extrabold text-slate-900">Offering departments</h2>
+              <h2 className="text-base font-extrabold text-slate-900">Offering departments</h2>
               <p className="text-xs font-medium text-slate-500">Open a department&apos;s approved timetable to staff the courses assigned to you.</p>
             </div>
             <span className="whitespace-nowrap text-xs font-bold text-slate-500">
@@ -1486,6 +1554,16 @@ const selectedSchedule = assignmentSchedules.find(
               >
                 <UserMinus className="h-4 w-4" />
                 {selectedSection === "all" ? "Clear All Instructors" : "Clear Instructor"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setReturnSectionsOpen(true)}
+                disabled={Boolean(assignmentLocked) || isSaving || isReturningSections || returnableClasses.length === 0}
+                className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Hand sections without an instructor back to the offering department. Sections with an instructor stay with you."
+              >
+                <Undo2 className="h-4 w-4" />
+                Return Unassigned ({returnableClasses.length})
               </button>
               {activeSemester && !assignmentLocked && (
                 <button
@@ -1641,6 +1719,19 @@ const selectedSchedule = assignmentSchedules.find(
         isConfirming={isClearingSection}
         onConfirm={clearSectionInstructors}
         onCancel={() => !isClearingSection && setClearSectionTarget(null)}
+      />
+
+      <ConfirmModal
+        appearance="workflow"
+        isOpen={returnSectionsOpen}
+        eyebrow="Cross-Department Assignment"
+        title="Return unassigned sections?"
+        message={`Return ${returnableClasses.length} ${returnableClasses.length === 1 ? "section" : "sections"} without an instructor to ${selectedDepartment?.department_name ?? "the offering department"}: ${returnableClasses.slice(0, 8).map((item) => item.label).join(", ")}${returnableClasses.length > 8 ? ` and ${returnableClasses.length - 8} more` : ""}. They will assign instructors themselves. Sections that already have an instructor stay with your department.`}
+        confirmLabel="Return Sections"
+        variant="warning"
+        isConfirming={isReturningSections}
+        onConfirm={returnUnassignedSections}
+        onCancel={() => !isReturningSections && setReturnSectionsOpen(false)}
       />
 
       {isConflictsOpen && (

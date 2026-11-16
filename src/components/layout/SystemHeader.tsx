@@ -48,7 +48,7 @@ export default function SystemHeader({ activeSemester, sidebarOpen = false, onTo
       <div className="relative z-10 flex shrink-0 items-center gap-2">
         {activeSemester && (
           <div
-            className="mr-1 hidden h-8 items-center gap-2 rounded-full border border-white/20 bg-white/10 pl-2.5 pr-3 text-xs leading-none sm:flex"
+            className="mr-1 hidden h-8 items-center gap-2 rounded-full border border-white/20 bg-white/10 pl-2.5 pr-3 text-[11px] leading-none sm:flex"
             title="Active semester"
           >
             <span className="h-1.5 w-1.5 rounded-full bg-[#C9952A]" aria-hidden="true" />

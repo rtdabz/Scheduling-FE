@@ -209,7 +209,7 @@ export function HelperBuddy({ message }: { message: HelperMessage | null }) {
               borderRadius: 16,
               borderLeft: `4px solid ${config.borderColor}`,
               padding: "16px",
-              fontFamily: "inherit",
+              fontFamily: "Inter, system-ui, -apple-system, sans-serif",
               display: "flex",
               flexDirection: "column",
               gap: 8,

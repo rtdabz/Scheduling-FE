@@ -63,7 +63,7 @@ function PanelFrame({ className = '', children, action = true, subtitle = true, 
     <section className={`min-w-0 rounded-xl border border-border bg-white p-5 ${className}`}>
       <div className={`mb-4 flex min-h-[28px] justify-between gap-3 ${subtitle ? 'items-start' : 'items-center'}`}>
         <div className="min-w-0 flex-1">
-          {title ? <div className={`relative font-jakarta text-sm font-semibold leading-5 tracking-tight ${subtitle ? '' : 'truncate'}`}>
+          {title ? <div className={`relative text-[15px] font-semibold leading-5 tracking-tight ${subtitle ? '' : 'truncate'}`}>
             <span className="invisible">{title}</span>
             <Skeleton className="absolute left-0 top-1/2 h-3 w-40 max-w-full -translate-y-1/2 rounded" />
           </div> : <TextLine line="h-5" className="h-3 w-40 max-w-full" />}
@@ -775,7 +775,7 @@ export default function DashboardSkeleton({ metricCount, variant = 'institutiona
   if (variant === 'vpaa') tabs.push('activity');
 
   return (
-    <div className={`${ROOT} font-jakarta text-text`} aria-label="Loading dashboard" aria-busy="true">
+    <div className={`${ROOT} text-text`} aria-label="Loading dashboard" aria-busy="true">
       <div data-skeleton="tabs" aria-hidden="true" className="flex gap-6 border-b border-border">
         {tabs.map(key => <span key={key} className={`relative -mb-px flex shrink-0 items-center gap-1.5 rounded-sm px-0.5 pb-2.5 pt-1 text-[13px] ${tab === key ? 'font-semibold text-primary' : 'font-medium text-muted'}`}>
           {key.charAt(0).toUpperCase() + key.slice(1)}

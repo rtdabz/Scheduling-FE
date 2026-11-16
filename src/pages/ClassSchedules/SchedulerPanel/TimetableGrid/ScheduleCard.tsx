@@ -215,7 +215,7 @@ const ScheduleCard = memo(function ScheduleCard({
             </div>
           ) : (
             <div className="space-y-2 border-t border-slate-800 pt-2">
-              <p className="flex items-center gap-1.5 text-[11px] text-slate-400">
+              <p className="flex items-center gap-1.5 text-[10.5px] text-slate-400">
                 <Move className="h-3 w-3 shrink-0 text-[#c9952a]" />
                 Click an empty slot to move it here.
               </p>
@@ -322,7 +322,7 @@ const ScheduleCard = memo(function ScheduleCard({
                 <span className="font-medium text-slate-400">Room: </span>{roomDisplayName}
               </div>
             ) : <span />}
-            <span className={`shrink-0 rounded px-1 py-0.5 font-bold leading-none ${isWideView ? "text-[11px]" : "text-[10px]"} ${gridStyles.badgeText}`}>
+            <span className={`shrink-0 rounded px-1 py-0.5 font-bold leading-none ${isWideView ? "text-[10.5px]" : "text-[10px]"} ${gridStyles.badgeText}`}>
               {subject.units} {subject.units === 1 ? "unit" : "units"}
             </span>
           </div>
@@ -348,7 +348,7 @@ const ScheduleCard = memo(function ScheduleCard({
               </span>
             </div>
           ) : (
-          <div className={`text-slate-500 font-medium mt-auto pt-0.5 break-words ${isWideView ? "text-[12px] leading-none" : "text-[11px] whitespace-normal leading-tight"}`}>
+          <div className={`text-slate-500 font-medium mt-auto pt-0.5 break-words ${isWideView ? "text-[12px] leading-none" : "text-[10.5px] whitespace-normal leading-tight"}`}>
             {hasFaculty && schedule.facultyName ? (
               <div className="truncate font-bold text-emerald-800" title={schedule.facultyName}>
                 {schedule.facultyName}

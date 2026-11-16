@@ -25,7 +25,7 @@
 .transfer-review > .transfer-section-heading, .transfer-review > .transfer-description { flex-shrink: 0; }
 .transfer-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; }
 .transfer-section-heading h3 { display: flex; align-items: baseline; gap: 9px; margin: 0; font-size: 18px; line-height: 1.35; font-weight: 600; }
-.transfer-step { color: #4e0a10; font-family: 'Plus Jakarta Sans', 'DM Sans', system-ui, sans-serif; font-size: 12px; font-weight: 700; }
+.transfer-step { color: #4e0a10; font-family: 'DM Sans', system-ui, sans-serif; font-size: 12px; font-weight: 700; }
 .transfer-selection-count { flex-shrink: 0; border: 1px solid #e2d9d0; border-radius: 5px; padding: 3px 8px; color: #4e0a10; background: #fff; font-size: 12px; font-weight: 600; }
 .room-transfer .transfer-description { margin: 5px 0 14px; color: #5f5752; font-size: 13px; }
 .room-transfer .transfer-meta { margin-top: 4px; color: #625a54; font-size: 12px; line-height: 1.5; font-weight: 400; }

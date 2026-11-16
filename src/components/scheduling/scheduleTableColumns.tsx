@@ -127,7 +127,7 @@ export const scheduleTableColumns = (conflicts: ScheduleConflictState): ColumnDe
           <div className="flex items-center gap-1.5">
             <span className="font-black text-slate-800">{schedule.subjectCode}</span>
             {showMeetingType && (
-              <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-bold ${schedule.meetingType === 'laboratory' ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-sky-200 bg-sky-50 text-sky-700'}`}>
+              <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold ${schedule.meetingType === 'laboratory' ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-sky-200 bg-sky-50 text-sky-700'}`}>
                 {schedule.meetingType === 'laboratory' ? 'Lab' : 'Lec'}
               </span>
             )}

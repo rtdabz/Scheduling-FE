@@ -24,6 +24,9 @@ describe('notificationLink', () => {
     expect(notificationLink('incoming_cross_department_courses', 'program_head')).toBe('/program_head/cross-department-assignments');
     expect(notificationLink('incoming_cross_department_courses', 'dean')).toBeUndefined();
     expect(notificationLink('cross_department_instructors_released', 'secretary')).toBe('/secretary/cross-department-assignments');
+    // Returned sections are the offering department's to staff again.
+    expect(notificationLink('cross_department_sections_returned', 'secretary')).toBe('/secretary/instructor-assignment');
+    expect(notificationLink('cross_department_sections_returned', 'program_head')).toBe('/program_head/instructor-assignment');
   });
 
   it('opens the approval queue for the stage that must act', () => {

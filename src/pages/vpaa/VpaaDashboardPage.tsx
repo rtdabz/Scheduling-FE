@@ -504,10 +504,10 @@ export default function VpaaDashboardPage() {
   ];
 
   const timetablePanel = (
-    <div className={isFullscreen ? 'fixed inset-0 z-[1000] flex flex-col overflow-auto bg-parchment p-4 font-jakarta text-text sm:p-6' : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
+    <div className={isFullscreen ? 'fixed inset-0 z-[1000] flex flex-col overflow-auto bg-parchment p-4 text-text sm:p-6' : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
       <section aria-label="Institutional master timetable" className="flex min-h-0 flex-1 flex-col rounded-xl border border-border bg-white p-5">
         <header className="flex shrink-0 flex-wrap items-center gap-2">
-          <h2 className="font-jakarta text-sm font-semibold leading-5 tracking-tight text-text">Master timetable</h2>
+          <h2 className="font-sans text-[15px] font-semibold leading-5 tracking-tight text-text">Master timetable</h2>
           <span title="Preview of VPAA-approved classes" className="rounded-full bg-parchment px-2 py-0.5 text-[11px] font-medium text-muted">Preview</span>
           <button type="button" aria-label="Timetable filters" aria-expanded={showTimetableFilters} aria-controls="dashboard-timetable-filters" onClick={() => setShowTimetableFilters(open => !open)}
             data-active={showTimetableFilters || activeTimetableFilterCount > 0}
@@ -597,7 +597,7 @@ export default function VpaaDashboardPage() {
 
   if (dashboardLoading) return <DashboardSkeleton metrics={metrics} variant="vpaa" tab={tab} />;
 
-  return <div id="dashboard-overview" className="space-y-4 pb-8 font-jakarta text-text">
+  return <div id="dashboard-overview" className="space-y-4 pb-8 text-text">
     {loadError && <div className="flex flex-wrap items-center gap-3 rounded-xl bg-accent/[0.12] px-4 py-3 text-[13px] font-medium text-stage-warnText">
       <AlertTriangle className="h-4 w-4 shrink-0" />
       <span className="flex-1">{loadError}</span>
@@ -661,7 +661,7 @@ export default function VpaaDashboardPage() {
             {totals.pendingVpaa ? <AlertTriangle className="h-[18px] w-[18px]" /> : <CheckCircle2 className="h-[18px] w-[18px]" />}
           </span>
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-semibold leading-tight tracking-tight text-primary">
+            <div className="text-[15px] font-semibold leading-tight tracking-tight text-primary">
               {grouped(totals.pendingVpaa)} {totals.pendingVpaa === 1 ? 'Section' : 'Sections'} Awaiting VPAA Review
             </div>
             <p className="mt-1 text-xs leading-tight text-text/75">

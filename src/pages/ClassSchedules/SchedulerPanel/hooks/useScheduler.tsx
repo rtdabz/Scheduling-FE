@@ -33,7 +33,7 @@ import { changedResetPreview, confirmScheduleReset, previewScheduleReset, resetC
 import ResetConfirmationMessage from "../Modals/ResetConfirmationMessage";
 import { buildSectionFinalizeCandidates, buildSectionReassignCandidates } from "../sectionFinalizeCandidates";
 import { getSubjectTotalSlots } from "../types";
-import { isMajorSubject, majorTeachingDepartmentId } from "../facultyEligibility";
+import { isMajorSubject, majorTeachingDepartmentId, subjectForSchedule } from "../facultyEligibility";
 import { isDepartmentOfficeRole, normalizeRole } from "../../../../lib/roles";
 
 import type { SubjectClassification } from "../constants";
@@ -1004,14 +1004,14 @@ export const useScheduler = () => {
   }, [ownsProgram, sections, user?.department_id, user?.role]);
 
   const isProgramHeadOnlyMajorSchedule = useCallback(
-    (schedule: ScheduleItem): boolean => isProgramHeadOnlyMajor(schedule, subjects.find((item) => item.id === schedule.subjectId)),
+    (schedule: ScheduleItem): boolean => isProgramHeadOnlyMajor(schedule, subjectForSchedule(subjects.find((item) => item.id === schedule.subjectId), schedule)),
     [isProgramHeadOnlyMajor, subjects],
   );
 
   const canManageScheduleFaculty = useCallback((schedule: ScheduleItem): boolean => {
     if (!canAssignInstructor) return false;
 
-    const subject = subjects.find((item) => item.id === schedule.subjectId);
+    const subject = subjectForSchedule(subjects.find((item) => item.id === schedule.subjectId), schedule);
     if (isProgramHeadOnlyMajor(schedule, subject)) return false;
 
     const assignedDepartmentId = isMajorSubject(subject)
@@ -1029,7 +1029,7 @@ export const useScheduler = () => {
   }, [canAssignInstructor, isProgramHeadOnlyMajor, subjects, user?.department_id]);
 
   const getFacultyRestrictionMessage = useCallback((schedule: ScheduleItem): string => {
-    const subject = subjects.find((item) => item.id === schedule.subjectId);
+    const subject = subjectForSchedule(subjects.find((item) => item.id === schedule.subjectId), schedule);
 
     if (isProgramHeadOnlyMajor(schedule, subject)) {
       return "Only the Program Head can assign instructors to this program's major courses.";
@@ -2487,7 +2487,7 @@ export const useScheduler = () => {
     }
 
     try {
-      const subject = subjects.find((item) => item.id === targetSchedule.subjectId);
+      const subject = subjectForSchedule(subjects.find((item) => item.id === targetSchedule.subjectId), targetSchedule);
       const delegated = Number(targetSchedule.departmentId) !== Number(user?.department_id)
         || (subject?.teachingProgramId != null
           && Number(subject.teachingProgramId) !== Number(subject.programId)

@@ -559,19 +559,19 @@ export default function SetupCoursesStep({
                   {course.code}
                 </p>
                 {!included && (
-                  <span className="inline-flex rounded bg-slate-100 px-1 py-0.5 text-[10px] font-black uppercase text-slate-500">
+                  <span className="inline-flex rounded bg-slate-100 px-1 py-0.5 text-[9px] font-black uppercase text-slate-500">
                     Excluded
                   </span>
                 )}
                 {hasSectionOverride && (
-                  <span className="inline-flex rounded bg-amber-50 px-1 py-0.5 text-[10px] font-bold text-amber-800 border border-amber-200">
+                  <span className="inline-flex rounded bg-amber-50 px-1 py-0.5 text-[9px] font-bold text-amber-800 border border-amber-200">
                     {config.selectedSectionIds.length}/{sections.length} sections
                   </span>
                 )}
                 {isConsecutive(config) && (
                   <span
                     title="Consecutive Days"
-                    className="inline-flex items-center gap-0.5 rounded bg-teal-50 px-1 py-0.5 text-[10px] font-black uppercase text-teal-800"
+                    className="inline-flex items-center gap-0.5 rounded bg-teal-50 px-1 py-0.5 text-[9px] font-black uppercase text-teal-800"
                   >
                     <ListOrdered className="h-2.5 w-2.5" />
                     {consecutiveSummary(
@@ -584,7 +584,7 @@ export default function SetupCoursesStep({
                 {config.requiredDay && (
                   <span
                     title="Required Day"
-                    className="inline-flex items-center gap-0.5 rounded bg-violet-50 px-1 py-0.5 text-[10px] font-black uppercase text-violet-800"
+                    className="inline-flex items-center gap-0.5 rounded bg-violet-50 px-1 py-0.5 text-[9px] font-black uppercase text-violet-800"
                   >
                     <CalendarDays className="h-2.5 w-2.5" />
                     {config.requiredDay}
@@ -602,7 +602,7 @@ export default function SetupCoursesStep({
                   return (
                     <span
                       title={`Lecture/Laboratory Required Days\n${perSection}`}
-                      className="inline-flex items-center gap-0.5 rounded bg-violet-50 px-1 py-0.5 text-[10px] font-black text-violet-800"
+                      className="inline-flex items-center gap-0.5 rounded bg-violet-50 px-1 py-0.5 text-[9px] font-black text-violet-800"
                     >
                       <CalendarDays className="h-2.5 w-2.5" />
                       {shared && pinned.length === sections.length
@@ -616,7 +616,7 @@ export default function SetupCoursesStep({
                 {preferredRoomCode && (
                   <span
                     title="Preferred Room"
-                    className="inline-flex items-center gap-0.5 rounded bg-sky-50 px-1 py-0.5 text-[10px] font-black uppercase text-sky-800"
+                    className="inline-flex items-center gap-0.5 rounded bg-sky-50 px-1 py-0.5 text-[9px] font-black uppercase text-sky-800"
                   >
                     <DoorOpen className="h-2.5 w-2.5" />
                     {preferredRoomCode}
@@ -722,7 +722,7 @@ export default function SetupCoursesStep({
         if (shape === "hybrid-split" || isIntegratedShape(shape)) {
           return (
             <span className="inline-flex flex-col items-center gap-0.5">
-              <span className="whitespace-nowrap text-[10px] font-black uppercase tracking-wide text-slate-500">
+              <span className="whitespace-nowrap text-[9px] font-black uppercase tracking-wide text-slate-500">
                 {shape === "hybrid-split"
                   ? "Hybrid Split"
                   : shape === "hybrid-laboratory"

@@ -133,7 +133,7 @@ export default function LoginDetailsPage() {
           {entry.user?.name ? initials(entry.user.name) : '?'}
         </span>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate font-jakarta text-lg font-bold text-gray-900">{loginUserName(entry)}</h1>
+          <h1 className="truncate text-lg font-bold text-gray-900">{loginUserName(entry)}</h1>
           <p className="text-xs text-gray-500">
             {loginUserRole(entry)} · {entry.status === 'failed' ? 'Sign-in attempt' : 'Signed in'} {formatExact(entry.occurred_at)}
           </p>

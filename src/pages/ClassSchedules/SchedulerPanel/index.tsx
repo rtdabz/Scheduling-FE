@@ -28,6 +28,7 @@ import { announceJoyrideStart } from "../../../onboarding/joyrideTour";
 import { useWorkflowDialog } from "./GenerateSchedule/useWorkflowDialog";
 import { normalizeRole, reassignsRoomSchedulesFromFacilities } from "../../../lib/roles";
 import { EDITABLE_STATUSES } from "../../../lib/scheduleStatuses";
+import { subjectForSchedule } from "./facultyEligibility";
 
 interface SchedulerPanelProps {
   autoAssignOnOpen?: boolean;
@@ -136,10 +137,12 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
   );
   const ownDepartmentSchedules = useMemo(() => {
     if (assignDepartmentId === null) return scheduler.schedules;
-    const teachingDepartmentByCourse = new Map(scheduler.subjects.map((subject) => [subject.id, subject.teachingDepartmentId ?? null]));
+    const subjectsById = new Map(scheduler.subjects.map((subject) => [subject.id, subject]));
     return scheduler.schedules.filter((schedule) => {
       if (schedule.departmentId != null && Number(schedule.departmentId) !== Number(assignDepartmentId)) return false;
-      const teachingDepartmentId = teachingDepartmentByCourse.get(schedule.courseId) ?? null;
+      // A class the teaching department returned is this department's own again.
+      const teachingDepartmentId = subjectForSchedule(subjectsById.get(schedule.courseId), schedule)
+        ?.teachingDepartmentId ?? null;
       return teachingDepartmentId === null || Number(teachingDepartmentId) === Number(assignDepartmentId);
     });
   }, [assignDepartmentId, scheduler.schedules, scheduler.subjects]);

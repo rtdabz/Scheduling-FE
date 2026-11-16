@@ -92,8 +92,8 @@ const openDepartment = async (code = 'CLIS') => {
   fireEvent.click(await screen.findByRole('button', { name: `View ${code} timetable` }));
 };
 const expandSection = (name = 'BLIS 1A') => {
-  const button = screen.getByRole('button', { name: `Section ${name}` });
-  if (button.getAttribute('aria-expanded') === 'false') fireEvent.click(button);
+  // Sections are always open; just confirm the section rendered.
+  expect(screen.getByRole('region', { name: `Section ${name}` })).toBeTruthy();
 };
 
 describe('assignment help context', () => {
@@ -163,7 +163,7 @@ describe('cross-department assignment visibility', () => {
     expect(screen.getAllByText('IT 101')).toHaveLength(1);
     expect(screen.getByText('IT Instructor')).toBeTruthy();
     expect(screen.queryByText('HIDDEN')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Section BLIS 1B' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Section BLIS 1B' })).toBeNull();
     expect(screen.queryByRole('combobox', { name: 'Instructor for IT 101 BLIS 1A' })).toBeNull();
     expect((screen.getByRole('button', { name: 'Clear All Instructors' }) as HTMLButtonElement).disabled).toBe(true);
     expect(workspace.mock.calls.at(-1)?.[0].scheduleIds).toEqual([1, 2]);
@@ -183,9 +183,9 @@ describe('cross-department assignment visibility', () => {
     render(<InstructorAssignment />);
     expect(await screen.findByText('1 of 1 classes staffed')).toBeTruthy();
     await openDepartment();
-    expect(screen.queryByRole('button', { name: 'Section BLIS 1A' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Section BLIS 1C' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Section BLIS 1B' })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Section BLIS 1A' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Section BLIS 1C' })).toBeNull();
+    expect(screen.getByRole('region', { name: 'Section BLIS 1B' })).toBeTruthy();
     expect(screen.getByText('1 of 1 classes assigned')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Grid' }));
     expect(screen.getByRole('button', { name: 'Class 2' })).toBeTruthy();

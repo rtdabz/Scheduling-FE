@@ -118,7 +118,7 @@ export default function EditCourseHoursModal({ curriculumId, course, defaults = 
             aria-invalid={error ? true : undefined}
             aria-describedby={`${id}-hint`}
             onChange={(event) => setValue(event.target.value)}
-            className="h-full w-16 rounded-l-lg bg-transparent pl-3 text-sm font-bold tabular-nums text-gray-800 focus:outline-none disabled:cursor-not-allowed disabled:text-gray-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            className="h-full w-16 rounded-l-lg bg-transparent pl-3 text-[15px] font-bold tabular-nums text-gray-800 focus:outline-none disabled:cursor-not-allowed disabled:text-gray-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
           />
           <span className="pr-3 text-xs text-gray-500">hr</span>
         </div>

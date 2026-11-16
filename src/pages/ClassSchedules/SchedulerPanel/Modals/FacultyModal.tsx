@@ -4,7 +4,7 @@ import { AlertTriangle, CalendarDays, ChevronDown, Clock, MapPin, User, UserChec
 import CourseCategoryBadge from "../../../../components/curriculum/CourseCategoryBadge";
 import EmploymentBadge from "../EmploymentBadge";
 import InstructorPickerModal from "./InstructorPickerModal";
-import { eligibleFacultiesForSubject, majorTeachingDepartmentId, requiredTeachingProgramId } from "../facultyEligibility";
+import { eligibleFacultiesForSubject, majorTeachingDepartmentId, requiredTeachingProgramId, subjectForSchedule } from "../facultyEligibility";
 import { AVAILABILITY_WARNING_TITLE, isAvailabilityWarning } from "../../../../lib/availabilityWindows";
 import { proBonoStatusOf } from "../../../../lib/facultyLoad";
 import { useModalScrollLock } from "../../../../hooks/useModalScrollLock";
@@ -78,7 +78,7 @@ export default function FacultyModal({
   const schedule = schedules.find((item) => item.id === facultyAssignmentPopup.scheduleId);
   if (!schedule) return null;
 
-  const subject = subjects.find((item) => item.id === schedule.subjectId);
+  const subject = subjectForSchedule(subjects.find((item) => item.id === schedule.subjectId), schedule);
   const selectedFaculty = faculties.find((faculty) => faculty.id === facultyAssignmentPopup.facultyId);
   const canManageFaculty = canManageScheduleFaculty(schedule);
   const restrictionMessage = getFacultyRestrictionMessage(schedule);

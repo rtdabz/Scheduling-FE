@@ -278,7 +278,7 @@ export default function SectionTimetables() {
         <section aria-label="Section timetable" className="rounded-xl border border-border bg-white p-5">
           <header className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
             <div className="min-w-0">
-              <h2 className="truncate font-sans text-sm font-semibold leading-5 tracking-tight text-text">
+              <h2 className="truncate font-sans text-[15px] font-semibold leading-5 tracking-tight text-text">
                 {showAllSections
                   ? "All Sections"
                   : selectedSection ? `${selectedSection.name} · ${yearLevelLabel(selectedSection.yearLevel)}` : "No section selected"}

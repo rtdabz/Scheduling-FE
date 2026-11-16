@@ -1,7 +1,7 @@
 import { buttonClass } from '../../components/ui/buttonStyles';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { BookOpen, Building2, Check, ChevronRight, Info, Lock, Save, TriangleAlert, X } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, BookOpen, Building2, Check, ChevronRight, Info, Lock, Save, TriangleAlert, Undo2, X } from 'lucide-react';
 import api from '../../lib/api';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import Modal from '../../components/ui/Modal';
@@ -12,6 +12,7 @@ import { useDataTable } from '../../components/ui/useDataTable';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
+import { publishLiveTopics } from '../../lib/liveUpdates';
 import { useToast } from '../../context/ToastContext';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
@@ -50,12 +51,27 @@ interface CourseRow {
   is_major?: boolean;
   instructor_assigned_classes?: number;
   section_assignments?: SectionAssignment[];
+  /** Summary only: this entry lists returned sections handed to the group's college, not the whole course. */
+  sectionLevelOnly?: boolean;
 }
 interface SectionAssignment {
   section_id: number;
+  /** One meeting of the class; the server expands it to the whole class. */
+  schedule_id?: number;
   section_name: string;
   instructor_name: string | null;
   status: 'Assigned' | 'Partially assigned' | 'Awaiting instructor' | string;
+  /** Returned by its receiving department: detached from the course-level assignment. */
+  returned?: boolean;
+  returned_from_department_id?: number | null;
+  returned_from_department_code?: string | null;
+  section_teaching_department_id?: number | null;
+  section_teaching_department_code?: string | null;
+  section_teaching_department_name?: string | null;
+  section_teaching_program_id?: number | null;
+  section_teaching_program_code?: string | null;
+  /** Returned and free to move: nobody teaches it and it is open for assignment. */
+  reassignable?: boolean;
 }
 /** Section chip styling per status: a coloured dot carries the state, the chip stays quiet. */
 const SECTION_STATUS_STYLES: Record<string, { dot: string; chip: string }> = {
@@ -63,7 +79,12 @@ const SECTION_STATUS_STYLES: Record<string, { dot: string; chip: string }> = {
   'Partially assigned': { dot: 'bg-amber-500', chip: 'border-amber-200 bg-amber-50 text-amber-900' },
   'Awaiting instructor': { dot: 'bg-slate-300', chip: 'border-dashed border-slate-300 bg-slate-50 text-slate-500' },
 };
-const sectionStyleOf = (status: string) => SECTION_STATUS_STYLES[status] ?? SECTION_STATUS_STYLES['Awaiting instructor'];
+const RETURNED_STYLE = { dot: 'bg-sky-500', chip: 'border-dashed border-sky-300 bg-sky-50 text-sky-900' };
+// "Reassigned · <staffing>" reuses the staffing colours of a course-level section.
+const sectionStyleOf = (status: string) => SECTION_STATUS_STYLES[status]
+  ?? (status.startsWith('Returned') ? RETURNED_STYLE : null)
+  ?? SECTION_STATUS_STYLES[status.replace(/^Reassigned · /, '')]
+  ?? SECTION_STATUS_STYLES['Awaiting instructor'];
 /**
  * Mirrors the backend rule (CourseTeachingAssignmentController::targetRestrictions):
  * Program Heads and the department office never give their department's courses to
@@ -161,6 +182,8 @@ export default function CourseTeachingAssignments() {
   const [removingAll, setRemovingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [sectionBusyId, setSectionBusyId] = useState<number | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
 
   const liveRevision = useLiveRevision(['assignments', 'courses', 'curriculum']);
 
@@ -191,7 +214,7 @@ export default function CourseTeachingAssignments() {
       if (active) setError(errorMessage(loadError, 'Unable to load course teaching assignments.'));
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [liveRevision]);
+  }, [liveRevision, reloadToken]);
 
   const ownDepartment = departments.find((department) => department.id === currentDepartmentId) ?? null;
   const availableDepartments = useMemo(
@@ -218,6 +241,38 @@ export default function CourseTeachingAssignments() {
   const effectiveTargetDepartment = selectedProgram
     ? departments.find((department) => department.id === selectedProgram.department_id) ?? targetDepartment
     : targetDepartment;
+
+  // Returned sections still awaiting a decision: not yet handed to another college and nobody
+  // teaching them. Once assigned they leave this list (their chip shows "Reassigned · …"); if the
+  // new college returns one, it is back here.
+  const returnedSections = useMemo<ReturnedSectionRow[]>(
+    () => courses.flatMap((course) => (course.section_assignments ?? [])
+      .filter((section) => section.returned && section.schedule_id != null
+        && section.section_teaching_department_id == null && !section.instructor_name)
+      .map((section) => ({ course, section })))
+      .sort((a, b) => compareNatural(`${a.course.course_code} ${a.section.section_name}`, `${b.course.course_code} ${b.section.section_name}`)),
+    [courses],
+  );
+  // Each returned section picks its own target, independent of the Teaching college panel.
+  const assignReturnedSection = async ({ course, section }: ReturnedSectionRow, target: SectionTarget) => {
+    if (section.schedule_id == null || sectionBusyId !== null) return;
+    setSectionBusyId(section.schedule_id);
+    try {
+      const response = await api.post<{ message?: string }>('/course-teaching-assignments/sections', {
+        schedule_ids: [section.schedule_id],
+        teaching_department_id: target.departmentId,
+        teaching_program_id: target.programId,
+      });
+      toast.success('Section assigned', response.data.message ?? `${course.course_code} (${section.section_name}) assigned.`);
+      invalidateCacheGroups('schedules');
+      publishLiveTopics(['assignments', 'schedules']);
+      setReloadToken((token) => token + 1);
+    } catch (sectionError) {
+      toast.error('Not assigned', errorMessage(sectionError, 'Failed to assign the section.'));
+    } finally {
+      setSectionBusyId(null);
+    }
+  };
 
   const byYear = useMemo(() => {
     const years = new Map<number, CourseRow[]>();
@@ -253,30 +308,53 @@ export default function CourseTeachingAssignments() {
   const selectedCourses = courses.filter((course) => selectedIds.includes(course.id));
   const assignedInDepartment = courses.filter((course) => course.teaching_department_id !== null).length;
 
-  // Assigned courses grouped by the college that teaches them, for the summary dialog.
+  // Assigned courses grouped by the college that teaches them, for the summary dialog. A returned
+  // section handed to another college also appears under that college, as a section-only entry.
   const assignedSummary = useMemo(() => {
     const groups = new Map<number, { department: DepartmentOption | null; code: string; name: string; courses: CourseRow[] }>();
-    courses.forEach((course) => {
-      if (course.teaching_department_id === null) return;
-      const department = departments.find((item) => item.id === course.teaching_department_id) ?? null;
-      const group = groups.get(course.teaching_department_id) ?? {
+    const groupFor = (departmentId: number, code?: string | null, name?: string | null) => {
+      const department = departments.find((item) => item.id === departmentId) ?? null;
+      const group = groups.get(departmentId) ?? {
         department,
-        code: course.teaching_department_code ?? department?.department_code ?? '—',
-        name: course.teaching_department_name ?? department?.department_name ?? 'Unknown college',
+        code: code ?? department?.department_code ?? '—',
+        name: name ?? department?.department_name ?? 'Unknown college',
         courses: [],
       };
-      group.courses.push(course);
-      groups.set(course.teaching_department_id, group);
+      groups.set(departmentId, group);
+      return group;
+    };
+    courses.forEach((course) => {
+      if (course.teaching_department_id !== null) {
+        groupFor(course.teaching_department_id, course.teaching_department_code, course.teaching_department_name).courses.push(course);
+      }
+      const handedOn = new Map<number, SectionAssignment[]>();
+      (course.section_assignments ?? []).forEach((section) => {
+        if (!section.returned || section.section_teaching_department_id == null) return;
+        handedOn.set(section.section_teaching_department_id, [...(handedOn.get(section.section_teaching_department_id) ?? []), section]);
+      });
+      handedOn.forEach((sections, departmentId) => {
+        const first = sections[0];
+        groupFor(departmentId, first.section_teaching_department_code, first.section_teaching_department_name).courses.push({
+          ...course,
+          sectionLevelOnly: true,
+          teaching_program_code: first.section_teaching_program_code ?? null,
+          // Shown as this college's own sections: its staffing, without the "Reassigned" prefix.
+          section_assignments: sections.map((section) => ({ ...section, returned: false, status: section.status.replace(/^Reassigned · /, '') })),
+        });
+      });
     });
     return [...groups.values()]
       .map((group) => ({
         ...group,
         courses: [...group.courses].sort((a, b) => yearOf(a) - yearOf(b) || a.course_code.localeCompare(b.course_code)),
-        units: group.courses.reduce((sum, course) => sum + unitsOf(course), 0),
+        // A section-only entry is not a whole course, so it adds no course units.
+        units: group.courses.reduce((sum, course) => sum + (course.sectionLevelOnly ? 0 : unitsOf(course)), 0),
       }))
       .sort((a, b) => b.courses.length - a.courses.length || a.code.localeCompare(b.code));
   }, [courses, departments]);
   const assignedUnits = assignedSummary.reduce((sum, group) => sum + group.units, 0);
+  // Every assignment the summary lists: whole courses plus returned sections handed to another college.
+  const assignmentCount = assignedSummary.reduce((sum, group) => sum + group.courses.length, 0);
 
   const statusOf = (course: CourseRow): string => {
     if (selectedIds.includes(course.id)) return 'Selected';
@@ -528,9 +606,15 @@ export default function CourseTeachingAssignments() {
       accessorFn: (course) => currentTeacherOf(course),
       header: 'Taught by',
       meta: { headerClassName: 'course-teaching-col-teacher' },
-      cell: ({ row }) => (row.original.teaching_department_id !== null
-        ? <span className="inline-flex max-w-full truncate rounded-md border border-[#4e0a10]/15 bg-[#4e0a10]/[0.06] px-2 py-0.5 text-xs font-bold leading-5 text-[#4e0a10]" title={row.original.teaching_program_name ?? row.original.teaching_department_name ?? undefined}>{currentTeacherOf(row.original)}</span>
-        : <span className="text-xs font-medium leading-5 text-slate-400">{currentTeacherOf(row.original)}</span>),
+      // The course-level college, plus a badge per college a returned section was handed to.
+      cell: ({ row }) => (
+        <span className="flex min-w-0 flex-wrap items-center gap-1">
+          {row.original.teaching_department_id !== null
+            ? <span className="inline-flex max-w-full truncate rounded-md border border-[#4e0a10]/15 bg-[#4e0a10]/[0.06] px-2 py-0.5 text-xs font-bold leading-5 text-[#4e0a10]" title={row.original.teaching_program_name ?? row.original.teaching_department_name ?? undefined}>{currentTeacherOf(row.original)}</span>
+            : <span className="text-xs font-medium leading-5 text-slate-400">{currentTeacherOf(row.original)}</span>}
+          <MovedSectionBadges course={row.original} />
+        </span>
+      ),
     },
     {
       id: 'units',
@@ -549,10 +633,14 @@ export default function CourseTeachingAssignments() {
         const assigned = row.original.teaching_department_id !== null;
         const classes = instructorClassesOf(row.original);
         const lockNote = classes > 0 ? `Instructor in ${classes} ${classes === 1 ? 'class' : 'classes'}` : null;
-        if (status === 'Selected') return <StatusPill tone="selected" label="Selected" />;
-        if (assigned) return <StatusPill tone="assigned" label="Assigned" note={lockNote ? `${lockNote} · locked` : null} title={lockNote ? instructorLockMessage(row.original) : undefined} locked={Boolean(lockNote)} />;
-        if (lockNote) return <StatusPill tone="locked" label="Locked" note={lockNote} title={instructorLockMessage(row.original)} locked />;
-        return <StatusPill tone="unassigned" label="Unassigned" note={status === 'Available' ? null : status} muted={status !== 'Available'} />;
+        const pill = status === 'Selected'
+          ? <StatusPill tone="selected" label="Selected" />
+          : assigned
+            ? <StatusPill tone="assigned" label="Assigned" note={lockNote ? `${lockNote} · locked` : null} title={lockNote ? instructorLockMessage(row.original) : undefined} locked={Boolean(lockNote)} />
+            : lockNote
+              ? <StatusPill tone="locked" label="Locked" note={lockNote} title={instructorLockMessage(row.original)} locked />
+              : <StatusPill tone="unassigned" label="Unassigned" note={status === 'Available' ? null : status} muted={status !== 'Available'} />;
+        return pill;
       },
     },
     {
@@ -622,13 +710,13 @@ export default function CourseTeachingAssignments() {
               title="View a summary of assigned courses"
               className={buttonClass({ variant: 'accentSoft', size: 'md', className: 'relative' })}
             >
-              {assignedInDepartment > 0 && (
+              {assignmentCount > 0 && (
                 <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5" aria-hidden="true">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-60" />
                   <span className="relative inline-flex h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
                 </span>
               )}
-              <span className="rounded-full bg-[#4e0a10] px-1.5 text-[10px] tabular-nums text-white">{assignedInDepartment}</span>
+              <span className="rounded-full bg-[#4e0a10] px-1.5 text-[10px] tabular-nums text-white">{assignmentCount}</span>
               Assigned
               <ChevronRight className="h-3.5 w-3.5" />
             </button>
@@ -640,6 +728,17 @@ export default function CourseTeachingAssignments() {
           <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
             <TriangleAlert className="h-4 w-4" />{error}
           </div>
+        )}
+
+        {returnedSections.length > 0 && (
+          <ReturnedSectionsPanel
+            rows={returnedSections}
+            departments={availableDepartments}
+            programs={programs}
+            restrictions={restrictions}
+            busyId={sectionBusyId}
+            onAssign={(row, target) => void assignReturnedSection(row, target)}
+          />
         )}
 
         <div className="grid gap-3 lg:h-[calc(100dvh-13rem)] lg:min-h-[520px] lg:grid-cols-[288px_minmax(0,1fr)]">
@@ -876,6 +975,85 @@ const STATUS_PILL_TONES = {
 } as const;
 
 /** One status vocabulary for the course table: Unassigned, Assigned, Locked, Selected. */
+/** Compact transfer badge, one style everywhere: moved out, received in, or back home. */
+function TransferBadge({ direction, label, title }: { direction: 'out' | 'in' | 'home'; label: string; title?: string }) {
+  const Icon = direction === 'out' ? ArrowUpRight : direction === 'in' ? ArrowDownLeft : Undo2;
+  return (
+    <span
+      className={`inline-flex max-w-full items-center gap-1 truncate rounded-md border px-1.5 py-px text-[10px] font-bold leading-4 ${direction === 'home' ? 'border-dashed border-sky-300 text-sky-700' : 'border-sky-200 bg-sky-50 text-sky-800'}`}
+      title={title}
+    >
+      <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+      <span className="truncate">{label}</span>
+    </span>
+  );
+}
+
+/** " · 1 course · 3 units · 1 returned section" for a summary card. */
+const summaryCountLabel = (courses: CourseRow[], units: number) => {
+  const whole = courses.filter((course) => !course.sectionLevelOnly).length;
+  const sections = courses.filter((course) => course.sectionLevelOnly)
+    .reduce((sum, course) => sum + (course.section_assignments?.length ?? 0), 0);
+  return [
+    whole > 0 ? `${whole} course${whole === 1 ? '' : 's'} · ${units} unit${units === 1 ? '' : 's'}` : null,
+    sections > 0 ? `${sections} received section${sections === 1 ? "" : "s"}` : null,
+  ].filter(Boolean).map((part) => ` · ${part}`).join('');
+};
+
+/** Where a returned section is now: the college/program it was handed to, or back in-house. */
+const movedTargetOf = (section: SectionAssignment) =>
+  section.section_teaching_program_code ?? section.section_teaching_department_code ?? null;
+
+/** Returned sections of a course, grouped by where they are now (null = back with this department). */
+const movedSectionsOf = (course: CourseRow) => {
+  const groups = new Map<string | null, SectionAssignment[]>();
+  (course.section_assignments ?? []).filter((section) => section.returned).forEach((section) => {
+    const target = movedTargetOf(section);
+    groups.set(target, [...(groups.get(target) ?? []), section]);
+  });
+  return [...groups.entries()].map(([target, sections]) => ({
+    target,
+    sections: [...sections].sort((a, b) => compareNatural(a.section_name, b.section_name)),
+  }));
+};
+
+/**
+ * Taught-by badges for a course's returned sections: one per college a section was handed to
+ * ("CAS · 1 section"), and one for sections returned to this department and not handed on.
+ */
+function MovedSectionBadges({ course }: { course: CourseRow }) {
+  const moved = movedSectionsOf(course);
+  if (moved.length === 0) return null;
+  return (
+    <>
+      {moved.map(({ target, sections }) => {
+        const names = sections.map((section) => section.section_name).join(', ');
+        const count = `${sections.length} ${sections.length === 1 ? 'section' : 'sections'}`;
+        return target ? (
+          <span
+            key={target}
+            className="inline-flex max-w-full items-center gap-1 truncate rounded-md border border-sky-300 bg-sky-50 px-2 py-0.5 text-xs font-bold leading-5 text-sky-800"
+            title={`${names}: moved to ${sections[0].section_teaching_department_name ?? target}`}
+          >
+            <ArrowUpRight className="h-3 w-3 shrink-0" aria-hidden="true" />
+            {target}
+            <span className="font-semibold text-sky-600">· {count}</span>
+          </span>
+        ) : (
+          <span
+            key="__home"
+            className="inline-flex max-w-full items-center gap-1 truncate rounded-md border border-dashed border-sky-300 px-2 py-0.5 text-[11px] font-semibold leading-5 text-sky-700"
+            title={`${names}: returned to your department`}
+          >
+            <Undo2 className="h-3 w-3 shrink-0" aria-hidden="true" />
+            Returned · {count}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 function StatusPill({ tone, label, note, title, locked = false, muted = false }: {
   tone: keyof typeof STATUS_PILL_TONES;
   label: string;
@@ -913,8 +1091,9 @@ interface SummaryGroup {
 
 const compareNatural = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 
+// Returned sections left the course-level assignment, so they do not count toward its staffing.
 const tallySections = (courses: CourseRow[]) => courses.reduce((tally, course) => {
-  (course.section_assignments ?? []).forEach((section) => {
+  (course.section_assignments ?? []).filter((section) => !section.returned).forEach((section) => {
     tally.total += 1;
     if (section.status === 'Assigned') tally.assigned += 1;
     else if (section.status === 'Partially assigned') tally.partial += 1;
@@ -956,6 +1135,145 @@ function StaffingMeter({ staffed, total }: { staffed: number; total: number }) {
   );
 }
 
+interface ReturnedSectionRow {
+  course: CourseRow;
+  section: SectionAssignment;
+}
+
+interface SectionTarget {
+  departmentId: number;
+  programId: number | null;
+}
+
+type ProgramOption = PageData['programs'][number];
+
+interface ReturnedSectionsPanelProps {
+  rows: ReturnedSectionRow[];
+  /** Colleges the user may hand courses to (same restrictions as course-level assignment). */
+  departments: DepartmentOption[];
+  programs: ProgramOption[];
+  restrictions: AssignmentRestrictions | null;
+  busyId: number | null;
+  onAssign: (row: ReturnedSectionRow, target: SectionTarget) => void;
+}
+
+/**
+ * Returned sections awaiting a decision. Each picks its own college (any eligible one, not only
+ * the department that returned it) and optional program. Other sections of the course keep
+ * following the course-level assignment; an assigned section leaves this list.
+ */
+function ReturnedSectionsPanel({ rows, departments, programs, restrictions, busyId, onAssign }: ReturnedSectionsPanelProps) {
+  return (
+    <section aria-labelledby="returned-sections-title" className="rounded-xl border border-sky-200 bg-white">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-sky-100 bg-sky-50/60 px-4 py-2.5">
+        <div className="min-w-0">
+          <h2 id="returned-sections-title" className="flex items-center gap-2 text-sm font-black text-slate-900">
+            <Undo2 className="h-4 w-4 text-sky-700" /> Returned sections
+            <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold tabular-nums text-sky-800">{rows.length}</span>
+          </h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            A receiving department could not staff these. Choose any eligible college or program for each one, or leave it to staff in
+            your own Instructor Assignment. Only the section moves; the rest of its course stays where it is.
+          </p>
+        </div>
+      </header>
+      <ul className="max-h-64 divide-y divide-slate-100 overflow-y-auto overscroll-contain [scrollbar-width:thin]">
+        {rows.map((row) => (
+          <ReturnedSectionItem
+            key={`${row.course.id}:${row.section.section_id}`}
+            row={row}
+            departments={departments}
+            programs={programs}
+            restrictions={restrictions}
+            busyId={busyId}
+            onAssign={onAssign}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ReturnedSectionItem({ row, departments, programs, restrictions, busyId, onAssign }: Omit<ReturnedSectionsPanelProps, 'rows'> & { row: ReturnedSectionRow }) {
+  const { course, section } = row;
+  const [departmentId, setDepartmentId] = useState('');
+  const [programId, setProgramId] = useState('');
+  const fieldId = useId();
+
+  const department = departments.find((item) => String(item.id) === departmentId) ?? null;
+  // Same rule as the course-level picker: never the user's own programs.
+  const programOptions = programs.filter((program) => Number(program.department_id) === Number(department?.id)
+    && !(restrictions?.own_program_ids ?? []).includes(program.id));
+  // Same as the course-level picker: with only one eligible program, it is chosen automatically.
+  const onlyProgram = programOptions.length === 1 ? programOptions[0] : null;
+  const program = programOptions.find((item) => String(item.id) === programId) ?? onlyProgram;
+  const programRequired = Boolean(restrictions?.requires_program && department?.id === restrictions.department_id);
+  const busy = busyId === section.schedule_id;
+  const lockedReason = section.reassignable ? null : 'This section is not open for instructor assignment right now.';
+  const blockedReason = lockedReason
+    ?? (department === null ? 'Choose a college first.' : null)
+    ?? (programRequired && program === null ? 'Choose a specific program of your department.' : null);
+  const targetLabel = program ? programLabel(program) : department?.department_code ?? null;
+  const selectClass = 'h-8 min-w-0 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 outline-none focus:border-[#C9952A] disabled:cursor-not-allowed disabled:opacity-50';
+
+  return (
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
+      <div className="min-w-[12rem] flex-1">
+        <p className="truncate text-[13px] font-bold text-slate-900">
+          {course.course_code} <span className="font-semibold text-slate-500">· {section.section_name}</span>
+        </p>
+        <p className="truncate text-[11px] text-slate-500" title={section.status}>
+          {section.status}
+          {section.returned_from_department_code && <> · returned by <span className="font-semibold text-slate-700">{section.returned_from_department_code}</span></>}
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <label htmlFor={`${fieldId}-college`} className="sr-only">College for {course.course_code} {section.section_name}</label>
+        <select
+          id={`${fieldId}-college`}
+          value={departmentId}
+          onChange={(event) => { setDepartmentId(event.target.value); setProgramId(''); }}
+          disabled={!section.reassignable || busyId !== null}
+          className={`${selectClass} max-w-[16rem]`}
+        >
+          <option value="">Choose college…</option>
+          {departments.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.department_code} · {item.department_name}
+              {item.id === section.returned_from_department_id ? ' (returned it)' : ''}
+            </option>
+          ))}
+        </select>
+        {department && programOptions.length > 0 && (
+          <>
+            <label htmlFor={`${fieldId}-program`} className="sr-only">Program for {course.course_code} {section.section_name}</label>
+            <select
+              id={`${fieldId}-program`}
+              value={onlyProgram ? String(onlyProgram.id) : programId}
+              onChange={(event) => setProgramId(event.target.value)}
+              disabled={!section.reassignable || busyId !== null}
+              className={`${selectClass} max-w-[12rem]`}
+            >
+              {!onlyProgram && <option value="">{programRequired ? 'Select a program' : 'Any program'}</option>}
+              {programOptions.map((item) => <option key={item.id} value={item.id}>{programLabel(item)}</option>)}
+            </select>
+          </>
+        )}
+        <button
+          type="button"
+          onClick={() => department && onAssign(row, { departmentId: department.id, programId: program?.id ?? null })}
+          disabled={busyId !== null || blockedReason !== null}
+          title={blockedReason ?? `Assign this section to ${targetLabel}`}
+          className={buttonClass({ variant: 'accentSoft', size: 'sm' })}
+        >
+          {busy ? <LoadingSpinner className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          {targetLabel ? `Assign to ${targetLabel}` : 'Assign'}
+        </button>
+      </div>
+    </li>
+  );
+}
+
 function SectionChip({ section }: { section: SectionAssignment }) {
   const style = sectionStyleOf(section.status);
   return (
@@ -973,14 +1291,28 @@ function SectionChip({ section }: { section: SectionAssignment }) {
 function AssignedCourseRow({ course }: { course: CourseRow }) {
   const sections = course.section_assignments ?? [];
   const tally = tallySections([course]);
-  const groups = sectionsByInstructor(sections);
+  // Returned sections no longer belong to this college's list; they get their own "moved" line.
+  const groups = sectionsByInstructor(sections.filter((section) => !section.returned));
+  const moved = movedSectionsOf(course);
   const units = unitsOf(course);
+  // The receiving college got the section from the department that assigned it to them: only the
+  // offering department can hand a returned section on, so that is the course's own department.
+  // Who returned it earlier comes from the transfer record and is kept as history.
+  const receivedFrom = course.department_code ?? null;
+  const returnedBy = [...new Set(sections.map((section) => section.returned_from_department_code).filter(Boolean))].join(', ') || null;
 
   return (
     <li className="grid gap-x-5 gap-y-2 px-4 py-3 md:grid-cols-[15rem_minmax(0,1fr)]">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[13px] font-bold text-slate-900">{course.course_code}</span>
+          {course.sectionLevelOnly && receivedFrom && (
+            <TransferBadge
+              direction="in"
+              label={`Received from ${receivedFrom}`}
+              title={`Assigned here by ${receivedFrom}${returnedBy ? ` after ${returnedBy} returned it` : ''}. It is now available for instructor assignment; the rest of the course is taught elsewhere.`}
+            />
+          )}
           {course.teaching_program_code && (
             <span className="rounded bg-[#4e0a10]/[0.07] px-1.5 py-px text-[10px] font-bold text-[#4e0a10]" title="Teaching program">{course.teaching_program_code}</span>
           )}
@@ -1018,6 +1350,22 @@ function AssignedCourseRow({ course }: { course: CourseRow }) {
               </span>
               <ul className="flex min-w-0 flex-wrap gap-1">
                 {items.map((section) => <SectionChip key={section.section_id} section={section} />)}
+              </ul>
+            </li>
+          ))}
+          {moved.map(({ target, sections: items }) => (
+            <li key={`moved:${target ?? '__home'}`} className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-start sm:gap-3">
+              <span className="flex min-w-0 items-center gap-2 sm:w-52 sm:shrink-0 sm:pt-0.5">
+                {target ? (
+                  <TransferBadge direction="out" label={`Moved to ${target}`} title={`Moved out of your department: returned, then assigned to ${items[0].section_teaching_department_name ?? target}.`} />
+                ) : (
+                  <TransferBadge direction="home" label="Returned to you" title="Returned to your department; assign it to another college or staff it yourself." />
+                )}
+                {items.length > 1 && <span className="shrink-0 text-[10px] font-semibold tabular-nums text-slate-400">×{items.length}</span>}
+              </span>
+              <ul className="flex min-w-0 flex-wrap gap-1">
+                {/* The badge already says it moved; the chip keeps only its current staffing. */}
+                {items.map((section) => <SectionChip key={section.section_id} section={{ ...section, status: section.status.replace(/^(Reassigned|Returned) · /, '') }} />)}
               </ul>
             </li>
           ))}
@@ -1097,8 +1445,7 @@ function AssignedCoursesSummary({ groups }: { groups: SummaryGroup[] }) {
                   <h3 className="truncate text-[13px] font-bold text-slate-900">{group.name}</h3>
                   <p className="text-[11px] text-slate-500">
                     <span className="font-bold tracking-wide text-[#4e0a10]">{group.code}</span>
-                    {' · '}{group.courses.length} course{group.courses.length === 1 ? '' : 's'}
-                    {' · '}{group.units} unit{group.units === 1 ? '' : 's'}
+                    {summaryCountLabel(group.courses, group.units)}
                   </p>
                 </div>
                 {tally.total > 0 && (
@@ -1109,7 +1456,7 @@ function AssignedCoursesSummary({ groups }: { groups: SummaryGroup[] }) {
                 )}
               </header>
               <ul className="divide-y divide-slate-100">
-                {group.courses.map((course) => <AssignedCourseRow key={course.id} course={course} />)}
+                {group.courses.map((course) => <AssignedCourseRow key={`${course.id}${course.sectionLevelOnly ? ":sections" : ""}`} course={course} />)}
               </ul>
             </section>
           );

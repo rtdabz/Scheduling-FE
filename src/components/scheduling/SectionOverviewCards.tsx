@@ -39,7 +39,7 @@ function DayLoadStrip({ dayLoad }: { dayLoad: Record<string, number> }) {
                 style={{ height: `${count === 0 ? 0 : Math.max(18, (count / peak) * 100)}%` }}
               />
             </div>
-            <span className="text-[10px] font-bold uppercase text-slate-400">{day.slice(0, 2)}</span>
+            <span className="text-[9px] font-bold uppercase text-slate-400">{day.slice(0, 2)}</span>
           </div>
         );
       })}

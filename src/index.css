@@ -56,7 +56,7 @@
   }
 
   html, body {
-    font-family: 'Plus Jakarta Sans', 'DM Sans', system-ui, sans-serif;
+    font-family: 'DM Sans', system-ui, sans-serif;
     background-color: var(--color-bg);
     color: var(--color-text);
     -webkit-font-smoothing: antialiased;
@@ -66,27 +66,9 @@
   img, svg, video, canvas { max-width: 100%; }
   button, input, select, textarea { max-width: 100%; }
 
-  /* One typeface system-wide: the dashboard's Plus Jakarta Sans, headings included. */
   h1, h2, h3 {
-    font-family: 'Plus Jakarta Sans', 'DM Sans', system-ui, sans-serif;
+    font-family: 'Playfair Display', Georgia, serif;
   }
-}
-
-/* One typeface system-wide. These mirror the Tailwind font config so the page header and every
-   other `font-display` / `font-serif` / `font-sans` heading follows it even on a dev server that
-   has not reloaded tailwind.config.js. */
-.font-display,
-.font-serif,
-.font-sans {
-  font-family: 'Plus Jakarta Sans', 'DM Sans', system-ui, sans-serif;
-}
-
-/* A dashboard that opts into Plus Jakarta Sans (`font-jakarta` on
-   #dashboard-overview) carries it to the page title above it and to the
-   overlays it portals to <body>, so no serif or DM Sans leaks in. */
-body:has(#dashboard-overview.font-jakarta) :is(main :is(h1, h2, h3), [role="tooltip"], [role="dialog"], [role="dialog"] :is(h1, h2, h3)),
-.font-jakarta :is(h1, h2, h3) {
-  font-family: 'Plus Jakarta Sans', 'DM Sans', system-ui, sans-serif;
 }
 
 *,

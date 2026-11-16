@@ -168,7 +168,7 @@ export default function MarkSectionsDoneModal({
         </button>
       </>}
     >
-      {contextText && <p className="mb-2.5 text-xs font-semibold text-[#71665c]">{contextText}</p>}
+      {contextText && <p className="mb-2.5 text-sm font-semibold text-[#71665c]">{contextText}</p>}
       {variant === "clear" && <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <p>{RESET_WARNING} You will review the exact counts before anything is deleted.</p>
@@ -221,7 +221,7 @@ export default function MarkSectionsDoneModal({
                   >
                     <span className="min-w-0 flex-1">
                       <span className="flex min-w-0 items-center gap-1.5">
-                        <span className="truncate text-[13px] font-bold leading-5 text-slate-800" title={candidate.sectionName}>{candidate.sectionName}</span>
+                        <span className="truncate text-sm font-bold leading-5 text-slate-800" title={candidate.sectionName}>{candidate.sectionName}</span>
                         <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-px text-[10px] font-bold text-slate-500">
                           {yearLevelLabel(candidate.yearLevel)}
                         </span>
@@ -231,7 +231,7 @@ export default function MarkSectionsDoneModal({
                           </span>
                         )}
                       </span>
-                      <span className="line-clamp-2 block text-[11px] font-medium leading-4 text-slate-500" title={detail}>
+                      <span className="line-clamp-2 block text-xs font-medium leading-4 text-slate-500" title={detail}>
                         {detail}
                       </span>
                     </span>

@@ -60,7 +60,7 @@ export default function LoginLocations({ filters, onFiltersChange }: Props) {
               <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${cell.accent}`} />
               <span className="text-[11px] font-medium text-gray-500">{cell.label}</span>
             </div>
-            <p className="mt-1 font-jakarta text-xl font-bold tabular-nums text-gray-900">
+            <p className="mt-1 text-xl font-bold tabular-nums text-gray-900">
               {cell.value === undefined ? <span className="inline-block h-5 w-10 animate-pulse rounded bg-gray-100 align-middle" /> : numberFormat.format(cell.value)}
             </p>
           </div>

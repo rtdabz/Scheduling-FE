@@ -494,7 +494,7 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
         <header className="room-print-title hidden">
           <div className="flex items-end justify-between gap-6 border-b-2 border-[#4e0a10] pb-2.5">
             <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#9a6b14]">Weekly Classroom Schedule</p>
+              <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#9a6b14]">Weekly Classroom Schedule</p>
               <h1 className="mt-0.5 text-[22px] font-extrabold leading-none tracking-tight text-[#4e0a10]">{room.room_code}</h1>
               <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-[11px] font-medium text-slate-600">
                 <span>{room.building || 'No building assigned'}</span>
@@ -509,7 +509,7 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
                 { label: 'Classes', value: String(roomGridCards.length) },
                 { label: 'Weekly Hours', value: formatPrintHours(roomGridCards.reduce((total, { schedule }) => total + schedule.durationSlots * slotMinutes(), 0)) },              ].map(({ label, value }, index) => (
                 <div key={label} className={`px-3.5 ${index > 0 ? 'border-l border-slate-200' : ''} last:pr-0`}>
-                  <dt className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">{label}</dt>
+                  <dt className="text-[8.5px] font-bold uppercase tracking-[0.14em] text-slate-400">{label}</dt>
                   <dd className="mt-0.5 text-[13px] font-bold tabular-nums leading-tight text-slate-800">{value}</dd>
                 </div>
               ))}
@@ -578,7 +578,7 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
                     className="pointer-events-none relative z-30 mx-[3px] my-px rounded-lg border-2 border-[#C9952A] bg-[#C9952A]/10 ring-4 ring-[#C9952A]/25"
                     style={{ gridColumn: dayIndex + 2, gridRow: `${startSlot + 2} / span ${span}` }}
                   >
-                    <span className="absolute -top-2.5 right-1.5 rounded-full bg-[#C9952A] px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-white shadow-sm">
+                    <span className="absolute -top-2.5 right-1.5 rounded-full bg-[#C9952A] px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-white shadow-sm">
                       Requested slot
                     </span>
                   </div>
@@ -592,7 +592,7 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
                   className={`room-print-card ${TIMETABLE_BLOCK_BASE} hidden flex-col justify-between gap-1 border px-2 py-1.5 ${TIMETABLE_SWATCH[subject.category === 'minor' ? 'minor' : 'major']}`}
                   style={{ gridColumn: schedule.dayIndex + 2, gridRow: `${schedule.startSlot + 2} / span ${schedule.durationSlots}` }}
                 >
-                  <p className={`truncate text-sm font-extrabold uppercase leading-tight tracking-tight ${subject.category === 'minor' ? 'text-[#7a5410]' : 'text-[#4e0a10]'}`}>
+                  <p className={`truncate text-[15px] font-extrabold uppercase leading-tight tracking-tight ${subject.category === 'minor' ? 'text-[#7a5410]' : 'text-[#4e0a10]'}`}>
                     {schedule.courseCode}
                   </p>
                   <p className="text-[11px] font-semibold tabular-nums leading-none text-slate-600">
@@ -677,7 +677,7 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
                     {count > 0 && (
                       <span
                         title={showAvailability ? `${count} available time slot${count === 1 ? '' : 's'}` : undefined}
-                        className="selection-indicator-count ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full font-bold"
+                        className="selection-indicator-count ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full font-bold"
                       >
                         {count}
                       </span>
@@ -822,7 +822,7 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
                                   {sched.course?.course_name || sched.course?.course_code || 'Subject Class'}
                                 </h4>
                                 {isCurrentlyRunning && (
-                                  <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                  <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
                                     Active
                                   </span>
                                 )}

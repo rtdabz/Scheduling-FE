@@ -51,8 +51,8 @@ export default function PageHeader({ navItems, homePath }: PageHeaderProps) {
     : rawTitle;
 
   return (
-    <header className="mb-4 flex flex-col gap-1">
-      <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2 overflow-x-auto text-[13px] font-semibold text-slate-400">
+    <header className="mb-5 flex flex-col gap-1">
+      <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2 overflow-x-auto text-sm font-semibold text-slate-400">
       <Link to={homePath} className="inline-flex shrink-0 items-center gap-1 hover:text-[#4e0a10]">
         <Home size={14} aria-hidden="true" />
         <span>Home</span>
@@ -67,7 +67,7 @@ export default function PageHeader({ navItems, homePath }: PageHeaderProps) {
         );
       })}
       </nav>
-      <h1 className="mt-2 break-words font-jakarta text-xl font-bold tracking-tight text-[#4e0a10] sm:text-2xl">{title}</h1>
+      <h1 className="mt-3 break-words font-display text-2xl font-bold tracking-tight text-[#4e0a10] sm:text-3xl">{title}</h1>
     </header>
   );
 }

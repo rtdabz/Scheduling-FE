@@ -7,7 +7,7 @@ import { INSTRUCTOR_ASSIGNABLE_STATUSES, type Faculty, type ScheduleItem, type S
 import ProfileAvatar from "../../../../components/ui/ProfileAvatar";
 import TableActionButton from "../../../../components/ui/TableActionButton";
 import { useToast } from "../../../../context/ToastContext";
-import { facultyEligibilityForSubject } from "../facultyEligibility";
+import { facultyEligibilityForSubject, subjectForSchedule } from "../facultyEligibility";
 import { AVAILABILITY_WARNING_TITLE, isAvailabilityWarning } from "../../../../lib/availabilityWindows";
 import { LOAD_TIER_LABELS, basicLoadOf, loadTierForUnits, type LoadAllowances, type LoadTier } from "../../../../lib/facultyLoad";
 import { employmentLabel } from "../EmploymentBadge";
@@ -39,7 +39,6 @@ interface AutoAssignModalProps {
   checkFacultyConflict: (facultyId: string, scheduleId: string) => string | null;
   onAssign: (assignments: AssignmentBatch[]) => Promise<boolean>;
   onRemoveAssignment?: (scheduleIds: string[]) => Promise<boolean>;
-  allowExternalInstructors?: boolean;
   /** When set, the list is auto-saved to the server for this department and semester and restored on reopen. */
   draftScope?: DraftScope | null;
 }
@@ -210,7 +209,6 @@ export default function AutoAssignModal({
   checkFacultyConflict,
   onAssign,
   onRemoveAssignment,
-  allowExternalInstructors = true,
   draftScope = null,
 }: AutoAssignModalProps) {
   const { confirm, toast } = useToast();
@@ -446,7 +444,10 @@ export default function AutoAssignModal({
     }
 
     if (selectedFaculty) {
-      const subject = subjects.find((item) => item.id === group.courseId);
+      const subject = subjectForSchedule(
+        subjects.find((item) => item.id === group.courseId),
+        group.schedules[0],
+      );
       const eligibility = facultyEligibilityForSubject(
         selectedFaculty,
         subject,
@@ -684,7 +685,7 @@ export default function AutoAssignModal({
         <main className="assign-modal-body" aria-busy={isSaving} inert={isSaving}>
           {step === 1 && (
             <div className="assign-columns">
-              <InstructorList faculties={faculties} departmentId={departmentId} facultyId={facultyId} facultyLoads={facultyLoads} onSelect={selectFaculty} allowExternalInstructors={allowExternalInstructors} />
+              <InstructorList faculties={faculties} departmentId={departmentId} facultyId={facultyId} facultyLoads={facultyLoads} onSelect={selectFaculty} />
               <section aria-label="Course and sections" className="assign-course-panel">
                 <div className="assign-course-filters">
                   <SelectField label="Year level" value={yearLevel} onChange={selectYearLevel} options={[{ value: "1", label: "1st Year" }, { value: "2", label: "2nd Year" }, { value: "3", label: "3rd Year" }, { value: "4", label: "4th Year" }]} placeholder="Select year level" />
@@ -778,43 +779,24 @@ const EMPLOYMENT_FILTERS: [EmploymentFilter, string][] = [
 const employmentRank = (faculty: Faculty): number =>
   faculty.employmentType === "full-time" ? 0 : faculty.employmentType === "part-time" ? 1 : 2;
 
-function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSelect, allowExternalInstructors = true }: { faculties: Faculty[]; departmentId: number | null; facultyId: string; facultyLoads: Map<string, number>; onSelect: (id: string) => void; allowExternalInstructors?: boolean }) {
-  const [tab, setTab] = useState<"department" | "external">("department");
+function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSelect }: { faculties: Faculty[]; departmentId: number | null; facultyId: string; facultyLoads: Map<string, number>; onSelect: (id: string) => void }) {
   const [search, setSearch] = useState("");
-  const [departmentFilter, setDepartmentFilter] = useState("");
   const [employment, setEmployment] = useState<EmploymentFilter>("all");
   const normalizedDepartmentId = departmentId === null ? null : Number(departmentId);
   const visibleFaculties = useMemo(
-    () => faculties.filter((faculty) => {
-      const isDepartmentInstructor = normalizedDepartmentId !== null
-        && faculty.departmentId !== null
-        && faculty.departmentId !== undefined
-        && Number(faculty.departmentId) === normalizedDepartmentId;
-      return tab === "department" ? isDepartmentInstructor : !isDepartmentInstructor;
-    }),
-    [faculties, normalizedDepartmentId, tab],
+    () => faculties.filter((faculty) => normalizedDepartmentId !== null
+      && faculty.departmentId !== null
+      && faculty.departmentId !== undefined
+      && Number(faculty.departmentId) === normalizedDepartmentId),
+    [faculties, normalizedDepartmentId],
   );
-  const externalDepartments = useMemo(() => {
-    const counts = new Map<string, { label: string; count: number }>();
-    if (tab !== "external") return [];
-    visibleFaculties.forEach((faculty) => {
-      const key = String(faculty.departmentId ?? "none");
-      const label = faculty.departmentCode ?? faculty.departmentName ?? "No department";
-      counts.set(key, { label, count: (counts.get(key)?.count ?? 0) + 1 });
-    });
-    return [...counts.entries()]
-      .map(([value, { label, count }]) => ({ value, label, count }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [tab, visibleFaculties]);
-  const activeDepartment = tab === "external" && externalDepartments.some((d) => d.value === departmentFilter) ? departmentFilter : "";
   const query = search.trim().toLowerCase();
   const searchedFaculties = useMemo(
     () => visibleFaculties.filter((faculty) => {
-      if (activeDepartment !== "" && String(faculty.departmentId ?? "none") !== activeDepartment) return false;
       return query === "" || [faculty.name, faculty.departmentCode, faculty.departmentName, faculty.programCode]
         .some((value) => (value ?? "").toLowerCase().includes(query));
     }),
-    [activeDepartment, query, visibleFaculties],
+    [query, visibleFaculties],
   );
   const employmentCounts = useMemo(() => ({
     all: searchedFaculties.length,
@@ -832,50 +814,9 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
       <div className="assign-panel-heading">
         <Users className="h-4 w-4 text-[#701522]" aria-hidden="true" /> Instructor
         <span className="assign-count-pill">
-          {query || activeDepartment || employment !== "all" ? `${matchingFaculties.length} of ${visibleFaculties.length}` : visibleFaculties.length}
+          {query || employment !== "all" ? `${matchingFaculties.length} of ${visibleFaculties.length}` : visibleFaculties.length}
         </span>
       </div>
-      {allowExternalInstructors && <div className="assign-tabs">
-        {([
-          ["department", "My department"],
-          ["external", "Other departments"],
-        ] as const).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() => {
-              setTab(value);
-              onSelect((faculties.find((faculty) => {
-                const isDepartmentInstructor = normalizedDepartmentId !== null
-                  && faculty.departmentId !== null
-                  && faculty.departmentId !== undefined
-                  && Number(faculty.departmentId) === normalizedDepartmentId;
-                return value === "department" ? isDepartmentInstructor : !isDepartmentInstructor;
-              })?.id) ?? "");
-            }}
-            aria-pressed={tab === value}
-            className="assign-tab"
-          >
-            {label}
-          </button>
-        ))}
-      </div>}
-      {tab === "external" && externalDepartments.length > 0 && (
-        <div className="relative shrink-0 px-3 pt-2.5">
-          <select
-            value={activeDepartment}
-            onChange={(event) => setDepartmentFilter(event.target.value)}
-            aria-label="Filter instructors by department"
-            className="assign-input h-9 w-full appearance-none px-3 pr-8 text-xs font-semibold"
-          >
-            <option value="">All departments ({visibleFaculties.length})</option>
-            {externalDepartments.map((department) => (
-              <option key={department.value} value={department.value}>{department.label} ({department.count})</option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-5 top-[20px] h-4 w-4 text-[#7A6E67]" />
-        </div>
-      )}
       <div className="relative shrink-0 px-3 pt-2.5">
         <Search className="pointer-events-none absolute left-[22px] top-[22px] h-4 w-4 text-[#7A6E67]" />
         <input
@@ -929,7 +870,6 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
                   <span className="assign-instructor-meta">
                     <span className="assign-employment-chip" data-type={faculty.employmentType ?? 'unknown'}>{employmentText ?? 'Employment not recorded'}</span>
                     {faculty.status === 'inactive' && <span className="assign-employment-chip" data-type="inactive">Inactive</span>}
-                    {tab === 'external' && <span className="truncate">{faculty.departmentCode ?? faculty.departmentName ?? 'External'}</span>}
                   </span>
                 </span>
                 <span className="assign-instructor-units" title="Teaching load">

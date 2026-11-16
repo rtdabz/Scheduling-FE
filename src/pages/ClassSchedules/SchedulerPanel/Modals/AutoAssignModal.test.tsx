@@ -307,7 +307,7 @@ describe("AutoAssignModal instructor conflict", () => {
     expect(screen.queryByText('BSIT 1B')).toBeNull();
   });
 
-  it('preserves department and employment filters', () => {
+  it('lists only own-department instructors and preserves employment filters', () => {
     const partTime = { ...faculty, id: 'f2', name: 'Ana Reyes', employmentType: 'part-time' } as Faculty;
     const external = { ...faculty, id: 'f3', name: 'Elena Santos', departmentId: 7, departmentCode: 'CTE' } as Faculty;
     const other = { ...faculty, id: 'f4', name: 'Miguel Aquino', departmentId: 8, departmentCode: 'CBA' } as Faculty;
@@ -316,10 +316,9 @@ describe("AutoAssignModal instructor conflict", () => {
     expect(screen.queryByRole('button', { name: /Juan Dela Cruz/ })).toBeNull();
     expect(screen.getByRole('button', { name: /Ana Reyes/ })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'All 2' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Other departments' }));
-    fireEvent.change(screen.getByRole('combobox', { name: 'Filter instructors by department' }), { target: { value: '8' } });
+    expect(screen.queryByRole('button', { name: 'Other departments' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Elena Santos/ })).toBeNull();
-    expect(screen.getByRole('button', { name: /Miguel Aquino/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Miguel Aquino/ })).toBeNull();
   });
 
   it('preserves course and year filters and clears their section selections', () => {

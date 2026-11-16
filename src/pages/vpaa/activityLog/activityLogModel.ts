@@ -78,6 +78,7 @@ const EVENT_LABELS: Record<string, string> = {
   user_updated: 'Account Updated',
   user_status_changed: 'Account Status Changed',
   user_archived: 'Account Archived',
+  user_password_changed: 'Password Changed by VPAA',
   profile_updated: 'Profile Updated',
   invitation_sent: 'Invitation Sent',
   invitation_accepted: 'Invitation Accepted',

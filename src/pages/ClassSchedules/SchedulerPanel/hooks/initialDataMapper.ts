@@ -184,6 +184,9 @@ export const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
       ? String(item.faculty_id ?? item.faculty?.id)
       : null,
     facultyAssignmentDone: Boolean(item.faculty_assignment_done),
+    delegationReturnedFromDepartmentId: item.delegation_returned_from_department_id ?? null,
+    sectionTeachingDepartmentId: item.section_teaching_department_id ?? null,
+    sectionTeachingProgramId: item.section_teaching_program_id ?? null,
     status: item.status,
     dayIndex,
     startSlot,
@@ -259,6 +262,7 @@ export const mapApiCourse = (s: ApiCourseRecord): Subject => {
     delegatedOnly: Boolean(s.delegated_only),
     programCode: s.program?.code ?? null,
     teachingDepartmentId: delegatedTo ?? (servesOwnCollege ? s.department_id : null),
+    ownTeachingDepartmentId: isGecServiceCourse(s) && s.department_id !== null ? s.department_id : null,
     teachingDepartmentCode: teachingDepartment?.department_code,
     teachingDepartmentName: teachingDepartment?.department_name,
     categories: s.categories ?? [],

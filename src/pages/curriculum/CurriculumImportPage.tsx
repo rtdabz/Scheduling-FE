@@ -920,7 +920,7 @@ export default function CurriculumImportPage() {
                   <div className="mt-5 rounded-xl border border-border bg-parchment/60 px-4 py-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-text">{draft.metadata.name}</p>
+                        <p className="truncate text-[15px] font-semibold text-text">{draft.metadata.name}</p>
                         <p className="text-[13px] text-muted">
                           <span aria-label="Assigned internal code" className="font-semibold text-text">{validation.metadata.code}</span>
                           {' · '}{program ? programLabel(program) : 'All programs in the department'} · {draft.metadata.effective_school_year} · created deactivated

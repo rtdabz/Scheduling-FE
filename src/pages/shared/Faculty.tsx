@@ -954,27 +954,27 @@ export default function Faculty() {
                       <div className="space-y-2 pt-2 border-t border-gray-50 font-sans">
                         {f.assigned_subjects.length > 0 && (
                           <div className="flex flex-wrap gap-1 items-center">
-                            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mr-1">Subjects:</span>
+                            <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mr-1">Subjects:</span>
                             {f.assigned_subjects.slice(0, 3).map(sub => (
-                              <span key={sub.id} className="text-[10px] bg-slate-50 border border-slate-200 text-slate-600 rounded px-1 py-0.5 font-mono uppercase font-semibold">
+                              <span key={sub.id} className="text-[9px] bg-slate-50 border border-slate-200 text-slate-600 rounded px-1 py-0.5 font-mono uppercase font-semibold">
                                 {sub.course_code || sub.subject_code}
                               </span>
                             ))}
                             {f.assigned_subjects.length > 3 && (
-                              <span className="text-[10px] text-gray-400 font-semibold">+{f.assigned_subjects.length - 3} more</span>
+                              <span className="text-[9px] text-gray-400 font-semibold">+{f.assigned_subjects.length - 3} more</span>
                             )}
                           </div>
                         )}
                         {f.assigned_classes.length > 0 && (
                           <div className="flex flex-wrap gap-1 items-center">
-                            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mr-1">Classes:</span>
+                            <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mr-1">Classes:</span>
                             {f.assigned_classes.slice(0, 3).map(c => (
-                              <span key={c.id} className="text-[10px] bg-slate-50 border border-slate-200 text-slate-600 rounded px-1 py-0.5 font-mono uppercase font-semibold">
+                              <span key={c.id} className="text-[9px] bg-slate-50 border border-slate-200 text-slate-600 rounded px-1 py-0.5 font-mono uppercase font-semibold">
                                 {c.section_name}
                               </span>
                             ))}
                             {f.assigned_classes.length > 3 && (
-                              <span className="text-[10px] text-gray-400 font-semibold">+{f.assigned_classes.length - 3} more</span>
+                              <span className="text-[9px] text-gray-400 font-semibold">+{f.assigned_classes.length - 3} more</span>
                             )}
                           </div>
                         )}

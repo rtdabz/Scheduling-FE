@@ -129,7 +129,6 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
   const canViewSchedules = hasStoredCapability('schedule.view');
   const canUpdateSchedules = hasStoredCapability('schedule.update');
   const canAssignInstructors = hasStoredCapability('schedule.assign_instructor');
-  const canAssignCrossDepartment = hasStoredCapability('schedule.assign_instructor_cross_department');
   const isProgramHead = role === 'program_head';
   const paths = isProgramHead
     ? {
@@ -377,7 +376,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
   const queue: QueueRow[] = [
     ...(canUpdateSchedules ? [{ label:'Sections that still need schedules', value:remaining, action:'View', icon:CalendarDays, path:paths.schedules } as QueueRow] : []),
     ...(canAssignInstructors ? [{ label:'Classes without instructors', value:noInstructor, action:'Assign', icon:UserRoundCheck, path:paths.schedules } as QueueRow] : []),
-    ...(canAssignCrossDepartment ? [{ label:'Delegated classes without instructors', value:crossDepartmentPending, action:'Assign', icon:Handshake, path:paths.crossDepartment } as QueueRow] : []),
+    ...(canAssignInstructors ? [{ label:'Delegated classes without instructors', value:crossDepartmentPending, action:'Assign', icon:Handshake, path:paths.crossDepartment } as QueueRow] : []),
     { label:'On-site classes without rooms', value:noRoom, action:'Assign', icon:DoorOpen, path:roomAssignmentPath },
     ...(canUpdateSchedules ? [{ label:'Incomplete schedule entries', value:incomplete, action:'Complete', icon:ClipboardCheck, path:paths.schedules } as QueueRow] : []),
     ...(canViewSchedules ? [{ label:'Sections returned for revision', value:stageCounts.revision, action:'Review', icon:FileClock, path:paths.schedules } as QueueRow] : []),
@@ -446,7 +445,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
   ];
 
   const timetablePanel = (
-    <div className={isFullscreen ? 'fixed inset-0 z-[999999] flex flex-col overflow-auto bg-parchment p-4 font-jakarta text-text sm:p-6' : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
+    <div className={isFullscreen ? 'fixed inset-0 z-[999999] flex flex-col overflow-auto bg-parchment p-4 text-text sm:p-6' : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
       <Panel
         title="Department Academic Timetable"
         action="View full timetable"
@@ -535,7 +534,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
     />;
   }
 
-  return <div id="dashboard-overview" className="space-y-4 pb-8 font-jakarta text-text">
+  return <div id="dashboard-overview" className="space-y-4 pb-8 text-text">
     {canViewSchedules && <RoomRecoveryAlerts />}
     {(loadError || statusError) && <div className={`flex flex-wrap items-center gap-3 rounded-xl px-4 py-3 text-[13px] font-medium text-stage-warnText ${BANDS.warn}`}>
       <AlertTriangle className="h-4 w-4 shrink-0"/>
@@ -867,7 +866,7 @@ export default function SecretaryDashboardPage({ role = 'secretary' }: Secretary
 function Panel({title, children, action, onAction, headerExtra, className = ''}:{title:string; children:ReactNode; action?:string; onAction?:() => void; headerExtra?:ReactNode; className?:string}) {
   return <section className={`min-w-0 rounded-xl border border-border bg-white p-5 ${className}`}>
     <div className="mb-4 flex min-h-[28px] items-center justify-between gap-3">
-      <h2 className="min-w-0 truncate font-jakarta text-sm font-semibold leading-5 tracking-tight text-text" title={title}>{title}</h2>
+      <h2 className="min-w-0 truncate text-[15px] font-semibold leading-5 tracking-tight text-text" title={title}>{title}</h2>
       <div className="flex shrink-0 items-center gap-2">
         {action && <button type="button" onClick={onAction} className="-mr-1.5 inline-flex h-7 shrink-0 items-center gap-0.5 whitespace-nowrap rounded-md pl-2 pr-1 text-xs font-semibold text-primary transition-colors hover:bg-primary/[0.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">{action}<ChevronRight className="h-3.5 w-3.5"/></button>}
         {headerExtra}

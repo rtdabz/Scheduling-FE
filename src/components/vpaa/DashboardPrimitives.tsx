@@ -44,7 +44,7 @@ export function Panel({
       <div className="mb-4 flex min-h-[28px] items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h2 className={`font-jakarta text-sm font-semibold leading-5 tracking-tight ${TONE_TEXT[tone]}`}>{title}</h2>
+            <h2 className={`text-[15px] font-semibold leading-5 tracking-tight ${TONE_TEXT[tone]}`}>{title}</h2>
             {badge != null && badge > 0 && (
               <span className="rounded-full bg-stage-returned px-1.5 py-0.5 text-[11px] font-semibold leading-none tabular-nums text-white">
                 {badge}

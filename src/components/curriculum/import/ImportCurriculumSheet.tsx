@@ -148,7 +148,7 @@ export default function ImportCurriculumSheet({ rows, totals, attention, renderT
     return (
       <section key={year} id={yearSectionId(year)} tabIndex={-1} aria-labelledby={`${yearSectionId(year)}-heading`} className="scroll-mt-14 space-y-3 focus:outline-none">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 border-b-2 border-primary/80 pb-1">
-          <h3 id={`${yearSectionId(year)}-heading`} className="text-sm font-bold uppercase tracking-[0.12em] text-primary">{YEAR_LABELS[year]}</h3>
+          <h3 id={`${yearSectionId(year)}-heading`} className="text-[15px] font-bold uppercase tracking-[0.12em] text-primary">{YEAR_LABELS[year]}</h3>
           <p className="text-xs tabular-nums text-muted">{plural(yearRows.length, 'course')} · {units} units</p>
         </div>
         {regular.length > 0 && <div className={`grid items-start gap-3 ${stacked ? '' : 'lg:grid-cols-2'}`}>{regular}</div>}

@@ -77,6 +77,8 @@ export interface Course {
   teachingDepartmentCode?: string;
   teachingDepartmentName?: string;
   teachingProgramId?: number | null;
+  /** teachingDepartmentId as it would be without a delegation (a GEC course serves its own college). */
+  ownTeachingDepartmentId?: number | null;
   delegatedOnly?: boolean;
   programId?: number | null;
   programCode?: string | null;
@@ -234,6 +236,11 @@ export interface ScheduleItem {
   facultyName: string | null;
   facultyId: string | null;
   facultyAssignmentDone?: boolean;
+  /** Teaching department that handed this class back; the class then follows its offering department's rules. */
+  delegationReturnedFromDepartmentId?: number | null;
+  /** Section-level teaching assignment of a returned class (null: its offering department teaches it). */
+  sectionTeachingDepartmentId?: number | null;
+  sectionTeachingProgramId?: number | null;
   status: ScheduleStatus;
   dayIndex: number;
   startSlot: number;
@@ -454,6 +461,9 @@ export interface ApiScheduleRecord {
   room_id: number | string | null;
   faculty_id?: number | string | null;
   faculty_assignment_done?: boolean | number;
+  delegation_returned_from_department_id?: number | null;
+  section_teaching_department_id?: number | null;
+  section_teaching_program_id?: number | null;
   day: string;
   start_time: string;
   end_time: string;

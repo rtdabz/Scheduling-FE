@@ -120,14 +120,19 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
       .catch(() => {});
   }, []);
 
-  const canAssignCrossDepartment = (isDepartmentOfficeRole(role) || role === 'program_head')
+  const isOfficeOrProgramHead = isDepartmentOfficeRole(role) || role === 'program_head';
+  // Course Assignment (handing courses away) and Cross-Department (staffing handed-in
+  // classes) are separate capabilities; either one needs the department status.
+  const canAssignCrossDepartment = isOfficeOrProgramHead
     && hasStoredCapability('schedule.assign_instructor_cross_department');
+  const canStaffDelegatedClasses = isOfficeOrProgramHead
+    && hasStoredCapability('schedule.assign_instructor');
   const {
     crossDepartmentPending,
     crossDepartmentUnlocked,
     loading: crossDepartmentStatusLoading,
   } = useDepartmentScheduleStatus(
-    canAssignCrossDepartment ? user?.department_id : null,
+    canAssignCrossDepartment || canStaffDelegatedClasses ? user?.department_id : null,
   );
   const crossDepartmentLocked = canAssignCrossDepartment && !crossDepartmentStatusLoading && !crossDepartmentUnlocked;
   const navItems = crossDepartmentLocked
@@ -322,7 +327,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
           <div className={`flex min-w-0 flex-col justify-center overflow-hidden transition-all duration-300 ease-in-out ${isOpen ? 'ml-3 w-[180px] shrink-0 opacity-100 md:w-[204px]' : 'hidden'}`}>
             <div className="flex items-baseline gap-1.5 whitespace-nowrap leading-none">
               <span className="bg-gradient-to-r from-white to-[#E8D5C4] bg-clip-text text-base font-extrabold tracking-wide text-transparent">TCC</span>
-              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#C9952A]">Scheduling</span>
+              <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#C9952A]">Scheduling</span>
             </div>
             {deptName && (
               <span className={`truncate font-medium leading-tight text-[#E8D5C4] ${sidebarProgramLabel ? 'mt-0.5 text-[11px]' : 'mt-1 text-[11px]'}`} title={deptName}>
@@ -413,7 +418,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
                             <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[#C9952A] ring-2 ring-[#4e0a10]" aria-hidden="true" />
                           )}
                         </div>
-                        <span className={`overflow-hidden truncate whitespace-nowrap text-[13px] font-medium transition-all duration-300 ease-in-out ${isOpen ? 'ml-3 max-w-[180px] opacity-100' : 'pointer-events-none ml-0 max-w-0 opacity-0'}`}>
+                        <span className={`overflow-hidden truncate whitespace-nowrap text-sm font-medium transition-all duration-300 ease-in-out ${isOpen ? 'ml-3 max-w-[180px] opacity-100' : 'pointer-events-none ml-0 max-w-0 opacity-0'}`}>
                           {item.label}
                         </span>
                         <div className={`flex items-center gap-2 overflow-hidden transition-all duration-300 ease-in-out ${isOpen ? 'ml-auto max-w-[70px] pl-2 opacity-100' : 'pointer-events-none ml-0 max-w-0 opacity-0'}`}>
@@ -468,7 +473,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
                                 {child.badge ? (
                                   <span className="flex min-w-0 flex-col leading-tight">
                                     <span className="truncate text-xs">{child.label}</span>
-                                    <span className="mt-0.5 inline-flex items-center gap-1 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-[#E8C27A]">
+                                    <span className="mt-0.5 inline-flex items-center gap-1 whitespace-nowrap text-[9px] font-semibold uppercase tracking-wide text-[#E8C27A]">
                                       <span className="h-1.5 w-1.5 rounded-full bg-[#C9952A]" aria-hidden="true" />
                                       {child.badge}
                                     </span>
@@ -553,7 +558,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
                         <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[#C9952A] ring-2 ring-[#4e0a10]" aria-hidden="true" />
                       )}
                     </div>
-                    <span className={`overflow-hidden truncate whitespace-nowrap text-[13px] font-medium transition-all duration-300 ease-in-out ${isOpen ? 'ml-3 max-w-[190px] opacity-100' : 'pointer-events-none ml-0 max-w-0 opacity-0'}`}>
+                    <span className={`overflow-hidden truncate whitespace-nowrap text-sm font-medium transition-all duration-300 ease-in-out ${isOpen ? 'ml-3 max-w-[190px] opacity-100' : 'pointer-events-none ml-0 max-w-0 opacity-0'}`}>
                       {item.label}
                     </span>
                     <div className={`flex items-center gap-2 overflow-hidden transition-all duration-300 ease-in-out ${isOpen ? 'ml-auto max-w-[70px] pl-2 opacity-100' : 'pointer-events-none ml-0 max-w-0 opacity-0'}`}>

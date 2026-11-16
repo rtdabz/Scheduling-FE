@@ -20,6 +20,7 @@ import {
   Power,
   Archive,
   Trash2,
+  KeyRound,
 } from 'lucide-react';
 import {
   useReactTable,
@@ -44,6 +45,7 @@ import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import { programLabel } from '../../lib/programLabel';
 import FilterBar from '../../components/ui/FilterBar';
+import ChangeUserPasswordModal from './ChangeUserPasswordModal';
 
 interface User {
   accountVersion?: string;
@@ -749,6 +751,7 @@ export default function VpaaUsers() {
   };
 
   const [isSendingSetupLink, setIsSendingSetupLink] = useState(false);
+  const [passwordTarget, setPasswordTarget] = useState<User | null>(null);
   const editingUser = isEditMode && editingId !== null ? users.find(u => u.id === editingId) : undefined;
 
   const sendSetupLink = async (user: User) => {
@@ -922,6 +925,21 @@ export default function VpaaUsers() {
               </TableActionButton>
               <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
                 Edit
+              </span>
+            </div>
+            <div className="relative group/tooltip">
+              <TableActionButton
+                label="Change Password"
+                variant="view"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setPasswordTarget(row.original);
+                }}
+              >
+                <KeyRound size={17} />
+              </TableActionButton>
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[10px] font-bold text-white bg-gray-900 rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-10 shadow-md whitespace-nowrap">
+                Change Password
               </span>
             </div>
             <div className="relative group/tooltip">
@@ -1133,6 +1151,17 @@ export default function VpaaUsers() {
                         title="Edit User"
                       >
                         <Pencil size={16} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPasswordTarget(u);
+                        }}
+                        className={buttonClass({ variant: 'infoTint', size: 'sm', iconOnly: true })}
+                        title="Change Password"
+                        aria-label="Change Password"
+                      >
+                        <KeyRound size={16} />
                       </button>
                       <button
                         onClick={(e) => {
@@ -1724,6 +1753,14 @@ export default function VpaaUsers() {
             >
               <Mail size={16} /> {isSendingSetupLink ? 'Sending...' : 'Send setup link'}
             </ModalButton>
+            <ModalButton
+              onClick={() => {
+                setIsDetailModalOpen(false);
+                setPasswordTarget(selectedUserForDetail);
+              }}
+            >
+              <KeyRound size={16} /> Change Password
+            </ModalButton>
             <ModalButton disabled={!selectedUserForDetail.googleLinked} onClick={() => unlinkGoogle(selectedUserForDetail)}>
               <Link2Off size={16} /> Unlink Google
             </ModalButton>
@@ -1742,7 +1779,7 @@ export default function VpaaUsers() {
           <dl className="m-4 grid grid-cols-2 gap-x-4 gap-y-4 rounded-xl border border-slate-200 bg-white p-4 sm:m-5">
             <div className="col-span-2">
               <dt className={`${modalLabel} mb-1`}>Email</dt>
-              <dd className="break-all text-sm font-semibold text-slate-800">{selectedUserForDetail.email || '—'}</dd>
+              <dd className="break-all font-display text-sm font-semibold text-slate-800">{selectedUserForDetail.email || '—'}</dd>
             </div>
             <div>
               <dt className={`${modalLabel} mb-1`}>Department</dt>
@@ -1773,6 +1810,10 @@ export default function VpaaUsers() {
             </div>
           </dl>
         </Modal>
+      )}
+
+      {passwordTarget && (
+        <ChangeUserPasswordModal user={passwordTarget} onClose={() => setPasswordTarget(null)} />
       )}
 
     </div>

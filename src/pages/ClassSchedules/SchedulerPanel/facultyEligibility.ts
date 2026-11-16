@@ -7,6 +7,41 @@ export interface FacultyEligibility {
 
 const ELIGIBLE: FacultyEligibility = { eligible: true, reason: null };
 
+/** The per-class teaching fields a schedule row carries. */
+export interface ClassTeaching {
+  delegationReturnedFromDepartmentId?: number | null;
+  sectionTeachingDepartmentId?: number | null;
+  sectionTeachingProgramId?: number | null;
+}
+
+/**
+ * Whether a receiving department returned this class. A returned class is detached from the
+ * course-level assignment for good and follows only its own section-level assignment.
+ */
+export const isDetachedClass = (schedule: ClassTeaching | null | undefined): boolean =>
+  schedule?.delegationReturnedFromDepartmentId != null;
+
+/**
+ * The course as it applies to one class (mirrors SchedulingPolicy::courseForRow on the server):
+ * a returned class takes its section-level assignment instead of the course-level one; with
+ * none, its offering department teaches it.
+ */
+export const subjectForSchedule = <T extends Subject>(
+  subject: T | null | undefined,
+  schedule: ClassTeaching | null | undefined
+): T | undefined => {
+  if (!subject) return undefined;
+  if (!isDetachedClass(schedule)) return subject;
+  return {
+    ...subject,
+    teachingDepartmentId: schedule?.sectionTeachingDepartmentId ?? subject.ownTeachingDepartmentId ?? null,
+    teachingProgramId: schedule?.sectionTeachingProgramId ?? null,
+    // The course-level labels name another department; the generic label is used instead.
+    teachingDepartmentCode: undefined,
+    teachingDepartmentName: undefined,
+  };
+};
+
 export const isMajorSubject = (subject?: Subject | null): boolean =>
   (subject?.category ?? "major") === "major";
 

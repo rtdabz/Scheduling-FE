@@ -79,7 +79,7 @@ export default function ScheduleApprovalPreviewModal({
     <Modal isOpen={open} onClose={onClose} title={title} size="xl" inert={inert} closeOnEscape={closeOnEscape} closeOnOverlayClick={false}
       closeLabel="Close preview" className="h-[95dvh]" bodyClassName="flex flex-col" footerClassName="!justify-between"
       headerActions={(statusLabel || headerActions) && <>
-        {statusLabel && <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase ${badge}`}>{statusLabel}</span>}
+        {statusLabel && <span className={`rounded-full border px-2.5 py-1 font-serif text-[10px] font-bold uppercase ${badge}`}>{statusLabel}</span>}
         {headerActions}
       </>}
       footer={<>

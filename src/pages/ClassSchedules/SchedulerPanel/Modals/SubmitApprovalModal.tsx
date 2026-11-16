@@ -81,8 +81,8 @@ export default function SubmitApprovalModal({
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
             <p className="flex items-baseline gap-1.5 text-[#291a19]">
               <span className="text-[11px] font-semibold uppercase tracking-[.08em] text-[#806630]">Readiness</span>
-              <span className="ml-1 text-2xl font-semibold tabular-nums leading-none tracking-tight">{departmentDoneSections}</span>
-              <span className="text-xs text-[#71665e]">of {departmentTotalSections} sections done</span>
+              <span className="ml-1 text-3xl font-semibold tabular-nums leading-none tracking-tight">{departmentDoneSections}</span>
+              <span className="text-sm text-[#71665e]">of {departmentTotalSections} sections done</span>
             </p>
             <span className={`scheduler-dialog-badge ${departmentReadyToSubmit ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>
               {departmentReadyToSubmit ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
@@ -141,8 +141,8 @@ export default function SubmitApprovalModal({
                 <li key={section.sectionId} className="scheduler-submit-card"
                   data-state={willSubmit ? "submit" : protectedSection ? "locked" : "pending"}>
                   <div className="min-w-0">
-                    <p className="truncate text-[13px] font-semibold leading-5 text-[#291a19]" title={section.sectionName}>{section.sectionName}</p>
-                    <p className="text-[11px] leading-4 tabular-nums text-[#71665e]">{section.plottedSubjects ?? section.plottedCourses}/{section.requiredSubjects ?? section.requiredCourses} subjects plotted</p>
+                    <p className="truncate text-sm font-semibold leading-5 text-[#291a19]" title={section.sectionName}>{section.sectionName}</p>
+                    <p className="text-xs leading-4 tabular-nums text-[#71665e]">{section.plottedSubjects ?? section.plottedCourses}/{section.requiredSubjects ?? section.requiredCourses} subjects plotted</p>
                   </div>
                   <span className={`scheduler-dialog-badge ${willSubmit ? "bg-emerald-50 text-emerald-800" : protectedSection ? "bg-[#f1ede8] text-[#625a54]" : "bg-amber-50 text-amber-800"}`}>
                     {willSubmit ? <CheckCircle2 size={12} /> : protectedSection ? <LockKeyhole size={12} /> : <AlertTriangle size={12} />}
@@ -154,7 +154,7 @@ export default function SubmitApprovalModal({
             {departmentSectionProgress.length === 0 && <li className="col-span-full rounded-[10px] border border-dashed border-[#e8e1d9] px-4 py-5 text-center text-sm text-[#71665e]">No sections are available for submission.</li>}
           </ul>
         </section>
-        {protectedCount > 0 && <p className="flex items-start gap-1.5 text-[11px] leading-4 text-[#71665e]"><LockKeyhole size={12} className="mt-0.5 shrink-0" />{protectedCount} protected section{protectedCount === 1 ? " keeps its" : "s keep their"} current workflow status.</p>}
+        {protectedCount > 0 && <p className="flex items-start gap-1.5 text-xs leading-4 text-[#71665e]"><LockKeyhole size={12} className="mt-0.5 shrink-0" />{protectedCount} protected section{protectedCount === 1 ? " keeps its" : "s keep their"} current workflow status.</p>}
       </div>
     </Modal>
   );

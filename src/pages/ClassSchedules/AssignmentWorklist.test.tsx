@@ -112,13 +112,11 @@ describe("AssignmentWorklist", () => {
       />,
     );
 
-    // The section is fully assigned, so it renders folded.
-    fireEvent.click(screen.getByRole("button", { name: "Section BSIT 1A" }));
     fireEvent.click(screen.getByRole("button", { name: /^Remove instructor/ }));
     expect(onAssign).toHaveBeenCalledWith(501, null);
   });
 
-  it("leaves a finished section folded and an unfinished one open", () => {
+  it("keeps every section open, finished or not", () => {
     render(
       <AssignmentWorklist
         classes={[
@@ -131,8 +129,10 @@ describe("AssignmentWorklist", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Section BSIT 1A" }).getAttribute("aria-expanded")).toBe("false");
-    expect(screen.getByRole("button", { name: "Section BSIT 1B" }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("region", { name: "Section BSIT 1A" }).textContent).toContain("all 1 assigned");
+    expect(screen.getByRole("region", { name: "Section BSIT 1B" }).textContent).toContain("1 need instructor");
+    expect(screen.queryByRole("button", { name: /^Section / })).toBeNull();
+    expect(screen.getAllByRole("combobox")).toHaveLength(2);
   });
 
   it("locks the picker for a class that is already finalized", () => {
@@ -145,7 +145,6 @@ describe("AssignmentWorklist", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Section BSIT 1A" }));
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.getByText("Rich Dadubo")).toBeTruthy();
   });

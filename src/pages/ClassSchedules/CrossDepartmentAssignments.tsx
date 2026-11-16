@@ -6,6 +6,7 @@ import type { DraftScope } from './SchedulerPanel/hooks/useInstructorAssignmentD
 import AutoAssignModal from './SchedulerPanel/Modals/AutoAssignModal';
 import { useScheduler } from './SchedulerPanel/hooks/useScheduler';
 import { INSTRUCTOR_ASSIGNABLE_STATUSES } from './SchedulerPanel/types';
+import { subjectForSchedule } from './SchedulerPanel/facultyEligibility';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 
 export default function CrossDepartmentAssignments() {
@@ -32,7 +33,9 @@ export default function CrossDepartmentAssignments() {
   );
   const delegatedSchedules = useMemo(
     () => scheduler.schedules.filter((schedule) => {
-      const subject = scheduler.subjects.find((item) => item.id === schedule.courseId);
+      // Per class: a returned section follows its own section-level assignment, so one handed
+      // here appears and one this department returned does not.
+      const subject = subjectForSchedule(scheduler.subjects.find((item) => item.id === schedule.courseId), schedule);
       if (
         subject?.teachingDepartmentId === null
         || subject?.teachingDepartmentId === undefined
@@ -171,7 +174,6 @@ export default function CrossDepartmentAssignments() {
         checkFacultyConflict={scheduler.checkFacultyConflict}
         onAssign={handleAutoAssign}
         onRemoveAssignment={handleRemoveAssignment}
-        allowExternalInstructors={false}
         draftScope={draftScope}
       />
     </div>

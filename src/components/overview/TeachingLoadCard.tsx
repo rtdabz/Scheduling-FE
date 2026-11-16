@@ -54,7 +54,7 @@ export default function TeachingLoadCard({
                     <span className="font-bold text-gray-800 truncate max-w-[130px]" title={item.name}>
                       {item.name}
                     </span>
-                    <span className="text-[10px] bg-gray-100 text-gray-500 border border-gray-200 rounded px-1.5 py-0.5 font-bold uppercase">
+                    <span className="text-[9px] bg-gray-100 text-gray-500 border border-gray-200 rounded px-1.5 py-0.5 font-bold uppercase">
                       {item.badgeLabel}
                     </span>
                   </div>
@@ -70,7 +70,7 @@ export default function TeachingLoadCard({
                       <span className="font-semibold text-gray-400">
                         {item.assignedUnits}/{item.maxUnits}
                       </span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${textColor}`}>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold border ${textColor}`}>
                         {pct}%
                       </span>
                     </div>
