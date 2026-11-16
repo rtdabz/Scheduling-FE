@@ -1051,6 +1051,51 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
       expect(secondSection().checked).toBe(false);
     });
 
+    it("targets the one new section when the rest of the year level is approved", async () => {
+      mockReads();
+      const threeSections: Section[] = [
+        sections[0],
+        { ...sections[0], id: "11", name: "BSIT 1B" },
+        { ...sections[0], id: "12", name: "BSIT 1C" },
+      ];
+      const approved = (id: string, sectionId: string) => ({
+        id,
+        sectionId,
+        courseId: "20",
+        semesterId: "1",
+        status: "approved",
+        day: "Monday",
+        startTime: "08:00",
+        endTime: "09:30",
+      });
+      const existing = [approved("900", "10"), approved("901", "11")] as unknown as ScheduleItem[];
+      render(
+        withProvider(
+          <YearLevelGenerateScheduleWorkflow
+            onClose={vi.fn()}
+            sections={threeSections}
+            courses={courses}
+            activeSemester={activeSemester}
+            departmentId={2}
+            existingSchedules={existing}
+            onAccepted={vi.fn()}
+          />,
+        ),
+      );
+
+      const selectedMode = await screen.findByRole("radio", { name: "Selected sections" });
+      await waitFor(() => expect(selectedMode.getAttribute("aria-checked")).toBe("true"));
+      const box = (name: RegExp) => screen.getByRole("checkbox", { name }) as HTMLInputElement;
+      expect(box(/BSIT 1C/).checked).toBe(true);
+      expect(box(/BSIT 1C/).disabled).toBe(false);
+      expect(box(/BSIT 1A/).disabled).toBe(true);
+      expect(box(/BSIT 1B/).disabled).toBe(true);
+      expect(
+        (screen.getByRole("radio", { name: "Whole year level" }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+      expect(screen.queryByText("Pick at least one section to generate.")).toBeNull();
+    });
+
     it("while a run for another year level is in progress", async () => {
       mockReads({
         run_id: "run-9",

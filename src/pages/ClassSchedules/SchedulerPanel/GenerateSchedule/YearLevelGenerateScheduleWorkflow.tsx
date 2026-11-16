@@ -390,6 +390,21 @@ function GenerateScheduleWizard({
       ),
     [activeSemester, existingSchedules],
   );
+  // Sections holding a schedule under review or approved: never a generation target.
+  const lockedSectionIds = useMemo(
+    () =>
+      new Set(
+        existingSchedules
+          .filter(
+            (schedule) =>
+              (!activeSemester ||
+                Number(schedule.semesterId) === Number(activeSemester.id)) &&
+              !EDITABLE_STATUSES.includes(schedule.status),
+          )
+          .map((schedule) => String(schedule.sectionId)),
+      ),
+    [activeSemester, existingSchedules],
+  );
   const yearLevelCurriculumId = useMemo(() => {
     const ids = Array.from(
       new Set(
@@ -672,6 +687,32 @@ function GenerateScheduleWizard({
     }
     setRestoredDraftKey(storageKey);
   }, [availableYearsKey, defaultsStorageKey, storageKey]);
+
+  // Once part of a year level is under review or approved, the whole year level
+  // can no longer be generated: switch to Selected sections, drop locked ones
+  // from the selection, and when a single section is left, target it directly.
+  // Waits for the saved draft to be restored, which would otherwise undo it.
+  useEffect(() => {
+    if (restoredDraftKey !== storageKey || generating) return;
+    const hasLocked = scopedSections.some((section) =>
+      lockedSectionIds.has(String(section.id)),
+    );
+    if (!hasLocked) return;
+    const selectable = scopedSections
+      .map((section) => String(section.id))
+      .filter((id) => !lockedSectionIds.has(id));
+    if (selectable.length === 0) return;
+    const kept = (targetSectionIds ?? []).filter((id) => selectable.includes(id));
+    const next = kept.length === 0 && selectable.length === 1 ? selectable : kept;
+    if (
+      targetSectionIds !== null &&
+      next.length === targetSectionIds.length &&
+      next.every((id, index) => id === targetSectionIds[index])
+    ) {
+      return;
+    }
+    setTargetSectionIds(next);
+  }, [generating, lockedSectionIds, restoredDraftKey, scopedSections, storageKey, targetSectionIds]);
 
   // Then compare with the server copy. When it is newer (e.g. saved on another device) and the
   // user has not started working here, it becomes this browser's copy and the wizard reopens on
@@ -1801,6 +1842,7 @@ function GenerateScheduleWizard({
                 }}
                 targetSectionIds={targetSectionIds}
                 scheduledSectionIds={scheduledSectionIds}
+                lockedSectionIds={lockedSectionIds}
                 onTargetSectionIdsChange={(ids) => {
                   setTargetSectionIds(ids);
                   run.clear();

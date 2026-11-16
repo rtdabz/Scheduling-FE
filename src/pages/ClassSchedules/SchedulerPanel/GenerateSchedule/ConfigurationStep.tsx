@@ -59,6 +59,7 @@ export default function ConfigurationStep({
   onAllowFridaySaturdaySplitChange,
   targetSectionIds = null,
   scheduledSectionIds = new Set<string>(),
+  lockedSectionIds = new Set<string>(),
   onTargetSectionIdsChange,
   targetBlockedReason = null,
 }: {
@@ -85,6 +86,7 @@ export default function ConfigurationStep({
   onAllowFridaySaturdaySplitChange?: (allowed: boolean) => void;
   targetSectionIds?: string[] | null;
   scheduledSectionIds?: Set<string>;
+  lockedSectionIds?: Set<string>;
   onTargetSectionIdsChange?: (ids: string[] | null) => void;
   targetBlockedReason?: string | null;
 }) {
@@ -192,6 +194,7 @@ export default function ConfigurationStep({
                 sections={sections}
                 targetSectionIds={targetSectionIds}
                 scheduledSectionIds={scheduledSectionIds}
+                lockedSectionIds={lockedSectionIds}
                 onChange={onTargetSectionIdsChange}
                 disabled={yearChangeDisabled}
                 blockedReason={targetBlockedReason}
@@ -471,6 +474,7 @@ function SectionTargetPicker({
   sections,
   targetSectionIds,
   scheduledSectionIds,
+  lockedSectionIds,
   onChange,
   disabled,
   blockedReason,
@@ -478,12 +482,17 @@ function SectionTargetPicker({
   sections: Section[];
   targetSectionIds: string[] | null;
   scheduledSectionIds: Set<string>;
+  lockedSectionIds: Set<string>;
   onChange: (ids: string[] | null) => void;
   disabled: boolean;
   blockedReason: string | null;
 }) {
   const perSection = targetSectionIds !== null;
   const selected = new Set(targetSectionIds ?? []);
+  const isLocked = (section: Section) => lockedSectionIds.has(String(section.id));
+  const hasLocked = sections.some(isLocked);
+  // A year level with locked sections can only be generated section by section.
+  const wholeYearDisabled = disabled || (hasLocked && !sections.every(isLocked));
   const toggle = (id: string) =>
     onChange(
       selected.has(id)
@@ -510,7 +519,12 @@ function SectionTargetPicker({
             type="button"
             role="radio"
             aria-checked={!perSection}
-            disabled={disabled}
+            disabled={wholeYearDisabled}
+            title={
+              wholeYearDisabled && !disabled
+                ? "Some sections are under review or approved. Generate the remaining sections instead."
+                : undefined
+            }
             onClick={() => onChange(null)}
             className={modeButton(!perSection)}
           >
@@ -536,37 +550,55 @@ function SectionTargetPicker({
               Only the ticked sections are generated and replaced. The other
               sections keep their classes, and the new timetable is fitted
               around them.
+              {hasLocked &&
+                " Locked sections are under review or approved and can't be regenerated."}
             </p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {sections.map((section) => {
                 const id = String(section.id);
                 const checked = selected.has(id);
                 const scheduled = scheduledSectionIds.has(id);
+                const locked = lockedSectionIds.has(id);
                 return (
                   <label
                     key={id}
-                    className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition ${
-                      checked
-                        ? "border-[#4e0a10] bg-[#4e0a10]/5 text-[#4e0a10]"
-                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                    } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
+                    title={
+                      locked
+                        ? "Already scheduled and under review or approved. Its classes are kept."
+                        : undefined
+                    }
+                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition ${
+                      locked
+                        ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+                        : checked
+                          ? "cursor-pointer border-[#4e0a10] bg-[#4e0a10]/5 text-[#4e0a10]"
+                          : "cursor-pointer border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                    } ${disabled && !locked ? "cursor-not-allowed opacity-60" : ""}`}
                   >
+                    {locked ? (
+                      <Lock
+                        className="h-3.5 w-3.5 text-slate-400"
+                        aria-hidden
+                      />
+                    ) : null}
                     <input
                       type="checkbox"
-                      checked={checked}
-                      disabled={disabled}
+                      checked={checked && !locked}
+                      disabled={disabled || locked}
                       onChange={() => toggle(id)}
-                      className="h-3.5 w-3.5 accent-[#4e0a10]"
+                      className={locked ? "sr-only" : "h-3.5 w-3.5 accent-[#4e0a10]"}
                     />
                     {section.name}
                     <span
                       className={`rounded-full px-1.5 py-px text-[10px] font-black ${
-                        scheduled
-                          ? "bg-slate-100 text-slate-500"
-                          : "bg-emerald-50 text-emerald-700"
+                        locked
+                          ? "bg-slate-200/70 text-slate-500"
+                          : scheduled
+                            ? "bg-slate-100 text-slate-500"
+                            : "bg-emerald-50 text-emerald-700"
                       }`}
                     >
-                      {scheduled ? "Scheduled" : "New"}
+                      {locked ? "Locked" : scheduled ? "Scheduled" : "New"}
                     </span>
                   </label>
                 );
