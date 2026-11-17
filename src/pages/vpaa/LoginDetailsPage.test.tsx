@@ -7,8 +7,8 @@ vi.mock('../../lib/api', () => ({ default: { get, post: vi.fn() } }));
 
 // Leaflet needs real layout; expose the pin and its popup details as plain DOM.
 vi.mock('./activityLog/SingleLoginMap', () => ({
-  default: ({ latitude, longitude, details }: { latitude: number; longitude: number; details: [string, string][] }) => (
-    <div data-testid="single-login-map" data-lat={latitude} data-lng={longitude}>
+  default: ({ latitude, longitude, precise, details }: { latitude: number; longitude: number; precise: boolean; details: [string, string][] }) => (
+    <div data-testid="single-login-map" data-lat={latitude} data-lng={longitude} data-precise={String(precise)}>
       {details.map(([label, value]) => <span key={label}>popup {label}: {value}</span>)}
     </div>
   ),
@@ -90,20 +90,45 @@ describe('Activity Log View action', () => {
 });
 
 describe('Login details page', () => {
-  it('shows user, sign-in, device and location details with a pin', async () => {
+  it('shows user, sign-in, device and an approximate IP location pin', async () => {
     renderAt('/activity-log/logins/42');
     expect(await screen.findByRole('heading', { level: 1, name: 'Sam Secretary' })).toBeTruthy();
 
-    for (const text of ['203.0.113.7', 'Desktop', 'Windows 10/11', 'Chrome 131', 'Username and password', 'Zamboanga', 'Zamboanga Peninsula', 'Philippines', '6.91, 122.07']) {
+    for (const text of ['203.0.113.7', 'Desktop', 'Windows 10/11', 'Chrome 131', 'Username and password', 'Zamboanga, Zamboanga Peninsula, Philippines', '6.91', '122.07', 'About city level (~5 km)']) {
       expect(screen.getAllByText(text).length).toBeGreaterThan(0);
     }
     expect(screen.getAllByText('Secretary').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Successful').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Approximate network location').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Precise device location')).toBeNull();
 
     const map = screen.getByTestId('single-login-map');
     expect(map.getAttribute('data-lat')).toBe('6.91');
-    expect(within(map).getByText('popup Coordinates: 6.91, 122.07')).toBeTruthy();
-    expect(screen.getByText(/never uses device GPS/)).toBeTruthy();
+    expect(map.getAttribute('data-precise')).toBe('false');
+    expect(within(map).getByText('popup Latitude: 6.91')).toBeTruthy();
+    expect(screen.getByText(/not the user's exact physical location/)).toBeTruthy();
+
+    const larger = screen.getByRole('link', { name: /View larger map/ });
+    expect(larger.getAttribute('href')).toBe('https://www.openstreetmap.org/?mlat=6.91&mlon=122.07#map=11/6.91/122.07');
+    expect(larger.getAttribute('target')).toBe('_blank');
+  });
+
+  it('prefers a precise device fix and labels it distinctly from the IP estimate', async () => {
+    detail = login({
+      location: {
+        status: 'private', city: null, region: null, country: null, country_code: null, latitude: null, longitude: null, is_proxy: null,
+        source: 'device', device: { latitude: 6.92144, longitude: 122.07902, accuracy_m: 18, captured_at: '2026-11-14T02:00:00Z' },
+      },
+    });
+    renderAt('/activity-log/logins/42');
+
+    const map = await screen.findByTestId('single-login-map');
+    expect(map.getAttribute('data-lat')).toBe('6.92144');
+    expect(map.getAttribute('data-precise')).toBe('true');
+    expect(screen.getAllByText('Precise device location').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('± 18 m').length).toBeGreaterThan(0);
+    expect(screen.getByText('122.07902')).toBeTruthy();
+    expect(screen.queryByText('Approximate network location')).toBeNull();
   });
 
   it('explains missing locations instead of showing a pin', async () => {
@@ -113,10 +138,12 @@ describe('Login details page', () => {
     });
     renderAt('/activity-log/logins/42');
 
-    expect(await screen.findByText('Signed in from a private network')).toBeTruthy();
+    expect(await screen.findByText(/IP address belongs to a private, campus or local network/)).toBeTruthy();
+    expect(screen.getAllByText('Location unavailable').length).toBeGreaterThan(0);
     expect(screen.queryByTestId('single-login-map')).toBeNull();
+    expect(screen.queryByRole('link', { name: /View larger map/ })).toBeNull();
     expect(screen.getByText('Incorrect password')).toBeTruthy();
-    expect(screen.getAllByText('Not available')).toHaveLength(4);
+    expect(screen.getAllByText('Not available')).toHaveLength(6);
   });
 
   it('returns to the Activity Log view the VPAA came from', async () => {

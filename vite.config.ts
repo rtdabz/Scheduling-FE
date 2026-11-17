@@ -42,6 +42,9 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: 'http://127.0.0.1:8000',
           changeOrigin: true,
+          // Forward the browser's IP (X-Forwarded-For) so Laravel sees the real client when
+          // TRUSTED_PROXIES includes 127.0.0.1 — e.g. when testing through a public tunnel.
+          xfwd: true,
         },
       },
     },

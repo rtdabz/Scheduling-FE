@@ -1,12 +1,14 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import axios from 'axios';
-import { ArrowLeft, CalendarClock, Globe2, Info, MapPinOff, MonitorSmartphone, ShieldAlert, UserRound } from 'lucide-react';
+import {
+  ArrowLeft, BadgeCheck, Clock3, Crosshair, Globe2, Info, KeyRound, MapPinOff, Maximize2, MonitorSmartphone, Navigation, ShieldAlert, Target, UserRound, Wifi,
+} from 'lucide-react';
 import api from '../../lib/api';
 import Badge from '../../components/ui/Badge';
 import { formatExact, initials } from './activityLog/activityLogModel';
 import {
-  failureReason, locationLabel, LOGIN_STATUSES, loginUserName, loginUserRole, methodLabel, type LoginEntry,
+  failureReason, LOCATION_SOURCES, locationLabel, locationSource, LOGIN_STATUSES, loginUserName, loginUserRole, methodLabel, type LoginEntry,
 } from './activityLog/loginActivityModel';
 
 // Leaflet is only downloaded when a sign-in actually has coordinates to show.
@@ -14,12 +16,15 @@ const SingleLoginMap = lazy(() => import('./activityLog/SingleLoginMap'));
 
 type LoginDetailResponse = { data: LoginEntry; meta: { retention_days: number } };
 
+/** Why nothing is mapped. In every case no device location was shared; the body explains the IP side. */
 const UNAVAILABLE_COPY: Record<string, { title: string; body: string }> = {
-  private: { title: 'Signed in from a private network', body: 'The IP address belongs to an internal, campus or local network, so it cannot be placed on a public map.' },
-  unavailable: { title: 'Location could not be determined', body: 'The geolocation provider had no reliable result for this IP address, or the lookup was unavailable at sign-in time.' },
-  pending: { title: 'Location lookup in progress', body: 'The approximate location is still being resolved. Refresh in a moment.' },
+  private: { title: 'Location unavailable', body: 'No device location was shared, and the IP address belongs to a private, campus or local network, so it cannot be placed on a public map.' },
+  unavailable: { title: 'Location unavailable', body: 'No device location was shared, and the geolocation provider had no reliable result for this IP address.' },
+  pending: { title: 'Location lookup in progress', body: 'The location is still being resolved. Refresh in a moment.' },
   expired: { title: 'Location no longer retained', body: 'Location details are deleted after the retention period. The sign-in record itself is kept in the audit log.' },
 };
+
+const SOURCE_ICONS = { device: Crosshair, ip: Wifi, none: MapPinOff } as const;
 
 /** Back target: the Activity Log view the VPAA came from (tab and filters kept), else the default log. */
 const backTarget = (state: unknown) => {
@@ -27,23 +32,45 @@ const backTarget = (state: unknown) => {
   return typeof from === 'string' && from.startsWith('/activity-log') ? from : '/activity-log';
 };
 
-function Section({ title, icon, children }: { title: string; icon: ReactNode; children: ReactNode }) {
+function Card({ title, subtitle, icon, action, children, className = '', label }: {
+  title: string; subtitle?: string; icon: ReactNode; action?: ReactNode; children: ReactNode; className?: string; label?: string;
+}) {
   return (
-    <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-      <h2 className="flex items-center gap-2 border-b border-gray-100 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
-        <span aria-hidden="true" className="text-[#701522]">{icon}</span>
-        {title}
-      </h2>
-      <dl className="divide-y divide-gray-100">{children}</dl>
+    <section aria-label={label} className={`min-w-0 overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] ${className}`}>
+      <header className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-gray-100 px-4 py-3">
+        <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#5A1220]/[0.06] text-[#5A1220] ring-1 ring-inset ring-[#5A1220]/10">
+          {icon}
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-[13px] font-semibold text-gray-900">{title}</h2>
+          {subtitle && <p className="truncate text-[11px] text-gray-500">{subtitle}</p>}
+        </div>
+        {action}
+      </header>
+      {children}
     </section>
   );
 }
 
 function Field({ label, value, mono = false }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
-    <div className="grid grid-cols-[8.5rem_minmax(0,1fr)] gap-3 px-4 py-2.5 text-[13px]">
-      <dt className="text-gray-500">{label}</dt>
-      <dd className={`break-words font-medium text-gray-900 ${mono ? 'font-mono text-[12px]' : ''}`}>{value}</dd>
+    <div className="grid grid-cols-[7.5rem_minmax(0,1fr)] items-baseline gap-3 px-4 py-2.5">
+      <dt className="text-[12px] text-gray-500">{label}</dt>
+      <dd className={`min-w-0 break-words text-[13px] font-medium text-gray-900 ${mono ? 'font-mono text-[12px] tabular-nums' : ''}`}>{value}</dd>
+    </div>
+  );
+}
+
+function MetaCell({ label, value, icon, mono = false }: { label: string; value: string | null; icon: ReactNode; mono?: boolean }) {
+  return (
+    <div className="min-w-0 bg-white px-4 py-3">
+      <dt className="flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-gray-400">
+        <span aria-hidden="true" className="text-gray-400">{icon}</span>
+        {label}
+      </dt>
+      <dd className={`mt-1 truncate text-[13px] font-semibold ${value ? 'text-gray-900' : 'font-medium text-gray-400'} ${mono && value ? 'font-mono text-[12.5px] tabular-nums' : ''}`} title={value ?? undefined}>
+        {value ?? 'Not available'}
+      </dd>
     </div>
   );
 }
@@ -79,29 +106,40 @@ export default function LoginDetailsPage() {
 
   const entry = response?.data;
   const geo = entry?.location;
-  const hasPin = geo?.status === 'resolved' && geo.latitude !== null && geo.longitude !== null;
-  const coordinates = hasPin ? `${geo.latitude!.toFixed(2)}, ${geo.longitude!.toFixed(2)}` : null;
+  const source = geo ? locationSource(geo) : 'none';
+  // Device fix first; an IP estimate only when it actually resolved. Never a fabricated point.
+  const pin = source === 'device' && geo?.device
+    ? { latitude: geo.device.latitude, longitude: geo.device.longitude, digits: 5 }
+    : source === 'ip' && geo?.latitude != null && geo.longitude != null
+      ? { latitude: geo.latitude, longitude: geo.longitude, digits: 2 }
+      : null;
+  const latitude = pin ? pin.latitude.toFixed(pin.digits) : null;
+  const longitude = pin ? pin.longitude.toFixed(pin.digits) : null;
+  const accuracy = source === 'device' && geo?.device ? `± ${geo.device.accuracy_m.toLocaleString()} m` : source === 'ip' ? 'About city level (~5 km)' : null;
+  const networkLocation = geo?.status === 'resolved' ? locationLabel(geo) : null;
 
-  const popupDetails = useMemo<[string, string][]>(() => {
-    if (!geo || !hasPin) return [];
-    return ([
-      ['City', geo.city], ['Region', geo.region], ['Country', geo.country], ['Coordinates', coordinates],
-    ] as [string, string | null][]).filter((row): row is [string, string] => Boolean(row[1]));
-  }, [geo, hasPin, coordinates]);
+  const popupDetails = useMemo<[string, string][]>(() => (
+    ([
+      ['Latitude', latitude], ['Longitude', longitude], ['Accuracy', accuracy], ['Network location', networkLocation],
+    ] as [string, string | null][]).filter((row): row is [string, string] => Boolean(row[1]))
+  ), [latitude, longitude, accuracy, networkLocation]);
 
   const backLink = (
-    <Link to={back} className="inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold text-[#701522] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#701522]/30">
+    <Link to={back} className="inline-flex items-center gap-1.5 rounded-lg px-1 py-0.5 text-xs font-semibold text-gray-500 transition-colors hover:text-[#5A1220] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220]/30">
       <ArrowLeft aria-hidden="true" className="h-3.5 w-3.5" /> Back to Activity Log
     </Link>
   );
 
   if (error) {
     return (
-      <div className="space-y-4">
+      <div className="mx-auto max-w-7xl space-y-4">
         {backLink}
-        <div role="alert" className="rounded-xl border border-gray-200 bg-white p-10 text-center">
-          <p className="text-sm font-semibold text-red-700">{error.message}</p>
-          {!error.notFound && <button type="button" onClick={() => void load()} className="mt-3 text-sm font-bold text-[#701522] hover:underline">Try again</button>}
+        <div role="alert" className="rounded-2xl border border-gray-200/80 bg-white p-10 text-center shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
+          <span aria-hidden="true" className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-red-50 text-red-600 ring-1 ring-inset ring-red-600/10">
+            <ShieldAlert className="h-5 w-5" />
+          </span>
+          <p className="mt-3 text-sm font-semibold text-red-700">{error.message}</p>
+          {!error.notFound && <button type="button" onClick={() => void load()} className="mt-3 text-sm font-bold text-[#5A1220] hover:underline">Try again</button>}
         </div>
       </div>
     );
@@ -109,107 +147,153 @@ export default function LoginDetailsPage() {
 
   if (loading || !entry || !geo) {
     return (
-      <div className="space-y-4" aria-busy="true" aria-label="Loading sign-in details">
+      <div className="mx-auto max-w-7xl space-y-4" aria-busy="true" aria-label="Loading sign-in details">
         {backLink}
-        <div className="h-20 animate-pulse rounded-xl border border-gray-200 bg-white" />
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
-          <div className="h-96 animate-pulse rounded-xl border border-gray-200 bg-white" />
-          <div className="h-96 animate-pulse rounded-xl border border-gray-200 bg-white" />
+        <div className="h-24 animate-pulse rounded-2xl border border-gray-200/80 bg-white" />
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
+          <div className="space-y-4">
+            <div className="h-36 animate-pulse rounded-2xl border border-gray-200/80 bg-white" />
+            <div className="h-52 animate-pulse rounded-2xl border border-gray-200/80 bg-white" />
+            <div className="h-36 animate-pulse rounded-2xl border border-gray-200/80 bg-white" />
+          </div>
+          <div className="h-[34rem] animate-pulse rounded-2xl border border-gray-200/80 bg-white" />
         </div>
       </div>
     );
   }
 
   const status = LOGIN_STATUSES[entry.status];
+  const failed = entry.status === 'failed';
   const reason = failureReason(entry.reason);
   const fallback = UNAVAILABLE_COPY[geo.status] ?? UNAVAILABLE_COPY.unavailable;
+  const sourceInfo = LOCATION_SOURCES[source];
+  const SourceIcon = SOURCE_ICONS[source];
+  // Opens the same recorded point on openstreetmap.org; zoom mirrors the in-page precision cap.
+  const largerMapUrl = pin
+    ? `https://www.openstreetmap.org/?mlat=${pin.latitude}&mlon=${pin.longitude}#map=${source === 'device' ? 17 : 11}/${pin.latitude}/${pin.longitude}`
+    : null;
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-7xl space-y-4">
       {backLink}
 
-      <header className={`flex flex-wrap items-center gap-4 rounded-xl border border-gray-200 border-l-4 bg-white px-4 py-3.5 shadow-sm ${entry.status === 'failed' ? 'border-l-red-500' : 'border-l-[#701522]'}`}>
-        <span aria-hidden="true" className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-bold ${entry.user?.name ? 'bg-[#F5E9EA] text-[#701522]' : 'bg-gray-100 text-gray-400'}`}>
-          {entry.user?.name ? initials(entry.user.name) : '?'}
-        </span>
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-lg font-bold text-gray-900">{loginUserName(entry)}</h1>
-          <p className="text-xs text-gray-500">
-            {loginUserRole(entry)} · {entry.status === 'failed' ? 'Sign-in attempt' : 'Signed in'} {formatExact(entry.occurred_at)}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {geo.is_proxy && <Badge tone="accent" icon={<ShieldAlert className="h-3 w-3" />}>VPN or hosting network</Badge>}
-          <Badge tone={status.tone} dot>{status.label}</Badge>
+      <header className="relative overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
+        <span aria-hidden="true" className={`absolute inset-x-0 top-0 h-0.5 ${failed ? 'bg-red-500' : 'bg-gradient-to-r from-[#5A1220] via-[#5A1220] to-[#F5A623]'}`} />
+        <div className="flex flex-wrap items-center gap-4 px-5 py-4">
+          <span aria-hidden="true" className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-sm font-bold ring-4 ${entry.user?.name ? 'bg-[#5A1220] text-white ring-[#5A1220]/[0.08]' : 'bg-gray-100 text-gray-400 ring-gray-100/60'}`}>
+            {entry.user?.name ? initials(entry.user.name) : '?'}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-gray-400">Login activity</p>
+            <h1 className="truncate text-lg font-bold leading-tight text-gray-900">{loginUserName(entry)}</h1>
+            <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+              <span className="inline-flex items-center gap-1"><BadgeCheck aria-hidden="true" className="h-3.5 w-3.5 text-gray-400" />{loginUserRole(entry)}</span>
+              <span className="inline-flex items-center gap-1">
+                <Clock3 aria-hidden="true" className="h-3.5 w-3.5 text-gray-400" />
+                {failed ? 'Sign-in attempt' : 'Signed in'} {formatExact(entry.occurred_at)}
+              </span>
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {geo.is_proxy && <Badge tone="accent" icon={<ShieldAlert className="h-3 w-3" />}>VPN or hosting network</Badge>}
+            <Badge tone={status.tone} dot className="px-2.5 py-1 text-xs">{status.label}</Badge>
+          </div>
         </div>
       </header>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
-        <div className="space-y-4">
-          <Section title="User" icon={<UserRound className="h-3.5 w-3.5" />}>
-            <Field label="Full name" value={loginUserName(entry)} />
-            <Field label="Role" value={loginUserRole(entry)} />
-            {entry.user?.username && <Field label="Username" value={entry.user.username} />}
-          </Section>
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
+        <div className="min-w-0 space-y-4">
+          <Card title="User Information" subtitle="Account that signed in" icon={<UserRound className="h-4 w-4" />}>
+            <dl className="divide-y divide-gray-100">
+              <Field label="Full name" value={loginUserName(entry)} />
+              <Field label="Role" value={loginUserRole(entry)} />
+              {entry.user?.username && <Field label="Username" value={entry.user.username} mono />}
+            </dl>
+          </Card>
 
-          <Section title="Sign-in" icon={<CalendarClock className="h-3.5 w-3.5" />}>
-            <Field label="Status" value={<Badge tone={status.tone} dot>{status.label}</Badge>} />
-            {reason && <Field label="Failure reason" value={reason} />}
-            <Field label="Date and time" value={formatExact(entry.occurred_at)} />
-            <Field label="Method" value={methodLabel(entry.method)} />
-            <Field label="IP address" value={entry.ip_address ?? 'Not recorded'} mono />
-          </Section>
+          <Card title="Sign-In Details" subtitle="Authentication event" icon={<KeyRound className="h-4 w-4" />}>
+            <dl className="divide-y divide-gray-100">
+              <Field label="Status" value={<Badge tone={status.tone} dot>{status.label}</Badge>} />
+              {reason && <Field label="Failure reason" value={<span className="text-red-700">{reason}</span>} />}
+              <Field label="Date and time" value={formatExact(entry.occurred_at)} />
+              <Field label="Method" value={methodLabel(entry.method)} />
+              <Field label="IP address" value={entry.ip_address ?? 'Not recorded'} mono />
+            </dl>
+          </Card>
 
-          <Section title="Device" icon={<MonitorSmartphone className="h-3.5 w-3.5" />}>
-            <Field label="Device" value={entry.client.device} />
-            <Field label="Operating system" value={entry.client.os} />
-            <Field label="Browser" value={entry.client.browser} />
-          </Section>
+          <Card title="Device Information" subtitle="Reported by the browser" icon={<MonitorSmartphone className="h-4 w-4" />}>
+            <dl className="divide-y divide-gray-100">
+              <Field label="Device" value={entry.client.device} />
+              <Field label="Operating system" value={entry.client.os} />
+              <Field label="Browser" value={entry.client.browser} />
+            </dl>
+          </Card>
         </div>
 
-        <section aria-label="Geographical location" className="flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <h2 className="flex items-center gap-2 border-b border-gray-100 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            <Globe2 aria-hidden="true" className="h-3.5 w-3.5 text-[#701522]" />
-            Approximate location
-          </h2>
-
-          <div className="relative h-[24rem] bg-gray-50 lg:h-auto lg:min-h-[24rem] lg:flex-1">
-            {hasPin ? (
+        <Card
+          label="Geographical location"
+          title="Login Location"
+          subtitle={sourceInfo.description}
+          icon={<Globe2 className="h-4 w-4" />}
+          className="flex flex-col"
+          action={(
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={sourceInfo.tone} icon={<SourceIcon className="h-3 w-3" />}>{sourceInfo.label}</Badge>
+              {largerMapUrl && (
+                <a
+                  href={largerMapUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-gray-700 shadow-sm transition-colors hover:border-[#5A1220]/30 hover:text-[#5A1220] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220]/30"
+                >
+                  <Maximize2 aria-hidden="true" className="h-3 w-3" /> View larger map
+                  <span className="sr-only"> (opens OpenStreetMap in a new tab)</span>
+                </a>
+              )}
+            </div>
+          )}
+        >
+          <div className="relative h-[22rem] bg-gray-50 sm:h-[26rem] lg:h-[30rem]">
+            {pin ? (
               <Suspense fallback={<div className="h-full w-full animate-pulse bg-gray-100" aria-label="Loading map" />}>
-                <SingleLoginMap latitude={geo.latitude!} longitude={geo.longitude!} failed={entry.status === 'failed'} details={popupDetails} />
+                <SingleLoginMap
+                  latitude={pin.latitude}
+                  longitude={pin.longitude}
+                  failed={failed}
+                  precise={source === 'device'}
+                  accuracyM={geo.device?.accuracy_m}
+                  details={popupDetails}
+                />
               </Suspense>
             ) : (
-              <div className="flex h-full flex-col items-center justify-center px-6 py-12 text-center">
-                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white ring-1 ring-gray-200">
-                  <MapPinOff aria-hidden="true" className="h-5 w-5 text-gray-400" />
+              <div className="flex h-full flex-col items-center justify-center bg-[radial-gradient(circle_at_center,#ffffff_0%,#f9fafb_70%)] px-6 py-12 text-center">
+                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-gray-200">
+                  <MapPinOff aria-hidden="true" className="h-6 w-6 text-gray-400" />
                 </span>
-                <p className="mt-3 text-sm font-semibold text-gray-800">{fallback.title}</p>
-                <p className="mt-1 max-w-sm text-xs text-gray-500">{fallback.body}</p>
+                <p className="mt-4 text-sm font-semibold text-gray-800">{fallback.title}</p>
+                <p className="mt-1 max-w-sm text-xs leading-relaxed text-gray-500">{fallback.body}</p>
               </div>
             )}
           </div>
 
-          <dl className="grid grid-cols-2 gap-px border-t border-gray-200 bg-gray-100 sm:grid-cols-4">
-            {([
-              ['City', geo.city], ['Region', geo.region], ['Country', geo.country], ['Coordinates', coordinates],
-            ] as [string, string | null][]).map(([label, value]) => (
-              <div key={label} className="bg-white px-4 py-2.5">
-                <dt className="text-[11px] font-medium text-gray-500">{label}</dt>
-                <dd className={`mt-0.5 truncate text-[13px] font-semibold ${value ? 'text-gray-900' : 'text-gray-400'} ${label === 'Coordinates' ? 'font-mono text-[12px]' : ''}`} title={value ?? undefined}>
-                  {value ?? 'Not available'}
-                </dd>
-              </div>
-            ))}
+          <dl className="grid grid-cols-1 gap-px border-t border-gray-200 bg-gray-100 min-[420px]:grid-cols-2 md:grid-cols-3">
+            <MetaCell label="Latitude" value={latitude} mono icon={<Navigation className="h-3 w-3" />} />
+            <MetaCell label="Longitude" value={longitude} mono icon={<Navigation className="h-3 w-3 rotate-90" />} />
+            <MetaCell label="Accuracy" value={accuracy} icon={<Target className="h-3 w-3" />} />
+            <MetaCell label="Location source" value={source === 'none' ? null : sourceInfo.label} icon={<SourceIcon className="h-3 w-3" />} />
+            <MetaCell label="IP location" value={networkLocation} icon={<Wifi className="h-3 w-3" />} />
+            <MetaCell label="Device fix time" value={geo.device?.captured_at ? formatExact(geo.device.captured_at) : null} icon={<Clock3 className="h-3 w-3" />} />
           </dl>
 
-          <p className="flex items-start gap-2 border-t border-gray-100 bg-amber-50/50 px-4 py-2 text-[11px] leading-relaxed text-gray-600">
+          <p className="flex items-start gap-2.5 border-t border-gray-100 bg-[#F5A623]/[0.06] px-4 py-2.5 text-[11px] leading-relaxed text-gray-600">
             <Info aria-hidden="true" className="mt-px h-3.5 w-3.5 shrink-0 text-[#C9952A]" />
             <span>
-              {hasPin ? `${locationLabel(geo)} is an estimate from the IP address, accurate to about the city level. ` : ''}
-              VPNs, mobile data and campus networks may show the provider's location. WICARS never uses device GPS. Location details are kept for {response?.meta.retention_days ?? 90} days.
+              {source === 'device' && geo.device && `Shared by the user's browser at sign-in, accurate to about ${geo.device.accuracy_m.toLocaleString()} m. `}
+              {source === 'ip' && `${locationLabel(geo)} is an estimate from the IP address, accurate to about the city level, not the user's exact physical location. `}
+              VPNs, mobile data and campus networks may show the provider's location. Device location is recorded only when the user allows it in the browser. Location details are kept for {response?.meta.retention_days ?? 90} days.
             </span>
           </p>
-        </section>
+        </Card>
       </div>
     </div>
   );

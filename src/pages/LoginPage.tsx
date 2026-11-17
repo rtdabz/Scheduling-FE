@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, Lock, Eye, EyeOff, KeyRound } from 'lucide-react';
 import logo from '../assets/logo.jpg';
@@ -14,6 +14,10 @@ import { clearDataCache } from '../lib/dataCache';
 import { writeLastActivity } from '../lib/sessionTimeout';
 import { AxiosError } from 'axios';
 import { dashboardPathForRole, isAccountRole, roleLabel } from '../lib/roles';
+import { captureDeviceLocation, settleWithin, type DeviceLocationPayload } from '../lib/deviceLocation';
+
+/** Longest a sign-in waits for a device fix that is still pending at submit. */
+const LOCATION_WAIT_MS = 2500;
 
 interface LoginResponse {
   token: string;
@@ -34,6 +38,11 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showResetPassword, setShowResetPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  // Started when the user begins signing in, so the permission prompt appears in context, not on page load.
+  const pendingLocation = useRef<Promise<DeviceLocationPayload | null> | null>(null);
+  const startLocation = () => {
+    pendingLocation.current ??= captureDeviceLocation({ allowPrompt: true });
+  };
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
@@ -90,7 +99,11 @@ export default function LoginPage() {
     }
     const expectedGoogleState = sessionStorage.getItem('google_oauth_state');
     if (googleCode && googleState && expectedGoogleState && googleState === expectedGoogleState) {
-      api.post<LoginResponse>('/auth/google/exchange', { code: googleCode, state: googleState })
+      // Returning from Google: attach a fix only if location was already granted (no prompt here).
+      settleWithin(captureDeviceLocation({ allowPrompt: false }), LOCATION_WAIT_MS)
+        .then(deviceLocation => api.post<LoginResponse>('/auth/google/exchange', {
+          code: googleCode, state: googleState, ...(deviceLocation ? { device_location: deviceLocation } : {}),
+        }))
         .then(({ data }) => storeLogin(data))
         .catch((error: AxiosError<ApiErrorResponse>) => toast.error('Google Login Failed', error.response?.data?.message || 'The Google login request expired.'))
         .finally(() => sessionStorage.removeItem('google_oauth_state'));
@@ -105,7 +118,12 @@ export default function LoginPage() {
     if (isLoading) return;
     setIsLoading(true);
     try {
-      const res = await api.post<LoginResponse>('/login', { username: username.trim(), password });
+      startLocation();
+      const deviceLocation = await settleWithin(pendingLocation.current!, LOCATION_WAIT_MS);
+      pendingLocation.current = null; // A retry takes a fresh fix.
+      const res = await api.post<LoginResponse>('/login', {
+        username: username.trim(), password, ...(deviceLocation ? { device_location: deviceLocation } : {}),
+      });
       storeLogin(res.data);
     } catch (error) {
       const axiosError = error as AxiosError<ApiErrorResponse>;
@@ -261,7 +279,7 @@ export default function LoginPage() {
                 Back to sign in
               </button>
             </form>
-          ) : <form onSubmit={handleSubmit} className="space-y-5" style={{ animationDelay: '0.3s' }}>
+          ) : <form onSubmit={handleSubmit} onFocus={startLocation} className="space-y-5" style={{ animationDelay: '0.3s' }}>
             <div className="relative pt-1">
               <input
                 id="username"

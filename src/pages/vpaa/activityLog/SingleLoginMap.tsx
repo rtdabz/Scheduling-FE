@@ -6,6 +6,10 @@ type Props = {
   latitude: number;
   longitude: number;
   failed: boolean;
+  /** True for a browser (device) fix; false for a city-level IP estimate. */
+  precise: boolean;
+  /** Device-reported accuracy radius in metres (precise fixes only). */
+  accuracyM?: number | null;
   /** Plain-text lines shown in the pin's popup. */
   details: [string, string][];
 };
@@ -24,31 +28,42 @@ const pinIcon = (color: string) => L.divIcon({
     <circle cx="15" cy="15" r="5" fill="#fff"/></svg>`,
 });
 
+/** City-level ring for IP estimates; GPS rings use the reported accuracy. */
+const IP_RADIUS_M = 5000;
+
 /**
- * One approximate sign-in location on OpenStreetMap. A soft radius ring signals that the point
- * is a city-level estimate, and the pin opens a popup with the location details.
+ * One sign-in location on OpenStreetMap. The ring is the uncertainty: the device-reported accuracy
+ * for a precise fix (solid), or a ~5 km dashed ring for an IP estimate, whose zoom is capped so
+ * the map never implies street-level precision it does not have.
  */
-export default function SingleLoginMap({ latitude, longitude, failed, details }: Props) {
+export default function SingleLoginMap({ latitude, longitude, failed, precise, accuracyM, details }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
-    const color = failed ? '#DC2626' : '#701522';
+    const color = failed ? '#DC2626' : '#5A1220';
     const center: L.LatLngTuple = [latitude, longitude];
-    const map = L.map(containerRef.current, { scrollWheelZoom: false, minZoom: 2 }).setView(center, 10);
+    const radius = precise ? Math.max(5, accuracyM ?? 0) : IP_RADIUS_M;
+    const map = L.map(containerRef.current, { scrollWheelZoom: false, minZoom: 2, zoomControl: true }).setView(center, precise ? 16 : 10);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 13, // City-level estimate; street-level zoom would imply precision that does not exist.
+      maxZoom: precise ? 19 : 13,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors',
     }).addTo(map);
     map.on('focus', () => map.scrollWheelZoom.enable());
     map.on('blur', () => map.scrollWheelZoom.disable());
 
-    L.circle(center, { radius: 5000, color, weight: 1, fillColor: color, fillOpacity: 0.08, interactive: false }).addTo(map);
+    const ring = L.circle(center, {
+      radius, color, weight: precise ? 1.5 : 1, dashArray: precise ? undefined : '4 4', fillColor: color, fillOpacity: precise ? 0.12 : 0.06, interactive: false,
+    }).addTo(map);
+    if (precise) map.fitBounds(ring.getBounds(), { maxZoom: 17, padding: [24, 24] });
+    const label = precise ? 'Precise device location' : 'Approximate network location';
+    const note = precise ? `Reported by the device browser, accurate to about ${Math.round(radius)} m` : 'Estimated from the IP address, about city level';
     const popup = `<div style="min-width:12rem;font-size:12px;line-height:1.45">${details
       .map(([label, value]) => `<div><span style="color:#6b7280">${escapeHtml(label)}:</span> <strong>${escapeHtml(value)}</strong></div>`)
-      .join('')}<div style="margin-top:4px;color:#6b7280;font-size:11px">Approximate, based on IP address</div></div>`;
-    L.marker(center, { icon: pinIcon(color), keyboard: true, title: 'Approximate sign-in location', alt: 'Approximate sign-in location' })
-      .bindPopup(popup)
+      .join('')}<div style="margin-top:4px;color:#6b7280;font-size:11px">${escapeHtml(note)}</div></div>`;
+    const popupHtml = `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:${color};margin-bottom:2px">${label}</div>${popup}`;
+    L.marker(center, { icon: pinIcon(color), keyboard: true, title: label, alt: label })
+      .bindPopup(popupHtml)
       .addTo(map);
 
     const resize = new ResizeObserver(() => map.invalidateSize());
@@ -57,7 +72,7 @@ export default function SingleLoginMap({ latitude, longitude, failed, details }:
       resize.disconnect();
       map.remove();
     };
-  }, [latitude, longitude, failed, details]);
+  }, [latitude, longitude, failed, precise, accuracyM, details]);
 
-  return <div ref={containerRef} className="h-full w-full" role="region" aria-label="Map of the approximate sign-in location" />;
+  return <div ref={containerRef} className="h-full w-full" role="region" aria-label={precise ? 'Map of the device sign-in location' : 'Map of the approximate sign-in location'} />;
 }

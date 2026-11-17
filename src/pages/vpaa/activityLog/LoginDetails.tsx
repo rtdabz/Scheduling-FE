@@ -2,15 +2,20 @@ import { Link, useLocation } from 'react-router-dom';
 import { Eye, ShieldAlert } from 'lucide-react';
 import Badge from '../../../components/ui/Badge';
 import { formatDateTime, initials } from './activityLogModel';
-import { failureReason, locationLabel, loginDetailsPath, LOGIN_STATUSES, loginUserName, loginUserRole, methodLabel, type LoginEntry } from './loginActivityModel';
+import { failureReason, LOCATION_SOURCES, locationLabel, locationSource, loginDetailsPath, LOGIN_STATUSES, loginUserName, loginUserRole, methodLabel, type LoginEntry } from './loginActivityModel';
 
 /** Everything recorded about one sign-in attempt, used in the map side panel. */
 export default function LoginDetails({ entry }: { entry: LoginEntry }) {
   const location = useLocation();
   const status = LOGIN_STATUSES[entry.status];
   const reason = failureReason(entry.reason);
+  const source = locationSource(entry.location);
   const rows: [string, string][] = [
-    ['Location', locationLabel(entry.location)],
+    ['Location source', LOCATION_SOURCES[source].label],
+    ...(source === 'device' && entry.location.device
+      ? [['Accuracy', `± ${entry.location.device.accuracy_m.toLocaleString()} m`] as [string, string]]
+      : []),
+    ['Network location', locationLabel(entry.location)],
     ['IP address', entry.ip_address ?? 'Not recorded'],
     ['Device', `${entry.client.device} · ${entry.client.os}`],
     ['Browser', entry.client.browser],

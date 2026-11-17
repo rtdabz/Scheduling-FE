@@ -16,8 +16,9 @@ type Props = {
 };
 
 /**
- * OpenStreetMap + Leaflet map with one circle pin per approximate location. Circle markers avoid
- * Leaflet's bundled marker images, and pin size grows with the number of sign-ins there.
+ * OpenStreetMap + Leaflet map with one circle pin per location. Circle markers avoid Leaflet's
+ * bundled marker images, and pin size grows with the number of sign-ins there. Device fixes have a
+ * solid outline; IP estimates a dashed one, so an estimate never reads as an exact position.
  */
 export default function LoginMap({ groups, selectedKey, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -30,7 +31,7 @@ export default function LoginMap({ groups, selectedKey, onSelect }: Props) {
     if (!containerRef.current) return;
     const map = L.map(containerRef.current, { worldCopyJump: true, minZoom: 2, scrollWheelZoom: false }).setView(PHILIPPINES, 5);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 12, // City-level data; deeper zoom would suggest precision that does not exist.
+      maxZoom: 15, // Pins are rounded to ~1 km; exact device points are only on the Details page.
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors',
     }).addTo(map);
     map.on('focus', () => map.scrollWheelZoom.enable());
@@ -63,15 +64,17 @@ export default function LoginMap({ groups, selectedKey, onSelect }: Props) {
       const selected = group.key === selectedKey;
       const color = pinColor(group);
       const count = group.entries.length;
+      const device = group.source === 'device';
       L.circleMarker([group.latitude, group.longitude], {
         radius: Math.min(20, 7 + Math.sqrt(count) * 2.2),
-        color: selected ? '#111827' : '#ffffff',
+        color: selected ? '#111827' : device ? '#ffffff' : color,
         weight: selected ? 3 : 2,
+        dashArray: device || selected ? undefined : '3 3',
         fillColor: color,
-        fillOpacity: selected ? 0.95 : 0.8,
+        fillOpacity: selected ? 0.95 : device ? 0.85 : 0.45,
         bubblingMouseEvents: false,
       })
-        .bindTooltip(`<strong>${escapeHtml(group.label)}</strong><br>${count} sign-in${count === 1 ? '' : 's'}${group.failed ? ` · ${group.failed} failed` : ''}`, { direction: 'top', offset: [0, -6] })
+        .bindTooltip(`<strong>${escapeHtml(group.label)}</strong><br>${device ? 'Precise device location' : 'Approximate network location'}<br>${count} sign-in${count === 1 ? '' : 's'}${group.failed ? ` · ${group.failed} failed` : ''}`, { direction: 'top', offset: [0, -6] })
         .on('click', () => onSelectRef.current(group.key))
         .addTo(layer);
     }
@@ -79,11 +82,17 @@ export default function LoginMap({ groups, selectedKey, onSelect }: Props) {
 
   return (
     <div className="relative h-full min-h-[22rem]">
-      <div ref={containerRef} className="absolute inset-0 z-0" role="region" aria-label="Map of approximate sign-in locations" />
+      <div ref={containerRef} className="absolute inset-0 z-0" role="region" aria-label="Map of sign-in locations" />
       <div className="pointer-events-none absolute bottom-2 left-2 z-[400] flex flex-wrap gap-x-3 gap-y-1 rounded-lg bg-white/90 px-2.5 py-1.5 text-[11px] font-medium text-gray-600 shadow-sm ring-1 ring-gray-200">
         <Legend color={COLORS.ok} label="Successful" />
         <Legend color={COLORS.mixed} label="Mixed" />
         <Legend color={COLORS.failed} label="Failed only" />
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-gray-500 ring-2 ring-white" /> Device
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full border border-dashed border-gray-500 bg-gray-500/40" /> Network estimate
+        </span>
       </div>
     </div>
   );

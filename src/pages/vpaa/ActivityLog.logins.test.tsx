@@ -80,7 +80,7 @@ describe('Activity Log tabs', () => {
     for (const text of ['Secretary', 'Successful', '203.0.113.7', 'Desktop · Windows 10/11', 'Chrome 131', 'Zamboanga, Zamboanga Peninsula, Philippines']) {
       expect(within(card).getByText(text)).toBeTruthy();
     }
-    expect(screen.getByText(/does not use device GPS/)).toBeTruthy();
+    expect(screen.getByText(/dashed pins are estimated from the IP address/)).toBeTruthy();
   });
 
   it('applies date, user, role and status filters to the login endpoints', async () => {
@@ -116,6 +116,16 @@ describe('Activity Log tabs', () => {
 });
 
 describe('login location model', () => {
+  it('pins device fixes separately from IP estimates and skips sign-ins with neither', () => {
+    const device = entry({ id: 9, location: { ...failed.location, source: 'device', device: { latitude: 6.92144, longitude: 122.07902, accuracy_m: 18, captured_at: null } } });
+    const groups = groupByLocation([entry(), device, failed]);
+    expect(groups.map(group => group.source).sort()).toEqual(['device', 'ip']);
+    const pin = groups.find(group => group.source === 'device')!;
+    // Rounded to ~1 km on the overview; the exact point stays on the Details page.
+    expect([pin.latitude, pin.longitude]).toEqual([6.92, 122.08]);
+    expect(pin.label).toBe('Device location near 6.92, 122.08');
+  });
+
   it('groups logins by coordinate and counts failures', () => {
     const groups = groupByLocation([entry(), entry({ id: 3, status: 'failed' }), failed]);
     expect(groups).toHaveLength(1);

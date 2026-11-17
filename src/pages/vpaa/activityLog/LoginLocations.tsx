@@ -5,7 +5,7 @@ import api from '../../../lib/api';
 import LoginDetails from './LoginDetails';
 import LoginFiltersForm from './LoginFiltersForm';
 import LoginMap from './LoginMap';
-import { groupByLocation, loginParams, type LoginFilters, type LoginLocationsResponse } from './loginActivityModel';
+import { groupByLocation, LOCATION_SOURCES, loginParams, type LoginFilters, type LoginLocationsResponse } from './loginActivityModel';
 import { SECONDARY_BUTTON } from './styles';
 
 const numberFormat = new Intl.NumberFormat('en-PH');
@@ -104,7 +104,7 @@ export default function LoginLocations({ filters, onFiltersChange }: Props) {
                   </button>
                   <h3 className="text-sm font-semibold text-gray-900">{selected.label}</h3>
                   <p className="text-[11px] text-gray-500">
-                    {selected.entries.length} sign-in{selected.entries.length === 1 ? '' : 's'}{selected.failed ? ` · ${selected.failed} failed` : ''} · approximate
+                    {selected.entries.length} sign-in{selected.entries.length === 1 ? '' : 's'}{selected.failed ? ` · ${selected.failed} failed` : ''} · {LOCATION_SOURCES[selected.source].label.toLowerCase()}
                   </p>
                 </div>
                 <div className="flex-1 space-y-2 overflow-y-auto bg-gray-50/60 p-3">
@@ -125,7 +125,7 @@ export default function LoginLocations({ filters, onFiltersChange }: Props) {
                     <li className="px-4 py-10 text-center">
                       <MapPin className="mx-auto h-8 w-8 text-gray-300" />
                       <p className="mt-2 text-xs font-semibold text-gray-800">No located sign-ins</p>
-                      <p className="mt-1 text-[11px] text-gray-500">Sign-ins from private networks, or where the lookup failed, are listed in Login History.</p>
+                      <p className="mt-1 text-[11px] text-gray-500">Sign-ins without a shared device location from private networks, or where the IP lookup failed, are listed in Login History.</p>
                     </li>
                   )}
                   {groups.map(group => (
@@ -135,7 +135,7 @@ export default function LoginLocations({ filters, onFiltersChange }: Props) {
                         <MapPin aria-hidden="true" className={`h-4 w-4 shrink-0 ${group.failed === group.entries.length ? 'text-red-600' : group.failed ? 'text-amber-600' : 'text-[#701522]'}`} />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-xs font-semibold text-gray-900">{group.label}</span>
-                          <span className="block text-[11px] text-gray-500">{group.failed ? `${group.failed} failed` : 'All successful'}</span>
+                          <span className="block text-[11px] text-gray-500">{group.source === 'device' ? 'Device' : 'Network estimate'} · {group.failed ? `${group.failed} failed` : 'All successful'}</span>
                         </span>
                         <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-gray-700">{group.entries.length}</span>
                       </button>
@@ -151,8 +151,8 @@ export default function LoginLocations({ filters, onFiltersChange }: Props) {
       <p className="flex items-start gap-2 rounded-lg border border-sky-100 bg-sky-50/60 px-3 py-2 text-[11px] leading-relaxed text-sky-900">
         <Info aria-hidden="true" className="mt-px h-3.5 w-3.5 shrink-0" />
         <span>
-          Locations are estimated from the sign-in IP address and are accurate to about the city level. Mobile data, VPNs and campus networks can place a pin at the provider's location instead.
-          WICARS does not use device GPS. Location details are deleted after {meta?.retention_days ?? 90} days; the sign-in record itself stays in the audit log.
+          Solid pins are device locations the user allowed their browser to share; dashed pins are estimated from the IP address and are only accurate to about the city level. Mobile data, VPNs and campus networks can place an estimate at the provider's location.
+          Pins are grouped to about 1 km here; open a sign-in for its exact point. Location details are deleted after {meta?.retention_days ?? 90} days; the sign-in record itself stays in the audit log.
         </span>
       </p>
     </div>

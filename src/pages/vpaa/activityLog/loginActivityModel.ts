@@ -3,6 +3,9 @@ import { roleLabel } from '../../../lib/roles';
 
 export type LoginLocationStatus = 'resolved' | 'private' | 'unavailable' | 'pending' | 'expired';
 
+/** device = browser Geolocation fix; ip = city-level network estimate; none = nothing to map. */
+export type LoginLocationSource = 'device' | 'ip' | 'none';
+
 export type LoginEntry = {
   id: number;
   status: 'succeeded' | 'failed';
@@ -21,6 +24,9 @@ export type LoginEntry = {
     latitude: number | null;
     longitude: number | null;
     is_proxy: boolean | null;
+    /** Optional on older API responses; treat a missing value as derived from `status`. */
+    source?: LoginLocationSource;
+    device?: { latitude: number; longitude: number; accuracy_m: number; captured_at: string | null } | null;
   };
 };
 
@@ -98,8 +104,20 @@ export const locationLabel = (location: LoginEntry['location']) => {
   return location.status === 'resolved' && parts.length ? parts.join(', ') : LOCATION_FALLBACK[location.status];
 };
 
+export const LOCATION_SOURCES: Record<LoginLocationSource, { label: string; description: string; tone: BadgeTone }> = {
+  device: { label: 'Precise device location', description: "Reported by the browser with the user's permission", tone: 'success' },
+  ip: { label: 'Approximate network location', description: 'Estimated from the IP address, about city level', tone: 'warning' },
+  none: { label: 'Location unavailable', description: 'No device or network location was available', tone: 'neutral' },
+};
+
+export const locationSource = (location: LoginEntry['location']): LoginLocationSource =>
+  location.source ?? (location.device ? 'device'
+    : location.status === 'resolved' && location.latitude !== null && location.longitude !== null ? 'ip' : 'none');
+
 export type LocationGroup = {
   key: string;
+  /** device = browser fix; ip = city-level network estimate. Never mixed within one pin. */
+  source: Exclude<LoginLocationSource, 'none'>;
   latitude: number;
   longitude: number;
   label: string;
@@ -107,14 +125,30 @@ export type LocationGroup = {
   failed: number;
 };
 
-/** One map pin per rounded coordinate; logins are kept newest first within a pin. */
+/** Coordinates to pin for a sign-in: the device fix when present, else a resolved IP estimate. */
+export const mappedPoint = (location: LoginEntry['location']) => {
+  const source = locationSource(location);
+  if (source === 'device' && location.device) return { source, latitude: location.device.latitude, longitude: location.device.longitude } as const;
+  if (source === 'ip' && location.latitude !== null && location.longitude !== null) return { source, latitude: location.latitude, longitude: location.longitude } as const;
+  return null;
+};
+
+/**
+ * One map pin per source and rounded coordinate (~1 km), so the overview stays neighbourhood-level
+ * even for device fixes; the exact point is on each sign-in's Details page. Newest first within a pin.
+ */
 export const groupByLocation = (entries: LoginEntry[]): LocationGroup[] => {
   const groups = new Map<string, LocationGroup>();
   for (const entry of entries) {
-    const { latitude, longitude } = entry.location;
-    if (entry.location.status !== 'resolved' || latitude === null || longitude === null) continue;
-    const key = `${latitude.toFixed(2)},${longitude.toFixed(2)}`;
-    const group = groups.get(key) ?? { key, latitude, longitude, label: locationLabel(entry.location), entries: [], failed: 0 };
+    const point = mappedPoint(entry.location);
+    if (!point) continue;
+    const latitude = Number(point.latitude.toFixed(2));
+    const longitude = Number(point.longitude.toFixed(2));
+    const key = `${point.source}:${latitude.toFixed(2)},${longitude.toFixed(2)}`;
+    const label = point.source === 'device'
+      ? `Device location near ${latitude.toFixed(2)}, ${longitude.toFixed(2)}`
+      : locationLabel(entry.location);
+    const group = groups.get(key) ?? { key, source: point.source, latitude, longitude, label, entries: [], failed: 0 };
     group.entries.push(entry);
     if (entry.status === 'failed') group.failed += 1;
     groups.set(key, group);
