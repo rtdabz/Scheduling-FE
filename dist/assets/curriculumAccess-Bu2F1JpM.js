@@ -1,0 +1,1 @@
+import{dt as e,mt as t}from"./index-numAeWkt.js";function n(n){let r=e();return!r||!n||!t(`curriculum.manage`)||r.role!==`vpaa`&&r.department_id!=null&&r.department_id!==n.department_id?!1:r.role!==`program_head`||r.program_id!=null&&r.program_id===n.program_id}export{n as t};
