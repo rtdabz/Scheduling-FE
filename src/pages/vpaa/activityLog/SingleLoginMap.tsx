@@ -74,5 +74,5 @@ export default function SingleLoginMap({ latitude, longitude, failed, precise, a
     };
   }, [latitude, longitude, failed, precise, accuracyM, details]);
 
-  return <div ref={containerRef} className="h-full w-full" role="region" aria-label={precise ? 'Map of the device sign-in location' : 'Map of the approximate sign-in location'} />;
+  return <div ref={containerRef} className="relative z-0 isolate h-full w-full" role="region" aria-label={precise ? 'Map of the device sign-in location' : 'Map of the approximate sign-in location'} />;
 }
