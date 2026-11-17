@@ -1,0 +1,1 @@
+import{t as e}from"./SectionTimetables-DjvQNevk.js";export{e as default};
