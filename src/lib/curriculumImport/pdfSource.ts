@@ -14,7 +14,8 @@ const loadPdfJs = (): Promise<PdfJs> => {
     import('pdfjs-dist'),
     import('pdfjs-dist/build/pdf.worker.min.mjs?url'),
   ]).then(([pdfjs, worker]) => {
-    pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
+    // ?v= busts browser copies cached (immutable, 1 year) while the server sent .mjs as text/plain.
+    pdfjs.GlobalWorkerOptions.workerSrc = `${worker.default}?v=2`;
     return pdfjs;
   });
   return pdfjsPromise;
