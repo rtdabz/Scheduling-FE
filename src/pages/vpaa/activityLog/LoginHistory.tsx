@@ -11,7 +11,7 @@ import { useDataTable } from '../../../components/ui/useDataTable';
 import { formatDay, formatTime } from './activityLogModel';
 import LoginFiltersForm from './LoginFiltersForm';
 import {
-  failureReason, locationLabel, LOGIN_STATUSES, loginDetailsPath, loginParams, loginUserName, loginUserRole,
+  deviceLocationLabel, displayLocationLabel, failureReason, LOGIN_STATUSES, loginDetailsPath, loginParams, loginUserName, loginUserRole,
   type LoginEntry, type LoginFilters, type LoginHistoryResponse,
 } from './loginActivityModel';
 import { SECONDARY_BUTTON } from './styles';
@@ -94,8 +94,8 @@ export default function LoginHistory({ filters, onFiltersChange }: Props) {
         const { location, ip_address } = row.original;
         return (
           <div className="min-w-[10rem]">
-            <p className={`flex items-center gap-1 text-xs ${location.status === 'resolved' ? 'font-medium text-gray-800' : 'text-gray-500'}`}>
-              {locationLabel(location)}
+            <p className={`flex items-center gap-1 text-xs ${location.status === 'resolved' || deviceLocationLabel(location) ? 'font-medium text-gray-800' : 'text-gray-500'}`}>
+              {displayLocationLabel(location)}
               {location.is_proxy && <ShieldAlert aria-label="VPN, proxy or hosting network" className="h-3.5 w-3.5 text-amber-600" />}
             </p>
             <p className="font-mono text-[11px] text-gray-500">{ip_address ?? 'IP not recorded'}</p>

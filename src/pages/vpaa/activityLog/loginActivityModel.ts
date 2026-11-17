@@ -26,7 +26,11 @@ export type LoginEntry = {
     is_proxy: boolean | null;
     /** Optional on older API responses; treat a missing value as derived from `status`. */
     source?: LoginLocationSource;
-    device?: { latitude: number; longitude: number; accuracy_m: number; captured_at: string | null } | null;
+    device?: {
+      latitude: number; longitude: number; accuracy_m: number; captured_at: string | null;
+      /** Place named from the device fix; null until reverse geocoding succeeds (absent on older API responses). */
+      city?: string | null; region?: string | null; country?: string | null;
+    } | null;
   };
 };
 
@@ -104,6 +108,18 @@ export const locationLabel = (location: LoginEntry['location']) => {
   return location.status === 'resolved' && parts.length ? parts.join(', ') : LOCATION_FALLBACK[location.status];
 };
 
+/** Place named from the device (GPS) fix, e.g. "Cagayan de Oro, Northern Mindanao, Philippines", or null. */
+export const deviceLocationLabel = (location: LoginEntry['location']) => {
+  const device = location.device;
+  if (!device) return null;
+  const parts = [device.city, device.region, device.country].filter((part, index, all): part is string =>
+    Boolean(part) && all.indexOf(part) === index);
+  return parts.length ? parts.join(', ') : null;
+};
+
+/** Where the user signed in from: the named device place when known, else the IP (ISP network) estimate. */
+export const displayLocationLabel = (location: LoginEntry['location']) => deviceLocationLabel(location) ?? locationLabel(location);
+
 export const LOCATION_SOURCES: Record<LoginLocationSource, { label: string; description: string; tone: BadgeTone }> = {
   device: { label: 'Precise device location', description: "Reported by the browser with the user's permission", tone: 'success' },
   ip: { label: 'Approximate network location', description: 'Estimated from the IP address, about city level', tone: 'warning' },
@@ -146,7 +162,7 @@ export const groupByLocation = (entries: LoginEntry[]): LocationGroup[] => {
     const longitude = Number(point.longitude.toFixed(2));
     const key = `${point.source}:${latitude.toFixed(2)},${longitude.toFixed(2)}`;
     const label = point.source === 'device'
-      ? `Device location near ${latitude.toFixed(2)}, ${longitude.toFixed(2)}`
+      ? deviceLocationLabel(entry.location) ?? `Device location near ${latitude.toFixed(2)}, ${longitude.toFixed(2)}`
       : locationLabel(entry.location);
     const group = groups.get(key) ?? { key, source: point.source, latitude, longitude, label, entries: [], failed: 0 };
     group.entries.push(entry);

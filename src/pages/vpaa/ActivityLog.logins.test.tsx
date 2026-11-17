@@ -17,7 +17,7 @@ vi.mock('./activityLog/LoginMap', () => ({
 import { MemoryRouter } from 'react-router-dom';
 import ActivityLog from './ActivityLog';
 import { clearDataCache } from '../../lib/dataCache';
-import { groupByLocation, locationLabel, type LoginEntry } from './activityLog/loginActivityModel';
+import { deviceLocationLabel, displayLocationLabel, groupByLocation, locationLabel, type LoginEntry } from './activityLog/loginActivityModel';
 
 const entry = (overrides: Partial<LoginEntry> = {}): LoginEntry => ({
   id: 1,
@@ -137,5 +137,17 @@ describe('login location model', () => {
     const singapore = entry().location;
     expect(locationLabel({ ...singapore, city: 'Singapore', region: 'Singapore', country: 'Singapore' })).toBe('Singapore');
     expect(locationLabel({ ...singapore, status: 'expired' })).toBe('Location no longer retained');
+  });
+
+  it('names the device place ahead of the ISP network city when reverse geocoding succeeded', () => {
+    const ispCity = { ...entry().location, city: 'Davao City', region: 'Davao Region', country: 'Philippines' };
+    const fix = { latitude: 8.4542, longitude: 124.6319, accuracy_m: 25, captured_at: null };
+    const named = { ...ispCity, source: 'device' as const, device: { ...fix, city: 'Cagayan de Oro', region: 'Northern Mindanao', country: 'Philippines' } };
+
+    expect(deviceLocationLabel(named)).toBe('Cagayan de Oro, Northern Mindanao, Philippines');
+    expect(displayLocationLabel(named)).toBe('Cagayan de Oro, Northern Mindanao, Philippines');
+    expect(groupByLocation([entry({ location: named })])[0].label).toBe('Cagayan de Oro, Northern Mindanao, Philippines');
+    // Unnamed device fix (older rows, lookup failed): fall back to the ISP estimate.
+    expect(displayLocationLabel({ ...named, device: fix })).toBe('Davao City, Davao Region, Philippines');
   });
 });

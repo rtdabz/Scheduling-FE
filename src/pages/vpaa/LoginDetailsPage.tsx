@@ -8,7 +8,7 @@ import api from '../../lib/api';
 import Badge from '../../components/ui/Badge';
 import { formatExact, initials } from './activityLog/activityLogModel';
 import {
-  failureReason, LOCATION_SOURCES, locationLabel, locationSource, LOGIN_STATUSES, loginUserName, loginUserRole, methodLabel, type LoginEntry,
+  deviceLocationLabel, failureReason, LOCATION_SOURCES, locationLabel, locationSource, LOGIN_STATUSES, loginUserName, loginUserRole, methodLabel, type LoginEntry,
 } from './activityLog/loginActivityModel';
 
 // Leaflet is only downloaded when a sign-in actually has coordinates to show.
@@ -61,9 +61,9 @@ function Field({ label, value, mono = false }: { label: string; value: ReactNode
   );
 }
 
-function MetaCell({ label, value, icon, mono = false }: { label: string; value: string | null; icon: ReactNode; mono?: boolean }) {
+function MetaCell({ label, value, icon, mono = false, className = '' }: { label: string; value: string | null; icon: ReactNode; mono?: boolean; className?: string }) {
   return (
-    <div className="min-w-0 bg-white px-4 py-3">
+    <div className={`min-w-0 bg-white px-4 py-3 ${className}`}>
       <dt className="flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-gray-400">
         <span aria-hidden="true" className="text-gray-400">{icon}</span>
         {label}
@@ -117,12 +117,13 @@ export default function LoginDetailsPage() {
   const longitude = pin ? pin.longitude.toFixed(pin.digits) : null;
   const accuracy = source === 'device' && geo?.device ? `± ${geo.device.accuracy_m.toLocaleString()} m` : source === 'ip' ? 'About city level (~5 km)' : null;
   const networkLocation = geo?.status === 'resolved' ? locationLabel(geo) : null;
+  const devicePlace = geo ? deviceLocationLabel(geo) : null;
 
   const popupDetails = useMemo<[string, string][]>(() => (
     ([
-      ['Latitude', latitude], ['Longitude', longitude], ['Accuracy', accuracy], ['Network location', networkLocation],
+      ['Device location', devicePlace], ['Latitude', latitude], ['Longitude', longitude], ['Accuracy', accuracy], ['ISP network location', networkLocation],
     ] as [string, string | null][]).filter((row): row is [string, string] => Boolean(row[1]))
-  ), [latitude, longitude, accuracy, networkLocation]);
+  ), [devicePlace, latitude, longitude, accuracy, networkLocation]);
 
   const backLink = (
     <Link to={back} className="inline-flex items-center gap-1.5 rounded-lg px-1 py-0.5 text-xs font-semibold text-gray-500 transition-colors hover:text-[#5A1220] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220]/30">
@@ -277,11 +278,12 @@ export default function LoginDetailsPage() {
           </div>
 
           <dl className="grid grid-cols-1 gap-px border-t border-gray-200 bg-gray-100 min-[420px]:grid-cols-2 md:grid-cols-3">
+            {source === 'device' && <MetaCell label="Device location" value={devicePlace ?? 'Place name not yet resolved'} icon={<Crosshair className="h-3 w-3" />} className="col-span-full" />}
             <MetaCell label="Latitude" value={latitude} mono icon={<Navigation className="h-3 w-3" />} />
             <MetaCell label="Longitude" value={longitude} mono icon={<Navigation className="h-3 w-3 rotate-90" />} />
             <MetaCell label="Accuracy" value={accuracy} icon={<Target className="h-3 w-3" />} />
             <MetaCell label="Location source" value={source === 'none' ? null : sourceInfo.label} icon={<SourceIcon className="h-3 w-3" />} />
-            <MetaCell label="IP location" value={networkLocation} icon={<Wifi className="h-3 w-3" />} />
+            <MetaCell label="ISP network location" value={networkLocation} icon={<Wifi className="h-3 w-3" />} />
             <MetaCell label="Device fix time" value={geo.device?.captured_at ? formatExact(geo.device.captured_at) : null} icon={<Clock3 className="h-3 w-3" />} />
           </dl>
 
@@ -290,7 +292,7 @@ export default function LoginDetailsPage() {
             <span>
               {source === 'device' && geo.device && `Shared by the user's browser at sign-in, accurate to about ${geo.device.accuracy_m.toLocaleString()} m. `}
               {source === 'ip' && `${locationLabel(geo)} is an estimate from the IP address, accurate to about the city level, not the user's exact physical location. `}
-              VPNs, mobile data and campus networks may show the provider's location. Device location is recorded only when the user allows it in the browser. Location details are kept for {response?.meta.retention_days ?? 90} days.
+              The ISP network location is where the internet provider routes traffic: on mobile data it is often the carrier's hub city, not where the user is. VPNs and campus networks can do the same. Device location is recorded only when the user allows it in the browser. Location details are kept for {response?.meta.retention_days ?? 90} days.
             </span>
           </p>
         </Card>

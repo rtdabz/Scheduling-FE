@@ -102,7 +102,7 @@ describe('Login details page', () => {
     expect(screen.getAllByText('Approximate network location').length).toBeGreaterThan(0);
     expect(screen.queryByText('Precise device location')).toBeNull();
 
-    const map = screen.getByTestId('single-login-map');
+    const map = await screen.findByTestId('single-login-map'); // lazy-loaded chunk
     expect(map.getAttribute('data-lat')).toBe('6.91');
     expect(map.getAttribute('data-precise')).toBe('false');
     expect(within(map).getByText('popup Latitude: 6.91')).toBeTruthy();
