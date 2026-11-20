@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { CheckCircle2, Eye, EyeOff, KeyRound, Loader2, Mail, ShieldCheck } from 'lucide-react';
+import { AlertCircle, Check, CheckCircle2, Eye, EyeOff, KeyRound, Loader2, Lock, Mail, MonitorSmartphone } from 'lucide-react';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
 import { useToast } from '../../context/ToastContext';
@@ -14,6 +14,8 @@ const inputClass = 'h-9 w-full rounded-lg border border-[#E2D9D0] bg-white px-3 
 const cardClass = 'rounded-xl border border-[#E2D9D0] bg-white';
 
 type FieldErrors = Record<string, string>;
+
+const RECOVERY_EMAIL_INPUT_ID = 'vpaa-recovery-email';
 
 const fieldErrorsOf = (err: unknown): FieldErrors => {
   const errors = (err as { response?: { data?: { errors?: Record<string, string[]> } } }).response?.data?.errors;
@@ -95,7 +97,7 @@ function RecoveryEmailCard({ email, onVerified }: { email?: string | null; onVer
         ? <form onSubmit={sendCode} className="flex flex-col gap-2 sm:flex-row sm:items-start">
           <label className="block flex-1">
             <span className="sr-only">{email ? 'New Gmail address' : 'Gmail address'}</span>
-            <input type="email" autoComplete="email" required maxLength={255} value={address} onChange={(e) => { setAddress(e.target.value); setErrors({}); }} placeholder={email ? 'Change to another Gmail address' : 'name@gmail.com'} aria-invalid={Boolean(errors.email)} aria-describedby={errors.email ? 'recovery-email-error' : undefined} className={inputClass} disabled={busy} />
+            <input id={RECOVERY_EMAIL_INPUT_ID} type="email" autoComplete="email" required maxLength={255} value={address} onChange={(e) => { setAddress(e.target.value); setErrors({}); }} placeholder={email ? 'Change to another Gmail address' : 'name@gmail.com'} aria-invalid={Boolean(errors.email)} aria-describedby={errors.email ? 'recovery-email-error' : undefined} className={inputClass} disabled={busy} />
             <ErrorText id="recovery-email-error" message={errors.email} />
           </label>
           <ModalButton type="submit" variant="primary" disabled={busy || !address.trim()}>
@@ -124,29 +126,126 @@ function RecoveryEmailCard({ email, onVerified }: { email?: string | null; onVer
 interface PasswordForm { current_password: string; password: string; password_confirmation: string }
 const EMPTY_PASSWORD_FORM: PasswordForm = { current_password: '', password: '', password_confirmation: '' };
 
-function ChangePasswordCard() {
+/** Mirrors the server rule: Password::min(10)->letters()->mixedCase()->numbers(). */
+const PASSWORD_REQUIREMENTS: Array<{ label: string; test: (value: string) => boolean }> = [
+  { label: 'At least 10 characters', test: (v) => v.length >= 10 },
+  { label: 'One uppercase letter', test: (v) => /\p{Lu}/u.test(v) },
+  { label: 'One lowercase letter', test: (v) => /\p{Ll}/u.test(v) },
+  { label: 'One number', test: (v) => /\d/.test(v) },
+];
+
+const passwordInputClass = (invalid: boolean) => `h-10 w-full rounded-lg border bg-white pl-3 pr-11 text-sm text-[#1A1410] shadow-sm shadow-black/[0.02] outline-none transition placeholder:text-[#B5ABA4] focus:ring-4 disabled:cursor-not-allowed disabled:bg-[#F7F4F0] disabled:text-[#7A6E67] ${invalid
+  ? 'border-red-400 focus:border-red-500 focus:ring-red-500/15'
+  : 'border-[#E2D9D0] hover:border-[#D3C6BA] focus:border-[#4e0a10]/50 focus:ring-[#C9952A]/20'}`;
+
+interface PasswordFieldProps {
+  id: keyof PasswordForm;
+  label: string;
+  value: string;
+  autoComplete: string;
+  disabled: boolean;
+  error?: string;
+  describedBy?: string;
+  onChange: (value: string) => void;
+  children?: React.ReactNode;
+}
+
+function PasswordField({ id, label, value, autoComplete, disabled, error, describedBy, onChange, children }: PasswordFieldProps) {
+  const [visible, setVisible] = useState(false);
+  const inputId = `vpaa-${id}`;
+  const errorId = `${inputId}-error`;
+  const described = [error ? errorId : null, describedBy].filter(Boolean).join(' ') || undefined;
+
+  return <div className="min-w-0">
+    <label htmlFor={inputId} className="mb-1.5 block text-[13px] font-semibold text-[#1A1410]">{label}</label>
+    <div className="relative">
+      <input
+        id={inputId}
+        type={visible ? 'text' : 'password'}
+        autoComplete={autoComplete}
+        spellCheck={false}
+        required
+        maxLength={255}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        aria-invalid={Boolean(error)}
+        aria-describedby={described}
+        className={passwordInputClass(Boolean(error))}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        disabled={disabled}
+        aria-label={visible ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+        aria-controls={inputId}
+        aria-pressed={visible}
+        title={visible ? 'Hide' : 'Show'}
+        className="absolute inset-y-0 right-1 my-auto flex h-8 w-8 items-center justify-center rounded-md text-[#7A6E67] transition hover:bg-[#F7F4F0] hover:text-[#4e0a10] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A] disabled:pointer-events-none disabled:opacity-40"
+      >
+        {visible ? <EyeOff size={16} /> : <Eye size={16} />}
+      </button>
+    </div>
+    {error && <p id={errorId} role="alert" className="mt-1.5 flex items-start gap-1.5 text-xs font-medium text-red-600"><AlertCircle size={13} className="mt-px shrink-0" /> {error}</p>}
+    {children}
+  </div>;
+}
+
+function RequirementList({ id, password }: { id: string; password: string }) {
+  return <ul id={id} aria-label="Password requirements" className="mt-2.5 grid grid-cols-1 gap-x-3 gap-y-1.5 rounded-lg bg-[#FBF9F7] px-3 py-2.5 ring-1 ring-inset ring-[#E2D9D0]/70 min-[420px]:grid-cols-2">
+    {PASSWORD_REQUIREMENTS.map(({ label, test }) => {
+      const met = test(password);
+      return <li key={label} className={`flex items-center gap-1.5 text-xs transition-colors ${met ? 'font-medium text-emerald-700' : 'text-[#7A6E67]'}`}>
+        <span aria-hidden="true" className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-colors ${met ? 'bg-emerald-600 text-white' : 'bg-white text-transparent ring-1 ring-inset ring-[#D3C6BA]'}`}>
+          <Check size={10} strokeWidth={3} />
+        </span>
+        {label}
+        <span className="sr-only">{met ? '(met)' : '(not met)'}</span>
+      </li>;
+    })}
+  </ul>;
+}
+
+/** Locked until a recovery Gmail is verified: with no one above the VPAA, a forgotten password
+ * would otherwise be unrecoverable. The server enforces the same rule. */
+function ChangePasswordCard({ locked }: { locked: boolean }) {
   const { toast } = useToast();
   const [form, setForm] = useState<PasswordForm>(EMPTY_PASSWORD_FORM);
-  const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [succeeded, setSucceeded] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
 
-  const set = (key: keyof PasswordForm) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm((prev) => ({ ...prev, [key]: e.target.value }));
+  const requirementsMet = PASSWORD_REQUIREMENTS.every(({ test }) => test(form.password));
+  const confirmationStarted = form.password_confirmation.length > 0;
+  const matches = confirmationStarted && form.password === form.password_confirmation;
+  const reusesCurrent = form.password.length > 0 && form.password === form.current_password;
+  const disabled = busy || locked;
+  const canSubmit = !disabled && form.current_password.length > 0 && requirementsMet && matches && !reusesCurrent;
+  const isEmpty = !form.current_password && !form.password && !form.password_confirmation;
+
+  const set = (key: keyof PasswordForm) => (value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
     setErrors((prev) => ({ ...prev, [key]: '' }));
+    setSucceeded(false);
+  };
+
+  const reset = () => { setForm(EMPTY_PASSWORD_FORM); setErrors({}); };
+
+  const goToRecoveryEmail = () => {
+    const input = document.getElementById(RECOVERY_EMAIL_INPUT_ID);
+    input?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    input?.focus({ preventScroll: true });
   };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (form.password !== form.password_confirmation) {
-      setErrors({ password_confirmation: 'The two passwords do not match.' });
-      return;
-    }
+    if (!canSubmit) return;
     setBusy(true);
     setErrors({});
     try {
       const { data } = await api.put<{ message: string }>('/account/password', form);
       setForm(EMPTY_PASSWORD_FORM);
+      setSucceeded(true);
       toast.success('Password Changed', data.message);
     } catch (err) {
       setErrors(fieldErrorsOf(err));
@@ -156,34 +255,68 @@ function ChangePasswordCard() {
     }
   };
 
-  const field = (key: keyof PasswordForm, label: string, autoComplete: string, hint?: string) => <label className="block">
-    <span className="mb-1 block text-xs font-medium text-[#7A6E67]">{label}{hint && <span className="font-normal"> ({hint})</span>}</span>
-    <input type={show ? 'text' : 'password'} autoComplete={autoComplete} required maxLength={255} minLength={key === 'current_password' ? undefined : 10} value={form[key]} onChange={set(key)} aria-invalid={Boolean(errors[key])} aria-describedby={errors[key] ? `${key}-error` : undefined} className={inputClass} disabled={busy} />
-    <ErrorText id={`${key}-error`} message={errors[key]} />
-  </label>;
+  const newPasswordError = errors.password || (reusesCurrent ? 'Choose a password different from your current one.' : undefined);
+  const confirmationError = errors.password_confirmation
+    || (confirmationStarted && form.password.length > 0 && !matches ? 'Passwords do not match.' : undefined);
 
-  return <section className={cardClass}>
-    <CardHeader icon={KeyRound} title="Change password" description="Other devices are signed out after the change; this one stays signed in." />
-    <form onSubmit={submit} className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-3">
-      {field('current_password', 'Current password', 'current-password')}
-      {field('password', 'New password', 'new-password', 'min. 10, upper & lower case, a number')}
-      {field('password_confirmation', 'Confirm new password', 'new-password')}
-      <div className="flex flex-wrap items-center justify-between gap-2 sm:col-span-3">
-        <button type="button" onClick={() => setShow((v) => !v)} aria-pressed={show} className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#4e0a10] hover:underline">
-          {show ? <EyeOff size={13} /> : <Eye size={13} />} {show ? 'Hide passwords' : 'Show passwords'}
-        </button>
-        <ModalButton type="submit" variant="primary" disabled={busy || !form.current_password || !form.password || !form.password_confirmation}>
-          {busy && <Loader2 size={14} className="animate-spin" />} Change Password
-        </ModalButton>
+  return <section aria-labelledby="change-password-title" className="overflow-hidden rounded-xl border border-[#E2D9D0] bg-white shadow-sm shadow-black/[0.03]">
+    <header className="flex items-start gap-3.5 px-5 pb-4 pt-5">
+      <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#4e0a10]/[0.06] text-[#4e0a10] ring-1 ring-inset ring-[#4e0a10]/10"><KeyRound size={18} /></span>
+      <div className="min-w-0">
+        <h3 id="change-password-title" className="text-[15px] font-bold leading-6 text-[#1A1410]">Change password</h3>
+        <p className="mt-0.5 text-[13px] leading-5 text-[#7A6E67]">Confirm your current password, then choose a new one.</p>
       </div>
+    </header>
+
+    <form onSubmit={submit} noValidate aria-busy={busy} aria-disabled={locked || undefined}>
+      <div className="space-y-5 border-t border-[#E2D9D0]/70 px-5 py-5">
+        {locked && <div role="note" className="flex flex-col gap-3 rounded-lg bg-amber-50 px-3.5 py-3 ring-1 ring-inset ring-amber-600/25 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-2.5">
+            <Lock size={16} className="mt-0.5 shrink-0 text-amber-700" />
+            <p className="text-[13px] leading-5 text-amber-900">
+              <span className="font-semibold">Link a recovery Gmail first.</span> The VPAA password can only be recovered through a verified Gmail, so changing it is locked until one is linked.
+            </p>
+          </div>
+          <ModalButton onClick={goToRecoveryEmail} className="w-full shrink-0 sm:w-auto"><Mail size={14} /> Link Gmail</ModalButton>
+        </div>}
+
+        {succeeded && <div role="status" className="flex items-start gap-2.5 rounded-lg bg-emerald-50 px-3.5 py-2.5 text-[13px] text-emerald-800 ring-1 ring-inset ring-emerald-600/20">
+          <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-600" />
+          <span><span className="font-semibold">Password updated.</span> Other devices have been signed out; you are still signed in here.</span>
+        </div>}
+
+        <div className="sm:max-w-[calc(50%-0.625rem)]">
+          <PasswordField id="current_password" label="Current password" autoComplete="current-password" value={form.current_password} onChange={set('current_password')} disabled={disabled} error={errors.current_password} />
+        </div>
+
+        <div className="grid grid-cols-1 gap-5 border-t border-dashed border-[#E2D9D0] pt-5 sm:grid-cols-2">
+          <PasswordField id="password" label="New password" autoComplete="new-password" value={form.password} onChange={set('password')} disabled={disabled} error={newPasswordError} describedBy={locked ? undefined : 'vpaa-password-requirements'}>
+            {!locked && <RequirementList id="vpaa-password-requirements" password={form.password} />}
+          </PasswordField>
+          <PasswordField id="password_confirmation" label="Confirm new password" autoComplete="new-password" value={form.password_confirmation} onChange={set('password_confirmation')} disabled={disabled} error={confirmationError}>
+            {matches && <p className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-emerald-700"><CheckCircle2 size={13} /> Passwords match</p>}
+          </PasswordField>
+        </div>
+      </div>
+
+      <footer className="flex flex-col-reverse gap-3 border-t border-[#E2D9D0]/70 bg-[#FBF9F7] px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+        <p className="flex items-center gap-1.5 text-xs text-[#7A6E67]">{locked
+          ? <><Lock size={14} className="shrink-0 text-[#C9952A]" /> Requires a verified recovery Gmail.</>
+          : <><MonitorSmartphone size={14} className="shrink-0 text-[#C9952A]" /> Other devices will be signed out.</>}</p>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row">
+          <ModalButton onClick={reset} disabled={disabled || isEmpty} className="w-full sm:w-auto">Clear</ModalButton>
+          <ModalButton type="submit" variant="primary" loading={busy} disabled={!canSubmit} className="w-full sm:w-auto sm:min-w-[10.5rem]">
+            {busy ? 'Updating…' : 'Update password'}
+          </ModalButton>
+        </div>
+      </footer>
     </form>
   </section>;
 }
 
 export default function VpaaAccountSecurity({ email, onEmailVerified }: { email?: string | null; onEmailVerified: (email: string) => void }) {
   return <div className="space-y-4 p-4 sm:p-5">
-    <p className="flex items-center gap-2 text-xs text-[#7A6E67]"><ShieldCheck size={14} className="text-[#4e0a10]" /> These settings apply only to the VPAA account.</p>
     <RecoveryEmailCard email={email} onVerified={onEmailVerified} />
-    <ChangePasswordCard />
+    <ChangePasswordCard locked={!email} />
   </div>;
 }

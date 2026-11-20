@@ -378,7 +378,7 @@ export default function UserProfileModal({ onClose, user, roleLabel, onSaved }: 
           </section>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <InfoCard title="Account details" note={isVpaa ? 'Link a recovery Gmail and change your password in the Security tab.' : 'Managed by the VPAA. Ask them to change your username, email, role or department.'}>
+            <InfoCard title="Account details" note={isVpaa ? undefined : 'Managed by the VPAA. Ask them to change your username, email, role or department.'}>
               <InfoRow icon={AtSign} label="Username" value={current?.username} />
               <InfoRow icon={Mail} label="Email" value={current?.email} />
               <InfoRow icon={Building2} label="Department" value={department} />
