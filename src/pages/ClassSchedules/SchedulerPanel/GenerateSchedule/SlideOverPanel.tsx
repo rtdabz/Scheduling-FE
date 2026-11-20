@@ -74,7 +74,7 @@ export default function SlideOverPanel({
     <div
       ref={dialogRef}
       tabIndex={-1}
-      className={`scheduler-dialog-overlay fixed inset-0 z-[70] flex bg-slate-950/40 outline-none transition-opacity ${isModal ? "duration-150" : "duration-200"} ease-out motion-reduce:transition-none ${
+      className={`scheduler-dialog-overlay fixed inset-0 z-[85] flex bg-slate-950/40 outline-none transition-opacity ${isModal ? "duration-150" : "duration-200"} ease-out motion-reduce:transition-none ${
         open ? "opacity-100" : "opacity-0"
       }`}
       style={

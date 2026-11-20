@@ -8,7 +8,8 @@ fixed so far, and the rules new screens should follow.
 
 ## 1. Why 90% zoom looked right and 100% did not
 
-Page content is not the viewport. It is the viewport minus the 288px sidebar and 32px of page padding.
+Page content is not the viewport. It is the viewport minus the sidebar (288px expanded, 64px rail) and 32px
+of page padding. Since 2026-11-18 the expanded sidebar is only pinned beside the page from 1280px; see section 8.
 
 | Screen / zoom | Viewport (CSS px) | Content width |
 | --- | --- | --- |
@@ -40,7 +41,8 @@ Measured in code (class counts across `src/`) and in a headless browser at the s
 
 ### Typography
 
-Font family is already consistent: Plus Jakarta Sans everywhere. The sizes were not:
+Font family (corrected 2026-11-18): DM Sans for body text, Playfair Display for `h1`–`h3` (`font-display`),
+set in `index.css` and `tailwind.config.js`. The sizes were not consistent:
 
 | # | Finding | Count |
 | --- | --- | --- |
@@ -68,17 +70,17 @@ Ordered by how much breaks for the user, then by how many screens one change rep
 | P2 | T4 Heading levels: bring every `h2` / `h3` onto the scale in section 4, module by module | Open |
 | P2 | L5 Check each fixed-min-width table and grid with real data at 1366×768 | Open |
 | P2 | T6 Move the CSS-file font sizes onto the scale | Open |
-| P3 | L6 Tablet range with the sidebar open | Open |
+| P3 | L6 Tablet range with the sidebar open | Done 2026-11-18 (section 8, R1) |
 | P3 | Sub-10px text inside timetable and Gantt cards (needs card-height changes first) | Open |
 
 ## 4. Typography scale
 
-One typeface (Plus Jakarta Sans). Use only these sizes. They are existing Tailwind utilities, so no new
+DM Sans for body, Playfair Display for headings. Use only these sizes. They are existing Tailwind utilities, so no new
 class names are needed.
 
 | Role | Size / line height | Utility | Weight |
 | --- | --- | --- | --- |
-| Page title (`h1`) | 24 / 32 (20 / 28 on phones) | `text-xl sm:text-2xl` | bold |
+| Page title (`h1`) | 30 / 36 (24 / 32 on phones), Playfair Display | `text-2xl sm:text-3xl` | bold |
 | Dialog title | 18 / 28 | `text-lg` | bold |
 | Section title (`h2`) | 16 / 24 | `text-base` | semibold |
 | Card or panel title (`h3`, dashboard panels) | 14 / 20 | `text-sm` | semibold |
@@ -104,7 +106,10 @@ Rules:
 
 - **Breakpoints.** `sm` 640, `md` 768, `lg` 1024 are viewport widths. `xl` is 1568 and `2xl` is 1824:
   they mean the *content area* is at least 1280px / 1536px wide. A 1366px laptop is an `lg` screen.
-  Give grids an `lg:` column count that works in ~1000px, and reserve `xl:` for the wide arrangement.
+  Give grids an `lg:` column count that works in ~930–1080px, and reserve `xl:` for the wide arrangement.
+- **Sidebar.** Pinned (expanded, beside the page) at 1280px and up; a 64px rail with an overlay sidebar
+  from 768 to 1279px; hidden with an overlay below 768px. The threshold is `SIDEBAR_PIN_QUERY` in
+  `src/hooks/useMediaQuery.ts`. Content width is therefore never below ~930px on a laptop at 100% zoom.
 - **Tables.** Use `DataTable`. A table inside a card must be allowed to scroll sideways; never rely on the
   card clipping it. Hide secondary columns with the column `meta.hideBelow` option before adding a fixed
   minimum width.
@@ -145,3 +150,57 @@ Results are in section 7.
 | ESLint on changed files | Only existing React hook-rule findings remain; none are on lines changed here |
 
 Not covered: pages with real data (see section 6), dialogs opened from each page, and the 768–1023px tablet range.
+
+Note (2026-11-18): the 24px page title recorded above was later changed back to 30px Playfair Display in
+commit 129bf0a (typography cleanup). That is the current, intended size; section 4 now reflects it.
+
+## 8. System-wide responsive audit (2026-11-18)
+
+Scope: every routed page for VPAA, Secretary, Dean, Program Head and Director, the app shell, shared
+components, dialogs and the scheduling workspace, at 1920, 1600, 1440, 1366, 1280, 1024, 768 and 390px
+viewport widths (100% zoom). Priority range: 1024–1536px laptops.
+
+### 8.1 Findings, in fix order
+
+| ID | Priority | Finding | Where | Status |
+| --- | --- | --- | --- | --- |
+| R1 | P0 | The expanded 288px sidebar was pinned beside the page from 768px. Content width was ~450px at 768px and ~700px at 1024px, so every page fell back to its tablet layout on compact laptops, and the timetable had ~400px. | `AppLayout.tsx`, `Sidebar.tsx` | Done |
+| R2 | P1 | Curriculum list toolbar overflowed on phones by up to 124px: the action group was `shrink-0`, so its `flex-wrap` never applied; the filter group's `min-w-[18rem]` exceeds a 320px screen. | `CurriculumListPage.tsx` | Done |
+| R3 | P2 | Scheduling top bar at 1024px: Print wraps onto its own row and its divider is left at the start of that row. Cosmetic. | `SchedulerPanel/TopBar.tsx` | Open |
+| R4 | P2 | Dashboards (Dean, Secretary) stack their 12-column panel rows below 1568px. Intentional for the review-queue tables, which need more than ~600px, but the Secretary progress tab's three `col-span-4` panels could sit 2 + 1 at `lg`. Needs a check with real data before changing. | `DeanDashboardPage.tsx`, `SecretaryDashboardPage.tsx` | Open |
+| R5 | P2 | Section 3 items still open: L5 (fixed-min-width tables with real data), T4 (heading levels), T6 (CSS-file font sizes). | see section 3 | Open |
+| R6 | P3 | `SchedulerPanel/FacultyPanel` has `min-w-[280px]` but is not imported anywhere (dead code). | `FacultyPanel/index.tsx` | Open (remove when convenient) |
+
+Checked and found sound, no change needed:
+
+- **Dialogs.** The shared `Modal` caps height at `100dvh − 1rem` (phones) / `100vh − 2rem`, scrolls its body,
+  and wraps footer actions. Scheduler workflow dialogs (`scheduler-dialog-*` CSS) have phone and short-landscape
+  rules (2026-11-09 QA). Toasts, the profile menu and the notification panel are capped with `min(…, 100vw − 1rem)`.
+- **Tables.** `DataTable` scrolls inside its card; wide review tables and timetables use their own scrollers
+  (`min-w-[760px]` timetable below `lg`, `min-w-[1040px]` report tables).
+- **Grids.** No grid jumps from one column straight to the `xl` arrangement without a usable `md`/`lg` step.
+
+### 8.2 Sidebar behaviour (R1)
+
+| Viewport | Default | When opened | Content width (100% zoom) |
+| --- | --- | --- | --- |
+| ≥ 1280px | Expanded, pinned beside the page | Collapses to the rail when toggled | 960px at 1280, 1046 at 1366, 1280 at 1600 |
+| 768–1279px | 64px rail | Expanded over the page with a backdrop; closes on navigation, Escape or backdrop click | 672–1183px |
+| < 768px | Hidden | Expanded over the page (unchanged) | full width |
+
+Crossing 1280px (window resize, zoom, docking) resets the sidebar to that size's default.
+
+### 8.3 Verification
+
+- Overflow matrix (`main`, document and system header), 60 routes × 8 widths = 480 page loads, all five roles,
+  fixture backend (pages render shell, toolbars, table headers and empty/error states, not real rows):
+  **0 overflowing loads** after the fixes. Before, the Curriculum list overflowed at 390px (VPAA +13px,
+  Dean +124px).
+- Sidebar: at 1024px opening the sidebar leaves `main` at 960px (overlay) and navigating closes it; at 1280px
+  it starts pinned (`main` 992px) and toggling collapses it to the rail (`main` 1216px).
+- Screenshots reviewed at 768, 1024, 1280 and 1366px: Instructors, Courses, Users, Master Calendar,
+  Schedule Management, VPAA and Secretary dashboards.
+- `tsc` passes; ESLint on changed files shows only existing TanStack warnings; `App.programRooms` and
+  curriculum page tests pass (23).
+
+Not covered: real data (long names, many rows), dialogs opened from each page, and touch interaction.

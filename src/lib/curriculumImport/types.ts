@@ -15,7 +15,9 @@ export type ExtractionFlag =
   | 'unmapped_term'
   | 'unmapped_year'
   | 'malformed_row'
-  | 'merged_cells';
+  | 'merged_cells'
+  /** The source prints only total units, no lecture/laboratory split; the split is the reviewer's to confirm. */
+  | 'units_only';
 
 export type Provenance =
   | { kind: 'pdf'; page: number; bbox: [number, number, number, number] }
@@ -111,6 +113,9 @@ export interface DraftRow {
   lab_units: number | null;
   total_units: number | null;
   category: CourseCategory | null;
+  /** Hours per unit set in Configure, in minutes; absent or null uses the department rate. */
+  lecture_minutes_per_unit?: number | null;
+  laboratory_minutes_per_unit?: number | null;
   /** Reference text exactly as the document gives it; never classified or enforced. */
   prerequisites: string | null;
   code_suggestion: string | null;
@@ -188,6 +193,10 @@ export interface ResolvedRow {
   category: CourseCategory | null;
   rule: { id: number | null; match_kind: 'exact' | 'prefix'; match_value: string; category: CourseCategory } | null;
   catalog: { action: 'create' | 'reuse' | 'blocked'; course_id: number | null; course: Record<string, unknown> | null };
+  /** The rates the check used: the row's own when set in Configure (`custom`), otherwise the department's. */
+  lecture_minutes_per_unit?: number;
+  laboratory_minutes_per_unit?: number;
+  hours_source?: 'import' | 'custom';
   lecture_minutes: number | null;
   laboratory_minutes: number | null;
   weekly_contact_minutes: number | null;

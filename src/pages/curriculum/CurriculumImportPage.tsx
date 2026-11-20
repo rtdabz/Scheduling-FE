@@ -1,7 +1,7 @@
 import { buttonClass } from '../../components/ui/buttonStyles';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertOctagon, ArrowLeft, ArrowRight,Check, CheckCircle2, Clock3, FileText, List, ListChecks, Pencil, Settings2, ShieldCheck } from 'lucide-react';
+import { AlertOctagon, AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, Clock3, FileSpreadsheet, FileText, List, Loader2, ListChecks, Pencil, Settings2, ShieldCheck } from 'lucide-react';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
@@ -9,6 +9,7 @@ import { programLabel } from '../../lib/programLabel';
 import { getStoredUser } from '../../lib/storedUser';
 import { useToast } from '../../context/ToastContext';
 import { curriculumImportService } from '../../services/curriculum/curriculumImportService';
+import ImportCourseHoursModal from '../../components/curriculum/import/ImportCourseHoursModal';
 import ImportCreditLedger from '../../components/curriculum/import/ImportCreditLedger';
 import ImportReviewModal from '../../components/curriculum/import/ImportReviewModal';
 import ImportCurriculumSheet from '../../components/curriculum/import/ImportCurriculumSheet';
@@ -67,8 +68,6 @@ const secondaryButton = buttonClass({ variant: 'secondary' });
 // Light-on-maroon controls for the gradient header.
 const headerControl = buttonClass({ variant: 'onDarkMuted', iconOnly: true });
 const headerButton = buttonClass({ variant: 'onDarkMuted' });
-// The step's main action in its heading: solid white on the maroon gradient.
-const headerPrimary = buttonClass({ variant: 'onDark' });
 const quietButton = buttonClass({ variant: 'secondary' });
 
 const newRequestKey = () => (typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join(''));
@@ -107,6 +106,7 @@ export default function CurriculumImportPage() {
   // The details start unreviewed after each upload; the button says so until they are opened.
   const [detailsReviewed, setDetailsReviewed] = useState(false);
   const [openRowId, setOpenRowId] = useState<string | null>(null);
+  const [hoursRowId, setHoursRowId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [railOpen, setRailOpen] = useState(false);
@@ -404,6 +404,7 @@ export default function CurriculumImportPage() {
   };
 
   const openRow = draft?.rows.find((row) => row.row_id === openRowId) ?? null;
+  const hoursRow = draft?.rows.find((row) => row.row_id === hoursRowId) ?? null;
   const counts = validation?.counts;
   const canImport = validated && !!validation?.valid && busy === null;
   const program = programs.find((candidate) => candidate.id === draft?.metadata.program_id) ?? null;
@@ -555,21 +556,37 @@ export default function CurriculumImportPage() {
   );
   // Step 4's entry point sits in its gradient heading.
   const issuesHeaderButton = draft && (
-    <button type="button" onClick={() => setIssuesOpen(true)} aria-label={issuesLabel} className={`${headerButton} h-auto min-h-9 shrink-0 flex-wrap py-1.5`}>
+    <button type="button" onClick={() => setIssuesOpen(true)} aria-label={issuesLabel} className={`${secondaryButton} h-auto min-h-9 shrink-0 flex-wrap py-1.5`}>
       <ListChecks size={15} aria-hidden="true" /> Validation results
-      <span className="flex flex-wrap items-center gap-1" data-testid="issue-badges">{issueBadges(true)}</span>
+      <span className="flex flex-wrap items-center gap-1" data-testid="issue-badges">{issueBadges(false)}</span>
     </button>
   );
 
-  const stepHeaderClass = `-mx-4 -mt-5 rounded-t-[11px] px-4 py-3 sm:-mx-6 sm:px-6 ${IMPORT_HEADER_GRADIENT}`;
+  // One heading per working step: where the step sits in the flow, what it is for, and its actions.
+  const stepHeading = (number: number, title: string, description: string, actions: ReactNode) => (
+    <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+      <div className="min-w-0 flex-1 basis-72">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-stage-warnText">Step {number} of {STEPS.length}</p>
+        <h2 id="step-heading" className="mt-0.5 text-base font-semibold text-text">{title}</h2>
+        <p className="mt-0.5 max-w-3xl text-[13px] text-muted">{description}</p>
+      </div>
+      {stepActions(actions)}
+    </div>
+  );
+
   const detailsBar = draft && (
-    <div className="mt-4 rounded-xl border border-border bg-parchment/60 px-4 py-3">
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+    <div className={`mt-3 overflow-hidden rounded-xl border bg-white ${metadataNeedsFix ? 'border-red-200' : 'border-border'}`}>
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-3">
+        <dl className="grid min-w-0 flex-1 basis-80 grid-cols-1 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.2fr)]">
+          <div className="min-w-0"><dt className="text-[11px] font-semibold uppercase tracking-wide text-muted">Program</dt><dd className="truncate font-semibold text-text">{program ? programLabel(program) : 'All programs in the department'}</dd></div>
+          <div className="min-w-0"><dt className="text-[11px] font-semibold uppercase tracking-wide text-muted">School year</dt><dd className="font-semibold tabular-nums text-text">{draft.metadata.effective_school_year.trim() || '—'}</dd></div>
+          <div className="min-w-0"><dt className="text-[11px] font-semibold uppercase tracking-wide text-muted">Code</dt><dd className="truncate font-semibold text-text">{codeText}{!validated && proposedCode && <span className="ml-1.5 rounded bg-accent/15 px-1.5 text-[11px] font-bold text-stage-warnText">Proposed</span>}</dd></div>
+        </dl>
+        <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => openDetails()} className={secondaryButton}>
             <FileText size={15} aria-hidden="true" /> Curriculum details
             {(metadataNeedsFix || !detailsReviewed) && (
-              <span className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[11px] font-black leading-none text-white ${metadataNeedsFix ? 'bg-red-600' : 'bg-[#C9952A]'}`}>
+              <span className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[11px] font-black leading-none text-white ${metadataNeedsFix ? 'bg-red-600' : 'bg-accent'}`}>
                 <span aria-hidden="true">!</span>
                 <span className="sr-only">{metadataNeedsFix ? ', needs correction' : ', not reviewed yet'}</span>
               </span>
@@ -580,18 +597,14 @@ export default function CurriculumImportPage() {
               <AlertOctagon size={13} aria-hidden="true" /> Needs correction
             </button>
           )}
+          {issuesControl}
         </div>
-        {issuesControl}
-        <dl className="flex min-w-0 basis-full flex-wrap gap-x-5 gap-y-1 text-[13px]">
-          <div className="flex min-w-0 gap-1.5"><dt className="text-muted">Program</dt><dd className="truncate font-semibold text-text">{program ? programLabel(program) : 'All programs in the department'}</dd></div>
-          <div className="flex gap-1.5"><dt className="text-muted">School year</dt><dd className="font-semibold tabular-nums text-text">{draft.metadata.effective_school_year.trim() || '—'}</dd></div>
-          <div className="flex items-center gap-1.5"><dt className="text-muted">Code</dt><dd className="font-semibold text-text">{codeText}{!validated && proposedCode && <span className="ml-1.5 rounded bg-accent/15 px-1.5 text-[11px] font-bold text-[#7a5410]">Proposed</span>}</dd></div>
-        </dl>
       </div>
       {metadataNeedsFix && (
-        <ul className="mt-2 space-y-1 border-t border-border pt-2 text-[13px]">
+        <ul className="space-y-1 border-t border-red-200 bg-red-50/60 px-4 py-2 text-[13px]">
           {metadataIssues.map((issue) => (
             <li key={`${issue.field}:${issue.message}`} className="flex flex-wrap items-center gap-x-3">
+              <AlertOctagon size={13} className="shrink-0 text-red-700" aria-hidden="true" />
               <span className="text-red-800">{issue.message}</span>
               <button type="button" onClick={() => openDetails(issue.field)} className="text-xs font-bold text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Fix</button>
             </li>
@@ -601,24 +614,39 @@ export default function CurriculumImportPage() {
     </div>
   );
 
+  // The check's state colors the strip: problems red, out of date amber, ready green, otherwise neutral.
+  const statusTone = problems.length > 0 || (validated && !validation?.valid)
+    ? 'border-red-200 bg-red-50/60'
+    : validation && stale
+      ? 'border-accent/40 bg-accent/[0.07]'
+      : validated && validation?.valid
+        ? 'border-emerald-200 bg-emerald-50/60'
+        : 'border-border bg-parchment/50';
   // Status for the actions in the heading, directly under them, so a check's outcome shows where it was started.
   const statusStrip = (content: ReactNode) => (
     <>
-      <div className="-mx-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border bg-parchment/40 px-4 py-2 text-[13px] sm:-mx-6 sm:px-6" role="status">{content}</div>
-      {submitError && <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800">{submitError}</p>}
+      <div className={`mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border px-3 py-2 text-[13px] ${statusTone}`} role="status">{content}</div>
+      {submitError && (
+        <p role="alert" className="mt-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800">
+          <AlertOctagon size={15} className="mt-0.5 shrink-0" aria-hidden="true" />{submitError}
+        </p>
+      )}
     </>
   );
   const stepActions = (actions: ReactNode) => <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>;
 
   const validateButton = (
-    <button type="button" onClick={() => void runValidation()} disabled={busy !== null} className={headerButton}>
+    <button type="button" onClick={() => void runValidation()} disabled={busy !== null} className={secondaryButton}>
+      {busy === 'validate' ? <Loader2 size={15} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <ShieldCheck size={15} aria-hidden="true" />}
       {busy === 'validate' ? 'Validating…' : 'Validate'}
     </button>
   );
 
   const statusLine = (
-    <span className={`flex items-center gap-1.5 ${validated && validation?.valid ? 'text-emerald-800' : 'text-muted'}`}>
-      {validated && validation?.valid ? <CheckCircle2 size={15} aria-hidden="true" /> : <Clock3 size={15} aria-hidden="true" />}
+    <span className={`flex items-center gap-1.5 ${validated && validation?.valid ? 'font-semibold text-emerald-800' : validation && stale ? 'text-stage-warnText' : 'text-muted'}`}>
+      {problems.length > 0
+        ? <AlertOctagon size={15} className="text-red-700" aria-hidden="true" />
+        : validated && validation?.valid ? <CheckCircle2 size={15} aria-hidden="true" /> : <Clock3 size={15} aria-hidden="true" />}
       {problems.length > 0 ? <span className="font-semibold text-red-700">{problems.length} problem{problems.length === 1 ? '' : 's'} to fix in the draft</span> : validationStatus}
     </span>
   );
@@ -644,7 +672,7 @@ export default function CurriculumImportPage() {
           </div>
         </div>
         {step !== 'done' && (
-          <div className="px-4 py-4 sm:px-6">
+          <div className="px-4 py-3 sm:px-6">
             <ImportStepper
               steps={STEPS}
               current={step as WorkStep}
@@ -657,48 +685,93 @@ export default function CurriculumImportPage() {
       </header>
 
       {step === 'upload' && (
-        <section aria-labelledby="upload-heading" className="rounded-xl border border-border bg-white px-4 py-5 sm:px-6">
-          <h2 id="upload-heading" className="mb-4 text-lg font-semibold text-text">Upload the curriculum file</h2>
+        <section aria-labelledby="upload-heading" className="rounded-xl border border-border bg-white px-4 py-4 sm:px-6">
+          <div className="mb-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-stage-warnText">Step 1 of {STEPS.length}</p>
+            <h2 id="upload-heading" className="mt-0.5 text-base font-semibold text-text">Upload the curriculum file</h2>
+            <p className="mt-0.5 text-[13px] text-muted">Upload a PDF, Excel, CSV or Word file. You preview and correct everything before anything is imported.</p>
+          </div>
           <ImportUploader
             file={file}
             progress={progress}
             error={extractError}
+            needsInput={!!sheets || !!pendingMapping}
             onFile={(selectedFile) => void handleFile(selectedFile)}
             onCancel={cancelExtraction}
           >
             {sheets && (
-              <fieldset className="rounded-xl border border-border p-4">
-                <legend className="px-1 text-[13px] font-bold text-text">Choose a sheet</legend>
-                <p className="mb-2 text-xs text-muted">Several sheets in this workbook contain course tables.</p>
-                <div className="flex flex-wrap gap-2">
+              <fieldset className="rounded-xl border border-accent/40 bg-white">
+                <legend className="sr-only">Choose a sheet</legend>
+                <div className="flex items-start gap-2.5 rounded-t-xl border-b border-accent/30 bg-accent/[0.07] px-4 py-2.5">
+                  <AlertTriangle size={15} className="mt-0.5 shrink-0 text-stage-warnText" aria-hidden="true" />
+                  <div>
+                    <p className="text-[13px] font-semibold text-text" aria-hidden="true">Choose a sheet</p>
+                    <p className="text-xs text-muted">Several sheets in this workbook contain course tables. Pick the one to import.</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 px-4 py-3">
                   {sheets.map((sheet) => (
-                    <button key={sheet.label} type="button" onClick={() => file && handleReading(readTable(sheet), file)} className={quietButton}>{sheet.label}</button>
+                    <button key={sheet.label} type="button" onClick={() => file && handleReading(readTable(sheet), file)} className={quietButton}>
+                      <FileSpreadsheet size={15} className="text-primary" aria-hidden="true" /> {sheet.label}
+                    </button>
                   ))}
                 </div>
               </fieldset>
             )}
-            {pendingMapping && file && (
-              <fieldset className="space-y-3 rounded-xl border border-accent/40 bg-accent/[0.07] p-4">
-                <legend className="px-1 text-[13px] font-bold text-text">Match the columns</legend>
-                <p className="text-[13px] text-text">
-                  {pendingMapping.detection.missing.length > 0 && <>Not found: {pendingMapping.detection.missing.join(', ')}. </>}
-                  {pendingMapping.detection.ambiguous.length > 0 && <>More than one column fits: {pendingMapping.detection.ambiguous.join(', ')}. </>}
-                  Pick the column for each field. Fields left out stay blank and must be filled in during Preview.
-                </p>
-                <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
-                  {TEMPLATE_FIELDS.map(({ field, label, required }) => (
-                    <label key={field} className="flex items-center justify-between gap-3 text-[13px]">
-                      <span className="font-semibold text-text">{label}{required && <span className="text-red-700" aria-hidden="true"> *</span>}</span>
-                      <select value={pendingMapping.mapping[field] ?? ''} onChange={(event) => setPendingMapping({ ...pendingMapping, mapping: { ...pendingMapping.mapping, [field]: event.target.value === '' ? undefined : Number(event.target.value) } })} className={`${inputClass} w-48`}>
-                        <option value="">Not in file</option>
-                        {pendingMapping.detection.headers.map((header, column) => <option key={column} value={column}>{header || `Column ${column + 1}`}</option>)}
-                      </select>
-                    </label>
-                  ))}
-                </div>
-                <button type="button" onClick={() => startDraft(applyMapping(pendingMapping.table, pendingMapping.detection, pendingMapping.mapping), file)} className={primaryButton}>Use these columns</button>
-              </fieldset>
-            )}
+            {pendingMapping && file && (() => {
+              const requiredFields = TEMPLATE_FIELDS.filter((item) => item.required);
+              const matched = requiredFields.filter((item) => pendingMapping.mapping[item.field] !== undefined).length;
+              return (
+                <fieldset className="rounded-xl border border-accent/40 bg-white">
+                  <legend className="sr-only">Match the columns</legend>
+                  <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 rounded-t-xl border-b border-accent/30 bg-accent/[0.07] px-4 py-2.5">
+                    <div className="flex min-w-0 flex-1 basis-64 items-start gap-2.5">
+                      <AlertTriangle size={15} className="mt-0.5 shrink-0 text-stage-warnText" aria-hidden="true" />
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold text-text" aria-hidden="true">Match the columns</p>
+                        <p className="text-xs text-muted">Pick the column for each field. Fields left out stay blank and must be filled in during Preview.</p>
+                      </div>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${matched === requiredFields.length ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-white text-stage-warnText ring-accent/40'}`}>
+                      {matched} of {requiredFields.length} required matched
+                    </span>
+                  </div>
+                  <div className="space-y-3 px-4 py-3">
+                    {(pendingMapping.detection.missing.length > 0 || pendingMapping.detection.ambiguous.length > 0) && (
+                      <ul className="space-y-1 text-[13px] text-text">
+                        {pendingMapping.detection.missing.length > 0 && <li><span className="font-semibold">Not found:</span> {pendingMapping.detection.missing.join(', ')}.</li>}
+                        {pendingMapping.detection.ambiguous.length > 0 && <li><span className="font-semibold">More than one column fits:</span> {pendingMapping.detection.ambiguous.join(', ')}.</li>}
+                      </ul>
+                    )}
+                    <div className="grid gap-x-6 gap-y-2 md:grid-cols-2">
+                      {TEMPLATE_FIELDS.map(({ field, label, required }) => {
+                        const unset = pendingMapping.mapping[field] === undefined;
+                        return (
+                          <label key={field} className="flex items-center justify-between gap-3 text-[13px]">
+                            <span className="flex min-w-0 items-center gap-1.5 font-semibold text-text">
+                              {unset
+                                ? <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${required ? 'bg-accent' : 'bg-border'}`} aria-hidden="true" />
+                                : <Check size={13} className="shrink-0 text-emerald-700" aria-hidden="true" />}
+                              {label}{required && <span className="text-red-700" aria-hidden="true"> *</span>}
+                            </span>
+                            <select value={pendingMapping.mapping[field] ?? ''} onChange={(event) => setPendingMapping({ ...pendingMapping, mapping: { ...pendingMapping.mapping, [field]: event.target.value === '' ? undefined : Number(event.target.value) } })} className={`${inputClass} w-48 shrink-0 ${unset && required ? 'border-accent/60' : ''}`}>
+                              <option value="">Not in file</option>
+                              {pendingMapping.detection.headers.map((header, column) => <option key={column} value={column}>{header || `Column ${column + 1}`}</option>)}
+                            </select>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+                      <p className="text-xs text-muted"><span className="text-red-700" aria-hidden="true">*</span> Required for every course row.</p>
+                      <button type="button" onClick={() => startDraft(applyMapping(pendingMapping.table, pendingMapping.detection, pendingMapping.mapping), file)} className={primaryButton}>
+                        Use these columns <ArrowRight size={15} aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                </fieldset>
+              );
+            })()}
           </ImportUploader>
         </section>
       )}
@@ -729,57 +802,57 @@ export default function CurriculumImportPage() {
           </div>
           )}
 
-          <section aria-labelledby="step-heading" className="min-w-0 rounded-xl border border-border bg-white px-4 pb-6 pt-5 sm:px-6">
+          <section aria-labelledby="step-heading" className="min-w-0 rounded-xl border border-border bg-white px-4 pb-5 pt-4 sm:px-6">
             {step === 'review' && (
               <>
                 {/* The sheet is long, so each step's actions sit in its heading rather than below every term. */}
-                <div className={`${stepHeaderClass} flex flex-wrap items-center justify-between gap-x-4 gap-y-2`}>
-                  <div className="min-w-0 flex-1 basis-72">
-                    <h2 id="step-heading" className="text-lg font-semibold text-white">Preview the extracted curriculum</h2>
-                    <p className="mt-0.5 text-[13px] text-amber-50/85">Check what was read from the document. Open a course to correct it, or use Edit table in Configure. The original values stay on record next to your corrections.</p>
-                  </div>
-                  {stepActions(
-                    <button type="button" onClick={() => goTo('configure')} className={headerPrimary}>
-                      Continue to Configure <ArrowRight size={15} aria-hidden="true" />
-                    </button>,
-                  )}
-                </div>
+                {stepHeading(
+                  2,
+                  'Preview the extracted curriculum',
+                  'Check what was read from the document. Open a course to correct it, or use Edit table in Configure. The original values stay on record next to your corrections.',
+                  <button type="button" onClick={() => goTo('configure')} className={primaryButton}>
+                    Continue to Configure <ArrowRight size={15} aria-hidden="true" />
+                  </button>,
+                )}
                 {statusStrip(statusLine)}
 
                 {detailsBar}
                 {(draft.warnings.length > 0 || draft.unread.length > 0) && (
-                  <ul className="mt-3 list-disc rounded-lg border border-accent/40 bg-accent/[0.07] py-2 pl-8 pr-3 text-[13px] text-text">
-                    {draft.warnings.map((warning) => <li key={warning}>{warning}</li>)}
-                    {draft.unread.map((region, index) => (
-                      <li key={`unread-${index}`}>
-                        {region.page ? `Page ${region.page}: ` : ''}
-                        {region.reason === 'image'
-                          ? 'an image in the course area was not read. Check it, then answer it in Curriculum details.'
-                          : `text was not recognised as a course or note: "${region.text ?? ''}". Check it, then answer it in Curriculum details.`}
-                      </li>
-                    ))}
-                  </ul>
+                  <div className="mt-3 rounded-xl border border-accent/40 bg-accent/[0.06] px-4 py-2.5">
+                    <p className="flex items-center gap-2 text-[13px] font-semibold text-text">
+                      <AlertTriangle size={15} className="shrink-0 text-stage-warnText" aria-hidden="true" />
+                      Check these parts of the document
+                    </p>
+                    <ul className="mt-1 list-disc space-y-0.5 pl-11 text-[13px] text-text marker:text-accent">
+                      {draft.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                      {draft.unread.map((region, index) => (
+                        <li key={`unread-${index}`}>
+                          {region.page ? `Page ${region.page}: ` : ''}
+                          {region.reason === 'image'
+                            ? 'an image in the course area was not read. Check it, then answer it in Curriculum details.'
+                            : `text was not recognised as a course or note: "${region.text ?? ''}". Check it, then answer it in Curriculum details.`}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </>
             )}
 
             {step === 'configure' && (
               <>
-                <div className={`${stepHeaderClass} flex flex-wrap items-center justify-between gap-x-4 gap-y-2`}>
-                  <div className="min-w-0 flex-1 basis-72">
-                    <h2 id="step-heading" className="text-lg font-semibold text-white">Configure categories and class time</h2>
-                    <p className="mt-0.5 text-[13px] text-amber-50/85">Department rules suggest Major or Minor. Override a row only when the rule is wrong for it; you will be asked why.</p>
-                  </div>
-                  {stepActions(
-                    <>
-                      <button type="button" onClick={() => goTo('review')} className={headerButton}>Back</button>
-                      {validateButton}
-                      <button type="button" onClick={() => goTo('import')} className={headerPrimary}>
-                        Continue to Import <ArrowRight size={15} aria-hidden="true" />
-                      </button>
-                    </>,
-                  )}
-                </div>
+                {stepHeading(
+                  3,
+                  'Configure categories and class time',
+                  "Department rules suggest Major or Minor. Override a row only when the rule is wrong for it; you will be asked why. Use Edit table to correct values and set each course's hours per unit.",
+                  <>
+                    <button type="button" onClick={() => goTo('review')} className={secondaryButton}><ArrowLeft size={15} aria-hidden="true" /> Back</button>
+                    {validateButton}
+                    <button type="button" onClick={() => goTo('import')} className={primaryButton}>
+                      Continue to Import <ArrowRight size={15} aria-hidden="true" />
+                    </button>
+                  </>,
+                )}
                 {statusStrip(statusLine)}
                 {detailsBar}
               </>
@@ -800,8 +873,9 @@ export default function CurriculumImportPage() {
                   />
                 ) : (
                   <>
-                    <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-parchment/50 px-3 py-2">
                       <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by status">
+                        <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-muted" aria-hidden="true">Status</span>
                         {(['all', 'needs_category', 'invalid', 'override', 'rule', 'manual', 'unchecked'] as StatusFilter[]).map((filter) => {
                           const count = filter === 'all' ? draft.rows.length : statusCounts.get(filter) ?? 0;
                           if (filter !== 'all' && count === 0 && statusFilter !== filter) return null;
@@ -840,13 +914,13 @@ export default function CurriculumImportPage() {
                             <span className="text-xs text-muted">Select courses to set their category together.</span>
                           ) : (
                             <>
-                              <span className="font-bold text-text">{selectedInView.length} selected</span>
-                              <span className="text-xs text-muted">Set category:</span>
+                              <span className="rounded-full bg-primary/[0.07] px-2 py-0.5 text-xs font-bold text-primary">{selectedInView.length} selected</span>
+                              <span className="ml-1 text-xs text-muted">Set category:</span>
                               {(['major', 'minor'] as const).map((category) => (
-                                <button key={category} type="button" onClick={() => setCategoryFor(new Set(selectedInView.map((row) => row.row_id)), category)} className="h-7 rounded-md border border-primary bg-white px-2.5 text-xs font-bold text-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">{category === 'major' ? 'Major' : 'Minor'}</button>
+                                <button key={category} type="button" onClick={() => setCategoryFor(new Set(selectedInView.map((row) => row.row_id)), category)} className={buttonClass({ variant: 'accentSoft', size: 'sm' })}>{category === 'major' ? 'Major' : 'Minor'}</button>
                               ))}
-                              <button type="button" onClick={() => setCategoryFor(new Set(selectedInView.map((row) => row.row_id)), null)} className="h-7 rounded-md border border-border bg-white px-2.5 text-xs font-bold text-text hover:bg-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Use rule</button>
-                              <button type="button" onClick={() => toggleSelected(selectedInView.map((row) => row.row_id), false)} className="h-7 rounded-md px-2 text-xs font-bold text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">Clear selection</button>
+                              <button type="button" onClick={() => setCategoryFor(new Set(selectedInView.map((row) => row.row_id)), null)} className={buttonClass({ variant: 'secondary', size: 'sm' })}>Use rule</button>
+                              <button type="button" onClick={() => toggleSelected(selectedInView.map((row) => row.row_id), false)} className={buttonClass({ variant: 'ghost', size: 'sm' })}>Clear selection</button>
                             </>
                           )}
                         </div>
@@ -866,7 +940,7 @@ export default function CurriculumImportPage() {
                         );
                       }}
                       renderTerm={(term) => (tableEditing ? (
-                        <ImportDraftTable editing rows={term.rows} issuesByRow={visibleIssues} onChange={changeRow} onOpenRow={setOpenRowId} ariaLabel={`${term.label}, editable courses`} />
+                        <ImportDraftTable editing rows={term.rows} issuesByRow={visibleIssues} settings={settings} onChange={changeRow} onOpenRow={setOpenRowId} onEditHours={settings ? setHoursRowId : undefined} ariaLabel={`${term.label}, editable courses`} />
                       ) : (
                         <ImportConfigureTermTable
                           headingId={term.headingId}
@@ -890,25 +964,26 @@ export default function CurriculumImportPage() {
 
             {step === 'import' && (
               <>
-                <div className={`${stepHeaderClass} flex flex-wrap items-center justify-between gap-x-4 gap-y-2`}>
-                  <div className="min-w-0 flex-1 basis-72">
-                    <h2 id="step-heading" className="text-lg font-semibold text-white">Review and import</h2>
-                    <p className="mt-0.5 text-[13px] text-amber-50/85">An automatic summary of what will be created, from the server's check of the whole draft. Confirm it once to import.</p>
-                  </div>
-                  {stepActions(
-                    <>
-                      {issuesHeaderButton}
-                      <button type="button" onClick={() => goTo('configure')} className={headerButton}>Back</button>
-                      {validateButton}
-                      <button type="button" onClick={() => void commit()} disabled={!canImport} aria-describedby={importBlocker ? 'import-blocker' : undefined} className={headerPrimary}>{busy === 'commit' ? 'Importing…' : 'Confirm and import'}</button>
-                    </>,
-                  )}
-                </div>
+                {stepHeading(
+                  4,
+                  'Review and import',
+                  "An automatic summary of what will be created, from the server's check of the whole draft. Confirm it once to import.",
+                  <>
+                    {issuesHeaderButton}
+                    <button type="button" onClick={() => goTo('configure')} className={secondaryButton}><ArrowLeft size={15} aria-hidden="true" /> Back</button>
+                    {validateButton}
+                    <button type="button" onClick={() => void commit()} disabled={!canImport} aria-describedby={importBlocker ? 'import-blocker' : undefined} className={primaryButton}>
+                      {busy === 'commit' && <Loader2 size={15} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />}
+                      {busy === 'commit' ? 'Importing…' : 'Confirm and import'}
+                    </button>
+                  </>,
+                )}
                 {statusStrip(
                   <>
                     <span className="flex items-center gap-1.5 text-muted"><ShieldCheck size={15} aria-hidden="true" /> The curriculum is created deactivated. Activate it afterwards from the curriculum list.</span>
                     {importBlocker && (
                       <span className="flex items-center gap-1.5 text-xs font-semibold text-red-700">
+                        <AlertOctagon size={13} aria-hidden="true" />
                         <span id="import-blocker">{importBlocker}</span>
                         <button type="button" onClick={() => setIssuesOpen(true)} className="whitespace-nowrap font-bold text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">View issues</button>
                       </span>
@@ -917,11 +992,11 @@ export default function CurriculumImportPage() {
                 )}
 
                 {validated && validation ? (
-                  <div className="mt-5 rounded-xl border border-border bg-parchment/60 px-4 py-3">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="mt-4 overflow-hidden rounded-xl border border-border bg-white">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-parchment/50 px-4 py-3">
                       <div className="min-w-0">
-                        <p className="truncate text-[15px] font-semibold text-text">{draft.metadata.name}</p>
-                        <p className="text-[13px] text-muted">
+                        <p className="truncate text-sm font-semibold text-text">{draft.metadata.name}</p>
+                        <p className="text-xs text-muted">
                           <span aria-label="Assigned internal code" className="font-semibold text-text">{validation.metadata.code}</span>
                           {' · '}{program ? programLabel(program) : 'All programs in the department'} · {draft.metadata.effective_school_year} · created deactivated
                         </p>
@@ -930,16 +1005,16 @@ export default function CurriculumImportPage() {
                         <List size={15} aria-hidden="true" /> View all courses and summary
                       </button>
                     </div>
-                    <dl className="mt-3 grid grid-cols-3 gap-2 text-[13px] sm:grid-cols-6">
+                    <dl className="grid grid-cols-3 gap-px bg-border text-[13px] sm:grid-cols-6">
                       {[
                         { label: 'Courses', value: validation.rows.length, tone: 'text-text' },
                         { label: 'New', value: validation.rows.filter((row) => row.catalog.action === 'create').length, tone: 'text-emerald-800' },
                         { label: 'Reused', value: validation.rows.filter((row) => row.catalog.action === 'reuse').length, tone: 'text-primary' },
                         { label: 'Units', value: validation.totals.calculated.tu, tone: 'text-text' },
                         { label: 'Changes', value: validation.changes.filter((change) => !change.formatting).length, tone: 'text-text' },
-                        { label: 'Notices', value: noticeCount, tone: noticeCount ? 'text-[#7a5410]' : 'text-text' },
+                        { label: 'Notices', value: noticeCount, tone: noticeCount ? 'text-stage-warnText' : 'text-text' },
                       ].map((stat) => (
-                        <div key={stat.label} className="rounded-lg border border-border bg-white px-3 py-1.5">
+                        <div key={stat.label} className="bg-white px-4 py-2.5">
                           <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted">{stat.label}</dt>
                           <dd className={`text-lg font-bold leading-tight tabular-nums ${stat.tone}`}>{stat.value}</dd>
                         </div>
@@ -947,13 +1022,18 @@ export default function CurriculumImportPage() {
                     </dl>
                   </div>
                 ) : (
-                  <p className="mt-5 rounded-xl border border-dashed border-border px-4 py-4 text-[13px] text-muted" role="status">
-                    {validation ? 'The draft changed after the last check. Validate again to bring the review up to date.' : 'Validate the whole draft to generate the review.'}
-                    {' '}<span aria-label="Check result">{validationStatus}</span>
-                  </p>
+                  <div className="mt-4 flex items-start gap-3 rounded-xl border border-dashed border-border bg-parchment/40 px-4 py-4" role="status">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-muted ring-1 ring-border" aria-hidden="true">
+                      <ShieldCheck size={16} />
+                    </span>
+                    <p className="text-[13px] text-muted">
+                      <span className="block font-semibold text-text">{validation ? 'The draft changed after the last check. Validate again to bring the review up to date.' : 'Validate the whole draft to generate the review.'}</span>
+                      <span aria-label="Check result">{validationStatus}</span>
+                    </p>
+                  </div>
                 )}
 
-                <div className="mt-6"><ImportCreditLedger totals={totals} rowCount={draft.rows.length} /></div>
+                <div className="mt-5"><ImportCreditLedger totals={totals} rowCount={draft.rows.length} /></div>
               </>
             )}
           </section>
@@ -961,22 +1041,25 @@ export default function CurriculumImportPage() {
       )}
 
       {step === 'done' && result && (
-        <section aria-labelledby="done-heading" className="rounded-xl border border-border bg-white px-4 py-6 sm:px-6" aria-live="polite">
-          <div className="flex items-start gap-3">
-            <CheckCircle2 size={22} className="mt-1 shrink-0 text-emerald-700" aria-hidden="true" />
+        <section aria-labelledby="done-heading" className="overflow-hidden rounded-xl border border-border bg-white" aria-live="polite">
+          <div className="flex items-start gap-3 border-b border-emerald-200 bg-emerald-50/60 px-4 py-4 sm:px-6">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-700 text-white" aria-hidden="true">
+              <CheckCircle2 size={18} />
+            </span>
             <div className="min-w-0">
-              <h2 id="done-heading" className="text-lg font-semibold text-text">{result.replayed ? 'This import was already completed' : 'Curriculum imported'}</h2>
-              <p className="mt-1 text-[13px] text-text">
+              <h2 id="done-heading" className="text-base font-semibold text-text">{result.replayed ? 'This import was already completed' : 'Curriculum imported'}</h2>
+              <p className="mt-0.5 text-[13px] text-text">
                 <span className="font-bold">{result.curriculum.name}</span> ({result.curriculum.code}) was created as <span className="font-bold">{result.curriculum.status}</span>
                 {result.curriculum.cmo_number && <> under CMO {result.curriculum.cmo_number}{result.curriculum.cmo_series ? `, s. ${result.curriculum.cmo_series}` : ''}</>}, effective {result.curriculum.effective_school_year}. Activate it from the curriculum list when it is ready for sections.
               </p>
             </div>
           </div>
-          <dl className="mt-5 grid gap-x-8 gap-y-3 rounded-xl border border-border px-4 py-3 text-[13px] sm:grid-cols-4">
-            <div><dt className="text-xs text-muted">Courses created</dt><dd className="text-lg font-bold tabular-nums">{result.created_count}</dd></div>
-            <div><dt className="text-xs text-muted">Existing courses used</dt><dd className="text-lg font-bold tabular-nums">{result.reused_count}</dd></div>
-            <div><dt className="text-xs text-muted">Terms</dt><dd className="text-lg font-bold tabular-nums">{result.totals.populated_groups}</dd></div>
-            <div><dt className="text-xs text-muted">Total units</dt><dd className="text-lg font-bold tabular-nums">{result.totals.calculated.tu}</dd></div>
+          <div className="px-4 pb-5 pt-4 sm:px-6">
+          <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border text-[13px] sm:grid-cols-4">
+            <div className="bg-white px-4 py-2.5"><dt className="text-[11px] font-semibold uppercase tracking-wide text-muted">Courses created</dt><dd className="text-lg font-bold tabular-nums text-emerald-800">{result.created_count}</dd></div>
+            <div className="bg-white px-4 py-2.5"><dt className="text-[11px] font-semibold uppercase tracking-wide text-muted">Existing courses used</dt><dd className="text-lg font-bold tabular-nums text-primary">{result.reused_count}</dd></div>
+            <div className="bg-white px-4 py-2.5"><dt className="text-[11px] font-semibold uppercase tracking-wide text-muted">Terms</dt><dd className="text-lg font-bold tabular-nums">{result.totals.populated_groups}</dd></div>
+            <div className="bg-white px-4 py-2.5"><dt className="text-[11px] font-semibold uppercase tracking-wide text-muted">Total units</dt><dd className="text-lg font-bold tabular-nums">{result.totals.calculated.tu}</dd></div>
           </dl>
           {result.confirmation && (
             <p className="mt-3 text-[13px] text-muted">
@@ -990,15 +1073,19 @@ export default function CurriculumImportPage() {
               <ul className="mt-2 space-y-1.5">{Object.entries(result.acknowledged).map(([key, item]) => <li key={key} className="rounded-lg bg-parchment px-3 py-2"><span className="text-text">{item.message}</span><br /><span className="text-muted">Reason: {item.reason}</span></li>)}</ul>
             </details>
           )}
-          <div className="mt-5 flex flex-wrap gap-2">
-            <button type="button" onClick={() => navigate(`${curriculumBase}/${result.curriculum.id}`)} className={primaryButton}>Open curriculum</button>
+          <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
+            <button type="button" onClick={() => navigate(`${curriculumBase}/${result.curriculum.id}`)} className={primaryButton}>Open curriculum <ArrowRight size={15} aria-hidden="true" /></button>
             <Link to={curriculumBase} className={quietButton}>Back to curriculum list</Link>
+          </div>
           </div>
         </section>
       )}
 
       {openRow && draft && (
         <ImportRowDetailModal row={openRow} issues={stale ? [] : issuesByRow.get(openRow.row_id) ?? []} bytes={bytes} onClose={() => setOpenRowId(null)} onChange={changeRow} />
+      )}
+      {hoursRow && settings && step === 'configure' && (
+        <ImportCourseHoursModal key={hoursRow.row_id} row={hoursRow} settings={settings} onClose={() => setHoursRowId(null)} onSave={changeRow} />
       )}
       {reviewOpen && draft && validated && validation && step === 'import' && (
         <ImportReviewModal draft={draft} validation={validation} programName={program ? programLabel(program) : 'All programs in the department'} onClose={() => setReviewOpen(false)} />
@@ -1035,6 +1122,11 @@ export default function CurriculumImportPage() {
       {settingsOpen && settings && (
         <ImportSettingsModal
           settings={settings}
+          // Read against the curriculum being imported, so a curriculum without laboratories says so.
+          draft={draft ? {
+            lectureCourses: draft.rows.filter((row) => (row.lecture_units ?? 0) > 0).length,
+            labCourses: draft.rows.filter((row) => (row.lab_units ?? 0) > 0).length,
+          } : null}
           onClose={() => setSettingsOpen(false)}
           onSaved={(saved) => {
             setSettings(saved);

@@ -139,7 +139,7 @@ export default function InstructorPickerModal({
 
   return (
     <div
-      className="scheduler-dialog-overlay fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto"
+      className="scheduler-dialog-overlay fixed inset-0 z-[75] flex items-center justify-center overflow-y-auto"
       onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
     >
       <div

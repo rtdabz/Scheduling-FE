@@ -13,7 +13,10 @@ export default function ImportReviewModal({ onClose, ...summary }: ImportReviewM
       onClose={onClose}
       title="Import summary"
       description="What Confirm and import will create, from the server's check of the whole draft."
-      size="xl"
+      size="wide"
+      // A fixed frame so filtering the course list never resizes the dialog; the body is the only scroll area.
+      className="sm:h-[min(56rem,calc(100vh-2rem))]"
+      bodyClassName="overscroll-contain"
       footer={(
         <>
           <p className="mr-auto text-xs text-muted">Closing changes nothing. Corrections are made in Preview and Configure.</p>
@@ -21,7 +24,7 @@ export default function ImportReviewModal({ onClose, ...summary }: ImportReviewM
         </>
       )}
     >
-      <div className="px-4 py-4 sm:px-6">
+      <div className="px-4 py-4 sm:px-6 sm:py-5">
         <ImportReviewSummary {...summary} />
       </div>
     </Modal>

@@ -47,10 +47,10 @@ describe('curriculum import settings modal', () => {
     expect(saveButton().disabled).toBe(true);
 
     fireEvent.change(lecture, { target: { value: '11' } });
-    expect(screen.getByText('Use 0.5 to 10 hours.')).toBeDefined();
+    expect(screen.getByText('Use 0 to 10 hours.')).toBeDefined();
 
     fireEvent.change(lecture, { target: { value: '' } });
-    expect(screen.getByText('Use 0.5 to 10 hours.')).toBeDefined();
+    expect(screen.getByText('Use 0 to 10 hours.')).toBeDefined();
 
     fireEvent.change(lecture, { target: { value: '1.5' } });
     expect(screen.getByText(/Example: 2 lecture \+ 1 lab unit = 3 hours \+ 3 hours = 6 hours a week/)).toBeDefined();
@@ -60,6 +60,31 @@ describe('curriculum import settings modal', () => {
     fireEvent.click(saveButton());
     await waitFor(() => expect(service.updateSettings).toHaveBeenCalled());
     expect(service.updateSettings.mock.calls[0][0]).toMatchObject({ lecture_minutes_per_unit: 90, laboratory_minutes_per_unit: 180 });
+  });
+
+  it('accepts 0 hours and reads the rates against the curriculum being imported', async () => {
+    service.updateSettings.mockResolvedValue(settings({ revision: 4 }));
+    const { unmount } = render(<ImportSettingsModal settings={settings()} draft={{ lectureCourses: 12, labCourses: 0 }} onClose={vi.fn()} onSaved={vi.fn()} />);
+
+    // A curriculum without laboratories is detected, and its laboratory rate can be 0.
+    expect(screen.getByTestId('laboratory_minutes_per_unit-draft-note').textContent)
+      .toBe('This curriculum has no laboratory units, so this rate does not affect it. Set 0 if the department has no laboratories.');
+    expect(screen.queryByTestId('lecture_minutes_per_unit-draft-note')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Laboratory'), { target: { value: '0' } });
+    expect(screen.getByText('0 hours: the laboratory of imported courses is not scheduled.')).toBeDefined();
+    expect(screen.getByTestId('laboratory_minutes_per_unit-draft-note').textContent).toBe('This curriculum has no laboratory units, so this rate does not affect it.');
+    expect(screen.getByText(/Example: 2 lecture \+ 1 lab unit = 2 hours \+ 0 hours = 2 hours a week/)).toBeDefined();
+    expect(saveButton().disabled).toBe(false);
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(service.updateSettings).toHaveBeenCalled());
+    expect(service.updateSettings.mock.calls[0][0]).toMatchObject({ lecture_minutes_per_unit: 60, laboratory_minutes_per_unit: 0 });
+    unmount();
+
+    // With laboratory courses in the curriculum, 0 warns that their laboratory goes unscheduled.
+    render(<ImportSettingsModal settings={settings()} draft={{ lectureCourses: 12, labCourses: 3 }} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.queryByTestId('laboratory_minutes_per_unit-draft-note')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Laboratory'), { target: { value: '0' } });
+    expect(screen.getByTestId('laboratory_minutes_per_unit-draft-note').textContent).toBe('3 courses in this curriculum have laboratory units. At 0 hours their laboratory is not scheduled.');
   });
 
   it('adds, edits, and deletes prefix rules without a match type or status, confirming only for saved rules', async () => {

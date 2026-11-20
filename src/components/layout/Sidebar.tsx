@@ -18,6 +18,8 @@ import { getRecovery } from '../../lib/roomRecovery';
 
 interface SidebarProps {
   isOpen: boolean;
+  /** True when the expanded sidebar sits beside the page; false when it opens over it (see AppLayout). */
+  pinned?: boolean;
   onClose: () => void;
   onOpen?: () => void;
   navItems: NavSection[];
@@ -82,7 +84,7 @@ const lockCrossDepartmentItems = (items: NavItem[]): NavItem[] => items.map((ite
     : { ...item, children: item.children ? lockCrossDepartmentItems(item.children) : undefined }
 ));
 
-export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItems }: SidebarProps) {
+export default function Sidebar({ isOpen, pinned = true, onClose, onOpen, navItems: baseNavItems }: SidebarProps) {
   const location = useLocation();
   const { toast } = useToast();
   const [currentUser, setCurrentUser] = useState<StoredUser | null>(getStoredUser());
@@ -297,7 +299,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
   return (
     <div
       className={`
-        fixed left-0 top-0 z-[60] h-screen md:z-40
+        fixed left-0 top-0 h-screen ${pinned ? 'z-40' : 'z-[60]'}
         bg-[#4e0a10]
         flex flex-col
         overflow-hidden
@@ -464,7 +466,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
                                     toast.warning('Access Restricted', child.lockedMessage ?? lockedModuleMessage(child.requiredCapability));
                                     return;
                                   }
-                                  if (window.innerWidth < 768) {
+                                  if (!pinned) {
                                     onClose();
                                   }
                                 }}
@@ -546,7 +548,7 @@ export default function Sidebar({ isOpen, onClose, onOpen, navItems: baseNavItem
                         toast.warning('Access Restricted', lockedModuleMessage(item.requiredCapability));
                         return;
                       }
-                      if (window.innerWidth < 768) {
+                      if (!pinned) {
                         onClose();
                       }
                     }}

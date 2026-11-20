@@ -51,7 +51,7 @@ export default function EditCourseHoursModal({ curriculumId, course, defaults = 
   const lectureRate = toMinutes(lectureHours);
   const labRate = toMinutes(labHours);
   const rateError = (minutes: number) => {
-    if (!Number.isFinite(minutes) || minutes < step || minutes > defaults.max_minutes_per_unit) return `Use ${stepHours} to ${maxHours} hours.`;
+    if (!Number.isFinite(minutes) || minutes < 0 || minutes > defaults.max_minutes_per_unit) return `Use 0 to ${maxHours} hours.`;
     if (minutes % step !== 0) return `Use steps of ${stepHours} hour.`;
     return null;
   };
@@ -110,7 +110,7 @@ export default function EditCourseHoursModal({ curriculumId, course, defaults = 
             id={id}
             type="number"
             inputMode="decimal"
-            min={step / 60}
+            min={0}
             max={defaults.max_minutes_per_unit / 60}
             step={step / 60}
             value={value}
@@ -125,7 +125,7 @@ export default function EditCourseHoursModal({ curriculumId, course, defaults = 
         <span className="text-xs text-gray-600">= <strong className="tabular-nums">{units === 0 ? '—' : hoursLabel(total)}</strong> a week</span>
       </div>
       <p id={`${id}-hint`} className={`mt-2 text-xs ${error ? 'font-semibold text-red-700' : 'text-gray-500'}`}>
-        {error ?? (units === 0 ? `No ${label.toLowerCase()} units, so this rate is not used.` : `Department default: ${hoursLabel(label === 'Lecture' ? defaults.lecture_minutes_per_unit : defaults.laboratory_minutes_per_unit)} per unit.`)}
+        {error ?? (units === 0 ? `No ${label.toLowerCase()} units, so this rate is not used.` : toMinutes(value) === 0 ? `0 hours: the ${label.toLowerCase()} is not scheduled.` : `Department default: ${hoursLabel(label === 'Lecture' ? defaults.lecture_minutes_per_unit : defaults.laboratory_minutes_per_unit)} per unit.`)}
       </p>
     </div>
   );

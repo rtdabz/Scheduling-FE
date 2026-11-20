@@ -10,8 +10,16 @@ import type { ClassificationRule, ImportSettings } from '../../../lib/curriculum
 import { TABLE_HEAD } from '../../ui/tableStyles';
 import { ModalButton } from '../../ui/ModalForm';
 
+/** Lecture and laboratory units in the draft being imported, so the rates can be read against it. */
+export interface DraftUnitSummary {
+  lectureCourses: number;
+  labCourses: number;
+}
+
 interface ImportSettingsModalProps {
   settings: ImportSettings;
+  /** The curriculum being imported, when there is one. */
+  draft?: DraftUnitSummary | null;
   onClose: () => void;
   onSaved: (settings: ImportSettings) => void;
 }
@@ -21,7 +29,8 @@ type DraftRule = ClassificationRule & { key: string };
 const control = 'h-9 rounded-lg border border-border bg-white px-2.5 text-[13px] text-text focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:bg-parchment disabled:text-muted';
 
 const hoursLabel = (minutes: number) => {
-  if (!Number.isFinite(minutes) || minutes <= 0) return '—';
+  if (!Number.isFinite(minutes) || minutes < 0) return '—';
+  if (minutes === 0) return '0 hours';
   const hours = minutes / 60;
   const text = hours.toLocaleString(undefined, { maximumFractionDigits: 2 });
   return `${text} hour${hours === 1 ? '' : 's'}`;
@@ -35,7 +44,7 @@ const toMinutes = (hoursText: string) => (hoursText.trim() === '' ? Number.NaN :
 let nextKey = 0;
 const withKey = (rule: ClassificationRule): DraftRule => ({ ...rule, key: rule.id ? `saved-${rule.id}` : `new-${nextKey++}` });
 
-export default function ImportSettingsModal({ settings, onClose, onSaved }: ImportSettingsModalProps) {
+export default function ImportSettingsModal({ settings, draft = null, onClose, onSaved }: ImportSettingsModalProps) {
   const { confirm } = useToast();
   const [lectureHours, setLectureHours] = useState(() => formatHours(settings.lecture_minutes_per_unit / 60));
   const [laboratoryHours, setLaboratoryHours] = useState(() => formatHours(settings.laboratory_minutes_per_unit / 60));
@@ -70,7 +79,7 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
   const stepHours = formatHours(step / 60);
   const maxHours = formatHours(settings.max_minutes_per_unit / 60);
   const rateError = (minutes: number) => {
-    if (!Number.isFinite(minutes) || minutes < step || minutes > settings.max_minutes_per_unit) return `Use ${stepHours} to ${maxHours} hours.`;
+    if (!Number.isFinite(minutes) || minutes < 0 || minutes > settings.max_minutes_per_unit) return `Use 0 to ${maxHours} hours.`;
     const slots = minutes / step;
     if (Math.abs(slots - Math.round(slots)) > 1e-9) return `Use steps of ${stepHours} hour.`;
     return null;
@@ -129,7 +138,23 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
     }
   };
 
-  const conversion = (id: 'lecture_minutes_per_unit' | 'laboratory_minutes_per_unit', label: string, value: string, setValue: (value: string) => void, error: string | null) => (
+  /**
+   * What the rate means for the curriculum being imported: unused when it has no such units, and a warning when 0
+   * would leave its courses without that class time.
+   */
+  const draftNote = (label: string, minutes: number, courses: number | undefined) => {
+    if (courses === undefined) return null;
+    const kind = label.toLowerCase();
+    if (courses === 0) {
+      return { tone: 'info' as const, text: `This curriculum has no ${kind} units, so this rate does not affect it.${minutes > 0 && kind === 'laboratory' ? ' Set 0 if the department has no laboratories.' : ''}` };
+    }
+    if (minutes === 0) {
+      return { tone: 'warning' as const, text: `${courses} ${courses === 1 ? 'course' : 'courses'} in this curriculum ${courses === 1 ? 'has' : 'have'} ${kind} units. At 0 hours their ${kind} is not scheduled.` };
+    }
+    return null;
+  };
+
+  const conversion = (id: 'lecture_minutes_per_unit' | 'laboratory_minutes_per_unit', label: string, value: string, setValue: (value: string) => void, error: string | null, note: ReturnType<typeof draftNote>) => (
     <div className="rounded-xl border border-border bg-white p-4">
       <label htmlFor={id} className="block text-[13px] font-bold text-text">{label}</label>
       <p className="text-xs text-muted">Hours per unit</p>
@@ -139,7 +164,7 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
             id={id}
             type="number"
             inputMode="decimal"
-            min={step / 60}
+            min={0}
             max={settings.max_minutes_per_unit / 60}
             step={step / 60}
             value={value}
@@ -154,7 +179,12 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
       </div>
       {error
         ? <p id={`${id}-error`} className="mt-2 text-xs font-semibold text-red-700">{error}</p>
-        : <p className="mt-2 text-xs text-muted">Recorded with each imported course. Scheduling uses the course's Total Hours.</p>}
+        : <p className="mt-2 text-xs text-muted">{toMinutes(value) === 0 ? `0 hours: the ${label.toLowerCase()} of imported courses is not scheduled.` : "Recorded with each imported course. Scheduling uses the course's Total Hours."}</p>}
+      {note && (
+        <p className={`mt-2 rounded-md px-2 py-1.5 text-xs ${note.tone === 'warning' ? 'bg-accent/10 font-semibold text-stage-warnText' : 'bg-parchment text-text'}`} data-testid={`${id}-draft-note`}>
+          {note.text}
+        </p>
+      )}
     </div>
   );
 
@@ -190,8 +220,8 @@ export default function ImportSettingsModal({ settings, onClose, onSaved }: Impo
           <h3 id="conversion-heading" className="text-[15px] font-semibold text-text">Credit-to-time conversion</h3>
           <p className="mt-0.5 text-[13px] text-muted">How many hours of class each credit unit becomes in future imports.</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            {conversion('lecture_minutes_per_unit', 'Lecture', lectureHours, setLectureHours, lectureError)}
-            {conversion('laboratory_minutes_per_unit', 'Laboratory', laboratoryHours, setLaboratoryHours, laboratoryError)}
+            {conversion('lecture_minutes_per_unit', 'Lecture', lectureHours, setLectureHours, lectureError, draftNote('Lecture', lecture, draft?.lectureCourses))}
+            {conversion('laboratory_minutes_per_unit', 'Laboratory', laboratoryHours, setLaboratoryHours, laboratoryError, draftNote('Laboratory', laboratory, draft?.labCourses))}
           </div>
           <p className="mt-2 text-xs text-muted tabular-nums">
             Example: 2 lecture + 1 lab unit = {hoursLabel(exampleLecture)} + {hoursLabel(exampleLab)} = {hoursLabel(exampleLecture + exampleLab)} a week.

@@ -75,7 +75,7 @@ export default function SessionTimeoutGuard() {
       closeOnEscape={false}
       closeOnOverlayClick={false}
       footer={
-        <ModalButton ref={backToLogin} variant="primary" className="w-full" onClick={() => window.location.assign('/')}>
+        <ModalButton ref={backToLogin} variant="primary" className="w-full" onClick={() => window.location.assign('/login')}>
           Back to Login
         </ModalButton>
       }

@@ -381,8 +381,8 @@ function CurriculumManagePage() {
 
   return (
     <div className="w-full">
-      <div id="curriculum-filters" className="bg-white p-5 rounded-2xl border border-gray-300 shadow-md mb-6 font-sans flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 min-w-[18rem]">
+      <div id="curriculum-filters" className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-300 shadow-md mb-6 font-sans flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 min-w-[min(18rem,100%)]">
           {isDepartmentOffice && (
             <CurriculumStatusTabs
               id="curriculum-status-tabs"
@@ -418,7 +418,7 @@ function CurriculumManagePage() {
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
           <div className="flex items-center bg-gray-100/90 border border-gray-200 rounded-xl p-1">
             <button
               type="button"

@@ -23,14 +23,17 @@ export const buildDraft = (extraction: Extraction, source: Omit<DraftSource, 'ex
     .filter((token) => !knownCompact.has(compactCode(token)));
 
   const rows: DraftRow[] = extraction.rows.map((row, index) => {
+    // A template printing only total units starts the draft as all lecture; the flag keeps the split in review.
+    const total = finite(row.source.tu);
+    const unitsOnly = row.source.flags.includes('units_only') && row.source.lec === null && row.source.lab === null && total !== null;
     return {
       row_id: `r${index + 1}`,
       year_level: row.year_level,
       semester: row.semester,
       code: row.source.code,
       title: row.source.title,
-      lecture_units: finite(row.source.lec),
-      lab_units: finite(row.source.lab),
+      lecture_units: unitsOnly ? total : finite(row.source.lec),
+      lab_units: unitsOnly ? 0 : finite(row.source.lab),
       total_units: finite(row.source.tu),
       category: null,
       prerequisites: row.source.prerequisites,
@@ -209,6 +212,9 @@ export const toPayload = (draft: ImportDraft, options: PayloadOptions) => ({
     lab_units: row.lab_units,
     total_units: row.total_units,
     category: row.category,
+    // Sent only when set, so a draft without custom hours keeps its earlier payload and fingerprint.
+    ...(row.lecture_minutes_per_unit != null ? { lecture_minutes_per_unit: row.lecture_minutes_per_unit } : {}),
+    ...(row.laboratory_minutes_per_unit != null ? { laboratory_minutes_per_unit: row.laboratory_minutes_per_unit } : {}),
     prerequisites: row.prerequisites,
     source: {
       code: row.source.code,

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { AtSign, BookOpen, Building2, CalendarDays, Camera, Clock, GraduationCap, Link2, Loader2, Lock, LogIn, Mail, MapPin, Trash2, UserRound, type LucideIcon } from 'lucide-react';
+import { AtSign, BookOpen, Building2, CalendarDays, Camera, Clock, GraduationCap, Link2, Loader2, Lock, LogIn, Mail, MapPin, ShieldCheck, Trash2, UserRound, type LucideIcon } from 'lucide-react';
 import Modal from '../ui/Modal';
 import ProfileAvatar from '../ui/ProfileAvatar';
 import api from '../../lib/api';
@@ -8,6 +8,7 @@ import { formatTime12h } from '../../lib/timeGrid';
 import { CREDENTIALS_MAX_LENGTH, titleOptions } from '../../lib/personName';
 import { useToast } from '../../context/ToastContext';
 import { ModalButton } from '../ui/ModalForm';
+import VpaaAccountSecurity from './VpaaAccountSecurity';
 
 interface Unit { name?: string | null; code?: string | null; department_name?: string | null; department_code?: string | null }
 
@@ -57,6 +58,8 @@ interface UserProfileModalProps {
   roleLabel: string;
   onSaved: (user: ProfileUser) => void;
 }
+
+type ProfileTab = 'profile' | 'teaching' | 'security';
 
 interface NameForm { honorific_prefix: string; first_name: string; middle_initial: string; last_name: string; suffix: string; credentials: string }
 
@@ -206,7 +209,7 @@ export default function UserProfileModal({ onClose, user, roleLabel, onSaved }: 
   const fileInput = useRef<HTMLInputElement>(null);
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'profile' | 'teaching'>('profile');
+  const [tab, setTab] = useState<ProfileTab>('profile');
   const [form, setForm] = useState<NameForm>(() => nameFormFrom(user));
   const [picture, setPicture] = useState<string | null>(() => user?.profile_picture || user?.photo || user?.avatar || null);
   const [saving, setSaving] = useState(false);
@@ -274,7 +277,16 @@ export default function UserProfileModal({ onClose, user, roleLabel, onSaved }: 
   const teaching = profile?.teaching ?? null;
   const setField = (key: keyof NameForm) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((prev) => ({ ...prev, [key]: event.target.value }));
 
-  const tabs: Array<['profile' | 'teaching', string, LucideIcon]> = [['profile', 'Profile', UserRound], ...(teaching ? [['teaching', 'Teaching Load', BookOpen] as ['teaching', string, LucideIcon]] : [])];
+  const isVpaa = current?.role === 'vpaa';
+  const tabs: Array<[ProfileTab, string, LucideIcon]> = [
+    ['profile', 'Profile', UserRound],
+    ...(teaching ? [['teaching', 'Teaching Load', BookOpen] as [ProfileTab, string, LucideIcon]] : []),
+    ...(isVpaa ? [['security', 'Security', ShieldCheck] as [ProfileTab, string, LucideIcon]] : []),
+  ];
+  const handleEmailVerified = (email: string) => {
+    setProfile((prev) => (prev ? { ...prev, user: { ...prev.user, email } } : prev));
+    onSaved({ email });
+  };
   const department = unitLabel(current?.department);
 
   const footer = tab === 'profile' ? <>
@@ -316,6 +328,8 @@ export default function UserProfileModal({ onClose, user, roleLabel, onSaved }: 
       ? <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading profile…</div>
       : tab === 'teaching' && teaching
         ? <TeachingLoad teaching={teaching} />
+        : tab === 'security' && isVpaa
+        ? <VpaaAccountSecurity email={current?.email} onEmailVerified={handleEmailVerified} />
         : <form id="profile-form" onSubmit={save} className="space-y-4 p-4 sm:p-5">
           <section className={cardClass}>
             <h3 className="border-b border-[#E2D9D0]/70 px-4 py-2.5 text-sm font-bold text-[#1A1410]">Profile information</h3>
@@ -364,7 +378,7 @@ export default function UserProfileModal({ onClose, user, roleLabel, onSaved }: 
           </section>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <InfoCard title="Account details" note="Managed by the VPAA. Ask them to change your username, email, role or department.">
+            <InfoCard title="Account details" note={isVpaa ? 'Link a recovery Gmail and change your password in the Security tab.' : 'Managed by the VPAA. Ask them to change your username, email, role or department.'}>
               <InfoRow icon={AtSign} label="Username" value={current?.username} />
               <InfoRow icon={Mail} label="Email" value={current?.email} />
               <InfoRow icon={Building2} label="Department" value={department} />

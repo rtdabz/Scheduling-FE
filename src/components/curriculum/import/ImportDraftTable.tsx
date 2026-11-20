@@ -5,7 +5,8 @@ import DataTable from '../../ui/DataTable';
 import { useDataTable } from '../../ui/useDataTable';
 import { TERM_LABELS } from '../../../lib/curriculumImport/normalize';
 import { rowHasProblem } from '../../../lib/curriculumImport/draft';
-import type { DraftRow, ExtractionFlag, ImportIssue, PlacementTerm } from '../../../lib/curriculumImport/types';
+import { Pencil } from 'lucide-react';
+import type { DraftRow, ExtractionFlag, ImportIssue, ImportSettings, PlacementTerm } from '../../../lib/curriculumImport/types';
 
 interface ImportDraftTableProps {
   /** Unlocks every row for inline editing; otherwise the cells read as text. */
@@ -14,6 +15,9 @@ interface ImportDraftTableProps {
   issuesByRow: Map<string, ImportIssue[]>;
   onChange: (rowId: string, patch: Partial<DraftRow>) => void;
   onOpenRow: (rowId: string) => void;
+  /** Department rates; with onEditHours, the table shows each course's weekly hours and edits its hours per unit. */
+  settings?: ImportSettings | null;
+  onEditHours?: (rowId: string) => void;
   /** Names the table, e.g. by its term. */
   ariaLabel?: string;
 }
@@ -43,6 +47,7 @@ const FLAG_REASONS: Record<ExtractionFlag, string> = {
   unmapped_year: 'Year was not recognised',
   malformed_row: 'Row was read with gaps',
   merged_cells: 'Read from merged cells',
+  units_only: 'Only total units were printed; check the lecture/lab split',
 };
 
 /** Flags still worth a look: a corrected code settles a misread one. */
@@ -50,8 +55,10 @@ const openFlags = (row: DraftRow): ExtractionFlag[] => row.source.flags.filter((
 
 const creditValue = (value: string): number | null => (value.trim() === '' ? null : Number(value));
 
+const hours = (minutes: number) => `${(minutes / 60).toLocaleString(undefined, { maximumFractionDigits: 2 })} h`;
+
 /** Configure's Edit table: every extracted value of a term's courses, editable in place. */
-export default function ImportDraftTable({ editing = false, rows, issuesByRow, onChange, onOpenRow, ariaLabel = 'Course rows to review' }: ImportDraftTableProps) {
+export default function ImportDraftTable({ editing = false, rows, issuesByRow, settings = null, onChange, onOpenRow, onEditHours, ariaLabel = 'Course rows to review' }: ImportDraftTableProps) {
   // Rows that need attention are tinted rather than marked with an icon, so the code column can start at the edge.
   const rowState = useCallback((row: DraftRow): 'problem' | 'review' | null => {
     const issues = issuesByRow.get(row.row_id) ?? [];
@@ -178,6 +185,41 @@ export default function ImportDraftTable({ editing = false, rows, issuesByRow, o
           );
         },
       },
+      ...(settings && onEditHours ? [{
+        id: 'hours',
+        header: () => <span title="Weekly class time: units × hours per unit. Edit to set this course's hours per unit.">Hours / week</span>,
+        enableSorting: false,
+        meta: { align: 'center' },
+        cell: ({ row }) => {
+          const course = row.original;
+          // A rate set for this course replaces the department rate for that component.
+          const custom = course.lecture_minutes_per_unit != null || course.laboratory_minutes_per_unit != null;
+          const lectureRate = course.lecture_minutes_per_unit ?? settings.lecture_minutes_per_unit;
+          const labRate = course.laboratory_minutes_per_unit ?? settings.laboratory_minutes_per_unit;
+          const lecture = (course.lecture_units ?? 0) * lectureRate;
+          const lab = (course.lab_units ?? 0) * labRate;
+          const code = course.code.trim() || course.row_id;
+          return (
+            <button
+              type="button"
+              onClick={() => onEditHours(course.row_id)}
+              aria-label={`Edit hours per unit for ${code}: ${hours(lecture + lab)} a week${custom ? ', custom' : ''}`}
+              title={`${hours(lectureRate)} per lecture unit, ${hours(labRate)} per laboratory unit`}
+              className={`mx-auto flex h-8 min-w-[6.5rem] items-center justify-between gap-2 rounded-md border px-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                custom ? 'border-primary/30 bg-primary/[0.04] hover:border-primary/60' : 'border-border bg-white hover:border-primary/50 hover:bg-parchment/60'
+              }`}
+            >
+              <span className="leading-none">
+                <span className="block text-[13px] font-bold tabular-nums text-text">{hours(lecture + lab)}</span>
+                <span className={`mt-0.5 block whitespace-nowrap text-[11px] ${custom ? 'font-semibold text-primary' : 'text-muted'}`} aria-hidden="true">
+                  {custom ? 'Custom' : `${lecture / 60}+${lab / 60}`}
+                </span>
+              </span>
+              <Pencil size={12} className="shrink-0 text-primary" aria-hidden="true" />
+            </button>
+          );
+        },
+      } satisfies ColumnDef<DraftRow>] : []),
       {
         id: 'prerequisites',
         header: 'Prerequisites',
@@ -192,7 +234,7 @@ export default function ImportDraftTable({ editing = false, rows, issuesByRow, o
         },
       },
     ];
-  }, [issuesByRow, onChange, onOpenRow, editing, rowState]);
+  }, [issuesByRow, onChange, onOpenRow, editing, rowState, settings, onEditHours]);
 
   const table = useDataTable({ data: rows, columns, pageSize: false, getRowId: (row) => row.row_id, enableSorting: false });
 

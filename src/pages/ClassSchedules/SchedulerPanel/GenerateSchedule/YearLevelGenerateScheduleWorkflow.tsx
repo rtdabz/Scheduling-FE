@@ -93,6 +93,7 @@ import {
   schedulingSettingsCacheKey,
 } from "./generatorCache";
 import WizardProgressStepper from "./WizardProgressStepper";
+import "./generator.css";
 import ConfigurationStep from "./ConfigurationStep";
 import type { SetupDraft } from "./ConfigurationStep";
 import { orderDays } from "./generationTypes";
@@ -196,12 +197,6 @@ const wizardSteps: Array<{ id: Step; title: string }> = [
   { id: 4, title: "Schedule Summary" },
 ];
 const lastStep: Step = 4;
-const stepWidths: Record<Step, string> = {
-  1: "sm:w-[min(100rem,calc(100vw-2rem))]",
-  2: "sm:w-[min(80rem,calc(100vw-2rem))]",
-  3: "sm:w-[min(80rem,calc(100vw-2rem))]",
-  4: "sm:w-[min(100rem,calc(100vw-2rem))]",
-};
 const storageVersion = "v5";
 const defaultSetupDraft: SetupDraft = {
   completed: false,
@@ -1728,25 +1723,26 @@ function GenerateScheduleWizard({
       // Any real input means the user is working here; a newer server copy then no longer replaces the form.
       onPointerDownCapture={() => { interactedRef.current = true; }}
       onKeyDownCapture={() => { interactedRef.current = true; }}
-      className={`scheduler-generator-workspace flex min-h-0 min-w-0 w-[calc(100vw-1rem)] flex-col overflow-hidden bg-white transition-[width] duration-300 ease-out ${stepWidths[step]}`}
+      // Fills the frame's height on full-height steps and shrinks to its content on short ones (see .workflow-modal[data-fit]).
+      // Form steps cap the frame narrower than the table steps (see .workflow-modal:has([data-step-size])).
+      data-step-size={step === 1 || step === 3 ? "compact" : "wide"}
+      className="scheduler-generator-workspace flex min-h-0 w-full min-w-0 flex-auto flex-col overflow-hidden bg-white"
     >
-      <header className="scheduler-dialog-header scheduler-brand-header relative flex shrink-0 flex-wrap items-center gap-3 px-4 py-4 sm:px-5">
-        <div className="flex min-w-0 flex-1 basis-64 items-center gap-3">
-          {departmentLogoUrl ? (
-            <img src={departmentLogoUrl} alt="" className="scheduler-generator-logo h-10 w-10 shrink-0 rounded-full object-contain" />
-          ) : (
-            <span className="scheduler-dialog-icon"><Sparkles className="h-6 w-6" /></span>
-          )}
-          <div className="min-w-0">
-            <p className="scheduler-dialog-eyebrow">Schedule builder</p>
-            <h2 id="schedule-generator-title" className="scheduler-dialog-title">Generate Schedule</h2>
-            <p id="schedule-generator-description" className="scheduler-dialog-description">
-              {formatSemester(activeSemester)} &middot; {yearLabel(yearLevel, scopedSections)} &middot;{" "}
-              {targetSections.length} section{targetSections.length === 1 ? "" : "s"}
-            </p>
-          </div>
+      <header className="workflow-header scheduler-dialog-header scheduler-brand-header">
+        {departmentLogoUrl ? (
+          <img src={departmentLogoUrl} alt="" className="scheduler-generator-logo shrink-0 rounded-full object-contain" />
+        ) : (
+          <span className="scheduler-dialog-icon"><Sparkles className="h-6 w-6" /></span>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="scheduler-dialog-eyebrow">Schedule builder</p>
+          <h2 id="schedule-generator-title" className="scheduler-dialog-title">Generate Schedule</h2>
+          <p id="schedule-generator-description" className="scheduler-dialog-description">
+            {formatSemester(activeSemester)} &middot; {yearLabel(yearLevel, scopedSections)} &middot;{" "}
+            {targetSections.length} section{targetSections.length === 1 ? "" : "s"}
+          </p>
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-1">
+        <div className="workflow-header-actions">
         {serverDraftParams && (
           <AutoSaveIndicator
             state={serverDraft.saveState}
@@ -1796,16 +1792,14 @@ function GenerateScheduleWizard({
         </div>
       </header>
 
-      <div className="scheduler-generator-stepper shrink-0 px-4 py-2.5 sm:px-5">
-        <WizardProgressStepper
-          id="generator-progress"
-          currentStep={step}
-          steps={wizardSteps}
-          ariaLabel="Schedule generator steps"
-        />
-      </div>
+      <WizardProgressStepper
+        id="generator-progress"
+        currentStep={step}
+        steps={wizardSteps}
+        ariaLabel="Schedule generator steps"
+      />
 
-      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-parchment p-3 sm:p-4">
+      <main className="workflow-body overflow-y-auto">
         <div id="generator-workspace" className="mx-auto flex min-h-0 w-full flex-1 flex-col gap-3">
           {failure && (
             <RecommendedAdjustmentPanel
@@ -1950,14 +1944,15 @@ function GenerateScheduleWizard({
         </div>
       </main>
 
-      <footer className="scheduler-dialog-footer flex shrink-0 flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3 sm:px-5">
+      <footer className="workflow-footer">
         <p
-          className={`mr-auto min-w-0 max-w-3xl flex-1 basis-full text-xs font-medium leading-snug sm:basis-0 ${
+          className="workflow-footer-help"
+          data-tone={
             !generating &&
             ((step === 3 && generationBlockedReason) || (step === 4 && saveBlockedReason))
-              ? "text-rose-700"
-              : "text-[#6b5f57]"
-          }`}
+              ? "error"
+              : undefined
+          }
         >
           {generating
             ? "Closing keeps this job running. Cancel clears it here and requests the worker to stop at its next checkpoint. No timetable is saved by generation."
@@ -1967,7 +1962,7 @@ function GenerateScheduleWizard({
                 ? saveBlockedReason
                 : helpText[step]}
         </p>
-        <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 [&>button]:grow sm:w-auto sm:[&>button]:grow-0">
+        <div className="workflow-footer-buttons">
           {generating ? (
             <button
               id="generator-cancel"

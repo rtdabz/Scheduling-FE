@@ -1,7 +1,10 @@
 import type { NoteRun } from '../../types/curriculum';
-import { isSuspiciousCode, isSummerHeading, parseCredit, stripFormBlanks, termOf, yearHeading } from './normalize';
+import {
+  isCodeHeader, isLabHeader, isLecHeader, isPrerequisiteHeader, isSuspiciousCode, isSummerHeading, isTotalHeader, looksLikeCode,
+  parseCredit, stripFormBlanks, termOf,
+} from './normalize';
 import { buildNote, DEFAULT_TEXT_COLOR, FORM_FURNITURE, NOTE_START, type NoteChar } from './notes';
-import { metadataFromLines } from './tabular';
+import { metadataFromLines, placementHeading } from './tabular';
 import type { Extraction, ExtractedGroup, ExtractedRow, ExtractionFlag, PlacementTerm, ReportedTotals, SourceNote, UnreadRegion } from './types';
 
 export const PDF_EXTRACTOR_VERSION = 'tcc-grid-pdfjs/2';
@@ -30,12 +33,15 @@ export interface PdfPageText {
 interface Heading {
   y: number;
   year: number | null;
+  /** The term a combined heading names (`First Year - First Semester`), else null. */
+  term: PlacementTerm | null;
   summer: boolean;
 }
 
 interface TableHeader {
   page: number;
   y: number;
+  top: number;
   left: number;
   right: number;
   codeX: number;
@@ -69,39 +75,117 @@ const lineText = (line: PdfTextItem[]) => line.map((item) => item.str).join(' ')
 
 const headingsOf = (items: PdfTextItem[]): Heading[] => lines(items).flatMap((line): Heading[] => {
   const text = lineText(line);
-  const year = yearHeading(text);
-  if (year !== null) return [{ y: line[0].y, year, summer: false }];
-  return isSummerHeading(text) ? [{ y: line[0].y, year: null, summer: true }] : [];
+  const placement = placementHeading(text);
+  if (placement !== null) return [{ y: line[0].y, year: placement.year, term: placement.term, summer: false }];
+  if (isSummerHeading(text)) return [{ y: line[0].y, year: null, term: null, summer: true }];
+  // A term heading on its own line (`First Semester`) places the tables under it, within the current year.
+  const term = termOf(text);
+  return term !== null ? [{ y: line[0].y, year: null, term, summer: false }] : [];
 });
 
-const findOnLine = (items: PdfTextItem[], anchor: PdfTextItem, left: number, right: number, pattern: RegExp) =>
-  items.find((item) => sameLine(item, anchor) && item.x >= left && item.x < right && pattern.test(item.str.trim())) ?? null;
+interface HeaderBlock {
+  /** The lowest header line; course rows start below it. */
+  y: number;
+  /** The highest header line, when the labels sit on a row above the Lec/Lab/Units row. */
+  top: number;
+  codeX: number;
+  /** Null when the table prints only total units. */
+  lec: PdfTextItem | null;
+  lab: PdfTextItem | null;
+  tu: PdfTextItem;
+  preq: PdfTextItem | null;
+}
+
+/** How far above the Lec/Lab/Units row the code and title labels of a two-row header may sit. */
+const UPPER_HEADER_GAP = 18;
+
+/** How far below a header line codes are looked for when the code column has no label. */
+const CODE_SEARCH_DEPTH = 120;
+
+/**
+ * Table blocks found by their Lec, Lab, and total-credit headers, so the code column may be labelled `Course Code`,
+ * `Subj Code`, `Subjects`, anything else, or nothing. Without a label, the block's code column starts at the
+ * leftmost course code printed below the header, between the previous block and this block's Lec column.
+ */
+const headerBlocks = (items: PdfTextItem[]): HeaderBlock[] => {
+  const lecs = items.filter((item) => isLecHeader(item.str)).sort((a, b) => a.y - b.y || a.x - b.x);
+  const blocks: HeaderBlock[] = [];
+  let lineY = Number.NEGATIVE_INFINITY;
+  let leftBound = 0;
+  for (const lec of lecs) {
+    if (Math.abs(lec.y - lineY) > LINE_TOLERANCE) {
+      lineY = lec.y;
+      leftBound = 0;
+    }
+    const after = items.filter((item) => sameLine(item, lec) && item.x > lec.x).sort((a, b) => a.x - b.x);
+    const nextLec = after.find((item) => isLecHeader(item.str));
+    const inBlock = after.filter((item) => !nextLec || item.x < nextLec.x);
+    const lab = inBlock.find((item) => isLabHeader(item.str));
+    const tu = lab ? inBlock.find((item) => item.x > lab.x && isTotalHeader(item.str)) : undefined;
+    if (!lab || !tu) continue;
+    const preq = inBlock.find((item) => item.x > tu.x && isPrerequisiteHeader(item.str)) ?? null;
+
+    // The code label sits on the Lec row, or on the row above it in a two-row header.
+    const label = items
+      .filter((item) => item.y <= lec.y + LINE_TOLERANCE && lec.y - item.y <= UPPER_HEADER_GAP && item.x >= leftBound && item.x < lec.x && isCodeHeader(item.str))
+      .sort((a, b) => a.x - b.x)[0];
+    const codeX = label?.x ?? codeColumnBelow(items, lec.y, leftBound, lec.x);
+    const end = preq ?? tu;
+    leftBound = end.x + end.width + 1;
+    if (codeX === null) continue;
+    blocks.push({ y: lec.y, top: Math.min(lec.y, label?.y ?? lec.y), codeX, lec, lab, tu, preq });
+  }
+
+  // Tables printing only total units: a code label and a Units/Credits label on one line, with no Lec between.
+  const codeLabels = items.filter((item) => isCodeHeader(item.str)).sort((a, b) => a.y - b.y || a.x - b.x);
+  for (const label of codeLabels) {
+    if (blocks.some((block) => Math.abs(block.top - label.y) <= UPPER_HEADER_GAP && block.codeX <= label.x + 1 && label.x < block.tu.x)) continue;
+    const onLine = items.filter((item) => sameLine(item, label) && item.x > label.x).sort((a, b) => a.x - b.x);
+    const nextLabel = onLine.find((item) => isCodeHeader(item.str));
+    const inBlock = onLine.filter((item) => !nextLabel || item.x < nextLabel.x);
+    const tu = inBlock.find((item) => isTotalHeader(item.str));
+    if (!tu || inBlock.some((item) => item.x < tu.x && isLecHeader(item.str))) continue;
+    const preq = inBlock.find((item) => item.x > tu.x && isPrerequisiteHeader(item.str)) ?? null;
+    blocks.push({ y: label.y, top: label.y, codeX: label.x, lec: null, lab: null, tu, preq });
+  }
+  return blocks;
+};
+
+/** The left edge of an unlabelled code column: the leftmost course code printed just below the header. */
+const codeColumnBelow = (items: PdfTextItem[], headerY: number, left: number, right: number): number | null => {
+  const codes = items.filter((item) => item.y > headerY + LINE_TOLERANCE && item.y < headerY + CODE_SEARCH_DEPTH
+    && item.x >= left && item.x < right && looksLikeCode(stripFormBlanks(item.str)));
+  return codes.length > 0 ? Math.min(...codes.map((item) => item.x)) : null;
+};
 
 const tableHeaders = (page: PdfPageText, items: PdfTextItem[], headings: Heading[], warnings: string[]): TableHeader[] => {
-  const anchors = items.filter((item) => /^course\s*code$/i.test(item.str.trim())).sort((a, b) => a.y - b.y || a.x - b.x);
-  const headers: TableHeader[] = anchors.map((anchor) => {
-    const next = anchors.filter((other) => other !== anchor && sameLine(other, anchor) && other.x > anchor.x).sort((a, b) => a.x - b.x)[0];
-    const left = anchor.x - 8;
-    const right = next ? next.x - 8 : page.width;
-    const label = items.find((item) => sameLine(item, anchor) && item.x > anchor.x && item.x < right && termOf(item.str) !== null);
-    const above = headings.filter((heading) => heading.y < anchor.y).sort((a, b) => b.y - a.y);
+  const blocks = headerBlocks(items);
+  const headers: TableHeader[] = blocks.map((block) => {
+    const next = blocks.filter((other) => other !== block && Math.abs(other.y - block.y) <= LINE_TOLERANCE && other.codeX > block.codeX).sort((a, b) => a.codeX - b.codeX)[0];
+    const left = block.codeX - 8;
+    const right = next ? next.codeX - 8 : page.width;
+    const numbersStart = (block.lec ?? block.tu).x;
+    const label = items.find((item) => item.y >= block.top - LINE_TOLERANCE && item.y <= block.y + LINE_TOLERANCE && item.x > block.codeX && item.x < numbersStart && termOf(item.str) !== null);
+    const above = headings.filter((heading) => heading.y < block.top).sort((a, b) => b.y - a.y);
     const year = above.find((heading) => heading.year !== null)?.year ?? null;
     let term = label ? termOf(label.str) : null;
+    if (term === null && above[0]?.term) term = above[0].term;
     if (term === null && above[0]?.summer) term = 3;
-    if (term === null) warnings.push(`Page ${page.page}: a table near y=${Math.round(anchor.y)} has no recognizable term label; map its term manually.`);
-    if (year === null) warnings.push(`Page ${page.page}: a table near y=${Math.round(anchor.y)} has no enclosing year heading; map its year manually.`);
+    if (term === null) warnings.push(`Page ${page.page}: a table near y=${Math.round(block.y)} has no recognizable term label; map its term manually.`);
+    if (year === null) warnings.push(`Page ${page.page}: a table near y=${Math.round(block.y)} has no enclosing year heading; map its year manually.`);
     return {
       page: page.page,
-      y: anchor.y,
+      y: block.y,
+      top: block.top,
       left,
       right,
-      codeX: anchor.x,
+      codeX: block.codeX,
       term,
       year,
-      lec: findOnLine(items, anchor, left, right, /^lec(ture)?$/i),
-      lab: findOnLine(items, anchor, left, right, /^lab(oratory)?$/i),
-      tu: findOnLine(items, anchor, left, right, /^(tu|units?)$/i),
-      preq: findOnLine(items, anchor, left, right, /^pre-?req/i),
+      lec: block.lec,
+      lab: block.lab,
+      tu: block.tu,
+      preq: block.preq,
       bottom: page.height,
     };
   });
@@ -115,21 +199,24 @@ const tableHeaders = (page: PdfPageText, items: PdfTextItem[], headings: Heading
 };
 
 interface NumericColumns {
-  lec: number;
-  lab: number;
+  /** Null when the table prints only total units. */
+  lec: number | null;
+  lab: number | null;
   tu: number;
   numericLeft: number;
   numericRight: number;
 }
 
 const numericColumns = (header: TableHeader): NumericColumns | null => {
-  if (!header.lec || !header.lab || !header.tu) return null;
+  if (!header.tu) return null;
+  const right = header.tu.x + header.tu.width + 3;
+  if (!header.lec || !header.lab) return { lec: null, lab: null, tu: center(header.tu), numericLeft: header.tu.x - 6, numericRight: right };
   return {
     lec: center(header.lec),
     lab: center(header.lab),
     tu: center(header.tu),
     numericLeft: header.lec.x - 6,
-    numericRight: header.tu.x + header.tu.width + 3,
+    numericRight: right,
   };
 };
 
@@ -143,9 +230,12 @@ const readNumbers = (items: PdfTextItem[], columns: NumericColumns): Cells => {
   const values: ReportedTotals = { lec: null, lab: null, tu: null };
   const flags = new Set<ExtractionFlag>();
   const seen = new Set<keyof ReportedTotals>();
+  const keys = (['lec', 'lab', 'tu'] as const).filter((key) => columns[key] !== null);
+  if (keys.length === 1) flags.add('units_only');
+  const distance = (item: PdfTextItem, key: keyof ReportedTotals) => Math.abs(center(item) - (columns[key] ?? Number.POSITIVE_INFINITY));
   for (const item of items) {
     const text = item.str.trim();
-    const field = (['lec', 'lab', 'tu'] as const).reduce((best, key) => (Math.abs(center(item) - columns[key]) < Math.abs(center(item) - columns[best]) ? key : best), 'lec' as keyof ReportedTotals);
+    const field = keys.reduce((best, key) => (distance(item, key) < distance(item, best) ? key : best), keys[0]);
     const value = parseCredit(text);
     if (value === null) continue;
     if (Number.isNaN(value) || seen.has(field)) {
@@ -156,7 +246,7 @@ const readNumbers = (items: PdfTextItem[], columns: NumericColumns): Cells => {
     seen.add(field);
     values[field] = value;
   }
-  for (const key of ['lec', 'lab', 'tu'] as const) {
+  for (const key of keys) {
     if (!seen.has(key)) flags.add('blank_cell');
   }
   if (values.lec !== null && values.lab !== null && values.tu !== null && values.lec + values.lab !== values.tu) flags.add('credit_sum_mismatch');
@@ -179,7 +269,7 @@ const joinText = (items: PdfTextItem[]) => items
   .trim();
 
 const readTable = (header: TableHeader, items: PdfTextItem[], rows: ExtractedRow[], groups: ExtractedGroup[], consumed: Set<PdfTextItem>, warnings: string[]) => {
-  items.filter((item) => Math.abs(item.y - header.y) <= LINE_TOLERANCE && item.x >= header.left && item.x < header.right).forEach((item) => consumed.add(item));
+  items.filter((item) => item.y >= header.top - LINE_TOLERANCE && item.y <= header.y + LINE_TOLERANCE && item.x >= header.left && item.x < header.right).forEach((item) => consumed.add(item));
   const columns = numericColumns(header);
   if (!columns) {
     warnings.push(`Page ${header.page}: a table near y=${Math.round(header.y)} has no Lec/Lab/TU headers; it was not read.`);
@@ -187,7 +277,7 @@ const readTable = (header: TableHeader, items: PdfTextItem[], rows: ExtractedRow
   }
 
   const region = items.filter((item) => item.y > header.y + LINE_TOLERANCE && item.y < header.bottom - LINE_TOLERANCE && item.x >= header.left && item.x < header.right);
-  const total = region.filter((item) => /^total\s+credits?$/i.test(item.str.trim())).sort((a, b) => a.y - b.y)[0];
+  const total = region.filter((item) => /^total(\s+(credits?|units?))?\s*:?$/i.test(item.str.trim())).sort((a, b) => a.y - b.y)[0];
   const rowLimit = total ? total.y - LINE_TOLERANCE : header.bottom;
   const anchors = region
     .filter((item) => item.y < rowLimit && item.x < header.codeX + 12 && stripFormBlanks(item.str) !== '' && !/^note\b/i.test(stripFormBlanks(item.str)))
@@ -308,7 +398,7 @@ const readNotes = (page: PdfPageText, remaining: PdfTextItem[], headers: TableHe
   }
 
   // Images below the letterhead can hold notes that text extraction cannot see.
-  const bodyTop = Math.min(...headers.map((header) => header.y));
+  const bodyTop = Math.min(...headers.map((header) => header.top));
   for (const [x0, y0, x1, y1] of page.images ?? []) {
     if (x1 - x0 >= 20 && y1 - y0 >= 6 && y1 > bodyTop) {
       unread.push({ reason: 'image', page: page.page, bbox: [x0, y0, x1, y1].map((value) => Math.round(value * 100) / 100) as [number, number, number, number] });
@@ -338,7 +428,7 @@ export const extractCurriculumLayout = (pages: PdfPageText[]): Extraction => {
       if (items.length > 0) warnings.push(`Page ${page.page} has no recognizable curriculum table.`);
       continue;
     }
-    const firstTableY = Math.min(...headings.map((heading) => heading.y), ...headers.map((header) => header.y));
+    const firstTableY = Math.min(...headings.map((heading) => heading.y), ...headers.map((header) => header.top));
     metadata ??= readMetadata(items, firstTableY);
     // The letterhead and metadata above the first table, and the heading lines, are not notes.
     const consumed = new Set(items.filter((item) => item.y < firstTableY || headings.some((heading) => Math.abs(item.y - heading.y) <= LINE_TOLERANCE)));

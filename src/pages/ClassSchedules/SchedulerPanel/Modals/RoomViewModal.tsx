@@ -146,7 +146,7 @@ export default function RoomViewModal({
 
   return (
     <div
-      className="scheduler-dialog-overlay fixed inset-0 z-50 flex items-center justify-center overflow-y-auto"
+      className="scheduler-dialog-overlay fixed inset-0 z-[65] flex items-center justify-center overflow-y-auto"
       onClick={(e) => { if (e.target === e.currentTarget) setIsRoomViewOpen(false); }}
     >
       <div

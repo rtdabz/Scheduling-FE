@@ -2,6 +2,7 @@ import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, DoorOpen, GraduationCap, Printer, RotateCcw, Send, UserCheck, UserMinus } from "lucide-react";
 import { yearLevelLabel } from "./constants";
+import "./TopBar.css";
 import type { DepartmentSectionProgress, ScheduleItem, SectionDoneCandidate, Section, WithdrawalStage } from "./types";
 import Skeleton from "../../../components/ui/Skeleton";
 import SearchField from "./components/SearchField";
@@ -104,16 +105,19 @@ const stepStateStyles: Record<StepState, { marker: string; label: string; meta: 
 /** The system header's maroon gradient (index.css) for the workspace header band. Pair with light text. */
 const HEADER_BAND = "bg-wicars-header";
 
-function WorkflowStep({ index, label, meta, state }: { index: number; label: string; meta?: string; state: StepState }) {
+function WorkflowStep({ index, label, shortLabel, meta, state }: { index: number; label: string; shortLabel?: string; meta?: string; state: StepState }) {
   const styles = stepStateStyles[state];
   return (
-    <li className="flex min-w-0 items-center gap-2" aria-current={state === "active" ? "step" : undefined}>
-      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold transition-colors duration-300 ${styles.marker}`}>
+    <li className="ws-step flex min-w-0 items-center gap-2" aria-current={state === "active" ? "step" : undefined}>
+      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold transition-colors duration-300 ${styles.marker}`} title={label}>
         {state === "done" ? <CheckCircle2 className="h-4 w-4" aria-label="Completed" /> : index}
       </span>
-      <span className="min-w-0 leading-tight">
-        <span className={`block truncate text-[13px] font-bold ${styles.label}`}>{label}</span>
-        {meta && <span className={`block truncate text-[11px] font-medium tabular-nums ${styles.meta}`}>{meta}</span>}
+      <span className="ws-step-text min-w-0 leading-tight">
+        <span className={`block truncate text-[13px] font-bold ${styles.label}`}>
+          {/* Narrow headers show the short label; the full one stays readable to screen readers. */}
+          {shortLabel ? <><span className="ws-step-long">{label}</span><span className="ws-label-short" aria-hidden="true">{shortLabel}</span></> : label}
+        </span>
+        {meta && <span className={`ws-step-meta block truncate text-[11px] font-medium tabular-nums ${styles.meta}`}>{meta}</span>}
       </span>
     </li>
   );
@@ -461,12 +465,13 @@ export default function TopBar({
         meta={selectedSectionId ? `${totalScheduled}/${totalSubjects} plotted` : undefined}
         state={plottingState}
       />
-      <li role="presentation" aria-hidden="true" className="flex w-6 shrink-0 items-center sm:w-10">
+      <li role="presentation" aria-hidden="true" className="ws-step-connector flex shrink-0 items-center">
         <span className={`h-0.5 w-full rounded-full transition-colors duration-300 ${isPhase2Active ? "bg-emerald-400" : "bg-white/20"}`} />
       </li>
       <WorkflowStep
         index={2}
         label="Instructor Assignment"
+        shortLabel="Assignment"
         meta={assignmentState === "upcoming"
           ? "After approval"
           : selectedSectionId ? `${assignedSlotsCount}/${totalSlotsCount} assigned` : undefined}
@@ -477,15 +482,16 @@ export default function TopBar({
 
   return (
     <div className="flex flex-col rounded-xl border border-slate-200 bg-white">
-      {/* Section, workflow, actions: one grid row on wide screens, a predictable stack below. */}
-      <div className={`grid grid-cols-1 items-center gap-x-5 gap-y-2.5 rounded-t-xl px-4 py-2.5 md:grid-cols-[auto_minmax(0,1fr)] xl:grid-cols-[auto_minmax(0,1fr)_auto] ${HEADER_BAND}`}>
-        <div id="schedule-builder-section" data-selected-section-id={selectedSectionId || undefined} className="relative shrink-0" ref={dropdownRef}>
-          {isLoading ? <Skeleton className="h-10 w-full rounded-lg sm:w-[232px]" /> : <><button
+      {/* Section, workflow, actions: always one row; see TopBar.css for how it narrows. */}
+      <div className={`ws-band rounded-t-xl ${HEADER_BAND}`}>
+      <div className="ws-band-row">
+        <div id="schedule-builder-section" data-selected-section-id={selectedSectionId || undefined} className="ws-section" ref={dropdownRef}>
+          {isLoading ? <Skeleton className="h-10 w-full rounded-lg" /> : <><button
             type="button"
             aria-haspopup="listbox"
             aria-expanded={isSectionDropdownOpen}
             onClick={() => setIsSectionDropdownOpen(!isSectionDropdownOpen)}
-            className="flex h-10 w-full items-center gap-2.5 rounded-lg border border-white/20 bg-white/10 pl-1 pr-2.5 text-left outline-none transition-colors hover:border-white/35 hover:bg-white/15 focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/40 sm:w-[232px]"
+            className="flex h-10 w-full items-center gap-2.5 rounded-lg border border-white/20 bg-white/10 pl-1 pr-2.5 text-left outline-none transition-colors hover:border-white/35 hover:bg-white/15 focus:border-[#C9952A] focus:ring-2 focus:ring-[#C9952A]/40"
           >
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/10 text-[#F5C842]">
               <GraduationCap className="h-4 w-4" />
@@ -555,7 +561,7 @@ export default function TopBar({
           )}</>}
         </div>
 
-        <div id="schedule-builder-workflow" className="flex min-w-0 justify-start">
+        <div id="schedule-builder-workflow" className="ws-workflow">
           {isLoading ? (
             <div className="flex w-full max-w-md items-center gap-3">
               <Skeleton className="h-8 w-8 shrink-0 rounded-full" /><Skeleton className="h-8 flex-1 rounded-lg" />
@@ -565,7 +571,7 @@ export default function TopBar({
           ) : workflowStepper}
         </div>
 
-        <div role="toolbar" aria-label="Schedule actions" className="flex min-w-0 flex-wrap items-center gap-2 md:col-span-2 xl:col-span-1 xl:justify-end">
+        <div role="toolbar" aria-label="Schedule actions" className="ws-toolbar">
           {!isLoading && (
             <WorkflowGuideButton
               guideId={
@@ -583,21 +589,22 @@ export default function TopBar({
                 id="schedule-builder-auto-assign"
                 type="button"
                 onClick={onAutoAssign}
-                className={`${toolButtonClass} border-[#C9952A] bg-[#C9952A] font-bold text-[#36060b] hover:border-[#F5C842] hover:bg-[#F5C842]`}
+                title="Assign instructors"
+                className={`${toolButtonClass} ws-icon-button border-[#C9952A] bg-[#C9952A] font-bold text-[#36060b] hover:border-[#F5C842] hover:bg-[#F5C842]`}
               >
                 <UserCheck className="h-3.5 w-3.5" />
-                <span>Assign</span>
+                <span className="ws-label-primary">Assign</span>
               </button>
               {onClearInstructors && (
                 <button
                   type="button"
                   onClick={onClearInstructors}
                   disabled={(clearableSectionInstructorCount === 0 && clearableDepartmentInstructorCount === 0) || isClearingSectionInstructors}
-                  className={bandDangerButtonClass}
+                  className={`${bandDangerButtonClass} ws-icon-button`}
                   title="Remove manageable instructor assignments from this section or the whole department"
                 >
                   <UserMinus className="h-3.5 w-3.5" />
-                  <span>{isClearingSectionInstructors ? "Clearing..." : "Clear Instructors"}</span>
+                  <span className="ws-label-secondary">{isClearingSectionInstructors ? "Clearing..." : "Clear Instructors"}</span>
                 </button>
               )}
             </>
@@ -615,16 +622,16 @@ export default function TopBar({
                   type="button"
                   onClick={onResetSchedules}
                   disabled={!canResetSchedules || isClearingAll}
-                  className={bandDangerButtonClass}
+                  className={`${bandDangerButtonClass} ws-icon-button`}
                   title="Clear plotted schedules from selected sections"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
-                  <span>{isClearingAll ? "Resetting..." : "Reset"}</span>
+                  <span className="ws-label-secondary">{isClearingAll ? "Resetting..." : "Reset"}</span>
                 </button>
               )}
             </>
           )}</>}
-          <span aria-hidden="true" className="mx-0.5 hidden h-6 w-px bg-white/20 sm:block" />
+          <span aria-hidden="true" className="ws-toolbar-divider mx-0.5 h-6 w-px bg-white/20" />
           {!isLoading && onOpenRoomTransfer && (
               <button
                 id="schedule-builder-room-transfer"
@@ -634,10 +641,10 @@ export default function TopBar({
                 aria-label="Reassign Room Schedule"
                 aria-describedby={pendingRoomTransferCount > 0 ? 'schedule-builder-room-transfer-count' : undefined}
                 title="Review schedules needing a room and transfer them to suitable rooms"
-                className={bandButtonClass}
+                className={`${bandButtonClass} ws-icon-button`}
               >
                 <DoorOpen className="h-3.5 w-3.5" />
-                <span>Reassign Room Schedule</span>
+                <span className="ws-label-room">Reassign Room Schedule</span>
                 {pendingRoomTransferCount > 0 && <span id="schedule-builder-room-transfer-count" role="status" aria-label="Pending room schedule reassignments" className="inline-flex min-w-5 items-center justify-center rounded-full bg-[#C9952A] px-1.5 py-0.5 text-[11px] font-bold leading-4 text-[#36060b]">{pendingRoomTransferCount}<span className="sr-only"> pending room schedule reassignments</span></span>}
               </button>
           )}
@@ -646,25 +653,26 @@ export default function TopBar({
               type="button"
               onClick={onPrint}
               title="Print schedule"
-              className={bandButtonClass}
+              className={`${bandButtonClass} ws-icon-button`}
             >
               <Printer className="h-3.5 w-3.5" />
-              <span>Print</span>
+              <span className="ws-label-secondary">Print</span>
             </button>
           )}
         </div>
       </div>
+      </div>
 
-      <div id="schedule-builder-next-step" className="rounded-b-xl border-t border-slate-200 bg-[#faf7f3] px-4 py-2.5">
-        <div className="grid grid-cols-1 gap-x-5 gap-y-3 md:grid-cols-[auto_minmax(0,1fr)] xl:grid-cols-[auto_minmax(0,1fr)_auto] xl:items-center">
+      <div id="schedule-builder-next-step" className="ws-strip rounded-b-xl border-t border-slate-200 bg-[#faf7f3] px-4 py-2">
+        <div className="ws-strip-row">
           {isLoading ? (
             <div className="flex items-center gap-5">
               <Skeleton className="h-8 w-14" /><Skeleton className="h-8 w-14" /><Skeleton className="h-8 w-28" />
             </div>
           ) : selectedSectionId ? (
             // One stat pattern across the row: label, value line, then bar. Remaining only shows while work is left.
-            <div id="schedule-builder-progress" role="group" aria-label={tracksInstructors ? "Instructor assignment progress" : "Plotting progress"} className="flex items-start gap-5">
-              <div className="w-36">
+            <div id="schedule-builder-progress" role="group" aria-label={tracksInstructors ? "Instructor assignment progress" : "Plotting progress"} className="ws-strip-progress">
+              <div>
                 <p className={statLabelClass}>{progressDoneLabel}</p>
                 <p className="mt-0.5 flex items-baseline gap-1 text-sm font-bold leading-5 tabular-nums text-slate-900">
                   {progressDone}
@@ -693,32 +701,32 @@ export default function TopBar({
               )}
             </div>
           ) : (
-            <div aria-hidden="true" className="hidden md:block" />
+            <div aria-hidden="true" />
           )}
 
-          <div className={`min-w-0 ${selectedSectionId || isLoading ? "md:border-l md:border-slate-200 md:pl-5" : ""}`}>
+          <div className="ws-strip-next" data-divider={Boolean(selectedSectionId || isLoading)}>
             {isLoading ? (
               <><Skeleton className="h-4 w-48" /><Skeleton className="mt-1.5 h-3 w-64 max-w-full" /></>
             ) : (
               <>
                 <p className={`${statLabelClass} !text-[#4e0a10]`}>Next step</p>
-                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <p className="text-[13px] font-bold leading-5 text-slate-900">{nextStep.title}</p>
+                <div className="ws-strip-title-row mt-0.5 flex min-w-0 items-center gap-x-2 gap-y-1">
+                  <p className="min-w-0 truncate text-[13px] font-bold leading-5 text-slate-900" title={nextStep.title}>{nextStep.title}</p>
                   {sectionSchedules.length > 0 && <SubmissionBadges section={selectedSection} />}
                 </div>
-                <p className="mt-0.5 text-xs leading-4 text-slate-500">{nextStep.description}</p>
+                <p className="ws-strip-description mt-0.5 text-xs leading-4 text-slate-500" title={nextStep.description}>{nextStep.description}</p>
               </>
             )}
           </div>
 
-          <div className={`flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 md:col-span-2 xl:col-span-1 xl:justify-end ${showDepartmentReadiness || isLoading ? "xl:border-l xl:border-slate-200 xl:pl-5" : ""}`}>
+          <div className="ws-strip-actions">
             {isLoading ? (
               <><Skeleton className="h-8 w-36" /><Skeleton className="h-9 w-28 rounded-lg" /></>
             ) : (
               <>
                 {showDepartmentReadiness && (
                   <>
-                    <div className="w-44">
+                    <div className="ws-readiness">
                       <p className={statLabelClass}>Department readiness</p>
                       <p className={`mt-0.5 flex items-center gap-1 text-xs font-semibold leading-5 ${departmentComplete ? "text-emerald-700" : "text-slate-800"}`}>
                         {departmentComplete && <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />}

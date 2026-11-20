@@ -130,16 +130,6 @@
   outline-offset: 2px;
 }
 
-.scheduler-generator-workspace .scheduler-generator-stepper {
-  border-bottom: 1px solid var(--gen-line);
-  background: #fff;
-}
-
-.scheduler-dialog .scheduler-generator-workspace > .scheduler-dialog-footer {
-  border-top: 1px solid var(--gen-line);
-  background: var(--gen-neutral);
-}
-
 /* One size, weight and interaction set for every generator action. */
 .scheduler-generator-workspace .scheduler-dialog-button {
   min-height: var(--btn-h-lg);
@@ -314,7 +304,8 @@
   .scheduler-dialog .scheduler-dialog-title { font-size: 20px; }
   .scheduler-dialog .scheduler-dialog-description { margin-top: 4px; font-size: 12px; }
   .scheduler-dialog .scheduler-dialog-footer { position: sticky; bottom: 0; z-index: 30; padding: 12px 16px; }
-  .scheduler-dialog > .scheduler-generator-workspace { align-self: flex-start; height: auto; overflow: visible; }
+  .scheduler-generator-workspace > .workflow-footer { position: sticky; bottom: 0; z-index: 30; }
+  .scheduler-dialog > .scheduler-generator-workspace { flex: none; height: auto; overflow: visible; }
   .scheduler-generator-workspace > main { flex: none; overflow: visible; }
 }
 
@@ -325,3 +316,130 @@
 .workflow-autosave-retry { border-radius: 999px; padding: 1px 8px; background: #fff; color: #701522; font-weight: 700; box-shadow: inset 0 0 0 1px #f3c4cb; }
 .workflow-autosave-retry:hover { background: #fde8eb; }
 @media (max-width: 639px) { .workflow-autosave span { display: none; } .workflow-autosave[data-tone="error"] span { display: inline; } }
+
+/* ── Shared workflow frame (Assign Instructors, Generate Schedule) ──
+   One frame, header, stepper, body and footer so both full-height workflows
+   size, scroll and adapt identically. Each modal keeps only its content styles. */
+.workflow-overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.workflow-modal { position: relative; display: flex; flex-direction: column; width: 100%; max-width: 1440px; height: min(1040px, calc(100dvh - 32px)); min-height: 0; overflow: hidden; border: 1px solid var(--gen-line); border-radius: 20px; background: #fff; color: #1a1410; }
+/* data-fit="content" (Generate Schedule): the frame is as tall as its content and never taller than
+   the space Assign's fixed frame uses. Short steps lose their empty band above the footer; long steps
+   reach the cap and scroll inside their own tables, because every level down to them is a
+   min-height: 0 flex column. */
+.workflow-modal[data-fit='content'] { height: auto; max-height: min(1040px, calc(100dvh - 32px)); }
+/* Form steps (Configuration, Review & Generate) need less width than the table steps. */
+.workflow-modal:has(> [data-step-size='compact']) { max-width: 1280px; }
+.workflow-modal :is(button, input, select, summary, [tabindex]):focus-visible { outline: 2px solid var(--gen-primary); outline-offset: 2px; }
+.workflow-modal button { touch-action: manipulation; }
+
+/* Header (deep maroon via .scheduler-brand-header) */
+.workflow-header { position: relative; display: flex; flex-shrink: 0; align-items: center; gap: 14px; padding: 14px 20px; }
+.workflow-header button { display: flex; align-items: center; justify-content: center; }
+.workflow-header-actions { display: flex; flex-shrink: 0; align-items: center; gap: 4px; margin-left: auto; }
+.workflow-header .scheduler-generator-logo { width: 44px; height: 44px; }
+
+/* Stepper: maroon progress, amber halo on the active step */
+.workflow-progress { display: flex; flex-shrink: 0; align-items: center; gap: 20px; padding: 10px 20px; border-bottom: 1px solid var(--gen-line); background: #fff; }
+.workflow-progress ol { display: flex; flex: 1; min-width: 0; align-items: center; max-width: calc(var(--workflow-step-count, 3) * 214px); margin: 0; padding: 0; list-style: none; }
+.workflow-progress li { display: flex; flex: 1; min-width: 0; align-items: center; gap: 8px; color: #625a54; font-size: 12px; font-weight: 500; }
+.workflow-progress li:last-child { flex: none; }
+.workflow-progress li:not(:last-child)::after { content: ''; flex: 1; min-width: 16px; height: 2px; margin: 0 4px; border-radius: 2px; background: var(--gen-line); }
+.workflow-progress li[data-complete='true']::after { background: var(--gen-primary); }
+.workflow-step-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workflow-progress li[aria-current='step'] { color: var(--gen-deep); font-weight: 600; }
+.workflow-progress li[data-complete='true'] { color: #3f342e; }
+.workflow-step-number { display: inline-flex; width: 24px; height: 24px; flex-shrink: 0; align-items: center; justify-content: center; border: 1px solid var(--gen-line-strong); border-radius: 50%; background: var(--gen-neutral); color: #7a6e67; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.workflow-progress [data-complete='true'] .workflow-step-number { border-color: var(--gen-primary); background: var(--gen-primary); color: #fff; }
+.workflow-progress [aria-current='step'] .workflow-step-number { border-color: var(--gen-deep); background: var(--gen-deep); color: #fff; box-shadow: 0 0 0 3px rgb(245 166 35 / 35%); }
+.workflow-step-count { margin-left: auto; color: #625a54; font-size: 12px; white-space: nowrap; }
+
+/* Body */
+.workflow-body { position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; padding: 12px; background: var(--gen-neutral); }
+
+/* Footer: guidance on the left, actions on the right. Actions never wrap on laptop
+   and desktop widths; the guidance text takes its own row first when space runs out. */
+.workflow-footer { position: relative; display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 16px; border-top: 1px solid var(--gen-line); background: var(--gen-neutral); }
+.workflow-footer-help { display: flex; flex: 1 1 240px; min-width: 0; align-items: center; gap: 7px; color: #625a54; font-size: 12px; line-height: 1.45; }
+.workflow-footer-help[data-tone='error'] { color: #b42318; font-weight: 600; }
+.workflow-footer-buttons { display: flex; flex-shrink: 0; flex-wrap: nowrap; align-items: center; gap: 8px; margin-left: auto; }
+.workflow-footer-buttons > button { flex-shrink: 0; white-space: nowrap; }
+
+@media (max-width: 1023px) {
+  .workflow-progress ol { max-width: none; }
+}
+
+/* Short viewports (laptops: 1366×768 and 1280×720 leave ~590–650px of viewport).
+   Chrome is trimmed first so the work area keeps a usable height. */
+@media (min-width: 640px) and (max-height: 820px) {
+  .workflow-overlay { padding: 8px; }
+  .workflow-modal { height: calc(100dvh - 16px); border-radius: 14px; }
+  .workflow-modal[data-fit='content'] { max-height: calc(100dvh - 16px); }
+  .workflow-modal .workflow-header { gap: 10px; padding: 8px 16px; }
+  .workflow-modal .workflow-header :is(.scheduler-dialog-eyebrow, .scheduler-dialog-description) { display: none; }
+  .workflow-modal .workflow-header .scheduler-dialog-title { font-size: 17px; line-height: 1.3; }
+  .workflow-modal.scheduler-dialog .workflow-header .scheduler-dialog-icon,
+  .workflow-modal .workflow-header .scheduler-generator-logo { width: 32px; height: 32px; border-radius: 9px; }
+  .workflow-modal .workflow-header .scheduler-generator-logo { border-radius: 50%; }
+  .workflow-modal .workflow-header .scheduler-dialog-icon svg { width: 18px; height: 18px; }
+  .workflow-modal .workflow-header .scheduler-dialog-close { width: 32px; height: 32px; }
+  .workflow-progress { padding: 6px 16px; }
+  .workflow-step-number { width: 20px; height: 20px; font-size: 10px; }
+  .workflow-body { padding: 10px; }
+  .workflow-footer { padding: 7px 16px; }
+  .workflow-modal .workflow-footer-buttons > button { min-height: 36px; padding: 6px 14px; }
+}
+@media (min-width: 640px) and (max-height: 660px) {
+  .workflow-modal .workflow-header { padding: 6px 14px; }
+  .workflow-modal.scheduler-dialog .workflow-header :is(.scheduler-dialog-icon, .scheduler-generator-logo) { display: none; }
+  .workflow-progress { padding: 5px 16px; }
+  .workflow-progress li { font-size: 11.5px; }
+}
+
+@media (max-width: 639px) {
+  .workflow-overlay { padding: 8px; }
+  .workflow-modal { height: calc(100dvh - 16px); border-radius: 16px; }
+  .workflow-modal[data-fit='content'] { max-height: calc(100dvh - 16px); }
+  .workflow-header { align-items: center; gap: 10px; padding: 12px 14px; }
+  .workflow-progress { padding: 9px 12px; }
+  .workflow-progress li { gap: 5px; font-size: 11px; }
+  .workflow-progress li:not(:last-child)::after { min-width: 8px; }
+  .workflow-step-number { width: 20px; height: 20px; font-size: 10px; }
+  .workflow-step-count { display: none; }
+  .workflow-body { padding: 10px; }
+  .workflow-footer { gap: 8px; padding: 10px 12px; }
+  .workflow-footer > :not(.sr-only) { flex-basis: 100%; }
+  .workflow-footer-buttons { flex-wrap: wrap; margin: 0; }
+  .workflow-footer-buttons > button { flex: 1 1 auto; min-height: 44px; }
+}
+/* Phones: only the current step keeps its title; the others stay readable to screen readers. */
+@media (max-width: 479px) {
+  .workflow-header .scheduler-generator-logo { display: none; }
+  .workflow-progress li:not([aria-current='step']) .workflow-step-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .workflow-progress li:not([aria-current='step']) { flex: 0 1 auto; }
+  .workflow-progress li:not([aria-current='step']):not(:last-child) { flex: 1; }
+}
+
+/* ── Shared workflow controls (panels, segmented choice, switch) ──
+   Same surfaces and states as the Assign Instructors panels and segments. */
+.workflow-panel { min-width: 0; border: 1px solid var(--gen-line); border-radius: 12px; background: #fff; box-shadow: 0 1px 2px rgb(74 13 22 / 4%); }
+
+.workflow-segmented { display: inline-grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; gap: 2px; padding: 3px; border: 1px solid var(--gen-line); border-radius: 10px; background: var(--gen-neutral); }
+.workflow-segmented > button { min-height: 30px; padding: 0 12px; border-radius: 7px; color: #5b4f48; font-size: 12px; font-weight: 600; white-space: nowrap; transition: background-color 150ms, color 150ms, box-shadow 150ms; }
+.workflow-segmented > button:hover:not(:disabled) { color: var(--gen-deep); }
+.workflow-segmented > button:is([aria-checked='true'], [aria-pressed='true']) { background: #fff; color: var(--gen-deep); box-shadow: 0 1px 2px rgb(74 13 22 / 12%), 0 0 0 1px rgb(112 21 34 / 10%); }
+.workflow-segmented > button:disabled { cursor: not-allowed; opacity: .55; }
+
+.workflow-switch { position: relative; display: inline-flex; width: 36px; height: 20px; flex-shrink: 0; align-items: center; padding: 2px; border-radius: 999px; background: #d9cfc5; cursor: pointer; transition: background-color 150ms; }
+.workflow-switch > span { width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(26 20 16 / 25%); transition: transform 150ms ease; }
+.workflow-switch[aria-checked='true'] { background: var(--gen-primary); }
+.workflow-switch[aria-checked='true'] > span { transform: translateX(16px); }
+.workflow-switch:hover:not(:disabled) { background: #cbbfb3; }
+.workflow-switch[aria-checked='true']:hover:not(:disabled) { background: var(--gen-deep); }
+.workflow-switch:disabled { cursor: not-allowed; opacity: .5; }
+
+/* Brand-header refinements shared by both workflows: icon actions read as quiet ghost buttons,
+   and the auto-save status keeps legible contrast on maroon. */
+.scheduler-dialog .workflow-header.scheduler-brand-header .scheduler-dialog-close { border-color: transparent; background: transparent; }
+.scheduler-dialog .workflow-header.scheduler-brand-header .scheduler-dialog-close:hover:not(:disabled) { border-color: rgb(255 255 255 / 14%); background: rgb(255 255 255 / 10%); }
+.scheduler-brand-header .workflow-autosave { color: rgb(255 255 255 / 70%); }
+.scheduler-brand-header .workflow-autosave[data-tone="saved"] { color: #a7dcb9; }

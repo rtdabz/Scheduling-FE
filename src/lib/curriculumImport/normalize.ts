@@ -22,19 +22,22 @@ export const compactCode = (code: string): string => normalizeCode(code).replace
 export const collapseHeading = (text: string): string => text.replace(/[\s_]+/g, '').toUpperCase();
 
 const YEAR_WORDS: Record<string, number> = {
-  FIRST: 1, '1ST': 1, ONE: 1,
-  SECOND: 2, '2ND': 2, TWO: 2,
-  THIRD: 3, '3RD': 3, THREE: 3,
-  FOURTH: 4, '4TH': 4, FOUR: 4,
+  FIRST: 1, '1ST': 1, ONE: 1, '1': 1, I: 1,
+  SECOND: 2, '2ND': 2, TWO: 2, '2': 2, II: 2,
+  THIRD: 3, '3RD': 3, THREE: 3, '3': 3, III: 3,
+  FOURTH: 4, '4TH': 4, FOUR: 4, '4': 4, IV: 4,
 };
 
+/** `FIRST YEAR`, `F I R S T  Y E A R`, `1st Year Level`, `Year 1`, `Year II`, `I Year`. */
 export const yearHeading = (text: string): number | null => {
-  const collapsed = collapseHeading(text);
-  const match = collapsed.match(/^(FIRST|SECOND|THIRD|FOURTH|1ST|2ND|3RD|4TH)YEAR(LEVEL)?$/);
-  return match ? YEAR_WORDS[match[1]] : null;
+  const collapsed = collapseHeading(text).replace(/[.:]+$/, '');
+  const before = collapsed.match(/^(FIRST|SECOND|THIRD|FOURTH|1ST|2ND|3RD|4TH|IV|III|II|I|[1-4])-?YEAR(LEVEL)?$/);
+  if (before) return YEAR_WORDS[before[1]];
+  const after = collapsed.match(/^YEAR(LEVEL)?-?(IV|III|II|I|[1-4])$/);
+  return after ? YEAR_WORDS[after[2]] : null;
 };
 
-export const isSummerHeading = (text: string): boolean => /^(SUMMER|MIDYEAR|SUMMERTERM)$/.test(collapseHeading(text));
+export const isSummerHeading = (text: string): boolean => /^(SUMMER|MIDYEAR|MID-YEAR|SUMMERTERM|MIDYEARTERM|SUMMERCLASS)$/.test(collapseHeading(text).replace(/[.:]+$/, ''));
 
 export const parseYearLevel = (value: unknown): number | null => {
   const text = String(value ?? '').trim();
@@ -54,13 +57,34 @@ export const parseTerm = (value: unknown): PlacementTerm | null => {
   return null;
 };
 
+/** A term label: `First Semester`, `1st Sem.`, `First Term`, `Semester 2`, `2nd Trimester`, `Summer`, `Midyear`. */
 export const termOf = (text: string): PlacementTerm | null => {
-  const collapsed = collapseHeading(text);
-  if (/^(FIRST|1ST)SEM(ESTER)?$/.test(collapsed)) return 1;
-  if (/^(SECOND|2ND)SEM(ESTER)?$/.test(collapsed)) return 2;
-  if (/^SUMMER(TERM)?$/.test(collapsed)) return 3;
+  const collapsed = collapseHeading(text).replace(/[.:]+$/, '');
+  const word = '(SEM|SEMESTER|TERM|TRIMESTER|TRI)';
+  if (new RegExp(`^(FIRST|1ST)${word}$|^${word}-?(1|I|ONE)$`).test(collapsed)) return 1;
+  if (new RegExp(`^(SECOND|2ND)${word}$|^${word}-?(2|II|TWO)$`).test(collapsed)) return 2;
+  if (/^(SUMMER|SUMMERTERM|SUMMERCLASS|MIDYEAR|MIDYEARTERM|MID-YEAR)$/.test(collapsed)) return 3;
   return null;
 };
+
+/**
+ * Departments label the course-code column differently: `Course Code`, `Subj Code`, `Subject Code`, `Subjects`,
+ * `Course No.`, `Code`. Matching is on the whole cell, so a title column such as `Descriptive Title` never matches.
+ */
+export const isCodeHeader = (text: string): boolean => {
+  const key = text.toLowerCase().replace(/[^a-z#]/g, '');
+  return /^(course|courses|subj|subject|subjects)?(code|codes|no|number|num|#)$/.test(key) || /^(subj|subject|subjects|course|courses)$/.test(key);
+};
+
+/** Lecture, laboratory, and total credit headers, in the wordings departments use. */
+export const isLecHeader = (text: string): boolean => /^lec(t|ture)?\.?(\s*(units?|hrs?|hours?|credits?))?$/i.test(text.trim());
+export const isLabHeader = (text: string): boolean => /^lab(oratory)?\.?(\s*(units?|hrs?|hours?|credits?))?$/i.test(text.trim());
+export const isTotalHeader = (text: string): boolean =>
+  /^(tu|t\.u\.?|units?|total|total\s*units?|credits?|credit\s*units?|total\s*credits?|no\.?\s*of\s*units)$/i.test(text.trim());
+export const isPrerequisiteHeader = (text: string): boolean => /^(pre-?req|pre-?requisites?|requisites?)/i.test(text.trim());
+
+/** A cell that reads as a course code: a letter prefix and a number (`IT 101`, `GEC 01`, `EDUC101`, `PE 1`). */
+export const looksLikeCode = (text: string): boolean => /^[A-Za-z][A-Za-z.&-]{0,9}\s*-?\s*\d{1,4}[A-Za-z]?(\s*[A-Za-z0-9]{1,3})?$/.test(text.trim());
 
 /** Strict numeric cell parse: blank is null, anything that is not a plain number is NaN. */
 export const parseCredit = (value: unknown): number | null => {

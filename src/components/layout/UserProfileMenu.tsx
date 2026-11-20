@@ -57,7 +57,7 @@ export default function UserProfileMenu() {
     setLoggingOut(true);
     logoutCurrentSession();
     toast.success('Logged Out', 'You have been successfully logged out.');
-    navigate('/', { replace: true });
+    navigate('/login', { replace: true });
   };
 
   return <div ref={wrapper} className="relative">

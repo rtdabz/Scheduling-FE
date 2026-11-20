@@ -53,7 +53,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 const programSelect = () => screen.getByRole('combobox', { name: 'Teaching Program (Optional)' }) as HTMLSelectElement;
-const courseRow = (code: string) => screen.getByText(code, { selector: 'p' }).closest('tr')!;
+const courseRow = (code: string) => screen.getByText(code, { selector: 'p' }).closest<HTMLElement>('[role="row"]')!;
 const openPage = async () => {
   render(<CourseTeachingAssignments />);
   await screen.findByRole('checkbox', { name: 'Select GEC 2' });
@@ -191,5 +191,14 @@ describe('Course Teaching program selection', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Course' }), { target: { value: '101' } });
     expect(screen.getByRole('checkbox', { name: 'Select GEC 2' })).toBeTruthy();
     expect(screen.queryByRole('checkbox', { name: 'Select PATH FIT 2' })).toBeNull();
+  });
+});
+
+describe('courseNameLines', () => {
+  it('puts two main words on each line, not counting minor words', async () => {
+    const { courseNameLines } = await import('../../lib/courseNameLines');
+    expect(courseNameLines('Readings in Philippine History')).toEqual(['Readings in Philippine', 'History']);
+    expect(courseNameLines('Fitness Training')).toEqual(['Fitness Training']);
+    expect(courseNameLines('History of the Philippines and Its Culture')).toEqual(['History of the Philippines', 'and Its Culture']);
   });
 });

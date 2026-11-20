@@ -565,6 +565,57 @@ describe('curriculum import page', () => {
     expect([category('GEC 1'), category('NSTP 1'), category('IT 101')]).toEqual(['major', 'major', '']);
   }, 20_000);
 
+  it('edits a course\'s hours per unit in the Configure edit table and sends them as custom rates', async () => {
+    render(<MemoryRouter><CurriculumImportPage /></MemoryRouter>);
+    await screen.findByRole('button', { name: /import settings/i });
+    const rows = ['1,First Semester,IT 101,Introduction to Computing,2,1,3,', '1,First Semester,GEC 1,Understanding the Self,3,0,3,'];
+    const input = document.getElementById('curriculum-import-file') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File([`${csv.split('\n')[0]}\n${rows.join('\n')}\n`], 'hours.csv', { type: 'text/csv' })] } });
+    await screen.findByRole('button', { name: /^Curriculum details/ });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to Configure' }));
+
+    // Hours are edited in the edit table, not in the category view.
+    expect(screen.queryByRole('button', { name: /^Edit hours per unit/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Edit table/ }));
+
+    // Department rates: 1 h a lecture unit, 3 h a laboratory unit.
+    fireEvent.click(screen.getByRole('button', { name: 'Edit hours per unit for IT 101: 5 h a week' }));
+    const dialog = screen.getByRole('dialog', { name: 'Edit Hours per Unit' });
+    expect((within(dialog).getByLabelText('Lecture') as HTMLInputElement).value).toBe('1');
+    expect((within(dialog).getByLabelText('Laboratory') as HTMLInputElement).value).toBe('3');
+    expect((within(dialog).getByRole('button', { name: 'Apply hours' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText('Lecture'), { target: { value: '0.75' } });
+    expect(within(dialog).getByText('Use steps of 0.5 hour.')).toBeDefined();
+    fireEvent.change(within(dialog).getByLabelText('Lecture'), { target: { value: '-1' } });
+    expect(within(dialog).getByText('Use 0 to 10 hours.')).toBeDefined();
+    // 0 is allowed: that component gets no class time.
+    fireEvent.change(within(dialog).getByLabelText('Laboratory'), { target: { value: '0' } });
+    expect(within(dialog).getByText('0 hours: the laboratory is not scheduled.')).toBeDefined();
+    fireEvent.change(within(dialog).getByLabelText('Laboratory'), { target: { value: '3' } });
+    fireEvent.change(within(dialog).getByLabelText('Lecture'), { target: { value: '1.5' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply hours' }));
+
+    // 2 × 1.5 h + 1 × 3 h; the other course keeps the department rates.
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Edit hours per unit for IT 101: 6 h a week, custom' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Edit hours per unit for GEC 1: 3 h a week' })).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: /^Curriculum details/ }));
+    fireEvent.change(screen.getByLabelText(/curriculum name/i), { target: { value: 'BSIT 2026' } });
+    fireEvent.change(screen.getByLabelText(/effective school year/i), { target: { value: '2026-2027' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    fireEvent.click(screen.getByRole('button', { name: /^validate$/i }));
+    await waitFor(() => expect(service.validate).toHaveBeenCalledTimes(1));
+    const [sentIt, sentGec] = service.validate.mock.calls[0][0].rows;
+    expect([sentIt.lecture_minutes_per_unit, sentIt.laboratory_minutes_per_unit]).toEqual([90, 180]);
+    expect('lecture_minutes_per_unit' in sentGec).toBe(false);
+
+    // Back to the department default clears the custom rates.
+    fireEvent.click(screen.getByRole('button', { name: /^Edit hours per unit for IT 101/ }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Edit Hours per Unit' })).getByRole('button', { name: 'Use department default' }));
+    expect(screen.getByRole('button', { name: 'Edit hours per unit for IT 101: 5 h a week' })).toBeDefined();
+  });
+
   it('locks a program head to their program, with the details reachable from Configure', async () => {
     sessionStorage.setItem('user', JSON.stringify({ role: 'program_head', department_id: 1, program_id: 7, permissions: ['curriculum.manage'] }));
     render(<MemoryRouter><CurriculumImportPage /></MemoryRouter>);
@@ -685,8 +736,8 @@ describe('curriculum import page', () => {
     fireEvent.click(screen.getByRole('button', { name: /^validate$/i }));
     const button = await screen.findByRole('button', { name: 'Validation results: 2 errors, 1 notice' });
     expect(button.tagName).toBe('BUTTON');
-    expect(screen.getByText('2 errors').className).toContain('text-red-800');
-    expect(screen.getByText('1 notice').className).toContain('bg-[#C9952A]');
+    expect(screen.getByText('2 errors').className).toContain('text-red-700');
+    expect(screen.getByText('1 notice').className).toContain('bg-accent/15');
     expect(screen.getByText('Import is blocked: 2 errors to correct.')).toBeDefined();
     fireEvent.click(button);
     expect(screen.getByRole('dialog', { name: 'Validation results' })).toBeDefined();

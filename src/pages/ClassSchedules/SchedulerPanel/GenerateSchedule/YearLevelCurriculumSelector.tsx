@@ -23,6 +23,8 @@ interface Props {
   variant?: "field" | "icon";
   /** Year-level scope: apply only to the sections passed, offering curricula open to their shared program. */
   restrictToSections?: boolean;
+  /** The host shows its own "Curriculum" label (Generate Schedule settings row); keep it for screen readers only. */
+  hideLabel?: boolean;
 }
 
 export default function YearLevelCurriculumSelector({
@@ -36,6 +38,7 @@ export default function YearLevelCurriculumSelector({
   hasClasses = false,
   variant = "field",
   restrictToSections = false,
+  hideLabel = false,
 }: Props) {
   const sectionScope = scope === "section";
   const { toast } = useToast();
@@ -186,7 +189,7 @@ export default function YearLevelCurriculumSelector({
   const picker = (
     <div className="shrink-0">
       <label className="block text-[11px] font-black uppercase tracking-wide text-slate-500">
-        <span className="flex items-center gap-1.5">
+        <span className={hideLabel ? "sr-only" : "flex items-center gap-1.5"}>
           <BookMarked className="h-3.5 w-3.5" aria-hidden />
           Curriculum
         </span>
@@ -197,7 +200,9 @@ export default function YearLevelCurriculumSelector({
           onChange={(event) =>
             setChoice(event.target.value === "" ? null : Number(event.target.value))
           }
-          className="mt-1.5 h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold normal-case tracking-normal text-slate-900 outline-none transition focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/10 disabled:bg-slate-50 disabled:text-slate-400"
+          className={hideLabel
+            ? "gen-select block normal-case tracking-normal"
+            : "mt-1.5 h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold normal-case tracking-normal text-slate-900 outline-none transition focus:border-[#4e0a10] focus:ring-2 focus:ring-[#4e0a10]/10 disabled:bg-slate-50 disabled:text-slate-400"}
         >
           <option value="">
             {loading

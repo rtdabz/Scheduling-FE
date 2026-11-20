@@ -1,7 +1,6 @@
 import { extractCurriculumLayout } from './pdfLayout';
 import { readPdfText } from './pdfSource';
-import { detectTemplateHeader, metadataFromLines, rowsFromGrid, rowsFromTemplate, type ColumnMapping, type HeaderDetection } from './tabular';
-import { termOf } from './normalize';
+import { detectTemplateHeader, gridHeaderAt, metadataFromLines, rowsFromGrid, sectionHeading, rowsFromTemplate, type ColumnMapping, type HeaderDetection } from './tabular';
 import type { Extraction, ImportFormat, Provenance, UnreadRegion } from './types';
 
 export const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
@@ -60,13 +59,23 @@ export type TableReading =
   | { kind: 'extraction'; extraction: Extraction }
   | { kind: 'mapping'; detection: HeaderDetection; table: TableSource };
 
-const hasGridHeader = (rows: string[][]) => rows.some((row) => {
-  const codeColumn = row.findIndex((cell) => /^course\s*code$/i.test(cell.trim()));
-  return codeColumn >= 0 && row.slice(codeColumn + 1).some((cell) => termOf(cell) !== null);
-});
+const isHeading = (row: string[]) => sectionHeading(row) !== null;
+
+/**
+ * A curriculum grid: table blocks found by their Lec/Lab/total headers, whatever the code column is called (or if
+ * it has no label), placed by a semester label in the block or by a year heading above it. A flat table with
+ * Year and Term columns has neither, and is read as the template instead.
+ */
+const hasGridHeader = (rows: string[][]) => {
+  const firstHeading = rows.findIndex(isHeading);
+  return rows.some((_, index) => {
+    const blocks = gridHeaderAt(rows, index);
+    return blocks.length > 0 && (blocks.some((block) => block.labelColumn >= 0) || (firstHeading >= 0 && firstHeading < index));
+  });
+};
 
 const firstTableRow = (rows: string[][]) => {
-  const index = rows.findIndex((row) => row.some((cell) => /^course\s*code$/i.test(cell.trim())));
+  const index = rows.findIndex((row, rowIndex) => isHeading(row) || gridHeaderAt(rows, rowIndex).length > 0);
   return index < 0 ? rows.length : index;
 };
 

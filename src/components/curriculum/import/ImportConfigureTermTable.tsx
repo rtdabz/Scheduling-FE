@@ -1,4 +1,4 @@
-import { Pencil } from 'lucide-react';
+import { Clock3, Pencil } from 'lucide-react';
 import { COURSE_CATEGORY_TONES } from '../courseCategoryStyles';
 import { HIGHLIGHT_CLASSES } from '../../../lib/curriculumImport/sheetNavigation';
 import { CONFIGURE_STATUS_LABELS, configureStatus, type ConfigureStatus } from '../../../lib/curriculumImport/configureStatus';
@@ -17,6 +17,8 @@ interface ImportConfigureTermTableProps {
   onToggleSelected: (rowIds: string[], selected: boolean) => void;
   onChange: (rowId: string, patch: Partial<DraftRow>) => void;
   onOpenRow: (rowId: string) => void;
+  /** Opens Edit Hours per Unit for a course; without it the hours are shown read-only. */
+  onEditHours?: (rowId: string) => void;
 }
 
 const CATEGORY_LABELS: Record<CourseCategory, string> = { major: 'Major', minor: 'Minor' };
@@ -48,7 +50,7 @@ const statusText = (status: ConfigureStatus, row: DraftRow, rule: ResolvedRow['r
   return CONFIGURE_STATUS_LABELS[status];
 };
 
-function CourseRow({ row, showPlacement, issues, resolvedRow, validated, settings, isSelected, onToggleSelected, onChange, onOpen }: {
+function CourseRow({ row, showPlacement, issues, resolvedRow, validated, settings, isSelected, onToggleSelected, onChange, onOpen, onEditHours }: {
   row: DraftRow;
   showPlacement: boolean;
   issues: ImportIssue[];
@@ -59,6 +61,7 @@ function CourseRow({ row, showPlacement, issues, resolvedRow, validated, setting
   onToggleSelected: (rowIds: string[], selected: boolean) => void;
   onChange: (rowId: string, patch: Partial<DraftRow>) => void;
   onOpen: () => void;
+  onEditHours?: () => void;
 }) {
   const id = row.row_id;
   const code = row.code.trim() || id;
@@ -71,8 +74,10 @@ function CourseRow({ row, showPlacement, issues, resolvedRow, validated, setting
   const errors = errorIssues.length;
   // The category line already explains a missing classification; other findings are spelled out under the course.
   const otherErrors = errorIssues.filter((issue) => issue.code !== 'unclassified');
-  const lecture = (row.lecture_units ?? 0) * (settings?.lecture_minutes_per_unit ?? 0);
-  const lab = (row.lab_units ?? 0) * (settings?.laboratory_minutes_per_unit ?? 0);
+  // A rate set for this course replaces the department rate for that component.
+  const customHours = row.lecture_minutes_per_unit != null || row.laboratory_minutes_per_unit != null;
+  const lecture = (row.lecture_units ?? 0) * (row.lecture_minutes_per_unit ?? settings?.lecture_minutes_per_unit ?? 0);
+  const lab = (row.lab_units ?? 0) * (row.laboratory_minutes_per_unit ?? settings?.laboratory_minutes_per_unit ?? 0);
 
   return (
     <tr data-row-id={id} className={`${HIGHLIGHT_CLASSES} border-t border-border/70 align-top max-sm:grid max-sm:grid-cols-[2rem_minmax(0,1fr)_8.75rem] ${errors > 0 ? 'bg-red-50/60 [&>td:first-child]:[box-shadow:inset_3px_0_0_#ef4444]' : isSelected ? 'bg-primary/[0.04]' : 'hover:bg-parchment/40'}`}>
@@ -115,15 +120,31 @@ function CourseRow({ row, showPlacement, issues, resolvedRow, validated, setting
         </span>
       </td>
       <td className="py-1.5 pr-2.5 text-right tabular-nums max-sm:col-start-2 max-sm:flex max-sm:items-baseline max-sm:gap-1.5 max-sm:pl-1.5 max-sm:pt-0 max-sm:text-left">
-        {settings ? (
-          <>
-            <span className="block text-[13px] font-bold text-text">{hours(lecture + lab)}</span>
-            <span className="block text-[11px] text-muted" title={`${hours(lecture)} lecture, ${hours(lab)} laboratory`}>
-              <span aria-hidden="true">{lecture / 60}+{lab / 60}</span>
-              <span className="sr-only">{hours(lecture)} lec, {hours(lab)} lab</span>
-            </span>
-          </>
-        ) : <span className="text-[11px] text-muted">—</span>}
+        {settings ? (() => {
+          const content = (
+            <>
+              <span className="flex items-center justify-end gap-1 text-[13px] font-bold text-text max-sm:justify-start">
+                {customHours && <Pencil size={10} className="shrink-0 text-primary" aria-hidden="true" />}
+                {hours(lecture + lab)}
+              </span>
+              <span className={`block text-[11px] ${customHours ? 'font-semibold text-primary' : 'text-muted'}`} title={`${hours(lecture)} lecture, ${hours(lab)} laboratory`}>
+                <span aria-hidden="true">{customHours ? 'Custom · ' : ''}{lecture / 60}+{lab / 60}</span>
+                <span className="sr-only">{hours(lecture)} lec, {hours(lab)} lab{customHours ? ', custom hours per unit' : ''}</span>
+              </span>
+            </>
+          );
+          return onEditHours ? (
+            <button
+              type="button"
+              onClick={onEditHours}
+              aria-label={`Edit hours per unit for ${code}: ${hours(lecture + lab)} a week${customHours ? ', custom' : ''}`}
+              title="Edit hours per unit"
+              className="-mr-1 block w-[calc(100%+0.25rem)] rounded-md px-1 py-0.5 text-right hover:bg-primary/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent max-sm:w-auto max-sm:text-left"
+            >
+              {content}
+            </button>
+          ) : content;
+        })() : <span className="text-[11px] text-muted">—</span>}
       </td>
     </tr>
   );
@@ -133,7 +154,7 @@ function CourseRow({ row, showPlacement, issues, resolvedRow, validated, setting
  * Configure's term table: what each course is saved as. The category shows the department rule's answer until the
  * reviewer picks one, and a picked category is marked as set by hand; validation never replaces it.
  */
-export default function ImportConfigureTermTable({ headingId, rows, showPlacement, issuesByRow, resolved, validated, settings, selected, onToggleSelected, onChange, onOpenRow }: ImportConfigureTermTableProps) {
+export default function ImportConfigureTermTable({ headingId, rows, showPlacement, issuesByRow, resolved, validated, settings, selected, onToggleSelected, onChange, onOpenRow, onEditHours }: ImportConfigureTermTableProps) {
   return (
     // Below the sm breakpoint each row wraps onto two lines (hours under the course), so a phone needs no sideways scrolling.
     <div className="sm:overflow-x-auto">
@@ -142,14 +163,16 @@ export default function ImportConfigureTermTable({ headingId, rows, showPlacemen
           <col className="w-8" />
           <col />
           <col className="w-[8.75rem]" />
-          <col className="w-[5rem]" />
+          <col className="w-[5.5rem]" />
         </colgroup>
         <thead className="max-sm:sr-only">
           <tr className={`${TABLE_HEAD} ${TABLE_HEAD_ROW}`}>
             <th scope="col" className="py-1.5 pl-2.5 pr-0"><span className="sr-only">Select</span></th>
             <th scope="col" className="py-1.5 pl-1.5 pr-2">Course</th>
             <th scope="col" className="py-1.5 pr-2">Category</th>
-            <th scope="col" className="py-1.5 pr-2.5 text-right" title="Weekly class time from lecture and laboratory units">Hrs/wk</th>
+            <th scope="col" className="py-1.5 pr-2.5 text-right" title="Weekly class time from lecture and laboratory units. Edit hours per unit in Edit table.">
+              <span className="inline-flex items-center gap-1"><Clock3 size={11} aria-hidden="true" />Hrs/wk</span>
+            </th>
           </tr>
         </thead>
         <tbody className="max-sm:block">
@@ -168,6 +191,7 @@ export default function ImportConfigureTermTable({ headingId, rows, showPlacemen
               onToggleSelected={onToggleSelected}
               onChange={onChange}
               onOpen={() => onOpenRow(row.row_id)}
+              onEditHours={onEditHours ? () => onEditHours(row.row_id) : undefined}
             />
           ))}
         </tbody>

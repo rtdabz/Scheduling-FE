@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Ban, BookOpen, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Info, Layers3, ListChecks, Pencil, Plus, Save, Search, Scale, SlidersHorizontal, UserCheck, UserRound, Users, X } from 'lucide-react';
+import { createPortal } from "react-dom";
+import { AlertTriangle, Ban, BookOpen, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Info, Layers3, ListChecks, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Save, Search, Scale, SlidersHorizontal, UserCheck, UserRound, Users, X } from 'lucide-react';
 import type { ColumnDef } from "@tanstack/react-table";
 import DataTable from "../../../../components/ui/DataTable";
 import { useDataTable } from "../../../../components/ui/useDataTable";
@@ -15,6 +16,7 @@ import LoadingSpinner from "../../../../components/ui/LoadingSpinner";
 import { useWorkflowDialog } from "../GenerateSchedule/useWorkflowDialog";
 import { useInstructorAssignmentDraft, type DraftScope, type InstructorAssignmentDraftPayload } from "../hooks/useInstructorAssignmentDraft";
 import AutoSaveIndicator from "../AutoSaveIndicator";
+import WizardProgressStepper from "../GenerateSchedule/WizardProgressStepper";
 import './AutoAssignModal.css';
 
 /* eslint-disable react-hooks/set-state-in-effect */
@@ -224,6 +226,8 @@ export default function AutoAssignModal({
   const [courseId, setCourseId] = useState("");
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [assignments, setAssignments] = useState<QueuedAssignment[]>([]);
+  // Narrow screens only (see AutoAssignModal.css): folds the instructor list into a rail so the sections table gets the width.
+  const [instructorsCollapsed, setInstructorsCollapsed] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
   const draftStore = useInstructorAssignmentDraft(draftScope, isOpen);
   // Auto-save starts only once the saved progress has been restored into the form.
@@ -655,10 +659,11 @@ export default function AutoAssignModal({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="assign-modal-overlay scheduler-dialog-overlay" onClick={(event) => event.target === event.currentTarget && !isSaving && handleClose()}>
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="auto-assign-title" aria-describedby="auto-assign-description" aria-busy={isSaving} tabIndex={-1} className="assign-modal scheduler-dialog">
-        <header className="assign-modal-header scheduler-dialog-header scheduler-brand-header">
+  // Portaled so the fixed overlay is positioned against the viewport whatever wraps this page.
+  return createPortal(
+    <div className="assign-modal-overlay scheduler-dialog-overlay workflow-overlay" onClick={(event) => event.target === event.currentTarget && !isSaving && handleClose()}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="auto-assign-title" aria-describedby="auto-assign-description" aria-busy={isSaving} tabIndex={-1} className="assign-modal workflow-modal scheduler-dialog">
+        <header className="workflow-header scheduler-dialog-header scheduler-brand-header">
           <span className="scheduler-dialog-icon"><UserCheck className="h-6 w-6" /></span>
           <div className="min-w-0 flex-1">
             <p className="scheduler-dialog-eyebrow">Instructor assignment</p>
@@ -670,22 +675,12 @@ export default function AutoAssignModal({
           <button type="button" onClick={handleClose} disabled={isSaving} aria-label="Close auto-assign" className="scheduler-dialog-close"><X className="h-5 w-5" /></button>
         </header>
 
-        <nav className="assign-progress" aria-label="Auto-assign instructor steps">
-          <ol>
-            {steps.map((item) => (
-              <li key={item.id} aria-current={step === item.id ? 'step' : undefined} data-complete={step > item.id}>
-                <span className="assign-step-number" aria-hidden="true">{step > item.id ? <Check size={13} strokeWidth={3} /> : item.id}</span>
-                <span className="assign-step-title">{item.title}</span>
-              </li>
-            ))}
-          </ol>
-          <span className="assign-step-count" aria-hidden="true">Step {step} of {steps.length}</span>
-        </nav>
+        <WizardProgressStepper currentStep={step} steps={steps} ariaLabel="Auto-assign instructor steps" />
 
-        <main className="assign-modal-body" aria-busy={isSaving} inert={isSaving}>
+        <main className="assign-modal-body workflow-body" aria-busy={isSaving} inert={isSaving}>
           {step === 1 && (
-            <div className="assign-columns">
-              <InstructorList faculties={faculties} departmentId={departmentId} facultyId={facultyId} facultyLoads={facultyLoads} onSelect={selectFaculty} />
+            <div className="assign-columns assign-select-columns" data-instructors-collapsed={instructorsCollapsed}>
+              <InstructorList faculties={faculties} departmentId={departmentId} facultyId={facultyId} facultyLoads={facultyLoads} onSelect={selectFaculty} collapsed={instructorsCollapsed} onToggleCollapsed={() => setInstructorsCollapsed((current) => !current)} />
               <section aria-label="Course and sections" className="assign-course-panel">
                 <div className="assign-course-filters">
                   <SelectField label="Year level" value={yearLevel} onChange={selectYearLevel} options={[{ value: "1", label: "1st Year" }, { value: "2", label: "2nd Year" }, { value: "3", label: "3rd Year" }, { value: "4", label: "4th Year" }]} placeholder="Select year level" />
@@ -730,19 +725,19 @@ export default function AutoAssignModal({
           {step === 3 && <ConfirmAssignments assignments={checkedAssignments} faculties={faculties} facultyLoads={facultyLoads} blocked={hasBlockedAssignments} onEdit={() => setStep(2)} />}
         </main>
 
-        <footer className="assign-modal-footer">
+        <footer className="workflow-footer">
           <p role="status" className="sr-only">{isSaving ? 'Saving assignments…' : ''}</p>
           {step === 3 ? (
             <ConfirmValidationSummary assignments={checkedAssignments}faculties={faculties} facultyLoads={facultyLoads} />
           ) : step === 1 && assignments.length > 0 ? (
-            <p role="status" className="assign-pending-summary">
+            <p role="status" className="workflow-footer-help assign-pending-summary">
               <ListChecks className="h-4 w-4 shrink-0" />
               {plural(assignments.length, "section")} pending · {plural(new Set(assignments.map((assignment) => assignment.facultyId)).size, "instructor")}
             </p>
           ) : (
-            <p className="assign-footer-help">{STEP_HELP[step]}</p>
+            <p className="workflow-footer-help">{STEP_HELP[step]}</p>
           )}
-          <div className="assign-footer-buttons">
+          <div className="workflow-footer-buttons">
             <button type="button" onClick={() => step > 1 ? setStep((current) => current - 1) : handleClose()} disabled={isSaving} className="assign-button assign-button-secondary">
               {step > 1 ? <><ChevronLeft className="h-4 w-4" /> Back</> : "Cancel"}
             </button>
@@ -764,7 +759,8 @@ export default function AutoAssignModal({
           </div>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -779,7 +775,7 @@ const EMPLOYMENT_FILTERS: [EmploymentFilter, string][] = [
 const employmentRank = (faculty: Faculty): number =>
   faculty.employmentType === "full-time" ? 0 : faculty.employmentType === "part-time" ? 1 : 2;
 
-function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSelect }: { faculties: Faculty[]; departmentId: number | null; facultyId: string; facultyLoads: Map<string, number>; onSelect: (id: string) => void }) {
+function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSelect, collapsed, onToggleCollapsed }: { faculties: Faculty[]; departmentId: number | null; facultyId: string; facultyLoads: Map<string, number>; onSelect: (id: string) => void; collapsed: boolean; onToggleCollapsed: () => void }) {
   const [search, setSearch] = useState("");
   const [employment, setEmployment] = useState<EmploymentFilter>("all");
   const normalizedDepartmentId = departmentId === null ? null : Number(departmentId);
@@ -809,15 +805,37 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
       : searchedFaculties.filter((faculty) => faculty.employmentType === employment),
     [employment, searchedFaculties],
   );
+  const selectedFaculty = facultyId ? faculties.find((faculty) => faculty.id === facultyId) : undefined;
+  const selectedLoad = selectedFaculty ? facultyLoads.get(selectedFaculty.id) ?? 0 : 0;
+  const selectedDisplay = selectedFaculty ? loadDisplay(selectedFaculty, selectedLoad) : null;
   return (
-    <aside aria-label="Instructor selection" className="assign-instructor-panel">
+    <aside aria-label="Instructor selection" className="assign-instructor-panel" data-collapsed={collapsed}>
+      {/* Rendered only while collapsed, and shown by CSS only on narrow screens (the full list below is hidden then). */}
+      {collapsed && <button type="button" onClick={onToggleCollapsed} aria-expanded={false} aria-controls="assign-instructor-panel-body" aria-label={selectedFaculty ? `Show instructor list (selected: ${selectedFaculty.name})` : "Show instructor list"} className="assign-instructor-rail" title={selectedFaculty ? `${selectedFaculty.name} · ${selectedLoad} / ${selectedDisplay?.ceiling} units. Show instructors` : "Show instructors"}>
+        <PanelLeftOpen className="assign-rail-icon h-4 w-4 shrink-0" aria-hidden="true" />
+        {selectedFaculty ? (
+          <>
+            <ProfileAvatar src={selectedFaculty.profilePicture} alt="" className="h-8 w-8 shrink-0 rounded-full" iconClassName="h-4 w-4" />
+            <span className="assign-rail-text">
+              <span className="assign-rail-name">{selectedFaculty.name}</span>
+              <span className="assign-rail-meta tabular-nums">{selectedLoad} / {selectedDisplay?.ceiling} units</span>
+            </span>
+          </>
+        ) : (
+          <span className="assign-rail-text"><span className="assign-rail-name">Choose instructor</span></span>
+        )}
+      </button>}
+      <div id="assign-instructor-panel-body" className="assign-instructor-body">
       <div className="assign-panel-heading">
         <Users className="h-4 w-4 text-[#701522]" aria-hidden="true" /> Instructor
         <span className="assign-count-pill">
           {query || employment !== "all" ? `${matchingFaculties.length} of ${visibleFaculties.length}` : visibleFaculties.length}
         </span>
+        <button type="button" onClick={onToggleCollapsed} aria-expanded={true} aria-controls="assign-instructor-panel-body" aria-label="Hide instructor list" title="Hide instructor list" className="assign-panel-collapse">
+          <PanelLeftClose className="h-4 w-4" aria-hidden="true" />
+        </button>
       </div>
-      <div className="relative shrink-0 px-3 pt-2.5">
+      <div className="assign-instructor-search relative shrink-0 px-3 pt-2.5">
         <Search className="pointer-events-none absolute left-[22px] top-[22px] h-4 w-4 text-[#7A6E67]" />
         <input
           type="search"
@@ -860,9 +878,9 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
             const selected = faculty.id === facultyId;
             const employmentText = employmentLabel(faculty.employmentType);
             return <li key={faculty.id}>
-              <button type="button" onClick={() => onSelect(faculty.id)} aria-pressed={selected} className="assign-instructor-option" style={{ contentVisibility: 'auto', containIntrinsicSize: '84px' }}>
+              <button type="button" onClick={() => onSelect(faculty.id)} aria-pressed={selected} className="assign-instructor-option" style={{ contentVisibility: 'auto', containIntrinsicSize: '64px' }}>
                 <span className="assign-instructor-avatar" aria-hidden="true">
-                  <ProfileAvatar src={faculty.profilePicture} alt="" className="h-9 w-9 shrink-0 rounded-full" iconClassName="h-4 w-4" />
+                  <ProfileAvatar src={faculty.profilePicture} alt="" className="h-8 w-8 shrink-0 rounded-full" iconClassName="h-4 w-4" />
                   {selected && <span className="assign-instructor-check"><Check size={10} strokeWidth={3.5} /></span>}
                 </span>
                 <span className="assign-instructor-identity">
@@ -893,6 +911,7 @@ function InstructorList({ faculties, departmentId, facultyId, facultyLoads, onSe
                 : "No instructors in this group."}
           </p>
         )}
+      </div>
       </div>
     </aside>
   );

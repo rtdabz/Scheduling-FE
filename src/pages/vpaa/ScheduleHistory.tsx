@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import {
   ChevronLeft,
@@ -72,17 +72,23 @@ type Entry = {
   schedule_label: string;
   schedule_count: number;
   section_count: number;
-  snapshots: Snapshot[];
   action: string;
   rejection_reason?: string | null;
   department?: ApiDepartmentRecord | null;
   /** Officials recorded when this decision was made. */
   signatories?: ScheduleSignatories | null;
-  /** Current account data supplied by legacy responses; never historical evidence. */
-  users?: UserSummary[];
-  snapshot: Record<string, unknown>;
+  snapshot: Record<string, unknown> | null;
   actor: { name: string | null; username: string | null; role: string | null } | null;
   created_at: string;
+};
+/**
+ * The list is a summary; every class snapshot (hundreds per semester archive) is loaded from
+ * GET /schedule-history/{id} only when an entry is viewed or printed.
+ */
+type EntryDetail = Entry & {
+  snapshots: Snapshot[];
+  /** Current account data, used only when the entry has no recorded signatories; never historical evidence. */
+  users?: UserSummary[];
 };
 type Response = {
   data: Entry[];
@@ -190,7 +196,7 @@ const gridCard = (
   };
 };
 
-const pdfInputFor = (entry: Entry): SchedulePdfInput => {
+const pdfInputFor = (entry: EntryDetail): SchedulePdfInput => {
   const departmentOf = (item: Snapshot) => Number(item.snapshot.department_id ?? entry.department_id ?? 0);
   const sections: Section[] = Array.from(
     new Map(entry.snapshots.map((item) => [String(item.section_id ?? ""), item])).values(),
@@ -242,12 +248,13 @@ const historyCacheKey = (page: number, type: HistoryType): string => `page:sched
 export default function ScheduleHistory() {
   const { toast, confirm } = useToast();
   const [canReuse] = useState(() => (getStoredUser()?.permissions ?? []).includes("schedule.create"));
-  const [busy, setBusy] = useState<{ id: number; action: "reuse" | "export" } | null>(null);
+  const [busy, setBusy] = useState<{ id: number; action: "reuse" | "export" | "view" | "print" } | null>(null);
+  const details = useRef(new Map<number, EntryDetail>());
   const [reuseIssues, setReuseIssues] = useState<{ issues: ReuseIssue[]; scheduleLabel: string; period: string; returnFocusTo: HTMLElement | null } | null>(null);
   const [cached] = useState(() => getCachedData<Response>(historyCacheKey(1, "")));
   const [entries, setEntries] = useState<Entry[]>(cached?.data ?? []);
-  const [selected, setSelected] = useState<Entry | null>(null);
-  const [printingEntry, setPrintingEntry] = useState<Entry | null>(null);
+  const [selected, setSelected] = useState<EntryDetail | null>(null);
+  const [printingEntry, setPrintingEntry] = useState<EntryDetail | null>(null);
   const [isPrintOpen, setIsPrintOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [type, setType] = useState<HistoryType>("");
@@ -293,12 +300,33 @@ export default function ScheduleHistory() {
     void load();
   }, [load]);
 
-  const open = (entry: Entry) => {
-    setSelected(entry);
+  const detailFor = async (entry: Entry, action: "view" | "print"): Promise<EntryDetail | null> => {
+    const known = details.current.get(entry.id);
+    if (known) return known;
+    setBusy({ id: entry.id, action });
+    try {
+      const response = await api.get<{ data: EntryDetail }>(`/schedule-history/${entry.id}`);
+      details.current.set(entry.id, response.data.data);
+      return response.data.data;
+    } catch (e: unknown) {
+      toast.error("Unable to open schedule", apiMessage(e, "Unable to load this schedule's classes."));
+      return null;
+    } finally {
+      setBusy(null);
+    }
+  };
+  const open = async (entry: Entry) => {
+    if (busy !== null) return;
+    const detail = await detailFor(entry, "view");
+    if (!detail) return;
+    setSelected(detail);
     setIsPrintOpen(false);
   };
-  const print = (entry: Entry) => {
-    setPrintingEntry(entry);
+  const print = async (entry: Entry) => {
+    if (busy !== null) return;
+    const detail = await detailFor(entry, "print");
+    if (!detail) return;
+    setPrintingEntry(detail);
     setIsPrintOpen(true);
   };
   const exportJson = async (entry: Entry) => {
@@ -373,10 +401,22 @@ export default function ScheduleHistory() {
       meta: { stopRowClick: true },
       cell: ({ row }) => (
         <div className="flex items-center gap-2">
-          <TableActionButton label="View schedule" variant="view" onClick={() => open(row.original)}>
+          <TableActionButton
+            label="View schedule"
+            variant="view"
+            disabled={busy?.id === row.original.id}
+            aria-busy={busy?.id === row.original.id && busy.action === "view"}
+            onClick={() => void open(row.original)}
+          >
             <Eye className="h-4 w-4" />
           </TableActionButton>
-          <TableActionButton label="Print schedule" variant="print" onClick={() => print(row.original)}>
+          <TableActionButton
+            label="Print schedule"
+            variant="print"
+            disabled={busy?.id === row.original.id}
+            aria-busy={busy?.id === row.original.id && busy.action === "print"}
+            onClick={() => void print(row.original)}
+          >
             <Printer className="h-4 w-4" />
           </TableActionButton>
           {canReuse && (
@@ -453,7 +493,7 @@ export default function ScheduleHistory() {
             variant="embedded"
             isLoading={loading}
             ariaLabel="Schedule history"
-            onRowClick={open}
+            onRowClick={(entry) => void open(entry)}
             emptyState={
               <>
                 <History className="mx-auto h-10 w-10 text-gray-300" />

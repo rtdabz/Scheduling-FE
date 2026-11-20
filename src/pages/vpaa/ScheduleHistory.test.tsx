@@ -20,7 +20,7 @@ vi.mock('../../components/scheduling/ScheduleApprovalPreviewModal', () => ({
   },
 }));
 
-const snapshot = {
+const detail = {
   id: 9, schedule_id: null, semester_id: 1, academic_year: '2025-2026', semester: '1st',
   section_id: null, course_id: null, department_id: 3, schedule_label: 'CIT Class Schedule',
   schedule_count: 1, section_count: 1, action: 'schedule_semester_archived', snapshot: {},
@@ -35,10 +35,19 @@ const snapshot = {
     },
   }],
 };
+type Detail = typeof detail & Record<string, unknown>;
+/** The list row: everything but the per-class rows, which load from /schedule-history/{id}. */
+const summaryOf = ({ snapshots: _snapshots, ...row }: Detail) => row;
+const snapshot = summaryOf(detail);
 const response = {
   data: [snapshot],
   meta: { current_page: 1, per_page: 25, total: 1, last_page: 1, from: 1, to: 1 },
 };
+function mockHistory(entry: Detail = detail) {
+  get.mockImplementation((url: string) => Promise.resolve(url === `/schedule-history/${entry.id}`
+    ? { data: { data: entry } }
+    : { data: { ...response, data: [summaryOf(entry)] } }));
+}
 const duplicateGuidance = 'Remove or reset the existing draft classes in Schedule Builder, then reuse this schedule.';
 
 function rejectReuse(issues: object[]) {
@@ -52,7 +61,7 @@ beforeEach(() => {
   clearDataCache();
   vi.clearAllMocks();
   localStorage.setItem('user', JSON.stringify({ id: 4, role: 'secretary', department_id: 3, permissions: ['schedule.view', 'schedule.create'] }));
-  get.mockResolvedValue({ data: response });
+  mockHistory();
   confirm.mockResolvedValue(true);
 });
 afterEach(() => {
@@ -62,12 +71,12 @@ afterEach(() => {
 
 describe('Schedule History semester snapshots', () => {
   it('labels the missing historical actor in both the table and preview', async () => {
-    get.mockResolvedValue({ data: { ...response, data: [{ ...snapshot, actor: { name: null, username: null, role: null } }] } });
+    mockHistory({ ...detail, actor: { name: null, username: null, role: null } } as unknown as Detail);
 
     render(<ScheduleHistory />);
     expect(await screen.findByText('Actor unavailable')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'View schedule' }));
-    const dialog = screen.getByRole('dialog');
+    const dialog = await screen.findByRole('dialog');
     expect(dialog.textContent).toContain('by Actor unavailable');
     expect(dialog.textContent).not.toContain('by null');
   });
@@ -89,7 +98,7 @@ describe('Schedule History semester snapshots', () => {
   it('opens the retained historical semester snapshot without loading the active semester', async () => {
     render(<ScheduleHistory />);
     fireEvent.click(await screen.findByRole('button', { name: 'View schedule' }));
-    expect(screen.getByRole('dialog', { name: 'CIT Class Schedule (Semester snapshot)' })).toBeTruthy();
+    expect(await screen.findByRole('dialog', { name: 'CIT Class Schedule (Semester snapshot)' })).toBeTruthy();
     expect(preview).toHaveBeenLastCalledWith(expect.objectContaining({
       canAct: false,
       printInput: expect.objectContaining({
@@ -99,7 +108,29 @@ describe('Schedule History semester snapshots', () => {
         allSchedules: [expect.objectContaining({ id: '42', semesterId: 1, courseCode: 'IT 101', signatories: null })],
       }),
     }));
+    expect(get.mock.calls.map(([url]) => url)).toEqual(['/schedule-history', '/schedule-history/9']);
+  });
+
+  it('loads class rows only when an entry is opened, once per entry', async () => {
+    render(<ScheduleHistory />);
+    const view = await screen.findByRole('button', { name: 'View schedule' });
     expect(get.mock.calls.map(([url]) => url)).toEqual(['/schedule-history']);
+
+    fireEvent.click(view);
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: 'Print schedule' }));
+    await waitFor(() => expect(get.mock.calls.map(([url]) => url)).toEqual(['/schedule-history', '/schedule-history/9']));
+  });
+
+  it('reports a failed detail load without opening the preview', async () => {
+    get.mockImplementation((url: string) => (url === '/schedule-history'
+      ? Promise.resolve({ data: response })
+      : Promise.reject(Object.assign(new Error('Server'), { isAxiosError: true, response: { status: 500, data: { message: 'Server error' } } }))));
+
+    render(<ScheduleHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: 'View schedule' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Unable to open schedule', 'Server error'));
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('retains each submission cohort’s recorded signatories without a global override', async () => {
@@ -111,20 +142,18 @@ describe('Schedule History semester snapshots', () => {
       frozen: true,
     };
     const second = { ...first, reviewed: { name: 'Later Dean', title: 'Dean' } };
-    get.mockResolvedValueOnce({ data: {
-      ...response,
-      data: [{
-        ...snapshot, signatories: null, schedule_count: 2, section_count: 2,
-        snapshots: [first, second].map((signatories, index) => ({
-          ...snapshot.snapshots[0], id: 10 + index, schedule_id: 42 + index,
-          section_id: 7 + index, section_name: `BSIT 1${index === 0 ? 'A' : 'B'}`,
-          snapshot: { ...snapshot.snapshots[0].snapshot, section_id: 7 + index, signatories },
-        })),
-      }],
-    } });
+    mockHistory({
+      ...detail, signatories: null, schedule_count: 2, section_count: 2,
+      snapshots: [first, second].map((signatories, index) => ({
+        ...detail.snapshots[0], id: 10 + index, schedule_id: 42 + index,
+        section_id: 7 + index, section_name: `BSIT 1${index === 0 ? 'A' : 'B'}`,
+        snapshot: { ...detail.snapshots[0].snapshot, section_id: 7 + index, signatories },
+      })),
+    });
 
     render(<ScheduleHistory />);
     fireEvent.click(await screen.findByRole('button', { name: 'View schedule' }));
+    await screen.findByRole('dialog');
     expect(preview).toHaveBeenLastCalledWith(expect.objectContaining({
       printInput: expect.objectContaining({
         historicalDocument: true,

@@ -14,6 +14,7 @@ import AutoAssignModal from "./Modals/AutoAssignModal";
 import ResolveConflictModal from "./Modals/ResolveConflictModal";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { useScheduler } from "./hooks/useScheduler";
 import { useWorkflowGuide } from "../../../hooks/useWorkflowGuide";
@@ -255,9 +256,10 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
         />
       </div>
 
-      {canGenerate && isGeneratorOpen && (
-        <div data-workflow-guide-scope="schedule-generator" className="scheduler-dialog-overlay fixed inset-0 z-50 flex items-center justify-center">
-          <div ref={generatorDialogRef} role="dialog" aria-modal="true" aria-labelledby="schedule-generator-title" aria-describedby="schedule-generator-description" aria-busy={isSavingGenerated} tabIndex={-1} className="scheduler-dialog flex max-w-full overflow-hidden bg-white outline-none shadow-2xl" style={{ width: "fit-content" }}>
+      {/* Portaled so the fixed overlay is positioned against the viewport whatever wraps this page. */}
+      {canGenerate && isGeneratorOpen && createPortal(
+        <div data-workflow-guide-scope="schedule-generator" className="scheduler-dialog-overlay workflow-overlay z-[65]">
+          <div ref={generatorDialogRef} role="dialog" aria-modal="true" aria-labelledby="schedule-generator-title" aria-describedby="schedule-generator-description" aria-busy={isSavingGenerated} tabIndex={-1} data-fit="content" className="scheduler-dialog workflow-modal outline-none">
             <YearLevelGenerateScheduleWorkflow
               onClose={() => setIsGeneratorOpen(false)}
               sections={scheduler.sections.filter((section) => scheduler.ownsProgram(section.programId))}
@@ -271,7 +273,8 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
               onSavingChange={setIsSavingGenerated}
             />
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* Held back while the generator is up, and shown once it closes. */}

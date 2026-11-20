@@ -1,13 +1,13 @@
 import { buttonClass } from '../../components/ui/buttonStyles';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import axios from 'axios';
-import { ArrowDownLeft, ArrowUpRight, BookOpen, Building2, Check, ChevronRight, Info, Lock, Save, TriangleAlert, Undo2, X } from 'lucide-react';
+import { ArrowDown, ArrowDownLeft, ArrowUp, ArrowUpDown, ArrowUpRight, BookOpen, Building2, Check, ChevronRight, Info, Lock, Save, TriangleAlert, Undo2, X } from 'lucide-react';
 import api from '../../lib/api';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import Modal from '../../components/ui/Modal';
-import type { ColumnDef } from '@tanstack/react-table';
+import type { ColumnDef, Table } from '@tanstack/react-table';
 import TableActionButton from '../../components/ui/TableActionButton';
-import DataTable from '../../components/ui/DataTable';
+import Skeleton from '../../components/ui/Skeleton';
 import { useDataTable } from '../../components/ui/useDataTable';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
@@ -17,6 +17,7 @@ import { useToast } from '../../context/ToastContext';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 import { programLabel, programName } from '../../lib/programLabel';
+import { courseNameLines } from '../../lib/courseNameLines';
 import './CourseTeachingAssignments.css';
 import SearchInput from '../../components/ui/SearchInput';
 
@@ -552,119 +553,14 @@ export default function CourseTeachingAssignments() {
       : [...new Set([...current, ...ids])]));
   };
 
+  // Sorting only: the rows are rendered by CourseList, so these columns carry no cell markup.
   const courseColumns: ColumnDef<CourseRow>[] = [
-    {
-      id: 'select',
-      enableSorting: false,
-      size: 40,
-      meta: { stopRowClick: true, align: 'center' },
-      header: () => (
-        <input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} disabled={selectableVisible.length === 0 || !effectiveTargetDepartment} aria-label="Select all unassigned courses" className="h-4 w-4 cursor-pointer accent-[#C9952A] disabled:cursor-not-allowed disabled:opacity-40" />
-      ),
-      cell: ({ row }) => {
-        const status = statusOf(row.original);
-        return (
-          <input type="checkbox" checked={status === 'Selected'} disabled={status !== 'Available' && status !== 'Selected'} onChange={() => toggleCourse(row.original)} aria-label={`Select ${row.original.course_code}`} className="h-4 w-4 cursor-pointer accent-[#4e0a10] disabled:cursor-not-allowed disabled:opacity-30" />
-        );
-      },
-    },
-    {
-      id: 'course',
-      accessorKey: 'course_code',
-      header: 'Course',
-      meta: { headerClassName: 'course-teaching-col-course' },
-      cell: ({ row }) => (
-        <div className="min-w-0 leading-5">
-          <p className="truncate text-[13px] font-bold text-slate-900">{row.original.course_code}</p>
-          <p className="line-clamp-2 text-xs font-medium text-slate-500" title={row.original.course_name}>{row.original.course_name}</p>
-        </div>
-      ),
-    },
-    {
-      id: 'program',
-      accessorFn: (course) => programOf(course).code,
-      header: 'Program',
-      meta: { headerClassName: 'course-teaching-col-program' },
-      cell: ({ row }) => {
-        const program = programOf(row.original);
-        return (
-          <div className="min-w-0 leading-5">
-            <p className="truncate text-xs font-bold text-slate-700">{program.code}</p>
-            <p className="line-clamp-2 text-xs font-medium text-slate-500" title={program.name}>{program.name}</p>
-          </div>
-        );
-      },
-    },
-    {
-      id: 'owner',
-      accessorFn: (course) => ownerOf(course),
-      header: 'Origin',
-      meta: { headerClassName: 'course-teaching-col-owner', cellClassName: 'text-xs font-semibold text-slate-600' },
-    },
-    {
-      id: 'taught_by',
-      accessorFn: (course) => currentTeacherOf(course),
-      header: 'Taught by',
-      meta: { headerClassName: 'course-teaching-col-teacher' },
-      // The course-level college, plus a badge per college a returned section was handed to.
-      cell: ({ row }) => (
-        <span className="flex min-w-0 flex-wrap items-center gap-1">
-          {row.original.teaching_department_id !== null
-            ? <span className="inline-flex max-w-full truncate rounded-md border border-[#4e0a10]/15 bg-[#4e0a10]/[0.06] px-2 py-0.5 text-xs font-bold leading-5 text-[#4e0a10]" title={row.original.teaching_program_name ?? row.original.teaching_department_name ?? undefined}>{currentTeacherOf(row.original)}</span>
-            : <span className="text-xs font-medium leading-5 text-slate-400">{currentTeacherOf(row.original)}</span>}
-          <MovedSectionBadges course={row.original} />
-        </span>
-      ),
-    },
-    {
-      id: 'units',
-      accessorFn: (course) => unitsOf(course),
-      header: 'Units',
-      size: 68,
-      meta: { align: 'center', cellClassName: 'text-[13px] font-bold tabular-nums text-slate-800' },
-    },
-    {
-      id: 'status',
-      accessorFn: (course) => statusOf(course),
-      header: 'Status',
-      meta: { headerClassName: 'course-teaching-col-status' },
-      cell: ({ row }) => {
-        const status = statusOf(row.original);
-        const assigned = row.original.teaching_department_id !== null;
-        const classes = instructorClassesOf(row.original);
-        const lockNote = classes > 0 ? `Instructor in ${classes} ${classes === 1 ? 'class' : 'classes'}` : null;
-        const pill = status === 'Selected'
-          ? <StatusPill tone="selected" label="Selected" />
-          : assigned
-            ? <StatusPill tone="assigned" label="Assigned" note={lockNote ? `${lockNote} · locked` : null} title={lockNote ? instructorLockMessage(row.original) : undefined} locked={Boolean(lockNote)} />
-            : lockNote
-              ? <StatusPill tone="locked" label="Locked" note={lockNote} title={instructorLockMessage(row.original)} locked />
-              : <StatusPill tone="unassigned" label="Unassigned" note={status === 'Available' ? null : status} muted={status !== 'Available'} />;
-        return pill;
-      },
-    },
-    {
-      id: 'actions',
-      header: () => <span className="sr-only">Actions</span>,
-      enableSorting: false,
-      size: 52,
-      meta: { align: 'right', stopRowClick: true },
-      cell: ({ row }) => (
-        <div className="flex justify-end">
-          {row.original.teaching_department_id !== null && (
-            <TableActionButton
-              label={instructorClassesOf(row.original) > 0 ? instructorLockMessage(row.original) : 'Remove assignment'}
-              aria-label={`Remove ${row.original.course_code} assignment`}
-              variant="remove"
-              onClick={() => void removeAssignment(row.original)}
-              disabled={removingId !== null || removingAll || saving || instructorClassesOf(row.original) > 0}
-            >
-              {removingId === row.original.id ? <LoadingSpinner className="h-4 w-4" /> : <X size={15} />}
-            </TableActionButton>
-          )}
-        </div>
-      ),
-    },
+    { id: 'course', accessorKey: 'course_code', header: 'Course' },
+    { id: 'program', accessorFn: (course) => programOf(course).code, header: 'Program' },
+    { id: 'owner', accessorFn: (course) => ownerOf(course), header: 'Origin' },
+    { id: 'taught_by', accessorFn: (course) => currentTeacherOf(course), header: 'Taught by' },
+    { id: 'units', accessorFn: (course) => unitsOf(course), header: 'Units' },
+    { id: 'status', accessorFn: (course) => statusOf(course), header: 'Status' },
   ];
   const courseTable = useDataTable({ data: visibleCourses, columns: courseColumns, pageSize: false, getRowId: (course) => String(course.id) });
 
@@ -880,22 +776,18 @@ export default function CourseTeachingAssignments() {
                 />
               </div>
 
-              <DataTable
+              <CourseList
                 table={courseTable}
-                variant="embedded"
-                density="compact"
-                className="flex min-h-0 flex-1 flex-col"
-                tableClassName="course-teaching-table table-fixed"
-                scrollClassName="min-h-0 flex-1 overflow-auto overscroll-contain max-lg:max-h-[65vh] [scrollbar-width:thin]"
-                scrollAriaLabel="Course teaching assignments"
-                isLoading={loading}
                 ariaLabel={`${YEAR_LABELS[activeYear]} courses`}
-                onRowClick={toggleCourse}
-                rowClassName={(course) => {
-                  const status = statusOf(course);
-                  const enabled = status === 'Available' || status === 'Selected';
-                  return `${enabled ? '' : '!cursor-default'} ${status === 'Selected' ? 'course-teaching-row-selected' : ''}`;
-                }}
+                isLoading={loading}
+                statusOf={statusOf}
+                onToggle={toggleCourse}
+                onRemove={(course) => void removeAssignment(course)}
+                removingId={removingId}
+                removeDisabled={removingId !== null || removingAll || saving}
+                allSelected={allVisibleSelected}
+                onToggleAll={toggleAllVisible}
+                selectAllDisabled={selectableVisible.length === 0 || !effectiveTargetDepartment}
                 emptyState={
                   <p className="text-sm font-semibold text-slate-500">
                     {!hasActiveCurriculum
@@ -967,14 +859,207 @@ function Select({ id, label, description, value, onChange, options, disabled = f
   );
 }
 
+/** One status vocabulary for the course list: Unassigned, Assigned, Locked, Selected. */
 const STATUS_PILL_TONES = {
-  unassigned: { pill: 'border-emerald-200 bg-emerald-50 text-emerald-700', dot: 'bg-emerald-500' },
-  assigned: { pill: 'border-amber-200 bg-amber-50 text-amber-800', dot: 'bg-amber-500' },
+  unassigned: { pill: 'border-slate-200 bg-white text-slate-700', dot: 'bg-slate-400' },
+  assigned: { pill: 'border-emerald-200 bg-emerald-50 text-emerald-800', dot: 'bg-emerald-500' },
   locked: { pill: 'border-slate-200 bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
-  selected: { pill: 'border-[#4e0a10]/20 bg-[#4e0a10]/[0.07] text-[#4e0a10]', dot: 'bg-[#4e0a10]' },
+  selected: { pill: 'border-[#4e0a10]/20 bg-[#4e0a10]/[0.07] text-[#4e0a10]', dot: 'bg-[#C9952A]' },
 } as const;
 
-/** One status vocabulary for the course table: Unassigned, Assigned, Locked, Selected. */
+const ROW_INTERACTIVE = 'a, button, input, select, textarea, label';
+const SORT_ICON = { asc: ArrowUp, desc: ArrowDown } as const;
+
+/**
+ * The course list: one CSS grid shared by the header and every row, reflowed with container
+ * queries (see CourseTeachingAssignments.css) instead of forcing a <table> into a grid. ARIA
+ * table roles keep it announced as a table. Sorting still comes from the TanStack table.
+ */
+function CourseList({
+  table, ariaLabel, isLoading, emptyState, statusOf, onToggle, onRemove, removingId, removeDisabled,
+  allSelected, onToggleAll, selectAllDisabled,
+}: {
+  table: Table<CourseRow>;
+  ariaLabel: string;
+  isLoading: boolean;
+  emptyState: ReactNode;
+  statusOf: (course: CourseRow) => string;
+  onToggle: (course: CourseRow) => void;
+  onRemove: (course: CourseRow) => void;
+  removingId: number | null;
+  removeDisabled: boolean;
+  allSelected: boolean;
+  onToggleAll: () => void;
+  selectAllDisabled: boolean;
+}) {
+  const rows = table.getRowModel().rows;
+  const headerCell = (id: string, area: string, align: 'start' | 'end' = 'start') => {
+    const column = table.getColumn(id);
+    if (!column) return null;
+    const sorted = column.getIsSorted();
+    const label = String(column.columnDef.header);
+    const Icon = sorted ? SORT_ICON[sorted] : ArrowUpDown;
+    return (
+      <div role="columnheader" aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none'} className={`ct-cell ct-${area} ${align === 'end' ? 'ct-end' : ''}`}>
+        <button type="button" onClick={column.getToggleSortingHandler()} aria-label={`Sort by ${label}`} className={`ct-sort ${sorted ? 'ct-sort-active' : ''}`}>
+          {label}
+          <Icon aria-hidden="true" className="h-3 w-3 shrink-0" />
+        </button>
+      </div>
+    );
+  };
+
+  return (
+    <div role="region" aria-label="Course teaching assignments" tabIndex={0} className="ct-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C9952A]/40 max-lg:max-h-[65vh] [scrollbar-width:thin]">
+      <div role="table" aria-label={ariaLabel} aria-busy={isLoading || undefined} className="ct-list">
+        <div role="rowgroup" className="ct-head-group">
+          <div role="row" className="ct-head">
+            <div role="columnheader" className="ct-cell ct-check">
+              <label className="ct-check-hit">
+                <input type="checkbox" checked={allSelected} onChange={onToggleAll} disabled={selectAllDisabled} aria-label="Select all unassigned courses" className="ct-checkbox" />
+                <span className="ct-select-all-text" aria-hidden="true">Select all</span>
+              </label>
+            </div>
+            {headerCell('course', 'course')}
+            {headerCell('program', 'program')}
+            {headerCell('owner', 'origin')}
+            {headerCell('taught_by', 'taught')}
+            {headerCell('units', 'units', 'end')}
+            {headerCell('status', 'status')}
+            <div role="columnheader" className="ct-cell ct-action"><span className="sr-only">Actions</span></div>
+          </div>
+        </div>
+        <div role="rowgroup">
+          {isLoading ? Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} role="row" className="ct-row" aria-hidden="true">
+              <div className="ct-cell ct-check"><Skeleton className="h-4 w-4" /></div>
+              <div className="ct-cell ct-course space-y-1.5"><Skeleton className="h-3.5 w-20" /><Skeleton className="h-3 w-4/5" /></div>
+              <div className="ct-cell ct-program space-y-1.5"><Skeleton className="h-3 w-12" /><Skeleton className="h-3 w-3/4" /></div>
+              <div className="ct-cell ct-origin"><Skeleton className="h-3 w-10" /></div>
+              <div className="ct-cell ct-taught"><Skeleton className="h-5 w-16" /></div>
+              <div className="ct-cell ct-units ct-end"><Skeleton className="ml-auto h-3.5 w-5" /></div>
+              <div className="ct-cell ct-status"><Skeleton className="h-5 w-20 rounded-full" /></div>
+              <div className="ct-cell ct-action" />
+            </div>
+          )) : rows.length === 0 ? (
+            <div role="row" className="ct-empty">
+              <div role="cell">{emptyState}</div>
+            </div>
+          ) : rows.map((row) => (
+            <CourseListRow
+              key={row.id}
+              course={row.original}
+              status={statusOf(row.original)}
+              onToggle={onToggle}
+              onRemove={onRemove}
+              removing={removingId === row.original.id}
+              removeDisabled={removeDisabled}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CourseListRow({ course, status, onToggle, onRemove, removing, removeDisabled }: {
+  course: CourseRow;
+  status: string;
+  onToggle: (course: CourseRow) => void;
+  onRemove: (course: CourseRow) => void;
+  removing: boolean;
+  removeDisabled: boolean;
+}) {
+  const selectable = status === 'Available' || status === 'Selected';
+  const selected = status === 'Selected';
+  const assigned = course.teaching_department_id !== null;
+  const classes = instructorClassesOf(course);
+  const locked = classes > 0;
+  const lockNote = locked ? `Instructor in ${classes} ${classes === 1 ? 'class' : 'classes'}` : null;
+  const program = programOf(course);
+
+  // A click anywhere on a selectable row toggles it, except on its own controls or while selecting text.
+  const handleClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (!selectable) return;
+    if ((event.target as Element).closest(ROW_INTERACTIVE)) return;
+    if (window.getSelection()?.toString()) return;
+    onToggle(course);
+  };
+
+  return (
+    <div
+      role="row"
+      aria-selected={selectable ? selected : undefined}
+      onClick={handleClick}
+      className={`ct-row ${selectable ? 'ct-row-selectable' : ''} ${selected ? 'ct-row-selected' : ''}`}
+    >
+      <div role="cell" className="ct-cell ct-check">
+        <label className="ct-check-hit">
+          <input type="checkbox" checked={selected} disabled={!selectable} onChange={() => onToggle(course)} aria-label={`Select ${course.course_code}`} className="ct-checkbox" />
+        </label>
+      </div>
+
+      <div role="cell" className="ct-cell ct-course">
+        <p className="truncate text-[13px] font-semibold leading-5 text-slate-900">{course.course_code}</p>
+        <p className="text-xs leading-4 text-slate-500" title={course.course_name}>
+          {courseNameLines(course.course_name).map((line, index) => <span key={index} className="block">{line}</span>)}
+        </p>
+      </div>
+
+      <div role="cell" className="ct-cell ct-program">
+        <span className="ct-label">Program</span>
+        <p className="truncate text-xs font-semibold leading-5 text-slate-700" title={program.name}>{program.code}</p>
+      </div>
+
+      <div role="cell" className="ct-cell ct-origin">
+        <span className="ct-label">Origin</span>
+        <span className="block truncate text-xs font-semibold leading-5 tracking-wide text-slate-600" title={course.department_name ?? undefined}>{ownerOf(course)}</span>
+      </div>
+
+      {/* The course-level college, plus a badge per college a returned section was handed to. */}
+      <div role="cell" className="ct-cell ct-taught">
+        <span className="ct-label">Taught by</span>
+        <span className="flex min-w-0 flex-wrap items-center gap-1">
+          {assigned
+            ? <span className="inline-flex min-w-0 max-w-full items-center rounded-md border border-[#4e0a10]/15 bg-[#4e0a10]/[0.05] px-1.5 py-px text-[11px] font-semibold leading-[18px] text-[#4e0a10]" title={course.teaching_program_name ?? course.teaching_department_name ?? undefined}><span className="truncate">{currentTeacherOf(course)}</span></span>
+            : <span className="min-w-0 truncate text-xs leading-5 text-slate-400" title={currentTeacherOf(course)}>{currentTeacherOf(course)}</span>}
+          <MovedSectionBadges course={course} />
+        </span>
+      </div>
+
+      <div role="cell" className="ct-cell ct-units ct-end">
+        <span className="ct-label">Units</span>
+        <span className="text-[13px] font-semibold leading-5 tabular-nums text-slate-900">{unitsOf(course)}</span>
+      </div>
+
+      <div role="cell" className="ct-cell ct-status">
+        <span className="ct-label">Status</span>
+        {selected
+          ? <StatusPill tone="selected" label="Selected" />
+          : assigned
+            ? <StatusPill tone="assigned" label="Assigned" note={lockNote ? `${lockNote} · locked` : null} title={lockNote ? instructorLockMessage(course) : undefined} locked={locked} />
+            : locked
+              ? <StatusPill tone="locked" label="Locked" note={lockNote} title={instructorLockMessage(course)} locked />
+              : <StatusPill tone="unassigned" label="Unassigned" note={status === 'Available' ? null : status} muted={status !== 'Available'} />}
+      </div>
+
+      <div role="cell" className="ct-cell ct-action">
+        {assigned && (
+          <TableActionButton
+            label={locked ? instructorLockMessage(course) : 'Remove assignment'}
+            aria-label={`Remove ${course.course_code} assignment`}
+            variant="remove"
+            onClick={() => onRemove(course)}
+            disabled={removeDisabled || locked}
+          >
+            {removing ? <LoadingSpinner className="h-4 w-4" /> : <X size={15} />}
+          </TableActionButton>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** Compact transfer badge, one style everywhere: moved out, received in, or back home. */
 function TransferBadge({ direction, label, title }: { direction: 'out' | 'in' | 'home'; label: string; title?: string }) {
   const Icon = direction === 'out' ? ArrowUpRight : direction === 'in' ? ArrowDownLeft : Undo2;
@@ -1064,8 +1149,8 @@ function StatusPill({ tone, label, note, title, locked = false, muted = false }:
 }) {
   const styles = muted ? STATUS_PILL_TONES.locked : STATUS_PILL_TONES[tone];
   return (
-    <span className="inline-flex min-w-0 max-w-full flex-col items-start gap-0.5" title={title}>
-      <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-bold leading-4 ${styles.pill}`}>
+    <span className="inline-flex min-w-0 max-w-full flex-col items-start gap-0.5" title={title ?? note ?? undefined}>
+      <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold leading-4 ${styles.pill}`}>
         {locked && tone === 'locked'
           ? <Lock className="h-3 w-3 shrink-0" aria-hidden="true" />
           : <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${styles.dot}`} />}

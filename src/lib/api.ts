@@ -131,7 +131,7 @@ api.interceptors.response.use(
 
             const reason = error.response.data?.reason === 'session_replaced' ? 'replaced' : 'expired';
             if (!announceSessionEnded(reason)) {
-                window.location.href = '/';
+                window.location.href = '/login';
             }
             return Promise.reject(sessionEndedError(error.config));
         }

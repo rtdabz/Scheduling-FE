@@ -413,7 +413,7 @@ export default function LoginPage() {
           </>}
         >
           <form id="forgot-password-form" onSubmit={handleForgotPassword} className={modalBody}>
-            <ModalField label="Institutional email" htmlFor="forgot-password-email" required hint="Enter the email assigned by VPAA.">
+            <ModalField label="Account email" htmlFor="forgot-password-email" required hint="Enter the email on your account. VPAA: use your verified recovery Gmail.">
               <input
                 id="forgot-password-email"
                 type="email"

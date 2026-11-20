@@ -214,3 +214,70 @@ describe('TCC curriculum PDF layout', () => {
     expect(result.warnings.join(' ')).toMatch(/OCR/);
   });
 });
+
+describe('other departments\' PDF headers', () => {
+  const item = (str: string, x: number, y: number): PdfTextItem => ({ page: 1, str, x, y, width: str.length * 4, height: 8 });
+  const page = (items: PdfTextItem[]): PdfPageText[] => [{ page: 1, width: 612, height: 792, items }];
+  const read = (items: PdfTextItem[]) => extractCurriculumLayout(page(items)).rows.map((row) => [row.source.code, row.source.title, row.year_level, row.semester, row.source.lec, row.source.lab, row.source.tu]);
+  const body = (codeLabel: string | null) => [
+    item('BACHELOR OF ELEMENTARY EDUCATION (BEEd)', 150, 60),
+    item('FIRST YEAR', 250, 100),
+    ...(codeLabel ? [item(codeLabel, 30, 120), item(codeLabel, 320, 120)] : []),
+    item('First Semester', 80, 120), item('Lec', 220, 120), item('Lab', 245, 120), item('Units', 268, 120),
+    item('Second Semester', 370, 120), item('Lec', 510, 120), item('Lab', 535, 120), item('Units', 558, 120),
+    item('EDUC 101', 30, 135), item('The Child and Adolescent Learner', 80, 135), item('3', 222, 135), item('0', 247, 135), item('3', 272, 135),
+    item('EDUC 102', 320, 135), item('Facilitating Learning', 370, 135), item('3', 512, 135), item('0', 537, 135), item('3', 562, 135),
+  ];
+
+  it.each([['Subj Code'], ['SubjCode'], ['Subj.Code'], ['Subjects'], ['Course No.']])('reads tables whose code column is headed "%s"', (label) => {
+    expect(read(body(label))).toEqual([
+      ['EDUC 101', 'The Child and Adolescent Learner', 1, 1, 3, 0, 3],
+      ['EDUC 102', 'Facilitating Learning', 1, 2, 3, 0, 3],
+    ]);
+  });
+
+  it('reads tables with no code header, from the codes printed under it', () => {
+    expect(read(body(null))).toEqual([
+      ['EDUC 101', 'The Child and Adolescent Learner', 1, 1, 3, 0, 3],
+      ['EDUC 102', 'Facilitating Learning', 1, 2, 3, 0, 3],
+    ]);
+  });
+});
+
+describe('other PDF curriculum templates', () => {
+  const item = (str: string, x: number, y: number): PdfTextItem => ({ page: 1, str, x, y, width: str.length * 4, height: 8 });
+  const read = (items: PdfTextItem[]) => extractCurriculumLayout([{ page: 1, width: 612, height: 792, items }]);
+  const placed = (items: PdfTextItem[]) => read(items).rows.map((row) => [row.source.code, row.source.title, row.year_level, row.semester, row.source.lec, row.source.lab, row.source.tu]);
+
+  it('reads one table per term under separate year and term heading lines', () => {
+    expect(placed([
+      item('SECOND YEAR', 250, 100),
+      item('Second Semester', 250, 115),
+      item('Course Code', 30, 130), item('Descriptive Title', 100, 130), item('Lec', 300, 130), item('Lab', 330, 130), item('Units', 360, 130),
+      item('CRIM 202', 30, 145), item('Forensic Chemistry', 100, 145), item('2', 302, 145), item('1', 332, 145), item('3', 364, 145),
+    ])).toEqual([['CRIM 202', 'Forensic Chemistry', 2, 2, 2, 1, 3]]);
+  });
+
+  it('reads a two-row header, with the code label above the Lec/Lab/Total row, and does not report the labels as unread', () => {
+    const extraction = read([
+      item('FIRST YEAR - FIRST SEMESTER', 200, 100),
+      item('Subj Code', 30, 120), item('Descriptive Title', 100, 120), item('Units', 330, 120),
+      item('Lec', 300, 132), item('Lab', 330, 132), item('Total', 360, 132),
+      item('EDUC 101', 30, 147), item('The Child and Adolescent Learner', 100, 147), item('3', 302, 147), item('0', 332, 147), item('3', 366, 147),
+    ]);
+    expect(extraction.rows.map((row) => [row.source.code, row.year_level, row.semester, row.source.lec, row.source.lab, row.source.tu])).toEqual([['EDUC 101', 1, 1, 3, 0, 3]]);
+    expect(extraction.unread).toEqual([]);
+  });
+
+  it('reads a table printing only total units and flags the split for review', () => {
+    const extraction = read([
+      item('FOURTH YEAR', 250, 100),
+      item('Subject Code', 30, 120), item('First Semester', 110, 120), item('Units', 330, 120),
+      item('BA 401', 30, 135), item('Strategic Management', 110, 135), item('3', 336, 135),
+      item('Total', 110, 150), item('3', 336, 150),
+    ]);
+    expect(extraction.rows.map((row) => [row.source.code, row.year_level, row.semester, row.source.lec, row.source.lab, row.source.tu])).toEqual([['BA 401', 4, 1, null, null, 3]]);
+    expect(extraction.rows[0].source.flags).toContain('units_only');
+    expect(extraction.groups).toEqual([{ year_level: 4, semester: 1, reported: { lec: null, lab: null, tu: 3 } }]);
+  });
+});

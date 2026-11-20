@@ -1,42 +1,24 @@
 /* Assign Instructors. Colors come from the shared scheduler-dialog tokens
    (--gen-*, defined on .scheduler-dialog in styles/scheduler-dialogs.css). */
-.assign-modal-overlay { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgb(28 19 20 / 52%); }
-.assign-modal { position: relative; display: flex; flex-direction: column; width: 100%; max-width: 1360px; height: min(900px, calc(100dvh - 32px)); min-height: 0; overflow: hidden; border: 1px solid var(--gen-line); border-radius: 20px; background: #fff; color: #1a1410; font-size: 13px; line-height: 1.5; }
-.assign-modal :is(button, input, select, summary, [tabindex]):focus-visible { outline: 2px solid var(--gen-primary); outline-offset: 2px; }
+/* Frame, header, stepper, body and footer come from the shared .workflow-* classes. */
+.assign-modal-overlay { z-index: 85; }
+.assign-modal { font-size: 13px; line-height: 1.5; }
 .assign-modal input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--gen-primary); }
 .assign-modal .font-black, .assign-modal .font-bold { font-weight: 600; }
 .assign-modal .rounded-xl { border-radius: 8px; }
 .assign-modal .text-slate-400 { color: #716963; }
 .assign-modal .border-slate-200 { border-color: #e2d9d0; }
-.assign-modal button { touch-action: manipulation; }
-
-/* â”€â”€ Header (deep maroon via .scheduler-brand-header) â”€â”€ */
-.assign-modal-header { display: flex; flex-shrink: 0; align-items: center; gap: 14px; padding: 14px 20px; }
-.assign-modal-header button { display: flex; align-items: center; justify-content: center; }
-
-/* â”€â”€ Stepper: maroon progress, amber halo on the active step â”€â”€ */
-.assign-progress { display: flex; flex-shrink: 0; align-items: center; gap: 20px; padding: 10px 20px; border-bottom: 1px solid var(--gen-line); background: #fff; }
-.assign-progress ol { display: flex; flex: 1; align-items: center; max-width: 640px; margin: 0; padding: 0; list-style: none; }
-.assign-progress li { display: flex; flex: 1; min-width: 0; align-items: center; gap: 8px; color: #625a54; font-size: 12px; font-weight: 500; }
-.assign-progress li:last-child { flex: none; }
-.assign-progress li:not(:last-child)::after { content: ''; flex: 1; min-width: 16px; height: 2px; margin: 0 4px; border-radius: 2px; background: var(--gen-line); }
-.assign-progress li[data-complete='true']::after { background: var(--gen-primary); }
-.assign-step-title { white-space: nowrap; }
-.assign-progress li[aria-current='step'] { color: var(--gen-deep); font-weight: 600; }
-.assign-progress li[data-complete='true'] { color: #3f342e; }
-.assign-step-number { display: inline-flex; width: 24px; height: 24px; flex-shrink: 0; align-items: center; justify-content: center; border: 1px solid var(--gen-line-strong); border-radius: 50%; background: var(--gen-neutral); color: #7a6e67; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.assign-progress [data-complete='true'] .assign-step-number { border-color: var(--gen-primary); background: var(--gen-primary); color: #fff; }
-.assign-progress [aria-current='step'] .assign-step-number { border-color: var(--gen-deep); background: var(--gen-deep); color: #fff; box-shadow: 0 0 0 3px rgb(245 166 35 / 35%); }
-.assign-step-count { margin-left: auto; color: #625a54; font-size: 12px; white-space: nowrap; }
 
 /* â”€â”€ Body â”€â”€ */
-.assign-modal-body { position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: hidden; padding: 16px; background: var(--gen-neutral); }
-.assign-columns { display: grid; grid-template-columns: minmax(280px, 3fr) minmax(0, 7fr); flex: 1; min-height: 0; gap: 14px; }
+.assign-modal-body { overflow: hidden; }
+/* The instructor list needs a name, a chip and a load bar, so it gets a fixed, narrow
+   track; every remaining pixel goes to the sections table. */
+.assign-columns { display: grid; grid-template-columns: clamp(248px, 22vw, 316px) minmax(0, 1fr); flex: 1; min-height: 0; gap: 12px; }
 .assign-instructor-panel, .assign-review-instructors, .assign-course-panel { display: flex; min-height: 0; min-width: 0; flex-direction: column; overflow: hidden; border: 1px solid var(--gen-line); border-radius: 12px; background: #fff; box-shadow: 0 1px 2px rgb(74 13 22 / 4%); }
 
 /* â”€â”€ Shared panel pieces â”€â”€ */
 .assign-panel-heading, .assign-panel-title { display: flex; flex-shrink: 0; align-items: center; gap: 8px; color: #1a1410; font-size: 13px; font-weight: 600; }
-.assign-panel-heading { min-height: 44px; padding: 10px 14px 6px; }
+.assign-panel-heading { min-height: 40px; padding: 8px 12px 4px; }
 .assign-count-pill { display: inline-flex; min-width: 22px; justify-content: center; margin-left: auto; border-radius: 999px; padding: 1px 8px; background: var(--gen-neutral); color: #5b4f48; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .assign-panel-title .assign-count-pill { margin-left: 2px; }
 .assign-input { border: 1px solid var(--gen-line); border-radius: 8px; background: #fff; color: #1a1410; outline: none; transition: border-color 150ms, box-shadow 150ms; }
@@ -45,21 +27,31 @@
 .assign-modal .assign-input:focus-visible { outline: none; }
 
 /* â”€â”€ Instructor panel â”€â”€ */
+.assign-instructor-body { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+/* Collapse controls exist only on narrow screens (see the width media queries below). */
+.assign-panel-collapse { display: none; width: 28px; height: 28px; flex-shrink: 0; align-items: center; justify-content: center; margin-left: 2px; border: 1px solid var(--gen-line); border-radius: 7px; background: #fff; color: #5b4f48; transition: background-color 150ms, border-color 150ms, color 150ms; }
+.assign-panel-collapse:hover { border-color: rgb(112 21 34 / 30%); background: var(--gen-soft); color: var(--gen-deep); }
+.assign-instructor-rail { display: none; width: 100%; height: 100%; min-height: 0; align-items: center; gap: 10px; padding: 10px; background: #fff; color: #1a1410; text-align: left; transition: background-color 150ms; }
+.assign-instructor-rail:hover { background: var(--gen-soft); }
+.assign-rail-icon { color: var(--gen-primary); }
+.assign-rail-text { display: flex; min-width: 0; min-height: 0; flex-direction: column; gap: 1px; }
+.assign-rail-name { overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.assign-rail-meta { overflow: hidden; color: #625a54; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .assign-segments { display: grid; flex-shrink: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; margin: 10px 12px 8px; padding: 3px; border-radius: 9px; background: var(--gen-neutral); }
-.assign-segment { display: inline-flex; min-height: 28px; align-items: center; justify-content: center; gap: 5px; border-radius: 7px; padding: 3px 6px; color: #5b4f48; font-size: 11px; font-weight: 600; transition: background-color 150ms, color 150ms; }
+.assign-segment { display: inline-flex; min-height: 28px; align-items: center; justify-content: center; gap: 4px; border-radius: 7px; padding: 3px 4px; white-space: nowrap; color: #5b4f48; font-size: 11px; font-weight: 600; transition: background-color 150ms, color 150ms; }
 .assign-segment:hover { color: var(--gen-deep); }
 .assign-segment[aria-pressed='true'] { background: #fff; color: var(--gen-deep); box-shadow: 0 1px 2px rgb(74 13 22 / 12%), 0 0 0 1px rgb(112 21 34 / 10%); }
 .assign-segment-count { border-radius: 999px; padding: 0 5px; background: rgb(74 13 22 / 6%); color: #625a54; font-size: 10px; }
 .assign-segment[aria-pressed='true'] .assign-segment-count { background: var(--gen-soft); color: var(--gen-primary); }
 .assign-instructor-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 10px 10px; border-top: 1px solid #f0eae3; padding-top: 8px; }
 .assign-instructor-list { margin: 0; padding: 0; list-style: none; }
-.assign-instructor-list li + li { margin-top: 6px; }
-.assign-instructor-option { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 4px 10px; width: 100%; padding: 9px 10px; border: 1px solid var(--gen-line); border-radius: 10px; background: #fff; text-align: left; transition: background-color 150ms, border-color 150ms, box-shadow 150ms; }
+.assign-instructor-list li + li { margin-top: 4px; }
+.assign-instructor-option { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 3px 9px; width: 100%; padding: 7px 9px; border: 1px solid var(--gen-line); border-radius: 10px; background: #fff; text-align: left; transition: background-color 150ms, border-color 150ms, box-shadow 150ms; }
 .assign-instructor-option:hover { border-color: var(--gen-line-strong); background: #fcfaf8; }
 .assign-instructor-option[aria-pressed='true'] { border-color: rgb(112 21 34 / 45%); background: var(--gen-soft); box-shadow: inset 3px 0 0 var(--gen-primary); }
 .assign-instructor-avatar { position: relative; display: flex; grid-row: span 2; align-self: start; }
 .assign-instructor-check { position: absolute; right: -3px; bottom: -3px; display: flex; width: 16px; height: 16px; align-items: center; justify-content: center; border: 2px solid #fff; border-radius: 50%; background: var(--gen-primary); color: #fff; }
-.assign-instructor-identity { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.assign-instructor-identity { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
 .assign-instructor-name { overflow: hidden; color: #1a1410; font-size: 13px; font-weight: 600; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .assign-instructor-option[aria-pressed='true'] .assign-instructor-name { color: var(--gen-deep); }
 .assign-instructor-meta { display: flex; min-width: 0; align-items: center; gap: 6px; color: #625a54; font-size: 11px; }
@@ -74,35 +66,43 @@
 .assign-load-notice { flex-shrink: 0; font-size: 10px; font-weight: 600; white-space: nowrap; }
 
 /* â”€â”€ Course filters â”€â”€ */
-.assign-course-filters { display: grid; flex-shrink: 0; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--gen-line); background: #fff; }
-.assign-course-filters > label { color: #5b4f48; text-transform: none; letter-spacing: normal; font-size: 11px; font-weight: 600; }
+/* Labels sit beside their selects, so both filters take one 50px row instead of a stacked block. */
+.assign-course-filters { display: grid; flex-shrink: 0; grid-template-columns: minmax(190px, 230px) minmax(0, 1fr); gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--gen-line); background: #fff; }
+.assign-course-filters > label { display: flex; min-width: 0; align-items: center; gap: 8px; color: #5b4f48; text-transform: none; letter-spacing: normal; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.assign-course-filters > label > div { min-width: 0; flex: 1; margin-top: 0; }
+.assign-course-filters select { height: 34px; }
+.assign-course-filters label svg { top: 50%; transform: translateY(-50%); }
 
 /* â”€â”€ Section table â”€â”€ */
 .assign-section-panel { display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: hidden; }
-.assign-sections-heading { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; min-height: 46px; padding: 8px 14px; }
+.assign-sections-heading { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 5px 12px; }
 .assign-sections-tools { display: flex; align-items: center; gap: 10px; }
 .assign-selected-pill { border-radius: 999px; padding: 2px 9px; background: var(--gen-soft); color: var(--gen-deep); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.assign-select-all { display: inline-flex; min-height: 32px; cursor: pointer; align-items: center; gap: 7px; border: 1px solid var(--gen-line); border-radius: 8px; padding: 4px 10px; background: #fff; color: #3f342e; font-size: 12px; font-weight: 600; transition: background-color 150ms, border-color 150ms; }
+.assign-select-all { display: inline-flex; min-height: 30px; cursor: pointer; align-items: center; gap: 7px; border: 1px solid var(--gen-line); border-radius: 8px; padding: 4px 10px; background: #fff; color: #3f342e; font-size: 12px; font-weight: 600; transition: background-color 150ms, border-color 150ms; }
 .assign-select-all:hover { border-color: rgb(112 21 34 / 30%); background: var(--gen-soft); }
 .assign-modal .assign-select-all input { width: 16px; height: 16px; }
 .assign-select-all[data-disabled='true'] { cursor: not-allowed; color: #9a8e86; background: #fff; border-color: var(--gen-line); }
 .assign-section-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; border-top: 1px solid var(--gen-line); }
 .assign-sections-table { table-layout: fixed; }
 /* The header gradient comes from the global `table thead th` rule; this only sets its type. */
-.assign-modal :is(.assign-sections-table, .assign-review-table) th { padding: 9px 12px; font-size: 11px; font-weight: 600; text-transform: none; letter-spacing: .01em; }
+.assign-modal :is(.assign-sections-table, .assign-review-table) th { padding: 7px 10px; font-size: 11px; font-weight: 600; text-transform: none; letter-spacing: .01em; }
 .assign-modal :is(.assign-sections-table, .assign-review-table) th button { text-transform: none; letter-spacing: normal; }
-.assign-modal .assign-sections-table td { padding: 11px 12px; vertical-align: top; font-size: 12px; font-weight: 400; border-color: #f0eae3; }
+.assign-modal .assign-sections-table td { padding: 7px 10px; vertical-align: top; font-size: 12px; font-weight: 400; border-color: #f0eae3; }
 .assign-modal .assign-sections-table :is(th, td):first-child { padding-right: 4px; padding-left: 10px; }
 .assign-modal .assign-sections-table tbody { border-color: #f0eae3; }
-.assign-section-checkbox { display: flex; width: 28px; min-height: 22px; align-items: center; justify-content: center; }
+/* DataTable fixes rows at 52px; here a row is as tall as its content (one line per meeting). */
+.assign-modal .assign-sections-table tbody > tr { height: auto; }
+.assign-section-checkbox { display: flex; width: 28px; min-height: 20px; align-items: center; justify-content: center; }
 .assign-section-checkbox input { cursor: pointer; }
 .assign-section-checkbox input:disabled { cursor: not-allowed; opacity: .45; }
 .assign-section-name { color: #1a1410; font-size: 13px; font-weight: 600; white-space: nowrap; }
 .assign-section-units { color: #3f342e; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.assign-section-meetings { display: flex; flex-direction: column; gap: 2px; color: #4f453e; font-size: 12px; line-height: 1.6; }
+.assign-section-meetings { display: flex; flex-direction: column; gap: 1px; color: #4f453e; font-size: 12px; line-height: 1.5; }
 .assign-section-meeting { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.assign-availability { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 4px; }
-.assign-status { display: inline-flex; align-items: center; gap: 5px; border: 1px solid transparent; border-radius: 6px; padding: 2px 7px; font-size: 11px; line-height: 1.45; font-weight: 600; white-space: nowrap; }
+/* Status chip and its detail share a line when the column allows, instead of always stacking. */
+.assign-availability { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 3px 6px; }
+.assign-availability > .assign-status-detail { min-width: 0; flex: 1 1 110px; }
+.assign-status { display: inline-flex; flex-shrink: 0; align-items: center; gap: 5px; border: 1px solid transparent; border-radius: 6px; padding: 1px 6px; font-size: 11px; line-height: 1.45; font-weight: 600; white-space: nowrap; }
 .assign-status svg { flex-shrink: 0; }
 .assign-status-available { border-color: #bfe3cb; background: #edf7ef; color: #1f6b3e; }
 .assign-status-assigned { border-color: var(--gen-line); background: var(--gen-neutral); color: #4f453e; }
@@ -112,7 +112,8 @@
 .assign-status-warning { border-color: rgb(245 166 35 / 45%); background: rgb(245 166 35 / 10%); color: var(--gen-amber-text); }
 .assign-status-detail { display: -webkit-box; max-width: 100%; overflow: hidden; color: #625a54; font-size: 11px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
 .assign-status-detail-conflict { color: #a12e29; }
-.assign-conflict-details { width: 100%; color: #87332c; font-size: 11px; }
+.assign-conflict-details { width: auto; color: #87332c; font-size: 11px; }
+.assign-conflict-details[open] { flex-basis: 100%; }
 .assign-conflict-details summary { width: fit-content; cursor: pointer; text-underline-offset: 3px; text-decoration: underline; }
 .assign-conflict-details p { margin-top: 6px; overflow-wrap: anywhere; }
 
@@ -125,7 +126,7 @@
 .assign-modal .assign-sections-table tbody > tr.assign-row-locked :is(.assign-section-name, .assign-section-units, .assign-section-meetings) { color: #7a6e67; }
 
 /* â”€â”€ Selection summary (sits under the table's scroll area, never over rows) â”€â”€ */
-.assign-selection-actions { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--gen-line); background: var(--gen-neutral); }
+.assign-selection-actions { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--gen-line); background: var(--gen-neutral); }
 .assign-selection-actions[data-selected='true'] { background: linear-gradient(0deg, var(--gen-neutral), #fbf6f6); box-shadow: inset 0 1px 0 rgb(112 21 34 / 12%); }
 .assign-selection-summary { display: flex; min-width: 0; flex: 1; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
 .assign-selection-who { display: flex; min-width: 0; align-items: center; gap: 10px; }
@@ -147,17 +148,14 @@
 .assign-button-secondary:hover:not(:disabled) { border-color: #94a3b8; background: var(--btn-secondary-hover); }
 .assign-button:disabled { cursor: not-allowed; border-color: var(--btn-disabled-border); background: var(--btn-disabled-bg); color: var(--btn-disabled-text); box-shadow: none; }
 
-/* â”€â”€ Modal footer â”€â”€ */
-.assign-modal-footer { position: relative; display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 20px; border-top: 1px solid var(--gen-line); background: var(--gen-neutral); }
-.assign-footer-help, .assign-pending-summary { display: flex; flex: 1; min-width: 0; align-items: center; gap: 7px; color: #625a54; font-size: 12px; }
+/* Footer: the pending count reads as a status, not help text. */
 .assign-pending-summary { color: var(--gen-deep); font-weight: 600; }
-.assign-footer-buttons { display: flex; flex-shrink: 0; align-items: center; gap: 8px; margin-left: auto; }
 
 /* â”€â”€ Review & Confirm â”€â”€ */
 .assign-review-heading { display: grid; flex-shrink: 0; grid-template-columns: minmax(0, 1fr) 170px auto; align-items: center; gap: 14px; padding: 14px; border-bottom: 1px solid var(--gen-line); }
 .assign-review-heading img, .assign-review-heading > div:first-child > span:first-child { width: 36px; height: 36px; }
 .assign-course-name { margin-top: 3px; overflow-wrap: anywhere; color: #625a54; font-size: 12px; font-weight: 400; }
-.assign-modal .assign-review-table td { padding: 13px 12px; vertical-align: top; font-weight: 400; }
+.assign-modal .assign-review-table td { padding: 9px 12px; vertical-align: top; font-weight: 400; }
 .assign-confirm-content { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 14px; overflow-y: auto; }
 .assign-confirm-summary { display: grid; flex-shrink: 0; grid-template-columns: minmax(240px, 1.5fr) repeat(4, minmax(0, 1fr)); align-items: center; gap: 16px; padding: 15px; border: 1px solid var(--gen-line); border-radius: 12px; background: #fff; }
 .assign-confirm-metric { display: flex; align-items: center; gap: 8px; border-left: 1px solid #eee7e0; padding-left: 14px; }
@@ -168,36 +166,64 @@
   .assign-review-heading > div:last-child { grid-column: 1 / -1; }
   .assign-confirm-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .assign-confirm-summary > div:first-child { grid-column: 1 / -1; }
-  .assign-columns { grid-template-columns: minmax(260px, 2fr) minmax(0, 5fr); }
+}
+
+/* ── Narrow screens: the instructor list can fold away ──
+   Side by side (1024–1279px) it folds into a 60px rail; stacked (<1024px) into a one-line bar.
+   The rail shows who is selected, and clicking it opens the list again. */
+@media (max-width: 1279px) {
+  .assign-select-columns .assign-panel-collapse { display: inline-flex; }
+  .assign-instructor-panel[data-collapsed='true'] .assign-instructor-body { display: none; }
+  .assign-instructor-panel[data-collapsed='true'] .assign-instructor-rail { display: flex; }
+}
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .assign-select-columns[data-instructors-collapsed='true'] { grid-template-columns: 60px minmax(0, 1fr); }
+  .assign-instructor-panel[data-collapsed='true'] .assign-instructor-rail { flex-direction: column; justify-content: flex-start; gap: 12px; padding: 12px 0; text-align: center; }
+  /* Name reads bottom-to-top along the rail. */
+  .assign-instructor-panel[data-collapsed='true'] .assign-rail-text { max-height: 100%; overflow: hidden; writing-mode: vertical-rl; transform: rotate(180deg); }
 }
 
 @media (max-width: 1023px) {
   .assign-modal-body { overflow-y: auto; }
   .assign-columns { flex: none; grid-template-columns: minmax(0, 1fr); align-items: start; }
-  .assign-instructor-panel { max-height: 400px; }
+  .assign-instructor-panel { max-height: min(380px, 50dvh); }
+  .assign-instructor-panel[data-collapsed='true'] .assign-instructor-rail { padding: 8px 12px; }
   .assign-course-panel { overflow: visible; }
-  .assign-section-panel, .assign-section-scroll { overflow: visible; }
+  /* One scroll container (the body): the table grows to full height and its sticky
+     header pins to the top of the body while scrolling. */
+  .assign-modal :is(.assign-section-panel, .assign-section-scroll) { overflow: visible; }
   .assign-review-instructors { max-height: 300px; }
   .assign-review-columns .assign-course-panel > div { flex: none; }
   .assign-review-columns .assign-course-panel > div > div { overflow-x: auto; }
   .assign-confirm-content { flex: none; overflow: visible; }
-  .assign-progress ol { max-width: none; }
   /* The selection summary stays reachable while the body scrolls. */
   .assign-selection-actions[data-selected='true'] { position: sticky; bottom: 0; z-index: 3; border-radius: 0 0 12px 12px; }
 }
 
+/* ── Short viewports (laptops: 1366×768 and 1280×720 screens leave ~590–650px of viewport) ──
+   Chrome around the table is trimmed first, so the rows keep a readable size. */
+@media (min-width: 640px) and (max-height: 820px) {
+  .assign-columns { gap: 10px; }
+  .assign-panel-heading { min-height: 36px; padding: 6px 12px 2px; }
+  .assign-segments { margin: 8px 10px 6px; }
+  .assign-segment { min-height: 26px; }
+  .assign-modal .assign-button { min-height: 36px; padding: 6px 14px; }
+  .assign-selection-actions { padding: 6px 12px; }
+  .assign-review-heading { padding: 10px 14px; }
+  .assign-confirm-content { gap: 10px; }
+}
+@media (min-width: 640px) and (max-height: 660px) {
+  .assign-course-filters { padding: 6px 12px; }
+  .assign-course-filters select { height: 32px; }
+  .assign-sections-heading { min-height: 36px; padding: 3px 12px; }
+  .assign-selection-actions .assign-selection-who > :first-child { display: none; }
+}
+
 @media (max-width: 639px) {
-  .assign-modal-overlay { padding: 8px; }
-  .assign-modal { height: calc(100dvh - 16px); border-radius: 16px; }
-  .assign-modal-header { align-items: center; gap: 10px; padding: 12px 14px; }
-  .assign-progress { padding: 9px 12px; }
-  .assign-progress li { gap: 5px; font-size: 11px; }
-  .assign-progress li:not(:last-child)::after { min-width: 8px; }
-  .assign-step-number { width: 20px; height: 20px; font-size: 10px; }
-  .assign-step-count { display: none; }
-  .assign-modal-body { padding: 10px; }
   .assign-columns { gap: 12px; }
-  .assign-course-filters { grid-template-columns: 110px minmax(0, 1fr); gap: 9px; padding: 12px; }
+  .assign-course-filters { grid-template-columns: 110px minmax(0, 1fr); gap: 9px; padding: 10px 12px; }
+  .assign-course-filters > label { display: block; }
+  .assign-course-filters > label > div { margin-top: 4px; }
   .assign-course-filters select { padding-left: 8px; font-size: 12px; }
   .assign-sections-heading { padding: 10px 12px; }
   .assign-sections-tools { flex-wrap: wrap; gap: 8px; }
@@ -213,10 +239,6 @@
   .assign-selection-actions { padding: 10px 12px; }
   .assign-selection-load { max-width: none; }
   .assign-selection-actions > .assign-button { width: 100%; min-height: 44px; }
-  .assign-modal-footer { gap: 8px; padding: 10px 12px; }
-  .assign-modal-footer > :not(.sr-only) { flex-basis: 100%; }
-  .assign-footer-buttons { margin: 0; }
-  .assign-footer-buttons .assign-button { flex: 1; min-height: 44px; }
   .assign-review-heading { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 12px; }
   .assign-modal .assign-review-table tbody > tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; padding: 12px; border-top: 1px solid #eee7e0; }
   .assign-modal .assign-review-table td { grid-column: 1; width: auto; padding: 4px 0; }

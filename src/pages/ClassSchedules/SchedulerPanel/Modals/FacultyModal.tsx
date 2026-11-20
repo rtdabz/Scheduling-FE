@@ -138,7 +138,7 @@ export default function FacultyModal({
 
   return (
     <div
-      className="scheduler-dialog-overlay fixed inset-0 z-50 flex items-center justify-center overflow-y-auto"
+      className="scheduler-dialog-overlay fixed inset-0 z-[65] flex items-center justify-center overflow-y-auto"
       onClick={(event) => { if (event.target === event.currentTarget && !isSavingFaculty) setFacultyAssignmentPopup(null); }}
     >
       <div

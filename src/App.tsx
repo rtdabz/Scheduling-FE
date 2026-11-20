@@ -1,5 +1,5 @@
-import { createBrowserRouter, createRoutesFromElements, RouterProvider, Route, Navigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { createBrowserRouter, createRoutesFromElements, RouterProvider, Route, Navigate, useLocation } from 'react-router-dom';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import LoginPage from './pages/LoginPage';
 import type { UserRole } from './pages/Dashboard';
 import AppLayout from './components/layout/AppLayout';
@@ -121,7 +121,7 @@ const DashboardRoute = () => <Dashboard role={getDashboardRole()} />;
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-  if (!token) return <Navigate to="/" replace />;
+  if (!token) return <Navigate to="/login" replace />;
   return <>{children}</>;
 };
 
@@ -227,6 +227,30 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+/** Query parameters that emailed reset/invite links and the Google sign-in callback put on `/`. */
+const SIGN_IN_PARAMS = ['reset_token', 'google_code', 'google_state', 'google_error'];
+
+/**
+ * Switch for the public landing page. While false, `/` shows the sign-in page exactly as it did
+ * before the landing page existed, and the landing page code is never loaded. Set to true to
+ * publish it.
+ */
+const LANDING_PAGE_ENABLED = false;
+
+const LandingPage = lazy(() => import('./pages/landing/LandingPage'));
+
+/**
+ * The public landing page. Password reset, account invitation and Google sign-in links from the
+ * API still point at `/?...`, so those are forwarded to the sign-in page with their query intact.
+ */
+const LandingRoute = () => {
+  const { search } = useLocation();
+  if (!LANDING_PAGE_ENABLED) return <PublicRoute><LoginPage /></PublicRoute>;
+  const params = new URLSearchParams(search);
+  if (SIGN_IN_PARAMS.some((name) => params.has(name))) return <Navigate to={`/login${search}`} replace />;
+  return <Suspense fallback={null}><LandingPage /></Suspense>;
+};
+
 export default function App() {
   useEffect(() => {
     const token = localStorage.getItem('token') || sessionStorage.getItem('token');
@@ -271,7 +295,8 @@ const departmentOfficeRoutes = (base: '/secretary' | '/director') => [
 
 const appRouter = createBrowserRouter(createRoutesFromElements(
       <>
-          <Route path="/" element={<PublicRoute><LoginPage /></PublicRoute>} />
+          <Route path="/" element={<LandingRoute />} />
+          <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
         
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route path="/dashboard" element={<DashboardRoute />} />

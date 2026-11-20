@@ -77,6 +77,128 @@ describe('side-by-side grid layout (TCC workbook/document style)', () => {
   });
 });
 
+describe('curricula whose code column is labelled differently, or not at all', () => {
+  const sheet = (rows: string[][]): TableSource => ({ format: 'xlsx', label: 'Sheet1', rows, provenance: (row) => ({ kind: 'xlsx', sheet: 'Sheet1', row: row + 1 }), warnings: [] });
+  const placed = (reading: ReturnType<typeof readTable>) => extractionOf(reading).rows.map((row) => [row.source.code, row.source.title, row.year_level, row.semester, row.source.lec, row.source.lab, row.source.tu]);
+
+  it.each([['Subj Code'], ['Subj. Code'], ['SubjCode'], ['Subj.Code'], ['SUBJCODE'], ['subj.code'], ['Subjects'], ['Subject Code'], ['Course No.'], ['Code']])('reads a grid whose code column is headed "%s"', (label) => {
+    const reading = readTable(sheet([
+      ['BACHELOR OF ELEMENTARY EDUCATION (BEEd)'],
+      ['FIRST YEAR'],
+      [label, 'First Semester', 'Lec', 'Lab', 'Units', 'Pre-requisite', label, 'Second Semester', 'Lec', 'Lab', 'Units', 'Pre-requisite'],
+      ['EDUC 101', 'The Child and Adolescent Learner', '3', '0', '3', '', 'EDUC 102', 'Facilitating Learner-Centered Teaching', '3', '0', '3', 'EDUC 101'],
+    ]));
+    expect(placed(reading)).toEqual([
+      ['EDUC 101', 'The Child and Adolescent Learner', 1, 1, 3, 0, 3],
+      ['EDUC 102', 'Facilitating Learner-Centered Teaching', 1, 2, 3, 0, 3],
+    ]);
+    expect(extractionOf(reading).rows[1].source.prerequisites).toBe('EDUC 101');
+  });
+
+  it('reads a grid with no code header, taking codes from the column before the title', () => {
+    const reading = readTable(sheet([
+      ['BACHELOR OF SCIENCE IN BUSINESS ADMINISTRATION (BSBA)'],
+      ['FIRST YEAR'],
+      ['', 'First Semester', 'Lec', 'Lab', 'TU', '', 'Second Semester', 'Lec', 'Lab', 'TU'],
+      ['BA 101', 'Basic Microeconomics', '3', '0', '3', 'BA 104', 'Human Resource Management', '3', '0', '3'],
+      ['GEC 01', 'Understanding the Self', '3', '0', '3', '', 'TOTAL CREDITS', '3', '0', '3'],
+      ['', 'TOTAL CREDITS', '6', '0', '6'],
+    ]));
+    expect(placed(reading)).toEqual([
+      ['BA 101', 'Basic Microeconomics', 1, 1, 3, 0, 3],
+      ['BA 104', 'Human Resource Management', 1, 2, 3, 0, 3],
+      ['GEC 01', 'Understanding the Self', 1, 1, 3, 0, 3],
+    ]);
+    expect(extractionOf(reading).groups).toEqual([
+      { year_level: 1, semester: 2, reported: { lec: 3, lab: 0, tu: 3 } },
+      { year_level: 1, semester: 1, reported: { lec: 6, lab: 0, tu: 6 } },
+    ]);
+  });
+
+  it('takes the term from a combined heading when the table has no semester label', () => {
+    const reading = readTable(sheet([
+      ['First Year - Second Semester'],
+      ['Subject', 'Descriptive Title', 'Lec Units', 'Lab Units', 'Total Units'],
+      ['CRIM 102', 'Fundamentals of Criminal Investigation', '3', '0', '3'],
+    ]));
+    expect(placed(reading)).toEqual([['CRIM 102', 'Fundamentals of Criminal Investigation', 1, 2, 3, 0, 3]]);
+  });
+
+  it.each([['Subj Code'], ['Subj.Code'], ['SubjCode']])('reads a flat template whose code column is headed "%s" without asking for mapping', async (label) => {
+    const reading = readTable(await readCsv(`Year Level,Term,${label},Descriptive Title,Lec,Lab,Units\n1,First Semester,EDUC 101,The Child and Adolescent Learner,3,0,3`));
+    expect(placed(reading)).toEqual([['EDUC 101', 'The Child and Adolescent Learner', 1, 1, 3, 0, 3]]);
+  });
+
+  it('does not take a line that only mentions Lec/Lab/Units, with no codes under it, for a table', () => {
+    expect(readTable(sheet([['', 'Note', 'Lec', 'Lab', 'Units'], ['', 'Units are per week', '', '', '']]))).toBeNull();
+  });
+});
+
+describe('other curriculum templates', () => {
+  const sheet = (rows: string[][]): TableSource => ({ format: 'xlsx', label: 'Sheet1', rows, provenance: (row) => ({ kind: 'xlsx', sheet: 'Sheet1', row: row + 1 }), warnings: [] });
+  const placed = (reading: ReturnType<typeof readTable>) => extractionOf(reading).rows.map((row) => [row.source.code, row.year_level, row.semester, row.source.lec, row.source.lab, row.source.tu]);
+
+  it('reads one table per term under separate year and term headings', () => {
+    const reading = readTable(sheet([
+      ['BACHELOR OF SCIENCE IN CRIMINOLOGY (BSCrim)'],
+      ['FIRST YEAR'],
+      ['First Semester'],
+      ['Course Code', 'Descriptive Title', 'Lec', 'Lab', 'Units', 'Pre-requisite'],
+      ['CRIM 101', 'Introduction to Criminology', '3', '0', '3', 'None'],
+      ['', 'Total', '3', '0', '3', ''],
+      ['Second Semester'],
+      ['Course Code', 'Descriptive Title', 'Lec', 'Lab', 'Units', 'Pre-requisite'],
+      ['CRIM 102', 'Theories of Crime Causation', '3', '0', '3', 'CRIM 101'],
+      ['Year 2'],
+      ['1st Sem.'],
+      ['Course Code', 'Descriptive Title', 'Lec', 'Lab', 'Units', 'Pre-requisite'],
+      ['CRIM 201', 'Forensic Photography', '2', '1', '3', ''],
+    ]));
+    expect(placed(reading)).toEqual([['CRIM 101', 1, 1, 3, 0, 3], ['CRIM 102', 1, 2, 3, 0, 3], ['CRIM 201', 2, 1, 2, 1, 3]]);
+    expect(extractionOf(reading).groups[0]).toEqual({ year_level: 1, semester: 1, reported: { lec: 3, lab: 0, tu: 3 } });
+  });
+
+  it('reads a two-row header with Units over Lec | Lab | Total', () => {
+    const reading = readTable(sheet([
+      ['Second Semester - Second Year'],
+      ['Subject Code', 'Descriptive Title', 'Units', '', '', 'Pre-requisite'],
+      ['', '', 'Lec', 'Lab', 'Total', ''],
+      ['EDUC 202', 'Assessment in Learning 1', '2', '1', '3', 'EDUC 101'],
+    ]));
+    expect(placed(reading)).toEqual([['EDUC 202', 2, 2, 2, 1, 3]]);
+    expect(extractionOf(reading).rows[0].source).toMatchObject({ title: 'Assessment in Learning 1', prerequisites: 'EDUC 101' });
+  });
+
+  it('reads the unit columns when a table prints contact hours too', () => {
+    const reading = readTable(sheet([
+      ['THIRD YEAR'],
+      ['Course Code', 'First Semester', 'Lec Hrs', 'Lab Hrs', 'Lec Units', 'Lab Units', 'Total Units'],
+      ['NCM 101', 'Health Assessment', '2', '3', '2', '1', '3'],
+    ]));
+    expect(placed(reading)).toEqual([['NCM 101', 3, 1, 2, 1, 3]]);
+  });
+
+  it('reads a table that prints only total units, flagging the split for review and starting it as lecture', () => {
+    const reading = readTable(sheet([
+      ['FOURTH YEAR, FIRST SEMESTER'],
+      ['Subject Code', 'Description', 'Units'],
+      ['BA 401', 'Strategic Management', '3'],
+      ['', 'Total Units', '3'],
+    ]));
+    const extraction = extractionOf(reading);
+    expect(placed(reading)).toEqual([['BA 401', 4, 1, null, null, 3]]);
+    expect(extraction.rows[0].source.flags).toContain('units_only');
+    const draft = buildDraft(extraction, { filename: 'ba.xlsx', size_bytes: 1, sha256: 'a'.repeat(64) });
+    expect(draft.rows[0]).toMatchObject({ lecture_units: 3, lab_units: 0, total_units: 3 });
+  });
+
+  it('reads a flat template with only a Units column without asking for column mapping', async () => {
+    const reading = readTable(await readCsv('Year,Semester,Subj Code,Subject Description,No. of Units\n1,1st Sem,GEC 01,Understanding the Self,3'));
+    expect(placed(reading)).toEqual([['GEC 01', 1, 1, null, null, 3]]);
+    expect(extractionOf(reading).rows[0].source.flags).toContain('units_only');
+  });
+});
+
 describe('DOCX semantic tables', () => {
   it('reads cell text from an inert document and ignores links, scripts, and images', () => {
     const html = '<h1>F I R S T Y E A R</h1>'

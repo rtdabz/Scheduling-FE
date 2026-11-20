@@ -8,6 +8,7 @@ import ConnectionBanner from './ConnectionBanner'
 import DepartmentSetupBanner from './DepartmentSetupBanner'
 import RouteLoadingBar from '../ui/RouteLoadingBar'
 import { useActiveSemester } from '../../hooks/useActiveSemester'
+import { SIDEBAR_PIN_QUERY, useMediaQuery } from '../../hooks/useMediaQuery'
 import { getStoredUser, hasStoredCapability, type StoredUser } from '../../lib/storedUser'
 import { annotateNav } from '../../navigation/navLocks'
 import { useLiveRevision } from '../../hooks/useLiveRefresh'
@@ -22,7 +23,17 @@ import { programHeadNav } from '../../navigation/programHeadNav'
 import type { NavSection } from '../../navigation/types'
 
 export default function AppLayout() {
-  const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia('(min-width: 768px)').matches)
+  // Wide screens pin the expanded sidebar beside the page; narrower ones keep the 64px rail (hidden on
+  // phones) and open the sidebar over the page, so content keeps its width. Crossing the threshold
+  // (resize, zoom, docking a laptop) resets the sidebar to that size's default.
+  const sidebarPinned = useMediaQuery(SIDEBAR_PIN_QUERY)
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia(SIDEBAR_PIN_QUERY).matches)
+  const [pinnedSeen, setPinnedSeen] = useState(sidebarPinned)
+  if (pinnedSeen !== sidebarPinned) {
+    setPinnedSeen(sidebarPinned)
+    setSidebarOpen(sidebarPinned)
+  }
+  const sidebarOverlay = sidebarOpen && !sidebarPinned
   const location = useLocation()
   const { semester: activeSemester } = useActiveSemester()
 
@@ -77,8 +88,7 @@ export default function AppLayout() {
   }, [sidebarOpen])
 
   useEffect(() => {
-    const isMobile = window.matchMedia('(max-width: 767px)').matches
-    if (!isMobile || !sidebarOpen) return
+    if (!sidebarOverlay) return
 
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -86,7 +96,7 @@ export default function AppLayout() {
     return () => {
       document.body.style.overflow = previousOverflow
     }
-  }, [sidebarOpen])
+  }, [sidebarOverlay])
 
   return (
     <div className="fixed inset-0 flex overflow-hidden bg-[#F7F5F2] print:static print:h-auto print:w-full print:overflow-visible print:bg-white">
@@ -94,13 +104,14 @@ export default function AppLayout() {
       <SessionTimeoutGuard />
 
       <div
-        className={`fixed inset-0 z-[55] bg-black/50 transition-opacity duration-300 ease-in-out md:hidden print:hidden ${sidebarOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
+        className={`fixed inset-0 z-[55] bg-black/50 transition-opacity duration-300 ease-in-out print:hidden ${sidebarOverlay ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
         onClick={() => setSidebarOpen(false)}
         aria-hidden="true"
       />
 
       <Sidebar
         isOpen={sidebarOpen}
+        pinned={sidebarPinned}
         onClose={() => setSidebarOpen(false)}
         onOpen={() => setSidebarOpen(true)}
         navItems={navItems}
@@ -108,7 +119,7 @@ export default function AppLayout() {
 
       <div className={`
         flex-shrink-0 transition-[width] duration-300 ease-in-out print:hidden
-        ${sidebarOpen ? 'w-0 md:w-72' : 'w-0 md:w-16'}
+        ${sidebarOpen && sidebarPinned ? 'w-72' : 'w-0 md:w-16'}
       `} />
 
       <div

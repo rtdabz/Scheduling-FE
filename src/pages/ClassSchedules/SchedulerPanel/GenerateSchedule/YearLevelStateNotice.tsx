@@ -20,18 +20,16 @@ export function YearLevelStateBadge({
       role="status"
       title={detail}
       aria-label={`${locked ? "Locked" : "Already scheduled"}: ${detail}`}
-      className={`inline-flex h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 text-xs font-black ${
+      className={`inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 text-xs font-semibold ${
         locked
           ? "border-rose-200 bg-rose-50 text-rose-800"
-          : "border-amber-200 bg-amber-50 text-amber-900"
+          : "border-[#F5A623]/40 bg-[#F5A623]/10 text-[#8A5A12]"
       }`}
     >
-      <Icon className="h-4 w-4 shrink-0" aria-hidden />
-      <span className="flex flex-col leading-tight">
-        {locked ? "Locked" : "Scheduled"}
-        <span className="text-[10px] font-semibold opacity-80">
-          {state.scheduledSectionCount}/{state.sectionCount} sections
-        </span>
+      <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      {locked ? "Locked" : "Scheduled"}
+      <span className="font-normal tabular-nums opacity-80">
+        {state.scheduledSectionCount}/{state.sectionCount}
       </span>
     </span>
   );

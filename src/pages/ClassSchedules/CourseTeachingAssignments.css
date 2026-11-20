@@ -1,121 +1,257 @@
+/*
+ * Course Teaching: course list.
+ *
+ * The list is a CSS grid, not a <table>: the header and every row share one column template,
+ * and container queries on the course panel re-arrange the same cells by grid area as the
+ * panel narrows. Nothing is hidden with overflow or shrunk to fit; long text is truncated or
+ * line-clamped inside a cell that has a real width.
+ *
+ *   wide   (>= 880px)  one line:  check | course | program | origin | taught by | units | status | action
+ *   medium (600-879px) two lines: check | course ............................ | units | status | action
+ *                                       | program | origin | taught by .......................
+ *   narrow (< 600px)   three lines; the header becomes a "Select all" + sort bar.
+ *
+ * Panel widths with the sidebar pinned: ~390px at 1024, ~645px at 1280, ~730px at 1366.
+ */
+
 .course-teaching-courses {
   container-type: inline-size;
+
+  --ct-border: #eef0f3;
+  --ct-row-hover: #f8fafc;
+  --ct-selected-bg: rgba(78, 10, 16, 0.045);
+  --ct-selected-hover: rgba(78, 10, 16, 0.07);
+  --ct-accent: var(--color-accent, #C9952A);
+  --ct-maroon: var(--color-primary, #4e0a10);
+  --ct-pad-x: 1rem;
+  --ct-gap: 0.75rem;
 }
 
-.course-teaching-table th,
-.course-teaching-table td {
-  padding-inline: 0.5rem;
+.ct-list {
+  min-width: 0;
 }
 
-.course-teaching-table td {
-  overflow-wrap: anywhere;
+/* ---- Shared grid --------------------------------------------------------------------- */
+
+.ct-head,
+.ct-row {
+  display: grid;
+  grid-template-columns:
+    1.25rem                      /* check   */
+    minmax(9rem, 14rem)          /* course: names break every two words, so it stays narrow */
+    5.5rem                       /* program: code only, full name on hover */
+    4rem                         /* origin: department code */
+    minmax(7rem, 13rem)          /* taught: badges wrap inside */
+    3.5rem                       /* units   */
+    minmax(7.5rem, 1fr)          /* status: takes the spare width so the row reads left to right */
+    2rem;                        /* action  */
+  grid-template-areas: "check course program origin taught units status action";
+  column-gap: var(--ct-gap);
+  align-items: center;
+  padding-inline: var(--ct-pad-x);
 }
 
-.course-teaching-table th button {
+.ct-cell { min-width: 0; }
+.ct-check { grid-area: check; }
+.ct-course { grid-area: course; }
+.ct-program { grid-area: program; }
+.ct-origin { grid-area: origin; }
+.ct-taught { grid-area: taught; }
+.ct-units { grid-area: units; }
+.ct-status { grid-area: status; }
+.ct-action { grid-area: action; display: flex; justify-content: flex-end; }
+.ct-end { text-align: right; justify-self: stretch; }
+
+/* Inline field labels are only for the stacked layouts. */
+.ct-label { display: none; }
+
+/* ---- Header --------------------------------------------------------------------------- */
+
+.ct-head-group {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.ct-head {
+  min-height: 2.25rem;
+}
+
+.ct-sort {
+  display: inline-flex;
   max-width: 100%;
+  align-items: center;
+  gap: 0.25rem;
+  margin-inline: -0.25rem;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: color 120ms ease, background-color 120ms ease;
 }
 
-.course-teaching-table th button svg {
-  flex-shrink: 0;
+.ct-sort svg { color: #cbd5e1; transition: color 120ms ease; }
+.ct-sort:hover { color: #0f172a; }
+.ct-sort:hover svg { color: #94a3b8; }
+.ct-sort:focus-visible { outline: 2px solid rgba(201, 149, 42, 0.6); outline-offset: 1px; }
+.ct-sort-active { color: var(--ct-maroon); }
+.ct-sort-active svg { color: var(--ct-accent); }
+
+/* Units is centred in the wide layout. */
+@container (min-width: 880px) {
+  .ct-units.ct-end { text-align: center; }
 }
 
-/* Fixed column widths (table-fixed); select, units and actions are sized in the column defs.
-   TanStack gives every column a default size of 150, which DataTable writes as an inline
-   `width: 150px` on each <th>, so these need !important to take effect.
-   Course is `auto`: it absorbs whatever the other columns leave, so the columns always add
-   up to the table width (no dead space, no horizontal overflow).
-   Origin only ever shows a department code, so it gets a compact pixel width and Taught by
-   sits right next to it. */
-@container (min-width: 768px) {
-  .course-teaching-table th.course-teaching-col-course { width: auto !important; }
-  .course-teaching-table th.course-teaching-col-program { width: 18% !important; }
-  .course-teaching-table th.course-teaching-col-owner { width: 76px !important; }
-  .course-teaching-table th.course-teaching-col-teacher { width: 17% !important; }
-  .course-teaching-table th.course-teaching-col-status { width: 16% !important; }
-}
+.ct-select-all-text { display: none; }
 
-.course-teaching-table td {
+/* ---- Rows ----------------------------------------------------------------------------- */
+
+.ct-row {
+  position: relative;
+  min-height: 3.75rem;
   padding-block: 0.625rem;
-  vertical-align: middle;
+  border-bottom: 1px solid var(--ct-border);
+  transition: background-color 120ms ease;
 }
 
-/* Selected rows: maroon tint plus an amber edge. The repeated class out-ranks the global
-   `table tbody > tr:...:hover` rule in index.css so the selection stays visible on hover. */
-table.course-teaching-table tbody > tr.course-teaching-row-selected.course-teaching-row-selected.course-teaching-row-selected {
-  background-color: rgba(78, 10, 16, 0.055) !important;
+/* Left edge: amber on hover, maroon-and-amber when selected. Drawn on the row itself so it
+   spans the full row height in every layout. */
+.ct-row::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 3px;
+  background: transparent;
+  transition: background-color 120ms ease;
 }
 
-table.course-teaching-table tbody > tr.course-teaching-row-selected > td:first-child {
-  box-shadow: inset 3px 0 0 #C9952A;
+.ct-row-selectable { cursor: pointer; }
+.ct-row:hover { background: var(--ct-row-hover); }
+.ct-row-selectable:hover::before { background: rgba(201, 149, 42, 0.55); }
+
+.ct-row-selected,
+.ct-row-selected:hover { background: var(--ct-selected-bg); }
+.ct-row-selected:hover { background: var(--ct-selected-hover); }
+.ct-row-selected::before,
+.ct-row-selected:hover::before { background: var(--ct-accent); }
+
+.ct-row:focus-within { background: var(--ct-row-hover); }
+.ct-row-selected:focus-within { background: var(--ct-selected-hover); }
+
+/* Checkbox with a comfortable hit area that does not widen the column. */
+.ct-check-hit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: -0.5rem;
+  padding: 0.5rem;
+  cursor: pointer;
 }
 
-@container (max-width: 767px) {
-  .course-teaching-table,
-  .course-teaching-table thead,
-  .course-teaching-table tbody {
+.ct-check-hit:has(input:disabled) { cursor: not-allowed; }
+
+.ct-checkbox {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--ct-maroon);
+}
+
+.ct-checkbox:disabled { cursor: not-allowed; opacity: 0.35; }
+.ct-checkbox:focus-visible { outline: 2px solid rgba(201, 149, 42, 0.7); outline-offset: 2px; }
+
+.ct-empty {
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+}
+
+/* ---- Medium: secondary details move to a second line ---------------------------------- */
+
+@container (max-width: 879px) {
+  .ct-head,
+  .ct-row {
+    grid-template-columns:
+      1.25rem 5.5rem 4rem minmax(0, 1fr) 3rem minmax(7.5rem, auto) 2rem;
+    grid-template-areas:
+      "check course  course course units status action"
+      ".     program origin taught taught taught .";
+    row-gap: 0.5rem;
+    align-items: start;
+  }
+
+  .ct-row { padding-block: 0.75rem; }
+
+  .ct-row .ct-check,
+  .ct-row .ct-units,
+  .ct-row .ct-status,
+  .ct-row .ct-action { align-self: center; }
+
+  .ct-label {
     display: block;
+    margin-bottom: 0.125rem;
+    color: #94a3b8;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    line-height: 0.875rem;
+    text-transform: uppercase;
   }
 
-  .course-teaching-table thead {
-    position: static;
-  }
+  /* Units and status stay on the course line, which already says what they are. */
+  .ct-row .ct-units .ct-label,
+  .ct-row .ct-status .ct-label { display: none; }
 
-  .course-teaching-table thead tr {
+  /* The header becomes a select-all + sort bar; secondary sort keys sit on its right. */
+  .ct-head {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
+    column-gap: 1rem;
+    row-gap: 0.25rem;
+    padding-block: 0.375rem;
   }
 
-  .course-teaching-table th {
-    flex: 0 0 auto;
-    width: auto !important;
-  }
-
-  .course-teaching-table th button {
-    white-space: nowrap;
-  }
-
-  .course-teaching-table th:last-child {
-    display: none;
-  }
-
-  .course-teaching-table tbody > tr {
-    display: grid;
-    grid-template-columns: 2rem minmax(0, 1fr) 3rem 3rem;
-    padding-block: 0.5rem;
-  }
-
-  .course-teaching-table td {
-    min-width: 0;
-    padding-block: 0.25rem;
-  }
-
-  .course-teaching-table td:nth-child(1) { grid-area: 1 / 1; }
-  .course-teaching-table td:nth-child(2) { grid-area: 1 / 2; }
-  .course-teaching-table td:nth-child(6) { grid-area: 1 / 3; }
-  .course-teaching-table td:nth-child(8) { grid-area: 1 / 4; }
-
-  .course-teaching-table td:nth-child(3),
-  .course-teaching-table td:nth-child(4),
-  .course-teaching-table td:nth-child(5),
-  .course-teaching-table td:nth-child(7) {
-    grid-column: 2 / -1;
-  }
-
-  .course-teaching-table td::before {
-    display: block;
-    color: #64748b;
-    font-size: 10px;
+  .ct-head .ct-check { margin-right: auto; }
+  .ct-head .ct-action { display: none; }
+  .ct-head .ct-end .ct-sort { flex-direction: row; }
+  .ct-select-all-text {
+    display: inline;
+    color: #475569;
+    font-size: 12px;
     font-weight: 600;
   }
+}
 
-  .course-teaching-table td:nth-child(3)::before { content: 'Program'; }
-  .course-teaching-table td:nth-child(4)::before { content: 'Origin'; }
-  .course-teaching-table td:nth-child(5)::before { content: 'Taught by'; }
-  .course-teaching-table td:nth-child(6)::before { content: 'Units'; }
-  .course-teaching-table td:nth-child(7)::before { content: 'Status'; }
+/* ---- Narrow: three lines, details paired under the course ----------------------------- */
 
-  .course-teaching-table td[colspan] {
-    grid-column: 1 / -1;
+@container (max-width: 599px) {
+  .course-teaching-courses { --ct-pad-x: 0.75rem; --ct-gap: 0.625rem; }
+
+  .ct-head,
+  .ct-row {
+    grid-template-columns: 1.25rem minmax(0, 1fr) minmax(0, 1fr) 3rem 2rem;
+    grid-template-areas:
+      "check course  course  course action"
+      ".     status  taught  taught units"
+      ".     program program origin origin";
   }
+
+  .ct-head { column-gap: 0.75rem; }
+
+  .ct-row .ct-status .ct-label,
+  .ct-row .ct-units .ct-label { display: block; }
+
+  .ct-row .ct-units,
+  .ct-row .ct-status { align-self: start; }
+
+  .ct-row .ct-origin { text-align: right; }
 }

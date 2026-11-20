@@ -1,0 +1,112 @@
+/* Generate Schedule workspace. Colors come from the shared --gen-* tokens on .scheduler-dialog
+   (styles/scheduler-dialogs.css); frame, stepper and footer are the shared .workflow-* classes. */
+
+/* ── Type and color system for every step ──
+   Step components are written with Tailwind's slate greys and heavy weights. Inside the work area
+   they are mapped onto the warm workflow palette and a 400/500/600 weight scale, the same way the
+   Assign Instructors modal normalizes its content. :where() keeps these at utility specificity so
+   hover and focus variants still win. */
+.scheduler-generator-workspace > main { color: #1a1410; font-size: 13px; line-height: 1.5; }
+:where(.scheduler-generator-workspace > main) :is(.font-black, .font-extrabold) { font-weight: 600; }
+:where(.scheduler-generator-workspace > main) :is(h3, h4) { font-family: 'DM Sans', system-ui, sans-serif; letter-spacing: -0.005em; }
+:where(.scheduler-generator-workspace > main) .shadow-sm { box-shadow: 0 1px 2px rgb(74 13 22 / 4%); }
+:where(.scheduler-generator-workspace > main) .border-slate-200 { border-color: var(--gen-line); }
+:where(.scheduler-generator-workspace > main) .border-slate-100 { border-color: #f0eae3; }
+:where(.scheduler-generator-workspace > main) .text-slate-900 { color: #1a1410; }
+:where(.scheduler-generator-workspace > main) .text-slate-800 { color: #2b221d; }
+:where(.scheduler-generator-workspace > main) .text-slate-700 { color: #3f342e; }
+:where(.scheduler-generator-workspace > main) .text-slate-600 { color: #5b4f48; }
+:where(.scheduler-generator-workspace > main) .text-slate-500 { color: #6b5f57; }
+:where(.scheduler-generator-workspace > main) .text-slate-400 { color: #8a7f78; }
+:where(.scheduler-generator-workspace > main) .bg-slate-50 { background-color: #faf8f5; }
+:where(.scheduler-generator-workspace > main) .bg-slate-100 { background-color: var(--gen-neutral); }
+
+/* ── Step 1: Configuration ── */
+.gen-config-host { container-type: inline-size; }
+.gen-config { display: grid; align-items: start; gap: 12px; }
+@container (min-width: 860px) {
+  .gen-config { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+}
+
+.gen-panel { container: gen-panel / inline-size; }
+.gen-panel-head { display: flex; align-items: flex-start; gap: 10px; padding: 14px 16px 12px; }
+.gen-panel-icon { display: flex; width: 28px; height: 28px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 8px; background: var(--gen-soft); color: var(--gen-primary); }
+.gen-panel-title { color: #1a1410; font-family: 'DM Sans', system-ui, sans-serif; font-size: 14px; font-weight: 600; line-height: 1.3; }
+.gen-panel-detail { margin-top: 2px; color: #6b5f57; font-size: 12px; line-height: 1.45; }
+.gen-panel-action { display: flex; flex-shrink: 0; align-items: center; gap: 4px; margin-left: auto; }
+
+/* Settings rows: label column beside the control once the panel is wide enough. */
+.gen-row { display: grid; gap: 8px 16px; padding: 12px 16px; border-top: 1px solid #f0eae3; }
+.gen-row-label { color: #1a1410; font-size: 13px; font-weight: 600; line-height: 1.35; }
+.gen-row-hint { margin-top: 2px; color: #6b5f57; font-size: 12px; font-weight: 400; line-height: 1.4; }
+.gen-row-control { display: flex; min-width: 0; flex-direction: column; gap: 8px; }
+@container gen-panel (min-width: 470px) {
+  .gen-row { grid-template-columns: 136px minmax(0, 1fr); align-items: start; }
+  .gen-row-label { padding-top: 8px; }
+}
+
+.gen-select { height: 36px; width: 100%; min-width: 0; border: 1px solid var(--gen-line-strong); border-radius: 8px; background-color: #fff; padding: 0 12px; color: #1a1410; font-size: 13px; font-weight: 500; outline: none; transition: border-color 150ms, box-shadow 150ms; }
+.gen-select:hover:not(:disabled) { border-color: #c9bcae; }
+.gen-select:focus { border-color: var(--gen-primary); box-shadow: 0 0 0 3px rgb(112 21 34 / 12%); }
+.gen-select:disabled { cursor: not-allowed; background-color: #faf8f5; color: #8a7f78; }
+
+.gen-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; color: #6b5f57; font-size: 12px; }
+.gen-meta > div { display: inline-flex; align-items: center; gap: 5px; }
+.gen-meta strong { color: #1a1410; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.gen-chip { display: inline-flex; height: 24px; flex-shrink: 0; align-items: center; gap: 5px; border: 1px solid transparent; border-radius: 999px; padding: 0 9px; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gen-chip[data-tone='positive'] { border-color: #bfe3cb; background: #edf7ef; color: #1f6b3e; }
+.gen-chip[data-tone='brand'] { border-color: rgb(112 21 34 / 18%); background: var(--gen-soft); color: var(--gen-deep); }
+.gen-chip[data-tone='neutral'] { border-color: var(--gen-line); background: var(--gen-neutral); color: #5b4f48; }
+.gen-link-button { display: inline-flex; height: 24px; align-items: center; gap: 4px; border-radius: 6px; padding: 0 6px; color: var(--gen-primary); font-size: 12px; font-weight: 600; }
+.gen-link-button:hover:not(:disabled) { background: var(--gen-soft); color: var(--gen-deep); }
+.gen-link-button:disabled { cursor: not-allowed; opacity: .5; }
+
+/* Section targets */
+.gen-section-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.gen-section { display: inline-flex; min-height: 32px; cursor: pointer; align-items: center; gap: 7px; border: 1px solid var(--gen-line); border-radius: 8px; background: #fff; padding: 0 10px; color: #3f342e; font-size: 12px; font-weight: 600; transition: border-color 150ms, background-color 150ms; }
+.gen-section:hover { border-color: var(--gen-line-strong); }
+.gen-section[data-checked='true'] { border-color: rgb(112 21 34 / 40%); background: var(--gen-soft); color: var(--gen-deep); }
+.gen-section[data-locked='true'] { cursor: not-allowed; background: #faf8f5; color: #8a7f78; }
+.gen-section[data-disabled='true'] { cursor: not-allowed; opacity: .6; }
+.gen-section input { width: 14px; height: 14px; accent-color: var(--gen-primary); }
+.gen-section-tag { border-radius: 999px; padding: 0 6px; background: var(--gen-neutral); color: #6b5f57; font-size: 10px; font-weight: 600; line-height: 1.7; }
+.gen-section-tag[data-tone='new'] { background: #edf7ef; color: #1f6b3e; }
+
+/* Week strip: the centerpiece. One tile per weekday; the bar under each name carries its state. */
+.gen-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; padding: 2px 16px 14px; }
+.gen-day { display: flex; min-width: 0; height: 60px; flex-direction: column; align-items: center; justify-content: center; gap: 7px; border: 1px solid rgb(112 21 34 / 22%); border-radius: 10px; background: var(--gen-soft); color: var(--gen-deep); transition: border-color 150ms, background-color 150ms, color 150ms; }
+.gen-day:hover:not(:disabled) { border-color: rgb(112 21 34 / 50%); }
+.gen-day-name { font-size: 13px; font-weight: 600; line-height: 1; }
+.gen-day-mark { display: block; width: 20px; height: 3px; border-radius: 2px; background: var(--gen-primary); }
+.gen-day[data-state='excluded'] { border-style: dashed; border-color: var(--gen-line-strong); background: #fff; color: #8a7f78; }
+.gen-day[data-state='excluded']:hover:not(:disabled) { border-color: #b8aa9c; color: #3f342e; }
+.gen-day[data-state='excluded'] .gen-day-name { text-decoration: line-through; text-decoration-thickness: 1.5px; }
+.gen-day[data-state='excluded'] .gen-day-mark { background: repeating-linear-gradient(90deg, #cfc4b9 0 3px, transparent 3px 6px); }
+.gen-day[data-state='closed'] { border-color: var(--gen-line); background: var(--gen-neutral); color: #a99e95; }
+.gen-day[data-state='closed'] .gen-day-mark { display: none; }
+.gen-day:disabled { cursor: not-allowed; }
+.gen-day[data-busy='true'] { opacity: .55; }
+.gen-day:focus-visible { outline: 2px solid var(--gen-primary); outline-offset: 2px; }
+
+/* Day rules (Sunday classes, Friday + Saturday) */
+.gen-rule { display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-top: 1px solid #f0eae3; }
+.gen-rule-text { min-width: 0; flex: 1; }
+.gen-rule-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: #1a1410; font-size: 13px; font-weight: 600; line-height: 1.35; }
+
+.gen-notices { display: flex; flex-direction: column; gap: 8px; padding: 0 16px 14px; }
+.gen-notices:empty { display: none; }
+.gen-notice { display: flex; align-items: flex-start; gap: 8px; border: 1px solid; border-radius: 8px; padding: 8px 10px; font-size: 12px; line-height: 1.45; }
+.gen-notice[data-tone='warning'] { border-color: rgb(245 166 35 / 40%); background: rgb(245 166 35 / 8%); color: var(--gen-amber-text); }
+.gen-notice[data-tone='error'] { border-color: #f3c4c0; background: #fff4f3; color: #a12e29; }
+.gen-notice svg { margin-top: 1px; flex-shrink: 0; }
+
+@container gen-panel (max-width: 380px) {
+  .gen-week { gap: 4px; padding-inline: 12px; }
+  .gen-day { height: 52px; }
+  .gen-day-name { font-size: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scheduler-generator-workspace * { transition: none !important; }
+}
