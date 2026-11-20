@@ -132,4 +132,20 @@ describe('schedule PDF signatories', () => {
     expect(pdf).toContain('(COLLEGE OF ARTS)');
     expect(pdf.match(/\(Page No\.  1 of 1\)/g)).toHaveLength(2);
   });
+
+  it('prints every section on its own page with its own signatories', async () => {
+    const source = input();
+    const [section] = source.sections;
+    source.sections = [section, { ...section, id: 'sec-b', name: 'B' }];
+    source.allSchedules = [...source.allSchedules, ...source.allSchedules.map((schedule) => ({ ...schedule, id: 'sched-b', sectionId: 'sec-b' }))];
+
+    const pdf = await pdfText({ ...source, signatories: recorded });
+
+    expect(pdf.match(/\/Type \/Page\n/g)).toHaveLength(2);
+    expect(pdf.match(/\(TAGOLOAN COMMUNITY COLLEGE\)/g)).toHaveLength(2);
+    expect(pdf.match(/\(Prepared by:\)/g)).toHaveLength(2);
+    expect(pdf.match(/\(DIEGO DEAN\)/g)).toHaveLength(2);
+    expect(pdf).toContain('(Page No.  1 of 2)');
+    expect(pdf).toContain('(Page No.  2 of 2)');
+  });
 });

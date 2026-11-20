@@ -101,45 +101,9 @@ export async function buildSchedulePdf(input: SchedulePdfInput): Promise<Blob> {
   return buildSchedulesPdf([input]);
 }
 
-/**
- * Several schedule documents in one PDF, e.g. one per department. Each starts on a new page with its
- * own letterhead, tables and signatories, and numbers its own pages ("Page 1 of 3" per department).
- */
-export async function buildSchedulesPdf(inputs: SchedulePdfInput[]): Promise<Blob> {
-  const [{ default: PdfDocument }, { default: table }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
-  const doc = new PdfDocument({ orientation: "landscape", format: "a4" });
-  const fonts = registerSystemPdfFonts(doc);
-  const pageCount = () => (doc as JsPdfDocumentWithPageInfo).internal.getNumberOfPages();
-  const ranges: Array<[number, number]> = [];
-  for (const [index, input] of inputs.entries()) {
-    if (index > 0) doc.addPage();
-    const first = pageCount();
-    await drawSchedule(doc, table, fonts, input);
-    ranges.push([first, pageCount()]);
-  }
-  ranges.forEach(([first, last]) => {
-    for (let page = first; page <= last; page++) drawFooter(doc, fonts, page, page - first + 1, last - first + 1);
-  });
-  return doc.output("blob");
-}
-
-async function drawSchedule(doc: jsPDF, table: AutoTable, { hasSans, hasDisplay }: PdfFonts, {
-  sections,
-  allSchedules,
-  selectedSectionId,
-  departments,
-  users,
-  activeSemester,
-  printAllSections = false,
-  signatories: recordedSignatories = null,
-  historicalDocument = false,
-}: SchedulePdfInput): Promise<void> {
+/** The sections a document prints, in print order: program, then year level, then section name. */
+function orderedTargetSections({ sections, selectedSectionId, activeSemester, printAllSections = false }: SchedulePdfInput): Section[] {
   const activeSection = sections.find((section) => section.id === selectedSectionId);
-  const activeDepartment = departments.find((department) => Number(department.id) === Number(activeSection?.departmentId));
-  const departmentId = activeSection?.departmentId?.toString();
-  const byRole = (role: string) =>
-    users.find((user) => user.is_active !== false && user.is_active !== 0 && user.role?.toLowerCase() === role && user.department_id?.toString() === departmentId);
-
   const activeSemesterSections = activeSemester
     ? sections.filter((section) => Number(section.semesterId) === Number(activeSemester.id))
     : sections;
@@ -150,7 +114,7 @@ async function drawSchedule(doc: jsPDF, table: AutoTable, { hasSans, hasDisplay 
     : activeSemesterSections;
 
   const programSortKey = (section: Section) => (section.programCode ?? section.programName ?? "").toUpperCase();
-  const targetSections = [...unfilteredSections].sort((a, b) => {
+  return [...unfilteredSections].sort((a, b) => {
     const programOrder = programSortKey(a).localeCompare(programSortKey(b));
     if (programOrder !== 0) {
       return programOrder;
@@ -162,6 +126,60 @@ async function drawSchedule(doc: jsPDF, table: AutoTable, { hasSans, hasDisplay 
     }
     return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
   });
+}
+
+/**
+ * Several schedule documents in one PDF, e.g. one per department. Every section starts on a new page
+ * with its own letterhead, table and signatories; pages are numbered per document ("Page 1 of 3" per
+ * department).
+ */
+export async function buildSchedulesPdf(inputs: SchedulePdfInput[]): Promise<Blob> {
+  const [{ default: PdfDocument }, { default: table }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
+  const doc = new PdfDocument({ orientation: "landscape", format: "a4" });
+  const fonts = registerSystemPdfFonts(doc);
+  const pageCount = () => (doc as JsPdfDocumentWithPageInfo).internal.getNumberOfPages();
+  const ranges: Array<[number, number]> = [];
+  let drawnAny = false;
+  for (const input of inputs) {
+    const sectionIds: Array<string | undefined> = orderedTargetSections(input).map((section) => section.id);
+    if (sectionIds.length === 0) sectionIds.push(undefined);
+    let first = 0;
+    for (const sectionId of sectionIds) {
+      if (drawnAny) doc.addPage();
+      drawnAny = true;
+      if (!first) first = pageCount();
+      await drawSchedule(doc, table, fonts, input, sectionId);
+    }
+    ranges.push([first, pageCount()]);
+  }
+  ranges.forEach(([first, last]) => {
+    for (let page = first; page <= last; page++) drawFooter(doc, fonts, page, page - first + 1, last - first + 1);
+  });
+  return doc.output("blob");
+}
+
+/** Draws one section's page (letterhead, table, signatories), or the whole document when no section is given. */
+async function drawSchedule(doc: jsPDF, table: AutoTable, { hasSans, hasDisplay }: PdfFonts, input: SchedulePdfInput, pageSectionId?: string): Promise<void> {
+  const {
+    sections,
+    allSchedules,
+    selectedSectionId,
+    departments,
+    users,
+    activeSemester,
+    signatories: recordedSignatories = null,
+    historicalDocument = false,
+  } = input;
+  const pageSection = pageSectionId ? sections.find((section) => section.id === pageSectionId) : undefined;
+  // A section's page names its own department and is signed by that department's dean.
+  const printAllSections = !pageSection && (input.printAllSections ?? false);
+  const activeSection = pageSection ?? sections.find((section) => section.id === selectedSectionId);
+  const activeDepartment = departments.find((department) => Number(department.id) === Number(activeSection?.departmentId));
+  const departmentId = activeSection?.departmentId?.toString();
+  const byRole = (role: string) =>
+    users.find((user) => user.is_active !== false && user.is_active !== 0 && user.role?.toLowerCase() === role && user.department_id?.toString() === departmentId);
+
+  const targetSections = pageSection ? [pageSection] : orderedTargetSections(input);
 
   const programTitleOf = (section: Section): string | null => {
     if (section.programId == null) return null;
