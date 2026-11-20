@@ -117,7 +117,8 @@ export default function Sidebar({ isOpen, pinned = true, onClose, onOpen, navIte
   useEffect(() => {
     api.get<DepartmentInfo[]>('/departments')
       .then((res) => {
-        if (res.data) setDepartments(res.data);
+        // A misbehaving backend can answer with an HTML error page; never store a non-array.
+        if (Array.isArray(res.data)) setDepartments(res.data);
       })
       .catch(() => {});
   }, []);
