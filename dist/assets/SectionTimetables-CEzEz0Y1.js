@@ -1,0 +1,1 @@
+import{t as e}from"./SectionTimetables-ScSjBama.js";export{e as default};

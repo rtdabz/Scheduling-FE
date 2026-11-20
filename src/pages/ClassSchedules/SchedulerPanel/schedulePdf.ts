@@ -14,6 +14,7 @@ import {
 } from "./printScheduleFormat";
 import { registerSystemPdfFonts } from "./fonts/systemPdfFonts";
 import { buildExportFilename } from "../../../lib/exportFile";
+import { loadCorsImage } from "../../../lib/loadCorsImage";
 
 export interface SchedulePdfInput {
   sections: Section[];
@@ -85,14 +86,7 @@ const absoluteAssetUrl = (asset: string): string =>
     ? asset
     : `${window.location.origin}${asset.startsWith("/") ? "" : "/"}${asset}`;
 
-const loadImgSafe = (url: string): Promise<HTMLImageElement | null> =>
-  new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.src = url;
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-  });
+const loadImgSafe = (url: string): Promise<HTMLImageElement | null> => loadCorsImage(url);
 
 type AutoTable = typeof import("jspdf-autotable").default;
 type PdfFonts = { hasSans: boolean; hasDisplay: boolean };

@@ -4,6 +4,7 @@ import { gridOpeningMinutes, slotCount, slotMinutes } from "../../../lib/timeGri
 import { packLanes } from "../../vpaa/calendar/ganttLayout";
 import { registerSystemPdfFonts } from "./fonts/systemPdfFonts";
 import type { ScheduleItem } from "./types";
+import { loadCorsImage } from "../../../lib/loadCorsImage";
 
 export interface InstructorTimetableScheduleItem {
   id?: string | number;
@@ -102,25 +103,8 @@ const absoluteAssetUrl = (asset: string): string =>
     ? asset
     : `${window.location.origin}${asset.startsWith("/") ? "" : "/"}${asset}`;
 
-const loadImgSafe = (url: string): Promise<HTMLImageElement | null> =>
-  new Promise((resolve) => {
-    if (!url) {
-      resolve(null);
-      return;
-    }
-    const img = new Image();
-    if ((url.startsWith("http:") || url.startsWith("https:")) && !url.startsWith(window.location.origin)) {
-      img.crossOrigin = "anonymous";
-    }
-    img.onload = () => resolve(img);
-    img.onerror = () => {
-      const retry = new Image();
-      retry.onload = () => resolve(retry);
-      retry.onerror = () => resolve(null);
-      retry.src = url;
-    };
-    img.src = url;
-  });
+// A non-CORS retry would taint the canvas the logo is cropped on; loadCorsImage retries with CORS instead.
+const loadImgSafe = (url: string): Promise<HTMLImageElement | null> => loadCorsImage(url);
 
 function createTransparentWatermarkDataUrl(img: HTMLImageElement, targetOpacity = 0.18): string {
   try {

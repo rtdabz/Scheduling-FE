@@ -5,6 +5,7 @@ import type { Curriculum, CurriculumNote, CurriculumSemester, Program } from '..
 import { noteSegments, noteScopeLabel } from './curriculumImport/notes';
 import { buildExportFilename } from './exportFile';
 import { openPdfPreview } from './pdfPreview';
+import { loadCorsImage } from './loadCorsImage';
 
 export const getCurriculumPdfFilename = (curriculum: Curriculum): string =>
   buildExportFilename('pdf', 'curriculum', curriculum.code, curriculum.effective_school_year);
@@ -70,17 +71,8 @@ const resolveAssetUrl = (asset: string): string => {
   return `${window.location.origin}${asset.startsWith('/') ? '' : '/'}${asset}`;
 };
 
-const loadImage = (url?: string | null): Promise<HTMLImageElement | null> => {
-  if (!url) return Promise.resolve(null);
-
-  return new Promise((resolve) => {
-    const image = new Image();
-    image.crossOrigin = 'anonymous';
-    image.onload = () => resolve(image);
-    image.onerror = () => resolve(null);
-    image.src = /^(data:|https?:)/i.test(url) ? url : resolveAssetUrl(url);
-  });
-};
+const loadImage = (url?: string | null): Promise<HTMLImageElement | null> =>
+  loadCorsImage(url && !/^(data:|https?:)/i.test(url) ? resolveAssetUrl(url) : url);
 
 const trimImageWhitespace = (image: HTMLImageElement): HTMLImageElement | HTMLCanvasElement => {
   const width = image.naturalWidth;

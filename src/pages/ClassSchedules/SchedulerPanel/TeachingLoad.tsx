@@ -22,6 +22,7 @@ import { formPageSize } from "./teachingLoadForm";
 import { facultyNameParts } from "./teachingLoadName";
 import { buildExportFilename } from "../../../lib/exportFile";
 import { openPdfPreview } from "../../../lib/pdfPreview";
+import { loadCorsImage } from "../../../lib/loadCorsImage";
 
 interface TeachingLoadProps {
   faculties: Faculty[];
@@ -57,14 +58,7 @@ const assetUrl = (asset: string): string => {
   return `${window.location.origin}${asset.startsWith("/") ? "" : "/"}${asset}`;
 };
 
-const loadImage = (url: string): Promise<HTMLImageElement | null> =>
-  new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.src = url;
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-  });
+const loadImage = (url: string): Promise<HTMLImageElement | null> => loadCorsImage(url);
 
 
 export default function TeachingLoad({
