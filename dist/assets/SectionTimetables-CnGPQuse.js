@@ -1,0 +1,1 @@
+import{t as e}from"./SectionTimetables-BHXwNzn-.js";export{e as default};
