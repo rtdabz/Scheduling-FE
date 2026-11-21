@@ -132,17 +132,17 @@ describe("SetupCoursesStep", () => {
 
     // Column headers check
     expect(screen.getByRole("columnheader", { name: "Course" })).toBeDefined();
-    expect(screen.getByRole("columnheader", { name: "Regular" })).toBeDefined();
-    expect(screen.getByRole("columnheader", { name: "Split" })).toBeDefined();
-    expect(screen.getByRole("columnheader", { name: "Integrated" })).toBeDefined();
+    expect(screen.getByRole("columnheader", { name: /Regular$/ })).toBeDefined();
+    expect(screen.getByRole("columnheader", { name: /Split$/ })).toBeDefined();
+    expect(screen.getByRole("columnheader", { name: /Integrated$/ })).toBeDefined();
     expect(screen.getByRole("columnheader", { name: "Delivery Mode" })).toBeDefined();
     expect(screen.getByRole("columnheader", { name: "Duration" })).toBeDefined();
     expect(screen.getByRole("columnheader", { name: "Configure" })).toBeDefined();
 
     // Checkboxes check
-    const regularCheckboxes = screen.getAllByRole("checkbox", { name: /Regular/i });
-    const splitCheckboxes = screen.getAllByRole("checkbox", { name: /Split/i });
-    const integratedCheckboxes = screen.getAllByRole("checkbox", { name: /Integrated/i });
+    const regularCheckboxes = screen.getAllByRole("checkbox", { name: /^Regular for/ });
+    const splitCheckboxes = screen.getAllByRole("checkbox", { name: /^Split for/ });
+    const integratedCheckboxes = screen.getAllByRole("checkbox", { name: /^Integrated for/ });
 
     expect(regularCheckboxes.length).toBe(2);
     expect(splitCheckboxes.length).toBe(2);
@@ -174,6 +174,104 @@ describe("SetupCoursesStep", () => {
     const it103Select = screen.getByRole("combobox", { name: "Delivery mode for IT 103" });
     expect(it103Select.textContent).toContain("On-Site");
     expect(it103Select.textContent).toContain("Hybrid");
+  });
+
+  describe("category header checkboxes", () => {
+    const threeCourses: Course[] = [
+      ...mockCourses,
+      { ...mockCourses[0], id: "c3", code: "IT 102", name: "Programming 1" },
+    ];
+    const threeConfigs = {
+      s1: { courseIds: ["c1", "c2", "c3"], splitCourseIds: [], gecSplitCourseIds: [] },
+      s2: { courseIds: ["c1", "c2", "c3"], splitCourseIds: [], gecSplitCourseIds: [] },
+    };
+    const header = (label: string) =>
+      screen.getByRole("checkbox", { name: `Set every eligible course to ${label}` }) as HTMLInputElement;
+    const renderStep = (onConfigChange = vi.fn(), excludedCourseIds: string[] = []) =>
+      render(
+        <SetupCoursesStep
+          courses={threeCourses}
+          sections={mockSections}
+          configs={threeConfigs}
+          onConfigChange={onConfigChange}
+          settings={{}}
+          excludedCourseIds={excludedCourseIds}
+          actionsDisabled={false}
+        />,
+      );
+
+    it("starts with Regular fully checked and locked, Split and Integrated unchecked", () => {
+      renderStep();
+      expect(header("Regular").checked).toBe(true);
+      expect(header("Regular").disabled).toBe(true);
+      expect(header("Split").checked).toBe(false);
+      expect(header("Split").indeterminate).toBe(false);
+      expect(header("Integrated").checked).toBe(false);
+    });
+
+    it("selects every eligible course, keeping each course's section sync intact", () => {
+      const onConfigChange = vi.fn();
+      renderStep(onConfigChange);
+
+      fireEvent.click(header("Split"));
+
+      // IT 103 has laboratory units and is not eligible, so only IT 101 and IT 102 move.
+      expect(screen.getByRole("checkbox", { name: "Split for IT 101" }).getAttribute("aria-checked")).toBe("true");
+      expect(screen.getByRole("checkbox", { name: "Split for IT 102" }).getAttribute("aria-checked")).toBe("true");
+      expect(screen.getByRole("checkbox", { name: "Regular for IT 103" }).getAttribute("aria-checked")).toBe("true");
+      expect(header("Split").checked).toBe(true);
+      expect(header("Regular").checked).toBe(false);
+      expect(header("Regular").indeterminate).toBe(true);
+      expect(header("Regular").disabled).toBe(false);
+
+      // The last change per section carries both courses, not just the last one.
+      const lastS1 = onConfigChange.mock.calls.filter(([id]) => id === "s1").at(-1)?.[1];
+      expect(lastS1.gecSplitCourseIds).toEqual(["c1", "c3"]);
+      expect(lastS1.modesByCourseId).toEqual({ c1: "on-site", c3: "on-site" });
+    });
+
+    it("shows the mixed state when only some courses use the configuration", () => {
+      renderStep();
+      fireEvent.click(screen.getByRole("checkbox", { name: "Split for IT 101" }));
+
+      expect(header("Split").checked).toBe(false);
+      expect(header("Split").indeterminate).toBe(true);
+
+      fireEvent.click(screen.getByRole("checkbox", { name: "Split for IT 102" }));
+      expect(header("Split").checked).toBe(true);
+      expect(header("Split").indeterminate).toBe(false);
+    });
+
+    it("clearing Split moves those courses back to Regular", () => {
+      renderStep();
+      fireEvent.click(header("Split"));
+      fireEvent.click(header("Split"));
+
+      expect(screen.getByRole("checkbox", { name: "Regular for IT 101" }).getAttribute("aria-checked")).toBe("true");
+      expect(screen.getByRole("checkbox", { name: "Regular for IT 102" }).getAttribute("aria-checked")).toBe("true");
+      expect(header("Split").checked).toBe(false);
+      expect(header("Regular").checked).toBe(true);
+    });
+
+    it("selects Regular for every course from a mixed state", () => {
+      renderStep();
+      fireEvent.click(screen.getByRole("checkbox", { name: "Integrated for IT 103" }));
+      expect(header("Regular").indeterminate).toBe(true);
+
+      fireEvent.click(header("Regular"));
+      expect(screen.getByRole("checkbox", { name: "Regular for IT 103" }).getAttribute("aria-checked")).toBe("true");
+      expect(header("Regular").checked).toBe(true);
+      expect(header("Integrated").checked).toBe(false);
+    });
+
+    it("leaves excluded courses untouched", () => {
+      renderStep(vi.fn(), ["c3"]);
+      fireEvent.click(header("Split"));
+
+      expect(screen.getByRole("checkbox", { name: "Split for IT 101" }).getAttribute("aria-checked")).toBe("true");
+      expect(screen.getByRole("checkbox", { name: "Regular for IT 102" }).getAttribute("aria-checked")).toBe("true");
+      expect(header("Split").checked).toBe(true);
+    });
   });
 
   it("toggles Split checkbox directly from the table and updates section configs", () => {
@@ -251,7 +349,7 @@ describe("SetupCoursesStep", () => {
     );
 
     // Choosing Integrated makes IT 103 lecture + lab, both on site.
-    fireEvent.click(screen.getAllByRole("checkbox", { name: /Integrated/i })[1]);
+    fireEvent.click(screen.getAllByRole("checkbox", { name: /^Integrated for/ })[1]);
     expect(onConfigChange).toHaveBeenCalledWith("s1", {
       splitCourseIds: ["c2"],
       gecSplitCourseIds: [],

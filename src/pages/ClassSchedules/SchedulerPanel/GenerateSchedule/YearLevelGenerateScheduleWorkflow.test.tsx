@@ -1339,7 +1339,7 @@ describe("YearLevelGenerateScheduleWorkflow", () => {
       "Duration",
       "Configure",
     ]) {
-      expect(screen.getByRole("columnheader", { name: heading })).toBeTruthy();
+      expect(screen.getByRole("columnheader", { name: new RegExp(`${heading}$`) })).toBeTruthy();
     }
     expect(screen.getByRole("button", { name: /Configure/ })).toBeTruthy();
 

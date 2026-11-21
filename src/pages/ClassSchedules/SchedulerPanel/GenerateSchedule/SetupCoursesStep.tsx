@@ -246,9 +246,18 @@ export default function SetupCoursesStep({
     onExcludedChange?.(courses.map((course) => course.id).filter((id) => next.has(id)));
   };
 
+  // Section configs to sync against. A bulk change passes a working copy that it updates
+  // course by course, so each course builds on the previous one's section lists instead
+  // of the (not yet re-rendered) `configs` prop.
+  type SectionSync = {
+    configs: Record<string, CourseSetupConfig>;
+    onConfigChange: (sectionId: string, change: Partial<CourseSetupConfig>) => void;
+  };
+
   const updateCourseConfig = (
     course: Course,
     changedConfig: CourseClassConfig,
+    sync: SectionSync = { configs, onConfigChange },
   ) => {
     const updatedConfig = changedConfig;
     setCourseConfigs((prev) => ({
@@ -260,8 +269,8 @@ export default function SetupCoursesStep({
       course,
       updatedConfig,
       sections,
-      configs,
-      onConfigChange,
+      sync.configs,
+      sync.onConfigChange,
     );
 
     const nextRules = consecutiveRulesForCourse(course.id, updatedConfig, sections);
@@ -281,10 +290,12 @@ export default function SetupCoursesStep({
     }
   };
 
-  const handleSelectConfiguration = (
+  /** Applies a configuration; returns true when it cleared the course's Lecture/Laboratory Required Days. */
+  const applyConfiguration = (
     course: Course,
     targetConfigType: ClassConfiguration,
-  ) => {
+    sync?: SectionSync,
+  ): boolean => {
     const current = configFor(course);
 
     let nextDelivery: DeliveryMode = current.delivery;
@@ -305,11 +316,7 @@ export default function SetupCoursesStep({
     // Leaving Integrated clears its component days explicitly; they never
     // become a course-wide Required Day and are not restored later.
     const leavesIntegrated = current.configuration === "integrated" && targetConfigType !== "integrated";
-    if (leavesIntegrated && sectionsWithComponentDays(course.id).length > 0) {
-      setComponentDaysNotice(
-        `${course.code}'s Lecture and Laboratory Required Days were cleared because it is no longer Integrated.`,
-      );
-    }
+    const clearsComponentDays = leavesIntegrated && sectionsWithComponentDays(course.id).length > 0;
 
     updateCourseConfig(course, {
       ...current,
@@ -323,7 +330,46 @@ export default function SetupCoursesStep({
       ...(targetConfigType === "regular" ? {} : { consecutiveDays: null, preferredStartDay: null, meetingDays: null }),
       sectionScope: "all",
       selectedSectionIds: sections.map((s) => s.id),
-    });
+    }, sync);
+    return clearsComponentDays;
+  };
+
+  const handleSelectConfiguration = (
+    course: Course,
+    targetConfigType: ClassConfiguration,
+  ) => {
+    if (applyConfiguration(course, targetConfigType)) {
+      setComponentDaysNotice(
+        `${course.code}'s Lecture and Laboratory Required Days were cleared because it is no longer Integrated.`,
+      );
+    }
+  };
+
+  /** Moves several courses to one configuration in a single pass. */
+  const applyConfigurationToRows = (
+    targetRows: SetupCourseTableRow[],
+    targetConfigType: ClassConfiguration,
+  ) => {
+    const working: Record<string, CourseSetupConfig> = { ...configs };
+    const sync: SectionSync = {
+      configs: working,
+      onConfigChange: (sectionId, change) => {
+        working[sectionId] = { ...working[sectionId], ...change };
+        onConfigChange(sectionId, change);
+      },
+    };
+    const cleared = targetRows
+      .filter((row) => applyConfiguration(row.course, targetConfigType, sync))
+      .map((row) => row.course.code);
+    if (cleared.length === 1) {
+      setComponentDaysNotice(
+        `${cleared[0]}'s Lecture and Laboratory Required Days were cleared because it is no longer Integrated.`,
+      );
+    } else if (cleared.length > 1) {
+      setComponentDaysNotice(
+        `Lecture and Laboratory Required Days were cleared for ${cleared.join(", ")} because they are no longer Integrated.`,
+      );
+    }
   };
 
   const handleDeliveryChange = (
@@ -498,6 +544,53 @@ export default function SetupCoursesStep({
   const allIncluded = rows.length > 0 && includedCount === rows.length;
   const someIncluded = includedCount > 0 && !allIncluded;
 
+  // Category header checkbox. It acts on the visible (searched/filtered), included courses
+  // that can take this configuration. Checked = all of them use it; mixed = some do.
+  // Each course always has exactly one configuration, so clearing Split or Integrated moves
+  // those courses back to Regular, and a fully checked Regular box cannot be cleared.
+  const renderConfigHeader = (targetType: ClassConfiguration, label: string) => {
+    const scope = filteredRows.filter((row) => row.included && row.eligibility[targetType]);
+    const selectedCount = scope.filter((row) => row.config.configuration === targetType).length;
+    const allSelected = scope.length > 0 && selectedCount === scope.length;
+    const someSelected = selectedCount > 0 && !allSelected;
+    const lockedOn = targetType === "regular" && allSelected;
+    const disabled = actionsDisabled || scope.length === 0 || lockedOn;
+    const title = scope.length === 0
+      ? `No included course can use ${label}.`
+      : lockedOn
+        ? "Every course needs a configuration. Choose Split or Integrated to move courses off Regular."
+        : allSelected
+          ? `Move all ${label} courses back to Regular`
+          : `Set all eligible courses to ${label}`;
+
+    return (
+      <label
+        title={title}
+        className={`inline-flex items-center gap-1.5 ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+      >
+        <input
+          type="checkbox"
+          aria-label={`Set every eligible course to ${label}`}
+          checked={allSelected}
+          ref={(input) => {
+            if (input) input.indeterminate = someSelected;
+          }}
+          disabled={disabled}
+          onChange={() =>
+            allSelected
+              ? applyConfigurationToRows(scope, "regular")
+              : applyConfigurationToRows(
+                  scope.filter((row) => row.config.configuration !== targetType),
+                  targetType,
+                )
+          }
+          className="h-3.5 w-3.5 accent-[#4e0a10] disabled:cursor-not-allowed disabled:opacity-50"
+        />
+        <span>{label}</span>
+      </label>
+    );
+  };
+
   const courseColumns: ColumnDef<SetupCourseTableRow>[] = [
     {
       id: "include",
@@ -633,7 +726,7 @@ export default function SetupCoursesStep({
     },
     {
       id: "regular",
-      header: "Regular",
+      header: () => renderConfigHeader("regular", "Regular"),
       size: 70,
       enableSorting: false,
       meta: { align: "center" },
@@ -641,7 +734,7 @@ export default function SetupCoursesStep({
     },
     {
       id: "split",
-      header: "Split",
+      header: () => renderConfigHeader("split", "Split"),
       size: 70,
       enableSorting: false,
       meta: { align: "center" },
@@ -649,8 +742,8 @@ export default function SetupCoursesStep({
     },
     {
       id: "integrated",
-      header: "Integrated",
-      size: 80,
+      header: () => renderConfigHeader("integrated", "Integrated"),
+      size: 90,
       enableSorting: false,
       meta: { align: "center" },
       cell: ({ row: { original } }) => renderConfigCheckbox(original, "integrated", "Integrated"),

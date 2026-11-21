@@ -41,6 +41,13 @@ interface WeeklyTimetableGridProps {
   isLoading?: boolean;
   /** Keep the day row pinned while the grid scrolls. Defaults to true. */
   stickyHeader?: boolean;
+  /**
+   * CSS `top` for the pinned day row. Sticky offsets start inside the scroll container's
+   * padding, so a negative value (e.g. "-1rem") pins the row flush with a padded scroller.
+   */
+  stickyTop?: string;
+  /** Stacking level of the day row; raise it above any card layer the grid holds. Defaults to 30. */
+  headerZIndex?: number;
 }
 
 /**
@@ -66,10 +73,13 @@ export default function WeeklyTimetableGrid({
   children,
   isLoading = false,
   stickyHeader = true,
+  stickyTop = "0px",
+  headerZIndex = 30,
 }: WeeklyTimetableGridProps) {
   const disabledDays = new Set(disabledDayIndexes);
   // Pin the day row to the top of the scroll area, or let it scroll away with the grid.
-  const headerPosition = stickyHeader ? "sticky top-0" : "relative";
+  const headerPosition = stickyHeader ? "sticky" : "relative";
+  const headerTop = stickyHeader ? { top: stickyTop } : undefined;
   const AXIS_BAND_SLOTS = Math.max(1, Math.round(AXIS_BAND_MINUTES / slotMinutes()));
 
   return (
@@ -87,12 +97,12 @@ export default function WeeklyTimetableGrid({
           without per-cell seams. The cells above it stay transparent. */}
       <div
         aria-hidden="true"
-        className={`bg-wicars-header ${headerPosition} z-[29] border-b border-[#c9952a]/30`}
-        style={{ gridColumn: "1 / -1", gridRow: 1 }}
+        className={`bg-wicars-header ${headerPosition} border-b border-[#c9952a]/30`}
+        style={{ gridColumn: "1 / -1", gridRow: 1, zIndex: headerZIndex - 1, ...headerTop }}
       />
       <div
-        className={`timetable-grid-header sticky left-0 ${stickyHeader ? "top-0" : ""} z-[35] flex items-center justify-center border-r border-[#c9952a]/15 bg-[#36060b] px-2 text-center text-[10px] font-semibold uppercase tracking-wider text-white/65`}
-        style={{ gridColumn: 1, gridRow: 1 }}
+        className="timetable-grid-header sticky left-0 flex items-center justify-center border-r border-[#c9952a]/15 bg-[#36060b] px-2 text-center text-[10px] font-semibold uppercase tracking-wider text-white/65"
+        style={{ gridColumn: 1, gridRow: 1, zIndex: headerZIndex + 5, ...headerTop }}
       >
         {isLoading ? <><Skeleton className="mr-1 h-3.5 w-3.5 rounded-full" /><Skeleton className="h-2.5 w-8" /></> : <><Clock className="mr-1 h-3.5 w-3.5" />Time</>}
       </div>
@@ -104,12 +114,12 @@ export default function WeeklyTimetableGrid({
         return (
           <div
             key={day}
-            className={`timetable-grid-header ${headerPosition} z-30 flex flex-col items-center justify-center border-r px-1 text-center text-[11px] font-semibold uppercase tracking-wider ${
+            className={`timetable-grid-header ${headerPosition} flex flex-col items-center justify-center border-r px-1 text-center text-[11px] font-semibold uppercase tracking-wider ${
               isDisabled
                 ? "border-slate-700/30 bg-slate-800/90 text-slate-500"
                 : `border-[#c9952a]/15 text-white ${dayIndex === days.length - 1 ? "border-r-transparent" : ""}`
             }`}
-            style={{ gridColumn: dayIndex + 2, gridRow: 1 }}
+            style={{ gridColumn: dayIndex + 2, gridRow: 1, zIndex: headerZIndex, ...headerTop }}
           >
             {isLoading ? <><Skeleton className="h-3 w-14" /><Skeleton className="mt-1 h-3.5 w-12 rounded-full" /></> : <><span className="max-w-full truncate leading-tight">{day}</span>
             {isDisabled ? (

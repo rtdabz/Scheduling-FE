@@ -214,7 +214,12 @@ export default function TimetableGrid({
               minWidth={0}
               className="shrink-0 max-lg:!min-w-[760px]"
               isLoading={isLoading}
-              stickyHeader={false}
+              // The page scrolls in the app shell's padded <main> (p-4); -1rem pins the day row
+              // flush with its top edge. z 42 stays above moving cards (z-40) and under the
+              // saving overlay (z-50).
+              stickyHeader
+              stickyTop="-1rem"
+              headerZIndex={42}
               getTimeLabel={slotToTimeStr}
               getDayCount={getClassesCountForDay}
               renderCell={isLoading ? undefined : (d, t) => {
