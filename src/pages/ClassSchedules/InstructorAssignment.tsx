@@ -231,9 +231,9 @@ type AssignmentView = "list" | "grid";
 
 const storedViewMode = (): AssignmentView => {
   try {
-    return localStorage.getItem(VIEW_MODE_STORAGE_KEY) === "grid" ? "grid" : "list";
+    return localStorage.getItem(VIEW_MODE_STORAGE_KEY) === "list" ? "list" : "grid";
   } catch {
-    return "list";
+    return "grid";
   }
 };
 

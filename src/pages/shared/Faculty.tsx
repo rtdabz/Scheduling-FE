@@ -255,7 +255,7 @@ export default function Faculty() {
   const canEditAvailability = !isVpaa && canEditLoad;
 
   const isInstructorsPath = window.location.pathname.includes('instructors');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);

@@ -210,7 +210,7 @@ const currentStandardHours = (): StandardHours => ({
 export default function DeanScheduleViewer() {
   const [selectedSectionId, setSelectedSectionId] = useState("All");
   const [selectedMode, setSelectedMode] = useState("All");
-  const [viewMode, setViewMode] = useState<ViewMode>("table");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [searchTerm, setSearchTerm] = useState("");
   const [sorting, setSorting] = useState<SortingState>([]);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
@@ -390,7 +390,7 @@ export default function DeanScheduleViewer() {
     setSelectedMode("All");
     setSearchTerm("");
     setSorting([]);
-    setViewMode("table");
+    setViewMode("grid");
     resetPage();
   };
 

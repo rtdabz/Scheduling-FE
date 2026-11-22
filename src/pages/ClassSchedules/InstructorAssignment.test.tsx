@@ -72,6 +72,7 @@ const syncScheduler = () => {
 beforeEach(() => {
   clearDataCache(); localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks();
   localStorage.setItem('user', JSON.stringify({ role: 'secretary', department_id: 6 }));
+  localStorage.setItem('instructor-assignment:view', 'list');
   window.history.replaceState(null, '', '/');
   payload = {
     active_semester: { id: 1, semester: '1st', academic_year: '2026-2027', is_active: true },

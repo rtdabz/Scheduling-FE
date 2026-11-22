@@ -83,6 +83,7 @@ beforeEach(() => {
 describe('Departments management identifies departments by logo', () => {
   it('replaces the code column with a logo column', async () => {
     render(<Departments />);
+    fireEvent.click(await screen.findByTitle('List View'));
 
     expect(await screen.findByText('Logo')).toBeTruthy();
     expect(screen.queryByText('Scheduling Profile')).toBeNull();
@@ -371,6 +372,7 @@ describe('VPAA department profile', () => {
     post.mockResolvedValueOnce({ data: { data: { ...program, id: 22, code: 'BSIS', name: 'Bachelor of Science in Information Systems' } } });
 
     render(<Departments />);
+    fireEvent.click(await screen.findByTitle('List View'));
     fireEvent.click(await screen.findByText('College of Information Technology'));
     fireEvent.click(screen.getByRole('button', { name: 'Manage programs' }));
 

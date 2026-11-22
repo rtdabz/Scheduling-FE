@@ -156,6 +156,7 @@ describe('Rooms component', () => {
     sessionStorage.setItem('user', JSON.stringify({ id: 1, role: 'vpaa' }));
     render(<MemoryRouter><Rooms /></MemoryRouter>);
     fireEvent.click(await screen.findByText('Main Bldg'));
+    fireEvent.click(screen.getByRole('button', { name: 'List View' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Room' }));
     await screen.findByText('Edit Room Details');
   };

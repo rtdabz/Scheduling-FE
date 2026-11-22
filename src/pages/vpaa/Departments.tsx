@@ -296,7 +296,7 @@ export default function Departments() {
   const [roomsError, setRoomsError] = useState(false);
 
   const [globalFilter, setGlobalFilter] = useState('');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [sorting, setSorting] = useState<SortingState>([]);
   const [pagination, setPagination] = useState({
     pageIndex: 0,

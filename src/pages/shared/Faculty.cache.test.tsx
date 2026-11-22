@@ -53,6 +53,7 @@ describe('instructor actions by role', () => {
   it('opens a clean VPAA creation form after editing and posts a new instructor', async () => {
     post.mockResolvedValue({ data: { ...faculty, id: 2, first_name: 'New', last_name: 'Instructor' } });
     render(<MemoryRouter><Faculty /></MemoryRouter>);
+    fireEvent.click(screen.getByTitle('List View'));
     fireEvent.click(screen.getByRole('button', { name: 'Edit cached instructor' }));
     expect((screen.getByLabelText('Title') as HTMLSelectElement).value).toBe('Dr.');
     expect((screen.getByLabelText('Credentials / Degrees') as HTMLInputElement).value).toBe('PhD');
@@ -98,6 +99,7 @@ describe('instructor actions by role', () => {
       standard_availabilities: [{ day_index: 0, start_time: '07:00', end_time: '20:30' }],
     } : url === '/faculties/1' ? faculty : [] }));
     render(<MemoryRouter><Faculty /></MemoryRouter>);
+    fireEvent.click(screen.getByTitle('List View'));
     if (role !== 'vpaa') expect(screen.queryByRole('button', { name: 'Add Instructor' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'View cached instructor' }));
     await screen.findByText('Default full-time hours');
@@ -111,6 +113,7 @@ describe('faculty mutation cache propagation', () => {
   it('clears connected warm pages after archiving and describes retained assignments', async () => {
     remove.mockResolvedValue({ data: { released_schedule_count: 2 } });
     render(<MemoryRouter><Faculty /></MemoryRouter>);
+    fireEvent.click(screen.getByTitle('List View'));
     fireEvent.click(await screen.findByText('Archive cached instructor'));
     await waitFor(() => expect(warning).toHaveBeenCalled());
     keys.forEach(key => expect(isCacheFresh(key)).toBe(false));
@@ -124,6 +127,7 @@ describe('faculty mutation cache propagation', () => {
   it('retains warm pages and the instructor when the write fails', async () => {
     remove.mockRejectedValue(new Error('Failed'));
     render(<MemoryRouter><Faculty /></MemoryRouter>);
+    fireEvent.click(screen.getByTitle('List View'));
     fireEvent.click(await screen.findByText('Archive cached instructor'));
     await waitFor(() => expect(remove).toHaveBeenCalled());
     keys.forEach(key => expect(getCachedData(key)).toEqual({ stale: true }));

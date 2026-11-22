@@ -61,6 +61,7 @@ describe('Dean Schedules table (shared with approval Schedule details)', () => {
 
   it('keeps the seven columns, chronological rows, badges, 12-hour times, and conflict marking', async () => {
     render(<DeanScheduleViewer />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Table' }));
     await waitFor(() => expect(bodyRows()).toHaveLength(3));
 
     expect(within(table()).getAllByRole('columnheader').map((header) => header.textContent))
@@ -80,6 +81,7 @@ describe('Dean Schedules table (shared with approval Schedule details)', () => {
 
   it('sorts Day & Time chronologically, filters, resets, pages by 10/25/50, and opens a meeting', async () => {
     render(<DeanScheduleViewer />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Table' }));
     await waitFor(() => expect(bodyRows()).toHaveLength(3));
 
     fireEvent.click(within(table()).getByRole('button', { name: 'Sort by Day & Time' }));
@@ -95,6 +97,7 @@ describe('Dean Schedules table (shared with approval Schedule details)', () => {
     fireEvent.change(screen.getByPlaceholderText('Search course, section, room, instructor...'), { target: { value: 'nothing matches' } });
     expect(screen.getByText('No schedules match the selected filters.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Table' }));
     expect(bodyRows()).toHaveLength(3);
 
     const pageSizes = screen.getByRole('combobox', { name: 'Rows per page' }) as HTMLSelectElement;
@@ -118,6 +121,7 @@ describe('Dean Schedules table (shared with approval Schedule details)', () => {
         ...statuses.map((status, index) => meeting(index + 1, { status })),
       ] } }));
     render(<DeanScheduleViewer />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Table' }));
     await waitFor(() => expect(bodyRows()).toHaveLength(4));
     expect(mocks.apiGet).toHaveBeenCalledWith('/initial-data', { params: { view: 'published', schedule_limit: 2000 } });
     expect(bodyRows().map((row) => within(row).getAllByRole('cell')[0].textContent))
@@ -134,6 +138,7 @@ describe('Dean Schedules table (shared with approval Schedule details)', () => {
       ? { conflicts: [{ ...roomConflict, schedules: [{ id: 3, status: 'approved' }, { id: 99, status: otherStatus }] }] }
       : { ...payload, schedules: [meeting(3, { status: 'approved' }), meeting(99, { status: otherStatus })] } }));
     render(<DeanScheduleViewer />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Table' }));
     await waitFor(() => expect(bodyRows()).toHaveLength(otherStatus === 'approved' ? 2 : 1));
     if (otherStatus === 'approved') await waitFor(() => expect(within(bodyRows()[0]).getByText('Room Conflict')).toBeTruthy());
     else expect(within(bodyRows()[0]).queryByText('Room Conflict')).toBeNull();

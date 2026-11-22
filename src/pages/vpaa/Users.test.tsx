@@ -237,3 +237,23 @@ describe('Create New Account layout', () => {
     expect(post.mock.calls[0][1]).toMatchObject({ is_active: false, username: 'ccsdean', profile_picture: null });
   });
 });
+
+describe('Users grid paging', () => {
+  it('pages the grid so users past the first page stay reachable', async () => {
+    const roster = Array.from({ length: 12 }, (_, index) => ({
+      ...createdUser({ email: `user${index + 1}@school.edu.ph`, role: 'secretary' }),
+      id: index + 1, name: `Grid Person ${String(index + 1).padStart(2, '0')}`, username: `grid${index + 1}`,
+    }));
+    get.mockImplementation((url: string) => Promise.resolve({ data: url === '/user' ? roster : url === '/departments' ? [department] : [] }));
+
+    render(<VpaaUsers />);
+    expect(await screen.findByText('Page 1 of 2')).toBeTruthy();
+    expect(screen.queryAllByText(/^Grid Person \d+$/)).toHaveLength(10);
+    expect(screen.queryByText('Grid Person 11')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(await screen.findByText('Grid Person 11')).toBeTruthy();
+    expect(screen.queryAllByText(/^Grid Person \d+$/)).toHaveLength(2);
+    expect(post).not.toHaveBeenCalled();
+  });
+});

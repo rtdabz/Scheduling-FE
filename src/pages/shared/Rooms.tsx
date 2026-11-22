@@ -6,6 +6,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ModalButton, ModalField, ModalNotice } from '../../components/ui/ModalForm';
 import { modalControl, modalFormBody, modalFormFooter } from '../../components/ui/modalStyles';
 import { BuildingsTable, RoomReassignBadge, RoomsTable } from '../../components/rooms/RoomListTables';
+import Pager from '../../components/ui/Pager';
+import { usePagedItems } from '../../components/ui/usePagedItems';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { useToast } from '../../context/ToastContext';
 import Skeleton from '../../components/ui/Skeleton';
@@ -126,6 +128,8 @@ const buildingKey = (name: string | null | undefined) => normalizeBuilding(name)
 const buildingOf = (room: { building: string }) => normalizeBuilding(room.building) || UNASSIGNED_BUILDING;
 
 const SCHEDULE_LIMIT = 2000;
+/** Grids are three cards wide, so their page sizes are multiples of three. */
+const GRID_PAGE_SIZES = [12, 24, 48];
 
 const mapApiRoom = (r: ApiRoom): Room => ({
   id: r.id,
@@ -174,7 +178,7 @@ export default function Rooms() {
   const location = useLocation();
   const [departmentFilter, setDepartmentFilter] = useState('');
   const [roomTypeFilter, setRoomTypeFilter] = useState('');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedBuilding, setSelectedBuilding] = useState<string | null>(
     location.state?.selectedBuilding ?? null
   );
@@ -625,6 +629,8 @@ export default function Rooms() {
       .sort((a, b) => a.room_code.localeCompare(b.room_code, undefined, { numeric: true, sensitivity: 'base' }));
   }, [searchedRooms, selectedBuilding]);
 
+  const buildingPager = usePagedItems(buildings, GRID_PAGE_SIZES[0]);
+  const roomPager = usePagedItems(roomsInSelectedBuilding, GRID_PAGE_SIZES[0], selectedBuilding);
 
   const handlePrintRoom = (room: Room) => {
     setSelectedRoomIdForDetail(room.id);
@@ -865,8 +871,9 @@ export default function Rooms() {
               <p className="text-xs">Try adjusting your search criteria or add a room.</p>
             </div>
           ) : viewMode === 'grid' ? (
+            <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {buildings.map((building) => {
+              {buildingPager.pageItems.map((building) => {
                 const percent = Math.round((building.availableCount / building.totalCount) * 100);
                 return (
                   <div
@@ -933,6 +940,8 @@ export default function Rooms() {
                 );
               })}
             </div>
+            <Pager {...buildingPager.pagerProps} totalLabel="buildings" variant="card" pageSizeOptions={GRID_PAGE_SIZES} />
+            </>
           ) : (
             <BuildingsTable
               buildings={buildings}
@@ -974,8 +983,9 @@ export default function Rooms() {
               <p className="text-xs">Adjust search parameters or check another building.</p>
             </div>
           ) : viewMode === 'grid' ? (
+            <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {roomsInSelectedBuilding.map((room) => {
+              {roomPager.pageItems.map((room) => {
                 const liveStatus = getRoomStatusToday(room.id);
                 
                 let badgeColor = 'bg-blue-50 text-blue-700 border-blue-200';
@@ -1086,6 +1096,8 @@ export default function Rooms() {
                 );
               })}
             </div>
+            <Pager {...roomPager.pagerProps} totalLabel="rooms" variant="card" pageSizeOptions={GRID_PAGE_SIZES} />
+            </>
           ) : (
             <RoomsTable
               rooms={roomsInSelectedBuilding}

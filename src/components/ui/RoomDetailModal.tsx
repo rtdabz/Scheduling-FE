@@ -72,7 +72,7 @@ const fetchRoomSchedules = (roomId: number) => api.get<Schedule[]>('/schedules',
   params: { view: 'published', room_id: roomId, semester_id: 'active', per_page: 1000 },
 });
 
-export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMode = 'list', className = '', initialRoom = null, initialSchedules = EMPTY_SCHEDULES, initialSchedulesComplete = true, highlightSlots }: RoomDetailModalProps) {
+export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMode = 'grid', className = '', initialRoom = null, initialSchedules = EMPTY_SCHEDULES, initialSchedulesComplete = true, highlightSlots }: RoomDetailModalProps) {
   const [room, setRoom] = useState<Room | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [isLoading, setIsLoading] = useState(true);

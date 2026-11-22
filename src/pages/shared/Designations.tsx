@@ -7,6 +7,7 @@ import Modal from '../../components/ui/Modal';
 import ConfirmModal from '../../components/ui/ConfirmModal';
 import Skeleton from '../../components/ui/Skeleton';
 import DataTable from '../../components/ui/DataTable';
+import { TablePager } from '../../components/ui/Pager';
 import { useDataTable } from '../../components/ui/useDataTable';
 import TableActionButton from '../../components/ui/TableActionButton';
 import { hasStoredCapability } from '../../lib/storedUser';
@@ -66,7 +67,7 @@ export default function Designations() {
   const [designations, setDesignations] = useState<Designation[]>(() => getCachedData<Designation[]>(DESIGNATIONS_CACHE_KEY) ?? []);
   const [isLoading, setIsLoading] = useState(() => !hasCachedData(DESIGNATIONS_CACHE_KEY));
   const [designationSearch, setDesignationSearch] = useState('');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [subsParentId, setSubsParentId] = useState<number | null>(null);
 
   const [editing, setEditing] = useState<Designation | null>(null);
@@ -553,6 +554,7 @@ export default function Designations() {
 
       <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
         {viewMode === 'grid' ? (
+          <>
           <div className="p-4 font-sans">
             {isLoading ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -602,7 +604,7 @@ export default function Designations() {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {visible.map((d) => {
+                {table.getRowModel().rows.map(({ original: d }) => {
                   const isSub = d.parent_id !== null;
                   const subCount = d.children_count ?? 0;
                   const holders = d.faculties_count ?? 0;
@@ -703,6 +705,8 @@ export default function Designations() {
               </div>
             )}
           </div>
+          {!isLoading && <TablePager table={table} totalLabel="designations" className="border-t border-gray-200" />}
+          </>
         ) : (
           <DataTable
             table={table}

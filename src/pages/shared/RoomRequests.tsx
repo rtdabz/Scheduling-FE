@@ -17,6 +17,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import DataTable from '../../components/ui/DataTable';
+import { TablePager } from '../../components/ui/Pager';
 import RoomDetailContent from '../../components/ui/RoomDetailContent';
 import SearchInput from '../../components/ui/SearchInput';
 import Skeleton from '../../components/ui/Skeleton';
@@ -133,7 +134,7 @@ export default function RoomRequests() {
   const [requestsError, setRequestsError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(!cached);
 
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [globalFilter, setGlobalFilter] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState<DepartmentRecord | null>(null);
   const [selectedRoom, setSelectedRoom] = useState<RoomRecord | null>(null);
@@ -318,7 +319,7 @@ export default function RoomRequests() {
   const openDepartment = (department: DepartmentRecord) => {
     setSelectedDepartment(department);
     setSelectedRoom(null);
-    setViewMode('list');
+    setViewMode('grid');
   };
 
   const handleSubmitted = (result: RoomRequestMutationResult) => {
@@ -427,8 +428,9 @@ export default function RoomRequests() {
   });
 
   const renderDepartmentGrid = () => (
+    <div className="space-y-4">
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {sortedDepartments.map((department) => {
+      {departmentTable.getRowModel().rows.map(({ original: department }) => {
         const assignedRooms = rooms.filter((room) => room.department_id === department.id);
         return (
           <article
@@ -463,6 +465,8 @@ export default function RoomRequests() {
       {sortedDepartments.length === 0 && (
         <EmptyState title="No departments found" description="Try adjusting your search criteria." />
       )}
+    </div>
+    <TablePager table={departmentTable} totalLabel="departments" variant="card" />
     </div>
   );
 
@@ -506,8 +510,9 @@ export default function RoomRequests() {
           rowClassName={() => 'group'}
         />
       ) : (
+        <>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {departmentRooms.map((room) => {
+          {roomTable.getRowModel().rows.map(({ original: room }) => {
             const deptLogo = room.department?.logo || (room.department_id ? departments.find((d) => d.id === room.department_id)?.logo : null) || selectedDepartment?.logo || null;
 
             return (
@@ -557,6 +562,8 @@ export default function RoomRequests() {
             );
           })}
         </div>
+        <TablePager table={roomTable} totalLabel="rooms" variant="card" />
+        </>
       )}
     </div>
   );

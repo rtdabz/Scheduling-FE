@@ -31,6 +31,7 @@ import {
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import DataTable from '../../components/ui/DataTable';
+import { TablePager } from '../../components/ui/Pager';
 import TableActionButton from '../../components/ui/TableActionButton';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
@@ -236,7 +237,7 @@ export default function VpaaUsers() {
 
   const [globalFilter, setGlobalFilter] = useState('');
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
 
   useEffect(() => {
@@ -1043,6 +1044,7 @@ export default function VpaaUsers() {
       </FilterBar>
 
       {viewMode === 'grid' ? (
+        <>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
           {isLoading ? (
             Array.from({ length: 6 }).map((_, idx) => (
@@ -1190,6 +1192,8 @@ export default function VpaaUsers() {
             })
           )}
         </div>
+        {!isLoading && <TablePager table={table} totalLabel="users" variant="card" />}
+        </>
       ) : (
         <DataTable
           table={table}

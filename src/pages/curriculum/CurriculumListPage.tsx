@@ -90,7 +90,7 @@ function CurriculumManagePage() {
     [userRole],
   );
 
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
   // `?view=archived` (linked from the system Archive) opens archived curricula; restoring stays permission-gated.
   const [searchParams, setSearchParams] = useSearchParams();
   const [isArchiveOpen, setIsArchiveOpen] = useState(() => searchParams.get('view') === 'archived');
