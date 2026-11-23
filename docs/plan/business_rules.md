@@ -183,11 +183,27 @@ and refreshes section readiness without changing workflow statuses.
 
 **Which college teaches a course.** A course is *owned* by the college whose
 curriculum offers it (`courses.department_id`) and may be *taught* by another
-(`courses.teaching_department_id`). Only the second is a decision anyone records;
+through an assignment for a particular academic semester. The authoritative
+assignment is `course_teaching_assignments`, unique by course and `semesters.id`;
+`courses.teaching_department_id`, `teaching_program_id`, and
+`teaching_source_program_id` project the active semester's assignment for existing
+workspace queries and API responses. Only teaching delegation is a decision anyone records;
 the first follows from the curriculum. With no override recorded, the owner
 teaches its own course — `SchedulingPolicy::assignedTeachingDepartmentId()`
 resolves that fallback, and the rule engine holds instructor assignment to active
 instructors of whichever college the answer names.
+
+**Each academic semester keeps its own delegations.** A new semester starts
+unassigned, even when it has the same period label as a previous academic year.
+Returning to a previously selected academic year and semester restores its saved
+course and section-level assignments, including intentional removals. Selecting
+the already active period leaves those assignments unchanged. Existing schedules,
+instructors, section returns, and history remain intact. Retained schedules and
+their course responses resolve teaching responsibility by the schedule's own
+semester. Assignment writes without an active semester are refused; the client
+includes its expected active semester so a stale save cannot silently move work
+into another semester. A new semester's assignment sends a new notification even
+when the target department is the same as before.
 
 **A major is never delegated.** It belongs to the department and program that
 offers it, so `PATCH /api/course-teaching-assignments/{course}` refuses one with

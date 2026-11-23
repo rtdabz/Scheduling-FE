@@ -276,7 +276,7 @@ export default function Settings() {
     try {
       const from = activeSemester ? `${SEMESTER_LABELS[activeSemester.semester]} · AY ${activeSemester.academic_year}` : 'No active semester';
       const to = `${SEMESTER_LABELS[semester.semester]} · AY ${semester.academic_year}`;
-      if (!await confirm({ title: 'Change active semester?', message: `From: ${from}\nTo: ${to}\n\nThis changes the current scheduling context. Existing schedules, sections, submissions, and Schedule History are retained.`, confirmLabel: 'Activate semester', cancelLabel: 'Cancel', variant: 'maroon' })) return;
+      if (!await confirm({ title: 'Change active semester?', message: `From: ${from}\nTo: ${to}\n\nThis changes the current scheduling context. Existing schedules, sections, submissions, and Schedule History are retained. A new academic year and semester starts unassigned. Returning to a saved academic year and semester restores its course and section-level assignments.`, confirmLabel: 'Activate semester', cancelLabel: 'Cancel', variant: 'maroon' })) return;
       const { data } = await api.patch<{ semester: Semester }>(`/semesters/${semester.id}/activate`, {
         expected_active_semester_id: activeSemester?.id ?? null, expected_academic_year: semester.academic_year,
       });

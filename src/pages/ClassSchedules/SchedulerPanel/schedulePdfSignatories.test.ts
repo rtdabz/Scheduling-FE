@@ -81,6 +81,17 @@ describe('schedule PDF signatories', () => {
     expect(pdf).not.toContain('DIEGO DEAN');
   });
 
+  it('signs a section with pending draft edits with the officials in office now, even beside approved rows', async () => {
+    const source = input();
+    source.historicalDocument = false;
+    const approvedRow = { ...source.allSchedules[0], signatories: recorded };
+    const draftEdit = { ...source.allSchedules[0], id: '12', status: 'draft' as const, signatories: undefined };
+    source.allSchedules = [approvedRow, draftEdit];
+    const pdf = await pdfText(source);
+    for (const text of ['(NADIA DEAN', '(NICO VPAA', '(Omar President']) expect(pdf).toContain(text);
+    for (const text of ['DIEGO DEAN', 'VERA VPAA', 'Olivia President']) expect(pdf).not.toContain(text);
+  });
+
   it('does not substitute current officials for missing historical signatories', async () => {
     const pdf = await pdfText({ ...input(), historicalDocument: true });
     for (const text of CURRENT) expect(pdf).not.toContain(text);

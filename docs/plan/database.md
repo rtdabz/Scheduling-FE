@@ -105,13 +105,22 @@ Batch course creation validates the department inherited from its curriculum.
 
 - Stores course identity, hours, units, major/minor classification, room requirement, status, and legacy default year/semester values.
 - Ownership is `department_id` and may be null for shared minors.
-- `teaching_department_id` is an optional teaching override and is not the same as ownership.
+- The three `teaching_*` columns project the active semester's optional teaching override; the semester-specific assignment table is authoritative. Teaching assignment is separate from ownership.
 - `program_id` scopes an owned major course; `teaching_program_id` may further scope delegated teaching.
 - Course codes are unique per owning department through the composite `course_code + department_id` constraint, not globally unique.
 - Curriculum placement is authoritative for year level and semester in a particular curriculum; do not assume course defaults describe every placement.
 - Uses soft deletes for user-facing archive operations.
 
 See [[business_rules]] for course ownership and teaching-assignment rules.
+
+### `course_teaching_assignments`
+
+- Unique by `course_id + semester_id`, distinguishing academic years as well as period labels.
+- Stores `teaching_department_id`, `teaching_program_id`, and `teaching_source_program_id` for that semester. Missing/null delegation falls back to normal ownership rules.
+- `is_legacy_snapshot` marks an effective pre-upgrade delegation preserved during migration, rather than evidence of an original historical decision.
+- Current `courses.teaching_*` fields are updated transactionally with assignment writes and replaced from the incoming semester's rows during activation.
+- Historical schedule scopes and serialized course relations resolve by the schedule's semester ID; section-specific teaching overrides retain precedence.
+- See [migration and rollout details](../../../backend/docs/course-teaching-semesters.md).
 
 ### `course_categories` and `course_category_mapping`
 

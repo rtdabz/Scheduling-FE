@@ -577,6 +577,17 @@ export const useScheduler = () => {
     }
   }, [schedulerCacheKey]);
 
+  // Drafts print the officials in office now, so a renamed Dean or VPAA must reach the print view.
+  const refreshUsers = useCallback(async () => {
+    try {
+      const response = await api.get<Pick<InitialDataResponse, "users">>('/initial-data', { params: { include: 'users' } });
+      if (!Array.isArray(response.data.users)) return;
+      setUsers(response.data.users);
+      patchCachedData<SchedulerCacheData>(schedulerCacheKey, { users: response.data.users });
+    } catch {
+    }
+  }, [schedulerCacheKey]);
+
   const refreshSections = useCallback(async () => {
     try {
       const response = await api.get<Pick<InitialDataResponse, "sections" | "active_semester">>('/initial-data', { params: { include: 'sections' } });
@@ -603,6 +614,7 @@ export const useScheduler = () => {
   useLiveRefresh(["faculty", "assignments"], () => { void refreshFaculties(); });
   useLiveRefresh(["courses", "assignments"], () => { void refreshSubjects(); });
   useLiveRefresh(["sections"], () => { void refreshSections(); });
+  useLiveRefresh(["users"], () => { void refreshUsers(); });
 
   const applyUpdatedSchedules = useCallback((updatedSchedules: ScheduleItem[]) => {
     const updatedScheduleMap = new Map(updatedSchedules.map((schedule) => [schedule.id, schedule]));

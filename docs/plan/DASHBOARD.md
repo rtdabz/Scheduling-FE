@@ -42,6 +42,8 @@
 
 ## Workflows
 
+- [Course teaching assignments by semester](../../../backend/docs/course-teaching-semesters.md) — Independent semester delegations, preserved earlier schedules, migration limits, and rollout.
+
 - [Independent Manual Plotting moves](reports/manual_plotting_independent_dragging.md) - Consecutive meeting drag/click relocation, root cause, preserved validation, and regression evidence; fixed 2026-11-14.
 - [Integrated Required Days plan](integrated_required_days_plan.md) - Proposed separate Lecture and Laboratory Required Day controls for Integrated generation, with section scope, solver enforcement, review/save parity and acceptance checks; 2026-11-11.
 - [Schedule Management workspace redesign](schedule_management_workspace_redesign_plan.md) — Prioritized UI audit and implemented viewport-bound two-column workspace, compact header with one progress overview, Manual Plotting panel, flush timetable grid with branded slot states; 2026-11-13.

@@ -8,6 +8,8 @@ interface CurriculumCardProps {
   curriculum: Curriculum;
   canEdit?: boolean;
   onView: (id: number) => void;
+  /** Card body click: opens the curriculum page where courses are managed. */
+  onOpen: (curriculum: Curriculum) => void;
   onEdit: (curriculum: Curriculum) => void;
   onDuplicate: (id: number) => void;
   onStatusChange: (id: number, status: string) => void;
@@ -30,6 +32,7 @@ export default function CurriculumCard({
   curriculum,
   canEdit = true,
   onView,
+  onOpen,
   onEdit,
   onDuplicate,
   onStatusChange,
@@ -49,7 +52,25 @@ export default function CurriculumCard({
   const deptLogo = curriculum.department?.logo;
 
   return (
-    <div className={`bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md flex flex-col justify-between min-h-[280px] relative overflow-hidden ${GRID_CARD_HOVER}`}>
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={`${canEdit ? 'Manage courses for' : 'Open'} ${curriculum.name}`}
+      title={canEdit ? 'Open to add or manage courses' : 'Open curriculum'}
+      onClick={(e) => {
+        // Action buttons in the footer handle their own clicks.
+        if ((e.target as HTMLElement).closest('button, a')) return;
+        onOpen(curriculum);
+      }}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen(curriculum);
+        }
+      }}
+      className={`bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md flex flex-col justify-between min-h-[280px] relative overflow-hidden cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9952A]/50 ${GRID_CARD_HOVER}`}
+    >
       {deptLogo && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 p-4 overflow-hidden">
           <img

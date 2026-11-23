@@ -638,13 +638,13 @@ describe("conflict wording", () => {
 
   it("names the holder and both windows on a partial overlap", () => {
     expect(check([booking])("1", "10", null, "5", 0, 0, 6)?.message).toBe(
-      "Room BA 201 is unavailable on Mon 07:00–10:00. It is booked by HM for PATH FIT 2 (BSIT 1I) from 07:00–09:00. Please choose another time or room."
+      "Room BA 201 is unavailable on Mon 7:00 AM–10:00 AM. It is booked by HM for PATH FIT 2 (BSIT 1I) from 7:00 AM–9:00 AM. Please choose another time or room."
     );
   });
 
   it("uses the same wording on an exact-time overlap", () => {
     expect(check([booking])("1", "10", null, "5", 0, 0, 4)?.message).toBe(
-      "Room BA 201 is unavailable on Mon 07:00–09:00. It is booked by HM for PATH FIT 2 (BSIT 1I) from 07:00–09:00. Please choose another time or room."
+      "Room BA 201 is unavailable on Mon 7:00 AM–9:00 AM. It is booked by HM for PATH FIT 2 (BSIT 1I) from 7:00 AM–9:00 AM. Please choose another time or room."
     );
   });
 
@@ -652,7 +652,7 @@ describe("conflict wording", () => {
     const conflict = check([booking]);
     expect(conflict("1", "10", null, "6", 0, 0, 6)).toBeNull();
     expect(conflict("1", "10", null, "5", 0, 4, 2)).toBeNull();
-    expect(conflict("1", "10", null, "5", 0, 3, 2)?.message).toMatch(/^Room BA 201 is unavailable on Mon 08:30–09:30\. /);
+    expect(conflict("1", "10", null, "5", 0, 3, 2)?.message).toMatch(/^Room BA 201 is unavailable on Mon 8:30 AM–9:30 AM\. /);
   });
 
   it("words timetable conflicts from each class's side", () => {
@@ -660,10 +660,10 @@ describe("conflict wording", () => {
     const map = getConflictedScheduleMap([booking, other], [], rooms, [], departments);
 
     expect(map["50"]?.message).toBe(
-      "Room BA 201 is unavailable on Mon 07:00–09:00. It is booked by IT for GE 101 (BSIT 1A) from 08:00–10:00. Please choose another time or room."
+      "Room BA 201 is unavailable on Mon 7:00 AM–9:00 AM. It is booked by IT for GE 101 (BSIT 1A) from 8:00 AM–10:00 AM. Please choose another time or room."
     );
     expect(map["51"]?.message).toBe(
-      "Room BA 201 is unavailable on Mon 08:00–10:00. It is booked by HM for PATH FIT 2 (BSIT 1I) from 07:00–09:00. Please choose another time or room."
+      "Room BA 201 is unavailable on Mon 8:00 AM–10:00 AM. It is booked by HM for PATH FIT 2 (BSIT 1I) from 7:00 AM–9:00 AM. Please choose another time or room."
     );
   });
 });

@@ -275,6 +275,8 @@ export interface ScheduleSignatories {
   recommended: SignatoryEntry | null;
   approved: SignatoryEntry | null;
   frozen?: boolean;
+  /** When the workflow last wrote this block. */
+  recorded_at?: string | null;
 }
 
 export interface DepartmentSectionProgress {

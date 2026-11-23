@@ -238,11 +238,15 @@ async function drawSchedule(doc: jsPDF, table: AutoTable, { hasSans, hasDisplay 
   const currentVpaa = users.find((user) => user.is_active !== false && user.is_active !== 0 && user.role?.toLowerCase() === "vpaa")?.name?.trim();
   const current = (name: string | null | undefined, title: string): SignatorySlot | null =>
     needsCurrentOfficials && name ? { name, title } : null;
-  const reviewed = slotFrom([...signedSets.map((set) => set.reviewed), unknownSlot, current(currentDean, REVIEWED_TITLE)], REVIEWED_TITLE);
-  const recommended = slotFrom([...signedSets.map((set) => set.recommended), unknownSlot, current(currentVpaa, RECOMMENDED_TITLE)], RECOMMENDED_TITLE);
+  // A printout carrying any unsubmitted edit is not an approved document yet, so the Dean, VPAA and
+  // President sign as they are now. Only a fully submitted printout keeps the officials it recorded.
+  const officialSets = unsignedSchedules.length > 0 ? [] : signedSets;
+  const unknownOfficial = unsignedSchedules.length > 0 ? null : unknownSlot;
+  const reviewed = slotFrom([...officialSets.map((set) => set.reviewed), unknownOfficial, current(currentDean, REVIEWED_TITLE)], REVIEWED_TITLE);
+  const recommended = slotFrom([...officialSets.map((set) => set.recommended), unknownOfficial, current(currentVpaa, RECOMMENDED_TITLE)], RECOMMENDED_TITLE);
   const approved = slotFrom(
-    [...signedSets.map((set) => set.approved), unknownSlot, needsCurrentOfficials && settings ? { name: settings.president_name, title: settings.president_title } : null],
-    signedSets.find((set) => set.approved?.title)?.approved?.title ?? (needsCurrentOfficials ? settings?.president_title ?? "" : "College President"),
+    [...officialSets.map((set) => set.approved), unknownOfficial, needsCurrentOfficials && settings ? { name: settings.president_name, title: settings.president_title } : null],
+    officialSets.find((set) => set.approved?.title)?.approved?.title ?? (needsCurrentOfficials ? settings?.president_title ?? "" : "College President"),
     // The President is printed exactly as entered in Document Signatories.
     false,
   );

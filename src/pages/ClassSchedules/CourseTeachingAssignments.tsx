@@ -186,6 +186,13 @@ export default function CourseTeachingAssignments() {
   const [sectionBusyId, setSectionBusyId] = useState<number | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
+  const refreshAfterSemesterChange = (failure: unknown) => {
+    if (axios.isAxiosError(failure) && failure.response?.status === 409) {
+      setSelectedIds([]);
+      setReloadToken((token) => token + 1);
+    }
+  };
+
   const liveRevision = useLiveRevision(['assignments', 'courses', 'curriculum']);
 
   useEffect(() => {
@@ -263,12 +270,14 @@ export default function CourseTeachingAssignments() {
         schedule_ids: [section.schedule_id],
         teaching_department_id: target.departmentId,
         teaching_program_id: target.programId,
+        ...(activeSemester ? { expected_active_semester_id: activeSemester.id } : {}),
       });
       toast.success('Section assigned', response.data.message ?? `${course.course_code} (${section.section_name}) assigned.`);
       invalidateCacheGroups('schedules');
       publishLiveTopics(['assignments', 'schedules']);
       setReloadToken((token) => token + 1);
     } catch (sectionError) {
+      refreshAfterSemesterChange(sectionError);
       toast.error('Not assigned', errorMessage(sectionError, 'Failed to assign the section.'));
     } finally {
       setSectionBusyId(null);
@@ -423,7 +432,7 @@ export default function CourseTeachingAssignments() {
     const listed = codes.length > 5 ? `${codes.slice(0, 5).join(', ')} and ${codes.length - 5} more` : codes.join(', ');
     const confirmed = await confirm({
       title: 'Confirm teaching assignment',
-      message: `Are you sure you want ${codes.length === 1 ? 'this course' : `these ${codes.length} courses`} (${listed}) to be taught by ${target}? Its instructors will handle ${codes.length === 1 ? 'it' : 'them'} until the assignment is removed.`,
+      message: `Are you sure you want ${codes.length === 1 ? 'this course' : `these ${codes.length} courses`} (${listed}) to be taught by ${target}? Its instructors will handle ${codes.length === 1 ? 'it' : 'them'} for this semester, until the assignment is removed.`,
       eyebrow: 'Course Teaching',
       confirmLabel: 'Assign',
       variant: 'warning',
@@ -438,6 +447,7 @@ export default function CourseTeachingAssignments() {
         course_ids: selectedCourses.map((course) => course.id),
         teaching_department_id: effectiveTargetDepartment.id,
         teaching_program_id: selectedProgram?.id ?? null,
+        ...(activeSemester ? { expected_active_semester_id: activeSemester.id } : {}),
       });
       savedIds.push(...(response.data.course_ids ?? []));
       toast.success(
@@ -445,6 +455,7 @@ export default function CourseTeachingAssignments() {
         `${savedIds.length} course${savedIds.length === 1 ? '' : 's'} assigned to ${selectedProgram?.code ?? effectiveTargetDepartment.department_code}.`,
       );
     } catch (saveError) {
+      refreshAfterSemesterChange(saveError);
       toast.error('Not saved', errorMessage(saveError, 'Failed to save assignments.'));
     } finally {
       applySaved(savedIds, effectiveTargetDepartment);
@@ -469,7 +480,9 @@ export default function CourseTeachingAssignments() {
 
     setRemovingId(course.id);
     try {
-      await api.delete(`/course-teaching-assignments/${course.id}`);
+      await api.delete(`/course-teaching-assignments/${course.id}`, {
+        data: { expected_active_semester_id: activeSemester?.id },
+      });
       const next = courses.map((row) => (row.id === course.id
         ? {
           ...row,
@@ -486,6 +499,7 @@ export default function CourseTeachingAssignments() {
       setCachedData<PageData>(cacheKey, { courses: next, departments, programs, currentDepartmentId, hasActiveCurriculum, activeSemester, restrictions });
       toast.success('Assignment removed', `${course.course_code} is no longer assigned to ${teacher}.`);
     } catch (removeError) {
+      refreshAfterSemesterChange(removeError);
       toast.error('Not removed', errorMessage(removeError, 'Failed to remove the assignment.'));
     } finally {
       setRemovingId(null);
@@ -514,6 +528,7 @@ export default function CourseTeachingAssignments() {
     try {
       const response = await api.post<{ course_ids?: number[]; locked_course_ids?: number[] }>('/course-teaching-assignments/batch-remove', {
         course_ids: removableAssigned.map((course) => course.id),
+        ...(activeSemester ? { expected_active_semester_id: activeSemester.id } : {}),
       });
       const removedIds = response.data.course_ids ?? [];
       const next = courses.map((row) => (removedIds.includes(row.id)
@@ -536,6 +551,7 @@ export default function CourseTeachingAssignments() {
         `${removedIds.length} course${removedIds.length === 1 ? '' : 's'} returned to ${removedIds.length === 1 ? 'its' : 'their'} origin department.${skipped ? ` ${skipped} kept because an instructor is already assigned.` : ''}`,
       );
     } catch (removeError) {
+      refreshAfterSemesterChange(removeError);
       toast.error('Not removed', errorMessage(removeError, 'Failed to remove the assignments.'));
     } finally {
       setRemovingAll(false);

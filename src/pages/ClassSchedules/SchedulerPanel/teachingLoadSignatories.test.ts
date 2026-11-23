@@ -38,10 +38,14 @@ describe("loadSheetSignatories", () => {
     expect(loadSheetSignatories([], 7, current)).toEqual(current);
   });
 
-  it("marks missing historical officials without borrowing the current officeholder", () => {
+  it("never joins a recorded block with a missing one", () => {
     const result = loadSheetSignatories([row(recorded), row(null)], 7, current);
-    expect(result.vpaaName).toBe("Vera Vpaa / Not recorded");
+    expect(result.vpaaName).toBe("Vera Vpaa");
     expect(result.presidentTitle).toBe("OIC-College President");
+  });
+
+  it("marks officials not recorded on submitted rows without borrowing the current officeholder", () => {
+    expect(loadSheetSignatories([row(null)], 7, current)).toMatchObject({ verifiedBy: "Not recorded", vpaaName: "Not recorded", presidentName: "Not recorded" });
   });
 
   it("falls back to every recorded preparer when none prepared the instructor's program", () => {
@@ -56,4 +60,53 @@ describe("loadSheetSignatories", () => {
     expect(loadSheetSignatories([row(recorded, "revision")], 7, current).preparedBy).toBe("Paula Head");
   });
 
+  describe("one official per line", () => {
+    const home = 6;
+    const lent = (signatories: ScheduleSignatories, departmentId: number) => ({ ...row(signatories), departmentId } as ScheduleItem);
+    const older: ScheduleSignatories = {
+      prepared: [{ program_id: 1, name: "Lender Secretary", title: "Program Head/Secretary" }],
+      reviewed: { name: "Lender Dean", title: "Dean", acted_at: "2026-03-01T00:00:00Z" },
+      recommended: { user_id: 11, name: "Former Vpaa", title: "Vice-President for Academic Affairs", acted_at: "2026-03-02T00:00:00Z" },
+      approved: { name: "ATTY. FORMER PRESIDENT", title: "College President", acted_at: "2026-03-02T00:00:00Z" },
+      frozen: true,
+    };
+    const newer: ScheduleSignatories = {
+      prepared: [{ program_id: 1, name: "Home Secretary", title: "Program Head/Secretary" }],
+      reviewed: { name: "Home Dean", title: "Dean", acted_at: "2026-09-01T00:00:00Z" },
+      recommended: { user_id: 1, name: "Mark Vpaa, DM", title: "Vice-President for Academic Affairs", acted_at: "2026-09-02T00:00:00Z" },
+      approved: { name: "DR. KHAREN JANE S. UNGAB", title: "College President-Designate", acted_at: "2026-09-02T00:00:00Z" },
+      frozen: true,
+    };
+    const now = { ...current, vpaaName: "Mark Vpaa, DBM", vpaaUserId: 1, presidentName: "KHAREN JANE S. UNGAB, DM", presidentTitle: "College President-Designate" };
+
+    it("leaves out the officials of a department that lent the instructor a class", () => {
+      const result = loadSheetSignatories([lent(newer, home), lent(older, 5)], 1, now, home);
+      expect(result).toEqual({
+        preparedBy: "Home Secretary",
+        preparedTitle: "Program Head/Secretary",
+        verifiedBy: "Home Dean",
+        vpaaName: "Mark Vpaa, DBM",
+        presidentName: "KHAREN JANE S. UNGAB, DM",
+        presidentTitle: "College President-Designate",
+      });
+    });
+
+    it("signs with the newest block when the department's classes were approved on different submissions", () => {
+      const result = loadSheetSignatories([lent(older, home), lent(newer, home)], 1, now, home);
+      expect(result.verifiedBy).toBe("Home Dean");
+      expect(result.vpaaName).toBe("Mark Vpaa, DBM");
+      expect(result.presidentName).toBe("KHAREN JANE S. UNGAB, DM");
+    });
+
+    it("keeps a different past VPAA and President on an old load", () => {
+      const result = loadSheetSignatories([lent(older, home)], 1, now, home);
+      expect(result.vpaaName).toBe("Former Vpaa");
+      expect(result.presidentName).toBe("ATTY. FORMER PRESIDENT");
+    });
+
+    it("uses the home department's current officials when every class is lent", () => {
+      const { vpaaUserId: _id, ...expected } = now;
+      expect(loadSheetSignatories([lent(older, 5)], 1, now, home)).toEqual(expected);
+    });
+  });
 });

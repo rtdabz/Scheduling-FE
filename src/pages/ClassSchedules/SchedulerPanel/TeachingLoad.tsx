@@ -168,9 +168,10 @@ export default function TeachingLoad({
         preparedTitle: preparer ? DESIGNATION_LABELS[preparer.role as FacultyAdministrativePost] : undefined,
         verifiedBy: byRole("dean")?.name ?? "",
         vpaaName: vpaaAccount?.name ?? "",
+        vpaaUserId: vpaaAccount ? Number(vpaaAccount.id) : null,
         presidentName: settings.president_name,
         presidentTitle: settings.president_title,
-      });
+      }, faculty.departmentId);
 
       const sheetCount = Math.max(1, Math.ceil(load.basic.length / BASIC_LINE_COUNT));
 

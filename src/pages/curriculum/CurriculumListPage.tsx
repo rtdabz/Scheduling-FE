@@ -541,6 +541,13 @@ function CurriculumManagePage() {
                 curriculum={item}
                 canEdit={canManageCurriculum && canAuthorCurriculum(item)}
                 onView={setViewCurriculumId}
+                onOpen={(c) =>
+                  navigate(
+                    canManageCurriculum && canAuthorCurriculum(c)
+                      ? `${curriculumPathFor(c.id)}?mode=edit`
+                      : curriculumPathFor(c.id),
+                  )
+                }
                 onEdit={(c) => {
                   setEditingCurriculum(c);
                   setIsEditMode(true);

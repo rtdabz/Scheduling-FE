@@ -98,7 +98,6 @@ const INNER_DIVIDERS: Column[] = ["A", "C", "D", "E", "F", "G", "H", "I", "J"];
 
 const OVER_LIMIT_TEXT = [107, 114, 128] as const;
 const CONFLICT_TEXT = [220, 38, 38] as const;
-const DELOAD_TEXT = [220, 38, 38] as const;
 
 const lineTextColor = (line: LoadLine): readonly [number, number, number] | undefined =>
   line.band === "over_limit" ? OVER_LIMIT_TEXT : undefined;
@@ -329,7 +328,7 @@ export const drawSheet = (doc: jsPDF, ctx: SheetContext): void => {
     if (held.length === 0) return;
     drawText(doc, held.map((designation) => designation.label).join("; "), { from: "B", to: "I", row }, { size: SIZE.label, padding: 1.6 });
     const deload = held.reduce((sum, designation) => sum + designation.deloadUnits, 0);
-    drawText(doc, formatQuantity(deload), { from: "J", row }, { size: SIZE.label, style: "bold", align: "center", color: DELOAD_TEXT });
+    drawText(doc, formatQuantity(deload), { from: "J", row }, { size: SIZE.label, style: "bold", align: "center", color: BLACK });
   });
 
   drawText(doc, "Prepared :", { from: "A", to: "C", row: formRow(44) }, { size: SIZE.label, style: "bold", padding: 1.6 });

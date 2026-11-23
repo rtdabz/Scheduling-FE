@@ -106,6 +106,7 @@ describe('Course Teaching program selection', () => {
     fireEvent.click(screen.getByRole('button', { name: `Assign 1 to ${teacher}` }));
     await waitFor(() => expect(post).toHaveBeenCalledExactlyOnceWith('/course-teaching-assignments/batch', {
       course_ids: [101], teaching_department_id: 1, teaching_program_id: programId,
+      expected_active_semester_id: 1,
     }));
     await waitFor(() => expect(within(courseRow('GEC 2')).getByText('Assigned')).toBeTruthy());
     expect(within(courseRow('GEC 2')).getByText(teacher, { exact: true })).toBeTruthy();
@@ -126,6 +127,28 @@ describe('Course Teaching program selection', () => {
     expect(screen.queryByRole('button', { name: /College of Information Technology/ })).toBeNull();
     expect(screen.getByRole('button', { name: /College of Arts and Sciences/ })).toBeTruthy();
     expect(screen.getByText('CIT is not listed: its courses are managed within the department.')).toBeTruthy();
+  });
+
+  it('refreshes the semester and clears stale selections when activation happens before saving', async () => {
+    await openPage();
+    get.mockResolvedValue({ data: {
+      courses: courses.map((course) => ({ ...course, teaching_department_id: null, teaching_program_id: null })),
+      departments, programs, current_department_id: 6, has_active_curriculum: true,
+      active_semester: { id: 2, semester: '1st', academic_year: '2026-2027' },
+    } });
+    post.mockRejectedValue({ isAxiosError: true, response: { status: 409, data: { message: 'The active semester changed.' } } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select GEC 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Assign 1 to CAS' }));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect((screen.getByRole('checkbox', { name: 'Select GEC 2' }) as HTMLInputElement).checked).toBe(false));
+    expect(post.mock.calls[0][1].expected_active_semester_id).toBe(1);
+    expect(within(courseRow('GEC 2')).queryByText('Assigned')).toBeNull();
+    // The next submission uses the newly fetched semester, rather than retrying in the old context.
+    post.mockResolvedValue({ data: { course_ids: [101] } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select GEC 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Assign 1 to CAS' }));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+    expect(post.mock.calls[1][1].expected_active_semester_id).toBe(2);
   });
 
   it('never offers the own program, and needs another program within the own department', async () => {

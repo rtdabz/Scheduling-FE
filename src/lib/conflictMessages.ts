@@ -2,9 +2,11 @@
  * One wording for every scheduling conflict a user sees; mirrors the server's ConflictMessage.
  *
  * Shape: "<What> is unavailable on <Day> <requested time>. <Who holds it, with what, when>. <What to do>."
- * Example: "Room BA 201 is unavailable on Mon 07:00–10:00. It is booked by CIT for PATH FIT 2 (BSIT 1I)
- * from 07:00–09:00. Please choose another time or room."
+ * Example: "Room BA 201 is unavailable on Mon 7:00 AM–10:00 AM. It is booked by CIT for PATH FIT 2 (BSIT 1I)
+ * from 7:00 AM–9:00 AM. Please choose another time or room."
  */
+
+import { formatTime12h } from "./timeGrid";
 
 const DASH = "–";
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -33,11 +35,8 @@ const text = (value: string | null | undefined): string | null => {
 /** "Monday" -> "Mon"; anything else passes through. */
 export const conflictDay = (day: string): string => (DAYS.includes(day.trim()) ? day.trim().slice(0, 3) : day.trim());
 
-/** "7:00", "07:00:00" -> "07:00". */
-export const conflictTime = (time: string): string => {
-  const match = /^(\d{1,2}):(\d{2})/.exec(time.trim());
-  return match ? `${match[1].padStart(2, "0")}:${match[2]}` : time.trim();
-};
+/** "7:00", "07:00:00" -> "7:00 AM"; "13:30:00" -> "1:30 PM". */
+export const conflictTime = (time: string): string => formatTime12h(time.trim());
 
 const window = (start: string, end: string): string => `${conflictTime(start)}${DASH}${conflictTime(end)}`;
 const slot = ({ day, start, end }: RequestedSlot): string => `${conflictDay(day)} ${window(start, end)}`;
