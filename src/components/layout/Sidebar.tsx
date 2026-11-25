@@ -8,7 +8,7 @@ import { ChevronDown, Lock, X } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import api from '../../lib/api';
 import { fetchCurrentUser } from '../../lib/currentUser';
-import { hasStoredCapability, lockedModuleMessage } from '../../lib/storedUser';
+import { hasStoredCapability, lockedModuleMessage, officeManagesNoProgram, OFFICE_COURSE_ASSIGNMENT_LOCK_MESSAGE } from '../../lib/storedUser';
 import { CROSS_DEPARTMENT_LOCKED_MESSAGE, useDepartmentScheduleStatus } from '../../hooks/useDepartmentScheduleStatus';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import { programLabel, programName } from '../../lib/programLabel';
@@ -73,15 +73,15 @@ const getStoredUser = (): StoredUser | null => {
 // approval; the Cross-Department page stays available.
 const CROSS_DEPARTMENT_NAV_IDS = new Set(['sidebar-course-teaching-assignments']);
 
-const lockCrossDepartmentItems = (items: NavItem[]): NavItem[] => items.map((item) => (
+const lockCrossDepartmentItems = (items: NavItem[], message: string = CROSS_DEPARTMENT_LOCKED_MESSAGE): NavItem[] => items.map((item) => (
   CROSS_DEPARTMENT_NAV_IDS.has(item.id ?? '')
     ? {
       ...item,
       isLocked: true,
-      lockedMessage: item.lockedMessage ?? CROSS_DEPARTMENT_LOCKED_MESSAGE,
-      children: item.children ? lockCrossDepartmentItems(item.children) : undefined,
+      lockedMessage: item.lockedMessage ?? message,
+      children: item.children ? lockCrossDepartmentItems(item.children, message) : undefined,
     }
-    : { ...item, children: item.children ? lockCrossDepartmentItems(item.children) : undefined }
+    : { ...item, children: item.children ? lockCrossDepartmentItems(item.children, message) : undefined }
 ));
 
 export default function Sidebar({ isOpen, pinned = true, onClose, onOpen, navItems: baseNavItems }: SidebarProps) {
@@ -138,8 +138,13 @@ export default function Sidebar({ isOpen, pinned = true, onClose, onOpen, navIte
     canAssignCrossDepartment || canStaffDelegatedClasses ? user?.department_id : null,
   );
   const crossDepartmentLocked = canAssignCrossDepartment && !crossDepartmentStatusLoading && !crossDepartmentUnlocked;
-  const navItems = crossDepartmentLocked
-    ? baseNavItems.map((section) => ({ ...section, items: lockCrossDepartmentItems(section.items) }))
+  // Every program of the office's department has a Program Head: Course Assignment is theirs.
+  const officeLockedOut = canAssignCrossDepartment && officeManagesNoProgram();
+  const navItems = officeLockedOut || crossDepartmentLocked
+    ? baseNavItems.map((section) => ({
+      ...section,
+      items: lockCrossDepartmentItems(section.items, officeLockedOut ? OFFICE_COURSE_ASSIGNMENT_LOCK_MESSAGE : CROSS_DEPARTMENT_LOCKED_MESSAGE),
+    }))
     : baseNavItems;
 
   const approvalsRevision = useLiveRevision(['approvals']);

@@ -20,6 +20,8 @@ interface ImportCurriculumDetailsModalProps {
   programs: Program[];
   /** Program heads import only into their own program. */
   programLocked: boolean;
+  canSelectProgram?: (programId: number) => boolean;
+  requireProgram?: boolean;
   code: { text: string; tag: 'Proposed' | 'Checked' | null; hint: string };
   issues: MetadataIssue[];
   /** Field to focus when opened from an error. */
@@ -55,7 +57,7 @@ const inputClass = 'h-9 w-full rounded-lg border bg-white px-3 text-[13px] text-
  * Edits the import's curriculum metadata directly in the parent draft: there is nothing to save or cancel,
  * so every way of closing keeps what was typed. The curriculum itself is created only on import.
  */
-export default function ImportCurriculumDetailsModal({ metadata, detected, programs, programLocked, code, issues, focusField, onChange, notes, courseCodes, onNotesChange, unread, onUnreadChange, onClose }: ImportCurriculumDetailsModalProps) {
+export default function ImportCurriculumDetailsModal({ metadata, detected, programs, programLocked, canSelectProgram = () => true, requireProgram = false, code, issues, focusField, onChange, notes, courseCodes, onNotesChange, unread, onUnreadChange, onClose }: ImportCurriculumDetailsModalProps) {
   const program = programs.find((candidate) => candidate.id === metadata.program_id) ?? null;
   const [transcription, setTranscription] = useState('');
   const placeNote = (id: string, scope: Scope) => onNotesChange(notes.map((note) => (note.id === id ? { ...note, scope } : note)));
@@ -106,8 +108,8 @@ export default function ImportCurriculumDetailsModal({ metadata, detected, progr
         <div className="sm:col-span-2">
           <label htmlFor="import-details-program_id" className={label}>Program</label>
           <select {...field('program_id')} value={metadata.program_id ?? ''} disabled={programLocked} onChange={(event) => onChange({ program_id: event.target.value ? Number(event.target.value) : null })}>
-            <option value="">All programs in the department</option>
-            {programs.map((candidate) => <option key={candidate.id} value={candidate.id}>{programLabel(candidate)}</option>)}
+            <option value="" disabled={requireProgram}>{requireProgram ? 'Choose a program' : 'All programs in the department'}</option>
+            {programs.map((candidate) => <option key={candidate.id} value={candidate.id} disabled={!canSelectProgram(candidate.id)}>{programLabel(candidate)}{!canSelectProgram(candidate.id) ? ' — managed by its Program Head' : ''}</option>)}
           </select>
           {programLocked && <span className="mt-1 block text-xs text-muted">Program heads import into their own program.</span>}
           {detected.program_text && <span className="mt-1 block text-xs text-muted">From the document: {detected.program_text}{!program ? '. No matching program is selected.' : ''}</span>}

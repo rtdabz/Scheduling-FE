@@ -72,3 +72,11 @@
 P1–P3 are implemented in `Departments.tsx`. New shared helpers: `ProfileSectionHeader` and `ProfilePager`, which replaces the duplicated pager markup. The VPAA layout puts Facilities under the left column on desktop through grid placement. The DOM order (and the mobile stacking order) is still Leadership → Program heads → Instructors → Facilities. A new test covers instructor search and clearing the program-head filter.
 
 **Not yet done:** the layout has not been checked visually in a browser at desktop, tablet or phone widths.
+
+## 6. Shared profile layout (2026-11-25)
+
+The Dean, Secretary, Program Head, and Director now use the VPAA Department Profile layout. This supersedes the role-dependent layout above: every profile has the same Instructors, Programs, Sections, and Facilities metrics and the same Leadership, Program heads, Instructors, and Facilities sections. Programs are shown in a separate dialog for every role, rather than inline for department users.
+
+Department users open that dialog through **View programs** and cannot add, edit, or archive programs or edit the department. VPAA retains **Manage programs** and the existing management controls. Department filtering and backend authorization are unchanged; facilities use the existing `/rooms` endpoint and retain its program scope, then filter to the selected department's lecture and laboratory rooms.
+
+Verification covers all four department roles, facilities belonging to the selected department, shared section order, read-only program access, and the existing VPAA management workflows.

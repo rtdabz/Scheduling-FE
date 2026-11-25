@@ -292,7 +292,7 @@ export default function Departments() {
   const [rooms, setRooms] = useState<UsageRoom[]>([]);
   const [activeRoomTab, setActiveRoomTab] = useState<'laboratory' | 'lecture'>('laboratory');
   const [roomPage, setRoomPage] = useState(0);
-  const [isLoadingRooms, setIsLoadingRooms] = useState(isVpaa);
+  const [isLoadingRooms, setIsLoadingRooms] = useState(true);
   const [roomsError, setRoomsError] = useState(false);
 
   const [globalFilter, setGlobalFilter] = useState('');
@@ -391,7 +391,7 @@ export default function Departments() {
   const openAddProgram = (department: Department) => {
     openDepartmentDetail(department);
     setShowProgramForm(true);
-    setIsProgramModalOpen(isVpaa);
+    setIsProgramModalOpen(true);
   };
 
   const fetchFaculties = async () => {
@@ -406,7 +406,6 @@ export default function Departments() {
   };
 
   const fetchRooms = useCallback(async () => {
-    if (!isVpaa) return;
     setIsLoadingRooms(true);
     setRoomsError(false);
     try {
@@ -417,7 +416,7 @@ export default function Departments() {
     } finally {
       setIsLoadingRooms(false);
     }
-  }, [isVpaa]);
+  }, []);
 
   useEffect(() => {
     fetchDepartments();
@@ -940,10 +939,10 @@ export default function Departments() {
   );
 
   const programDirectory = selectedDeptForDetail && (
-    <section className={isVpaa ? 'flex flex-col gap-3' : PROFILE_CARD}>
+    <section className="flex flex-col gap-3">
       <ProfileSectionHeader
         icon={<LibraryBig size={14} />}
-        title={isVpaa ? 'Programs' : 'Program directory'}
+        title="Programs"
         count={selectedDeptForDetail.programs.length}
         actions={canManageDepartments && (
           <button
@@ -1461,18 +1460,16 @@ export default function Departments() {
             </div>
           )}
           footer={<>
-            {isVpaa && (
-              <ModalButton
-                className="mr-auto"
-                onClick={() => {
-                  closeProgramForm();
-                  setIsProgramModalOpen(true);
-                }}
-              >
-                <LibraryBig size={16} />
-                Manage programs
-              </ModalButton>
-            )}
+            <ModalButton
+              className="mr-auto"
+              onClick={() => {
+                closeProgramForm();
+                setIsProgramModalOpen(true);
+              }}
+            >
+              <LibraryBig size={16} />
+              {canManageDepartments ? 'Manage programs' : 'View programs'}
+            </ModalButton>
             <ModalButton onClick={() => setIsDetailModalOpen(false)}>Close</ModalButton>
             {canManageDepartments && (
               <ModalButton
@@ -1493,9 +1490,7 @@ export default function Departments() {
               { label: 'Instructors', value: selectedDeptForDetail.facultyCount ?? 0, icon: <GraduationCap size={16} /> },
               { label: 'Programs', value: selectedDeptForDetail.programs.length, icon: <LibraryBig size={16} /> },
               { label: 'Sections', value: selectedDeptForDetail.sectionsCount ?? 0, icon: <LayoutGrid size={16} /> },
-              isVpaa
-                ? { label: 'Facilities', value: isLoadingRooms || roomsError ? '—' : departmentRooms.length, icon: <Building2 size={16} /> }
-                : { label: 'Program heads', value: selectedDeptForDetail.programHeads.length, icon: <Layers size={16} /> },
+              { label: 'Facilities', value: isLoadingRooms || roomsError ? '—' : departmentRooms.length, icon: <Building2 size={16} /> },
             ].map((metric) => (
               <div key={metric.label} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#4e0a10]/[0.06] text-[#4e0a10]" aria-hidden="true">
@@ -1510,7 +1505,7 @@ export default function Departments() {
           </div>
 
           <div className="grid grow gap-4 lg:grid-cols-12 lg:grid-rows-[auto_1fr]">
-            <div className={`flex min-w-0 flex-col gap-4 lg:col-span-5 lg:col-start-1 lg:row-start-1 ${isVpaa ? '' : 'lg:row-span-2'}`}>
+            <div className="flex min-w-0 flex-col gap-4 lg:col-span-5 lg:col-start-1 lg:row-start-1">
               <section className={PROFILE_CARD}>
                 <ProfileSectionHeader icon={<UserRound size={14} />} title="Leadership" />
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
@@ -1536,9 +1531,7 @@ export default function Departments() {
                 </div>
               </section>
 
-              {!isVpaa && programDirectory}
-
-              <section className={`${PROFILE_CARD} ${isVpaa ? '' : 'grow'}`}>
+              <section className={PROFILE_CARD}>
                 <ProfileSectionHeader
                   icon={<Layers size={14} />}
                   title="Program heads"
@@ -1749,7 +1742,6 @@ export default function Departments() {
               )}
             </section>
 
-            {isVpaa && (
               <section className={`${PROFILE_CARD} lg:col-span-5 lg:col-start-1 lg:row-start-2`} aria-labelledby="department-facilities-title">
                 <ProfileSectionHeader
                   icon={<Building2 size={14} />}
@@ -1816,15 +1808,14 @@ export default function Departments() {
                   </p>
                 )}
               </section>
-            )}
           </div>
         </Modal>
       )}
-      {isVpaa && selectedDeptForDetail && (
+      {selectedDeptForDetail && (
         <Modal
           isOpen={isProgramModalOpen}
           onClose={() => setIsProgramModalOpen(false)}
-          title="Manage programs"
+          title={canManageDepartments ? 'Manage programs' : 'View programs'}
           description={selectedDeptForDetail.name}
           busy={isSavingProgram}
           bodyClassName="p-4 sm:p-5"

@@ -1,15 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { ImportSettings, ValidationResult } from '../../lib/curriculumImport/types';
 
-const { service } = vi.hoisted(() => ({
+const { service, toast } = vi.hoisted(() => ({
   service: { getSettings: vi.fn(), updateSettings: vi.fn(), validate: vi.fn(), commit: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
 }));
+vi.mock('../../lib/currentUser', () => ({ fetchCurrentUser: vi.fn(async () => JSON.parse(sessionStorage.getItem('user')!)) }));
 vi.mock('../../services/curriculum/curriculumImportService', () => ({ curriculumImportService: service }));
 vi.mock('../../lib/api', () => ({ default: { get: vi.fn(async () => ({ data: [{ id: 7, code: 'BSIT', name: 'Information Technology', department_id: 1 }] })) } }));
 vi.mock('../../context/ToastContext', () => ({
-  useToast: () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() }, confirm: vi.fn(async () => true) }),
+  useToast: () => ({ toast, confirm: vi.fn(async () => true) }),
 }));
 // PDF.js does not run in jsdom; the recorded TCC text items stand in for the real extraction.
 vi.mock('../../lib/curriculumImport/adapters', async (importOriginal) => {
@@ -23,6 +25,7 @@ import fixture from '../../lib/curriculumImport/__fixtures__/tcc_bsit_pdf_text.j
 import { extractPdf } from '../../lib/curriculumImport/adapters';
 import { extractCurriculumLayout } from '../../lib/curriculumImport/pdfLayout';
 import CurriculumImportPage from './CurriculumImportPage';
+import { LIVE_UPDATE_EVENT } from '../../lib/liveUpdates';
 
 const settings: ImportSettings = {
   department_id: 1, revision: 4, lecture_minutes_per_unit: 60, laboratory_minutes_per_unit: 180,
@@ -84,6 +87,41 @@ afterEach(() => {
 });
 
 describe('curriculum import page', () => {
+  it.each(['secretary', 'director'])('keeps a detected managed program restricted for the %s and updates after head changes', async role => {
+    const user = { role, department_id: 1, permissions: ['curriculum.manage'], department_program_count: 2, can_edit_program_ids: [8] };
+    sessionStorage.setItem('user', JSON.stringify(user));
+    const extracted = extractCurriculumLayout(fixture.pages as never);
+    vi.mocked(extractPdf).mockResolvedValueOnce({ ...extracted, rows: extracted.rows.slice(0, 2), groups: [], notes: [] });
+    render(<MemoryRouter><CurriculumImportPage /></MemoryRouter>);
+    await screen.findByRole('button', { name: /import settings/i });
+    fireEvent.change(document.getElementById('curriculum-import-file')!, { target: { files: [new File([new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d])], 'tcc.pdf')] } });
+    await screen.findByRole('button', { name: /^Curriculum details/ });
+    fireEvent.click(screen.getByRole('button', { name: /^Curriculum details/ }));
+    expect((screen.getByLabelText(/^program$/i) as HTMLSelectElement).value).toBe('7');
+    expect((screen.getByRole('option', { name: /managed by its Program Head/ }) as HTMLOptionElement).disabled).toBe(true);
+    expect((screen.getByRole('option', { name: 'Choose a program' }) as HTMLOptionElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to Configure' }));
+    expect((screen.getByRole('button', { name: /^validate$/i }) as HTMLButtonElement).disabled).toBe(true);
+    expect(service.validate).not.toHaveBeenCalled();
+
+    for (const ids of [[7, 8], [8], [7, 8]]) {
+      sessionStorage.setItem('user', JSON.stringify({ ...user, can_edit_program_ids: ids }));
+      act(() => { window.dispatchEvent(new CustomEvent(LIVE_UPDATE_EVENT, { detail: { topics: ['users'] } })); });
+      await waitFor(() => expect((screen.getByRole('button', { name: /^validate$/i }) as HTMLButtonElement).disabled).toBe(!ids.includes(7)));
+    }
+    expect(service.commit).not.toHaveBeenCalled();
+  }, 20_000);
+
+  it.each(['secretary', 'director'])('locks the %s import page when every program has an active head', async role => {
+    sessionStorage.setItem('user', JSON.stringify({ role, department_id: 1, department_program_count: 2, can_edit_program_ids: [] }));
+    render(<MemoryRouter><CurriculumImportPage /></MemoryRouter>);
+    await screen.findByText('Curriculum Import is Locked');
+    expect(document.getElementById('curriculum-import-file')).toBeNull();
+    expect(service.validate).not.toHaveBeenCalled();
+    expect(service.commit).not.toHaveBeenCalled();
+  });
+
   it.each(['Registrar Reyes', null])('reviews the validated outcome and imports with recorded confirmer %s', async (confirmer) => {
     render(<MemoryRouter><CurriculumImportPage /></MemoryRouter>);
     await screen.findByRole('button', { name: /import settings/i });

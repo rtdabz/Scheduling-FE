@@ -160,7 +160,7 @@ export default function Rooms() {
   const [loadError, setLoadError] = useState(false);
   const [selectedRoomIdForDetail, setSelectedRoomIdForDetail] = useState<number | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-  const [printAfterOpen, setPrintAfterOpen] = useState(false);
+  const [printOrigin, setPrintOrigin] = useState<'table' | 'details' | null>(null);
 
   const role = user?.role?.toLowerCase() ?? '';
   const isVpaa = role === 'vpaa';
@@ -634,13 +634,13 @@ export default function Rooms() {
 
   const handlePrintRoom = (room: Room) => {
     setSelectedRoomIdForDetail(room.id);
-    setPrintAfterOpen(true);
+    setPrintOrigin('table');
     setIsDetailModalOpen(true);
-    document.body.classList.add('room-timetable-printing');
+    document.body.classList.add('room-timetable-printing', 'room-timetable-print-only');
   };
 
   useEffect(() => {
-    if (!isDetailModalOpen || !printAfterOpen) return;
+    if (!isDetailModalOpen || !printOrigin) return;
     const startedAt = performance.now();
     let frameId = 0;
     const printWhenReady = () => {
@@ -648,11 +648,16 @@ export default function Rooms() {
       if (grid) {
         document.body.classList.add('room-timetable-printing');
         const room = rooms.find((entry) => entry.id === selectedRoomIdForDetail);
-        printWithTitle(buildExportFilename('pdf', 'room-timetable', room?.room_code || selectedRoomIdForDetail));
+        try {
+          printWithTitle(buildExportFilename('pdf', 'room-timetable', room?.room_code || selectedRoomIdForDetail));
+        } catch {
+          setPrintOrigin(null);
+          toast.error('Print Failed', 'Could not open the print dialog. Please try again.');
+        }
         return;
       }
       if (performance.now() - startedAt >= 15000) {
-        setPrintAfterOpen(false);
+        setPrintOrigin(null);
         toast.error('Print Failed', 'The room timetable is not ready. Try opening the room again.');
         return;
       }
@@ -660,18 +665,20 @@ export default function Rooms() {
     };
     frameId = window.requestAnimationFrame(printWhenReady);
     const afterPrint = () => {
-      document.body.classList.remove('room-timetable-printing');
-      setPrintAfterOpen(false);
-      setIsDetailModalOpen(false);
-      setSelectedRoomIdForDetail(null);
+      document.body.classList.remove('room-timetable-printing', 'room-timetable-print-only');
+      setPrintOrigin(null);
+      if (printOrigin === 'table') {
+        setIsDetailModalOpen(false);
+        setSelectedRoomIdForDetail(null);
+      }
     };
     window.addEventListener('afterprint', afterPrint);
     return () => {
       window.cancelAnimationFrame(frameId);
       window.removeEventListener('afterprint', afterPrint);
-      document.body.classList.remove('room-timetable-printing');
+      document.body.classList.remove('room-timetable-printing', 'room-timetable-print-only');
     };
-  }, [isDetailModalOpen, printAfterOpen, rooms, selectedRoomIdForDetail, toast]);
+  }, [isDetailModalOpen, printOrigin, rooms, selectedRoomIdForDetail, toast]);
 
   useWorkflowGuide({
     id: 'rooms', isReady: showGuide && !isLoading, mission: 'Browse Rooms',
@@ -1348,21 +1355,24 @@ export default function Rooms() {
         key={linkedHighlight?.seq ?? 0}
         isOpen={isDetailModalOpen}
         onClose={() => {
-          setPrintAfterOpen(false);
+          setPrintOrigin(null);
           setIsDetailModalOpen(false);
           setSelectedRoomIdForDetail(null);
         }}
         roomId={selectedRoomIdForDetail}
         highlightSlots={linkedHighlight?.roomId === selectedRoomIdForDetail ? linkedHighlight.slots : undefined}
         initialViewMode="grid"
+        onPrint={() => setPrintOrigin('details')}
+        isPrinting={printOrigin !== null}
         className="room-timetable-modal"
         initialRoom={rooms.find(room => room.id === selectedRoomIdForDetail) ?? null}
         initialSchedules={schedules}
         initialSchedulesComplete={!schedulesTruncated}
       />
-      <style>{`body.room-timetable-printing > div[role="presentation"] { visibility: hidden; }
-      @page { size: landscape; margin: 0.35in; }
+      <style>{`body.room-timetable-print-only > div[role="presentation"] { visibility: hidden; }
+      @page room-timetable { size: A4 landscape; margin: 0.35in; }
       @media print {
+        body.room-timetable-printing { page: room-timetable; margin: 0 !important; }
         body.room-timetable-printing #root { display: none !important; }
         body.room-timetable-printing > div[role="presentation"] { display: flex !important; position: static !important; inset: auto !important; overflow: visible !important; padding: 0 !important; background: white !important; visibility: visible !important; }
         body.room-timetable-printing > div[role="presentation"] > section.room-timetable-modal { display: flex !important; width: 100% !important; max-width: none !important; max-height: none !important; border: 0 !important; box-shadow: none !important; overflow: visible !important; }
@@ -1382,10 +1392,11 @@ export default function Rooms() {
         body.room-timetable-printing section.room-timetable-modal > div,
         body.room-timetable-printing section.room-timetable-modal > div > div,
         body.room-timetable-printing section.room-timetable-modal > div > div > div { display: block !important; height: auto !important; min-height: 0 !important; padding: 0 !important; margin: 0 !important; border-radius: 0 !important; background: white !important; }
-        body.room-timetable-printing .room-detail-print-grid { display: block !important; zoom: 0.88; margin: 0 !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; overflow: visible !important; }
-        body.room-timetable-printing .room-detail-print-grid > div:last-child { overflow: visible !important; padding: 0 !important; }
-        body.room-timetable-printing .room-detail-print-scroll { overflow: visible !important; }
-        body.room-timetable-printing .timetable-grid-root { width: 100% !important; min-height: 0 !important; border: 1px solid #cbd5e1 !important; box-shadow: none !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        /* Reserve a small rounding allowance inside the A4 landscape page's printable height. */
+        body.room-timetable-printing .room-detail-print-grid { display: flex !important; flex-direction: column !important; height: calc(210mm - 0.7in - 2mm) !important; zoom: 1; margin: 0 !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; overflow: visible !important; break-inside: avoid; }
+        body.room-timetable-printing .room-detail-print-grid > div:last-child { display: flex !important; flex: 1 1 0% !important; flex-direction: column !important; min-height: 0 !important; overflow: visible !important; padding: 0 !important; }
+        body.room-timetable-printing .room-detail-print-scroll { flex: 1 1 0% !important; min-height: 0 !important; overflow: visible !important; }
+        body.room-timetable-printing .timetable-grid-root { width: 100% !important; height: 100% !important; min-height: 0 !important; grid-template-rows: 32px repeat(var(--room-timetable-slots), minmax(0, 1fr)) !important; border: 1px solid #cbd5e1 !important; box-shadow: none !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         body.room-timetable-printing .timetable-grid-root,
         body.room-timetable-printing .timetable-grid-root * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         body.room-timetable-printing .timetable-grid-root > div:last-child { border-left: 1px solid #cbd5e1 !important; border-bottom: 1px solid #cbd5e1 !important; }

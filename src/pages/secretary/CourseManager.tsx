@@ -13,7 +13,7 @@ import {
 } from '@tanstack/react-table';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
-import { getStoredUser } from '../../lib/storedUser';
+import { getStoredUser, PROGRAM_HEAD_MANAGED_COURSE_MESSAGE } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData } from '../../lib/dataCache';
 import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
@@ -41,6 +41,7 @@ interface Course {
   department: Department | null;
   status: 'active' | 'inactive';
   created_at?: string;
+  program_head_managed?: boolean;
 }
 
 interface ApiCourse {
@@ -62,6 +63,7 @@ interface ApiCourse {
   status: 'active' | 'inactive';
   created_at: string;
   updated_at: string;
+  program_head_managed?: boolean;
 }
 
 interface CoursesPageData {
@@ -83,7 +85,8 @@ const mapApiCourse = (s: ApiCourse): Course => ({
   department_id: s.department_id,
   department: s.department,
   status: s.status,
-  created_at: s.created_at
+  created_at: s.created_at,
+  program_head_managed: s.program_head_managed === true,
 });
 
 const YEAR_FILTERS = [
@@ -193,7 +196,19 @@ export default function CourseManager() {
           size: 320,
           cell: info => {
             const name = info.getValue() as string;
-            return <span className="block font-bold text-gray-800 break-words">{name}</span>;
+            return (
+              <span className="block font-bold text-gray-800 break-words">
+                {name}
+                {info.row.original.program_head_managed && (
+                  <span
+                    className="ml-2 inline-block rounded-full bg-gray-100 px-2 py-0.5 align-middle text-[10px] font-semibold text-gray-600"
+                    title={PROGRAM_HEAD_MANAGED_COURSE_MESSAGE}
+                  >
+                    Program Head managed
+                  </span>
+                )}
+              </span>
+            );
           }
         },
         {

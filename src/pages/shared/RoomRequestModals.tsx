@@ -23,7 +23,11 @@ import { useDataTable } from '../../components/ui/useDataTable';
 import { useToast } from '../../context/ToastContext';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import { apiErrorMessage } from '../../lib/apiError';
-import { hasStoredCapability } from '../../lib/storedUser';
+import api from '../../lib/api';
+import { hasStoredCapability, isDepartmentOfficeUser, officeCanManageProgram } from '../../lib/storedUser';
+import { useProgramAccess } from '../../hooks/useProgramAccess';
+import { programLabel } from '../../lib/programLabel';
+import type { Program } from '../../types/curriculum';
 import WeeklyTimetableGrid, { GRID_SLOT_HEIGHT_PX } from '../../components/scheduling/WeeklyTimetableGrid';
 import TimetablePanel from '../../components/scheduling/TimetablePanel';
 import {
@@ -59,7 +63,7 @@ import {
   type RoomRequestStatus,
   type RoomRequestWindow,
 } from '../../lib/roomRequests';
-import { modalButton, modalLabel, modalTextarea } from '../../components/ui/modalStyles';
+import { modalButton, modalControl, modalLabel, modalTextarea } from '../../components/ui/modalStyles';
 
 export interface LendableRoom {
   id: number;
@@ -505,6 +509,8 @@ export function RequestRoomModal({
   const scheduleButtonRef = useRef<HTMLButtonElement>(null);
   const wasPicking = useRef(false);
   const [purpose, setPurpose] = useState('');
+  const requestPrograms = useOfficeRequestPrograms();
+  const [programId, setProgramId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [openedSemesterId] = useState(semester?.id ?? null);
@@ -521,8 +527,12 @@ export function RequestRoomModal({
   const borrowingClosed = occupancy.borrowingClosed;
   const choiceValid = choice !== null && occupancy.status === 'ready' && borrowingClosed === null && fitsSchedule(choice, occupancy.blocks);
   const purposeMissing = purpose.trim() === '';
-  const canSubmit = semester !== null && choiceValid && !purposeMissing && !isSubmitting;
-  const submitHint = semester === null
+  // Keep the user's target explicit when assignments change while this form is open.
+  const selectedProgramAllowed = requestPrograms.programs.some(program => String(program.id) === programId);
+  const effectiveProgramId = selectedProgramAllowed ? programId : '';
+  const programMissing = requestPrograms.programRequired && effectiveProgramId === '';
+  const canSubmit = semester !== null && choiceValid && !purposeMissing && !programMissing && requestPrograms.blocker === null && !isSubmitting;
+  const submitHint = requestPrograms.blocker ?? (semester === null
     ? 'There is no active semester to request a room for.'
     : borrowingClosed !== null
       ? borrowingClosed
@@ -536,7 +546,9 @@ export function RequestRoomModal({
             ? 'The chosen time is no longer free. Change the schedule.'
             : purposeMissing
               ? 'Enter a purpose to continue.'
-              : null;
+              : programMissing
+                ? 'Choose the program this room is for.'
+                : null);
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -547,6 +559,7 @@ export function RequestRoomModal({
       const result = await submitRoomRequest({
         room_id: room.id,
         semester_id: semester.id,
+        ...(effectiveProgramId !== '' ? { program_id: Number(effectiveProgramId) } : {}),
         purpose: purpose.trim(),
         windows: [choiceWindow(choice)],
       });
@@ -740,6 +753,28 @@ export function RequestRoomModal({
             )}
           </section>
 
+          {requestPrograms.programs.length > 0 && (
+            <section>
+              <label htmlFor={`${ids}-program`} className="mb-1.5 block text-xs font-extrabold uppercase tracking-wider text-[#4e0a10]">
+                Program {requestPrograms.programRequired && <span className="text-red-600" aria-hidden="true">*</span>}
+                <span className="ml-1.5 font-semibold normal-case tracking-normal text-slate-500">Programs with a Program Head send their own requests.</span>
+              </label>
+              <select
+                id={`${ids}-program`}
+                value={effectiveProgramId}
+                onChange={(event) => setProgramId(event.target.value)}
+                required={requestPrograms.programRequired}
+                disabled={isSubmitting}
+                className={modalControl()}
+              >
+                <option value="">{requestPrograms.programRequired ? 'Choose a program' : 'Whole department'}</option>
+                {requestPrograms.programs.map((program) => (
+                  <option key={program.id} value={program.id}>{programLabel(program)}</option>
+                ))}
+              </select>
+            </section>
+          )}
+
           <section>
             <div className="mb-1.5 flex items-baseline justify-between gap-3">
               <label htmlFor={`${ids}-purpose`} className="text-xs font-extrabold uppercase tracking-wider text-[#4e0a10]">
@@ -803,7 +838,47 @@ const canGiveBack = (request: RoomRequest, departmentId: number | null): boolean
   hasStoredCapability('room.request')
   && departmentId !== null
   && request.requesting_department?.id === departmentId
+  // Only the program that sent it: its Program Head, or the office for programs without one.
+  && request.can_cancel !== false
   && (request.status === 'pending' || request.status === 'approved');
+
+/**
+ * The programs the department office may request rooms for: its department's programs without a
+ * Program Head. When any program has one, the office must name the program (the backend requires it).
+ * Program Heads always request for their own program, so they get no choice.
+ */
+function useOfficeRequestPrograms(): { programs: Program[]; programRequired: boolean; blocker: string | null } {
+  const [loaded, setLoaded] = useState<{ departmentId: number; programs: Program[]; error: boolean } | null>(null);
+  const access = useProgramAccess();
+  const user = access.user;
+  const isOffice = isDepartmentOfficeUser(user);
+  const departmentId = user?.department_id ?? null;
+  const writable = user?.can_edit_program_ids;
+  const allPrograms = loaded?.departmentId === departmentId ? loaded.programs : [];
+  const programs = allPrograms.filter(program => officeCanManageProgram(program.id, user));
+  const programRequired = isOffice && Array.isArray(writable) && writable.length < (user?.department_program_count ?? allPrograms.length);
+  const blocker = access.error ? 'Program permissions could not be loaded. Reopen this form to try again.'
+    : !access.ready ? 'Loading program permissions…'
+      : !isOffice ? null
+        : loaded?.error ? 'Program permissions could not be loaded. Reopen this form to try again.'
+      : loaded?.departmentId !== departmentId ? 'Loading program permissions…'
+        : programRequired && programs.length === 0 ? 'Every program is managed by its Program Head. Only the Program Heads can send room requests.' : null;
+
+  useEffect(() => {
+    if (!isOffice || departmentId === null) return;
+    let active = true;
+    api.get<Program[]>('/programs')
+      .then(({ data }) => {
+        if (active) setLoaded({ departmentId, programs: data.filter(program => program.department_id === departmentId), error: false });
+      })
+      .catch(() => { if (active) setLoaded({ departmentId, programs: [], error: true }); });
+    return () => {
+      active = false;
+    };
+  }, [isOffice, departmentId]);
+
+  return { programs, programRequired, blocker };
+}
 
 const grantEndMessage = (request: RoomRequest, affected: RoomOccupancySchedule[] | null, destination: 'Room TBA' | 'Online' = 'Room TBA'): string => {
   const roomCode = request.room?.room_code ?? 'the room';
@@ -1265,6 +1340,7 @@ export function RequestPreviewModal({
           <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Fact label="Requested by">
               {request.requesting_department?.code ?? 'Not specified'}
+              {request.requesting_program ? ` · ${request.requesting_program.code}` : ''}
               <span className="block text-xs font-semibold text-gray-500">{request.requester?.name || 'Actor unavailable'}</span>
             </Fact>
             <Fact label="Room owner">

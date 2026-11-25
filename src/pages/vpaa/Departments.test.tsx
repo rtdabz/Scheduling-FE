@@ -402,17 +402,33 @@ describe('VPAA department profile', () => {
     });
   });
 
-  it('preserves the Dean program directory without loading VPAA facilities', async () => {
-    sessionStorage.setItem('user', JSON.stringify({ id: 10, role: 'dean', department_id: 2 }));
+  it.each(['dean', 'secretary', 'program_head', 'director'])('uses the VPAA profile layout for %s with scoped facilities and read-only programs', async (role) => {
+    sessionStorage.setItem('user', JSON.stringify({ id: 10, role, department_id: 2, program_id: program.id }));
+    get.mockImplementation((url: string) => url === '/rooms' ? Promise.resolve({ data: [
+      { id: 1, department_id: 2, room_code: 'LAB 201', building: 'Technology Annex', room_type: 'laboratory', status: 'available' },
+      { id: 2, department_id: 1, room_code: 'CED 101', building: 'Education Building', room_type: 'lecture', status: 'available' },
+    ] }) : pageData(url));
 
     render(<Departments />);
     fireEvent.click(await screen.findByText('College of Information Technology'));
 
-    expect(screen.getByRole('heading', { name: 'Program directory' })).toBeTruthy();
-    expect(screen.getByText(program.name)).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'Facilities' })).toBeNull();
+    const profile = screen.getByRole('dialog', { name: 'College of Information Technology' });
+    expect(within(profile).getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent))
+      .toEqual(['Leadership', 'Program heads', 'Instructors', 'Facilities']);
+    expect(await within(profile).findByText('LAB 201')).toBeTruthy();
+    expect(within(profile).queryByText('CED 101')).toBeNull();
+    expect(within(profile).queryByRole('heading', { name: 'Program directory' })).toBeNull();
+    expect(screen.queryByText('College of Education')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Edit Department' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Manage programs' })).toBeNull();
-    expect(get.mock.calls.some(([url]) => url === '/rooms')).toBe(false);
+    expect(get).toHaveBeenCalledWith('/rooms');
+
+    fireEvent.click(within(profile).getByRole('button', { name: 'View programs' }));
+    const programs = screen.getByRole('dialog', { name: 'View programs' });
+    expect(within(programs).getByText(program.name)).toBeTruthy();
+    expect(within(programs).queryByRole('button', { name: /Add program|Edit BSIT|Archive BSIT/ })).toBeNull();
+    expect(post).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
   });
 
   it('searches the active instructor tab and shows a clearable program-head filter', async () => {

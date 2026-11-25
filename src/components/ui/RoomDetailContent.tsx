@@ -1,6 +1,6 @@
 import { getPhilippineNowParts } from '../../lib/philippineTime';
 
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   AlertTriangle,
   ArrowLeftRight,
@@ -14,6 +14,7 @@ import {
   XCircle,
   HelpCircle,
   Lock,
+  Printer,
   Send,
 } from 'lucide-react';
 import Skeleton from './Skeleton';
@@ -114,6 +115,8 @@ interface RoomDetailContentProps {
   schedules: Schedule[];
   isLoading: boolean;
   initialViewMode?: 'list' | 'grid';
+  onPrint?: () => void;
+  isPrinting?: boolean;
   highlightSlots?: LinkedSlot[];
   /** Semester whose borrowing grants are shown; defaults to the active one. */
   semesterId?: number | null;
@@ -193,7 +196,7 @@ const noop = () => undefined;
 
 const NO_SLOTS: LinkedSlot[] = [];
 
-export default function RoomDetailContent({ room, schedules, isLoading, initialViewMode = 'grid', highlightSlots = NO_SLOTS, semesterId, listMode = 'classes', onRequestSlot, borrowingClosedMessage = null, leading, actions }: RoomDetailContentProps) {
+export default function RoomDetailContent({ room, schedules, isLoading, initialViewMode = 'grid', onPrint, isPrinting = false, highlightSlots = NO_SLOTS, semesterId, listMode = 'classes', onRequestSlot, borrowingClosedMessage = null, leading, actions }: RoomDetailContentProps) {
   const [activeTabDay, setActiveTabDay] = useState<string>(() => {
     if (highlightSlots[0]) return highlightSlots[0].day;
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -289,6 +292,8 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
       })
       .filter((item): item is { schedule: ScheduleItem; subject: Subject } => item !== null);
   }, [room, schedules]);
+
+  const timetableSlotCount = Math.max(slotCount(), ...roomGridCards.map(({ schedule }) => schedule.startSlot + schedule.durationSlots));
 
   /**
    * Background bands drawn beside the class cards without ever overlapping them:
@@ -521,17 +526,34 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
           title="Weekly Classroom Schedule"
           highlight={room.room_code}
           detail={room.building || undefined}
-          actions={(['list', 'grid'] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => setViewMode(mode)}
-              aria-pressed={viewMode === mode}
-              className={`${TIMETABLE_HEADER_BUTTON} ${viewMode === mode ? TIMETABLE_HEADER_BUTTON_PRESSED : ''}`}
-            >
-              {mode === 'list' ? 'List View' : 'Grid View'}
-            </button>
-          ))}
+          actions={<>
+            {(['list', 'grid'] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setViewMode(mode)}
+                disabled={isPrinting}
+                aria-pressed={viewMode === mode}
+                className={`${TIMETABLE_HEADER_BUTTON} ${viewMode === mode ? TIMETABLE_HEADER_BUTTON_PRESSED : ''}`}
+              >
+                {mode === 'list' ? 'List View' : 'Grid View'}
+              </button>
+            ))}
+            {onPrint && (
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode('grid');
+                  onPrint();
+                }}
+                disabled={isPrinting}
+                className={TIMETABLE_HEADER_BUTTON}
+              >
+                <Printer size={14} aria-hidden="true" />
+                {isPrinting ? 'Preparing...' : 'Print'}
+              </button>
+            )}
+          </>}
         />
 
         {viewMode === 'grid' ? (
@@ -539,9 +561,10 @@ export default function RoomDetailContent({ room, schedules, isLoading, initialV
             <div className="room-detail-print-scroll min-h-0 flex-1 overflow-auto">
             <WeeklyTimetableGrid
               days={DAYS}
-              slotCount={Math.max(slotCount(), ...roomGridCards.map(({ schedule }) => schedule.startSlot + schedule.durationSlots))}
+              slotCount={timetableSlotCount}
               minWidth={760}
               className="shrink-0"
+              style={{ '--room-timetable-slots': timetableSlotCount } as CSSProperties}
               getTimeLabel={slotToTimeLabel}
               getDayCount={(dayIndex) => roomGridCards.filter(({ schedule }) => schedule.dayIndex === dayIndex).length}
             >

@@ -42,4 +42,19 @@ describe('fetchCurrentUser', () => {
     await fetchCurrentUser();
     expect(apiGet).toHaveBeenCalledTimes(3);
   });
+
+  it('fetches fresh permissions after an older pending read without duplicating the follow-up', async () => {
+    let resolveOld!: (value: unknown) => void;
+    apiGet.mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve; }));
+    apiGet.mockResolvedValue({ data: { id: 1, can_edit_program_ids: [] } });
+    const { fetchCurrentUser } = await import('./currentUser');
+    const old = fetchCurrentUser();
+    const first = fetchCurrentUser({ force: true, afterPending: true });
+    const second = fetchCurrentUser({ force: true, afterPending: true });
+    resolveOld({ data: { id: 1, can_edit_program_ids: [7] } });
+    await old;
+    expect(await first).toEqual({ id: 1, can_edit_program_ids: [] });
+    expect(await second).toEqual({ id: 1, can_edit_program_ids: [] });
+    expect(apiGet).toHaveBeenCalledTimes(2);
+  });
 });

@@ -32,7 +32,9 @@ import { GRID_CARD_HOVER } from '../../lib/cardStyles';
 import {
   getStoredUserDepartmentId,
   hasStoredCapability,
+  officeManagesNoProgram,
 } from '../../lib/storedUser';
+import { useProgramAccess } from '../../hooks/useProgramAccess';
 import { configureTimeGrid } from '../../lib/timeGrid';
 import {
   fetchActiveSemester,
@@ -115,6 +117,9 @@ const isLendable = (room: RoomRecord, departmentId: number | null) =>
 
 export default function RoomRequests() {
   const { toast } = useToast();
+  const access = useProgramAccess();
+  const requestRestriction = !access.ready ? 'Checking program permissions…'
+    : officeManagesNoProgram(access.user) ? 'Every program is managed by its Program Head. Only the Program Heads can send room requests.' : null;
   const canRequest = hasStoredCapability('room.request');
   const departmentId = getStoredUserDepartmentId();
   const mountedRef = useRef(true);
@@ -237,7 +242,7 @@ export default function RoomRequests() {
     return () => { active = false; };
   }, [selectedRoomId, semesterId, roomScheduleKey, roomScheduleVersion]);
 
-  useLiveRefresh(['rooms', 'schedules', 'settings'], () => {
+  useLiveRefresh(['rooms', 'schedules', 'settings', 'users', 'departments'], () => {
     void loadData(true);
     setRoomScheduleVersion((version) => version + 1);
   });
@@ -551,8 +556,10 @@ export default function RoomRequests() {
                   {canRequest && isLendable(room, departmentId) && (
                     <button
                       type="button"
+                      disabled={requestRestriction !== null}
+                      title={requestRestriction ?? undefined}
                       onClick={(e) => { e.stopPropagation(); setRequestRoom(room); }}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-[#5A1220] px-3 py-1.5 text-[10px] font-extrabold text-white transition hover:bg-[#4e0a10] cursor-pointer"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-[#5A1220] px-3 py-1.5 text-[10px] font-extrabold text-white transition hover:bg-[#4e0a10] cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <Send size={12} /> Request
                     </button>
@@ -642,8 +649,8 @@ export default function RoomRequests() {
       <button
         type="button"
         onClick={() => setRequestRoom(selectedRoom)}
-        disabled={borrowingClosedMessage !== null}
-        title={borrowingClosedMessage ?? undefined}
+        disabled={requestRestriction !== null || borrowingClosedMessage !== null}
+        title={requestRestriction ?? borrowingClosedMessage ?? undefined}
         className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-[#5A1220] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#4e0a10] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5A1220]/30 focus-visible:ring-offset-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#5A1220] sm:w-auto"
       >
         {borrowingClosedMessage !== null ? <Lock size={15} /> : <Send size={15} />}
@@ -691,7 +698,7 @@ export default function RoomRequests() {
               leading={backButton}
               actions={requestButton}
               borrowingClosedMessage={canRequestSelected ? borrowingClosedMessage : null}
-              onRequestSlot={canRequestSelected && borrowingClosedMessage === null
+              onRequestSlot={canRequestSelected && requestRestriction === null && borrowingClosedMessage === null
                 ? (choice) => { setRequestChoice(choice); setRequestRoom(selectedRoom); }
                 : undefined}
             />

@@ -1,4 +1,4 @@
-import { Eye, Pencil, Copy, CheckCircle2, Archive, BookOpen, Users } from 'lucide-react';
+import { Eye, Pencil, Copy, CheckCircle2, Archive, BookOpen } from 'lucide-react';
 import type { Curriculum } from '../../types/curriculum';
 import { curriculumLifecycleBadge } from '../../types/curriculum';
 import { GRID_CARD_HOVER } from '../../lib/cardStyles';
@@ -44,7 +44,6 @@ export default function CurriculumCard({
   };
 
   const lifecycleBadge = curriculumLifecycleBadge(curriculum);
-  const inUseBy = curriculum.active_sections_count ?? 0;
   const scheduledSections = curriculum.scheduled_sections_count ?? 0;
   const retirable = scheduledSections === 0;
   const blockedReason = `${scheduledSections} section${scheduledSections === 1 ? '' : 's'} already ${scheduledSections === 1 ? 'has' : 'have'} a schedule plotted from this curriculum. Archive or clear those schedules first.`;
@@ -119,15 +118,6 @@ export default function CurriculumCard({
         <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-xl mb-3">
           <BookOpen size={14} className="text-[#C9952A]" />
           <span className="text-xs font-bold text-gray-700">{curriculum.courses_count} Courses</span>
-          {inUseBy > 0 && (
-            <>
-              <span className="text-gray-300">|</span>
-              <Users size={14} className="text-[#C9952A]" />
-              <span className="text-xs font-bold text-gray-700">
-                {inUseBy} Section{inUseBy === 1 ? '' : 's'}
-              </span>
-            </>
-          )}
         </div>
 
         {curriculum.description && (

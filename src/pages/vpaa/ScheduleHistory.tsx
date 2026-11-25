@@ -36,7 +36,9 @@ import TableActionButton from "../../components/ui/TableActionButton";
 import ScheduleReuseIssuesModal, { type ReuseIssue } from "../../components/scheduling/ScheduleReuseIssuesModal";
 import { useToast } from "../../context/ToastContext";
 import { downloadFile } from "../../lib/exportFile";
-import { getStoredUser } from "../../lib/storedUser";
+import { officeManagesNoProgram, PROGRAM_HEAD_MANAGED_MESSAGE } from "../../lib/storedUser";
+import { useProgramAccess } from "../../hooks/useProgramAccess";
+import { useLiveRevision } from "../../hooks/useLiveRefresh";
 import { invalidateCacheGroups } from "../../lib/cacheGroups";
 
 type Snapshot = {
@@ -61,6 +63,7 @@ type Snapshot = {
 };
 type Entry = {
   id: number;
+  can_reuse?: boolean;
   group_id?: string | null;
   schedule_id: number | null;
   semester_id: number | null;
@@ -247,7 +250,15 @@ const historyCacheKey = (page: number, type: HistoryType): string => `page:sched
 
 export default function ScheduleHistory() {
   const { toast, confirm } = useToast();
-  const [canReuse] = useState(() => (getStoredUser()?.permissions ?? []).includes("schedule.create"));
+  const access = useProgramAccess();
+  const canReuse = (access.user?.permissions ?? []).includes("schedule.create");
+  const historyRevision = useLiveRevision(['users', 'departments']);
+  const permissionKey = `${access.user?.id}:${access.user?.department_id}:${access.user?.can_edit_program_ids?.join(',')}`;
+  const revision = `${historyRevision}:${permissionKey}`;
+  const [loadedRevision, setLoadedRevision] = useState('');
+  const loadVersion = useRef(0);
+  const mayReuse = (entry: Entry) => access.ready && loadedRevision === revision
+    && !officeManagesNoProgram(access.user) && entry.can_reuse === true;
   const [busy, setBusy] = useState<{ id: number; action: "reuse" | "export" | "view" | "print" } | null>(null);
   const details = useRef(new Map<number, EntryDetail>());
   const [reuseIssues, setReuseIssues] = useState<{ issues: ReuseIssue[]; scheduleLabel: string; period: string; returnFocusTo: HTMLElement | null } | null>(null);
@@ -270,6 +281,7 @@ export default function ScheduleHistory() {
   });
 
   const load = useCallback(async () => {
+    const version = ++loadVersion.current;
     const cacheKey = historyCacheKey(page, type);
     const cachedPage = getCachedData<Response>(cacheKey);
     if (cachedPage) {
@@ -282,19 +294,22 @@ export default function ScheduleHistory() {
       const response = await api.get<Response>("/schedule-history", {
         params: { page, per_page: 10, type: type || undefined },
       });
+      if (version !== loadVersion.current) return;
       setEntries(response.data.data);
+      setLoadedRevision(revision);
       setMeta(response.data.meta);
       setCachedData<Response>(cacheKey, response.data);
     } catch (e: unknown) {
+      if (version !== loadVersion.current) return;
       setError(
         axios.isAxiosError<{ message?: string }>(e)
           ? e.response?.data?.message || "Unable to load schedule history."
           : "Unable to load schedule history.",
       );
     } finally {
-      setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
-  }, [page, type]);
+  }, [page, type, revision]);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
@@ -341,6 +356,8 @@ export default function ScheduleHistory() {
     }
   };
   const reuse = async (entry: Entry) => {
+    if (!canReuse || !mayReuse(entry) || busy !== null) return;
+    const version = loadVersion.current;
     const returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const period = [semesterLabel(entry.semester), entry.academic_year ? `A.Y. ${entry.academic_year}` : ""].filter(Boolean).join(", ");
     const confirmed = await confirm({
@@ -350,7 +367,7 @@ export default function ScheduleHistory() {
       confirmLabel: "Reuse schedule",
       variant: "info",
     });
-    if (!confirmed) return;
+    if (!confirmed || version !== loadVersion.current) return;
     setBusy({ id: entry.id, action: "reuse" });
     try {
       const response = await api.post<{ message: string }>(`/schedule-history/${entry.id}/reuse`);
@@ -424,7 +441,8 @@ export default function ScheduleHistory() {
               id={`schedule-history-reuse-${row.original.id}`}
               label="Reuse schedule"
               variant="success"
-              disabled={busy !== null}
+              disabled={busy !== null || !mayReuse(row.original)}
+              title={!mayReuse(row.original) ? row.original.can_reuse === false || officeManagesNoProgram(access.user) ? PROGRAM_HEAD_MANAGED_MESSAGE : 'Checking program permissions…' : 'Reuse schedule'}
               aria-busy={busy?.id === row.original.id && busy.action === "reuse"}
               onClick={() => void reuse(row.original)}
             >

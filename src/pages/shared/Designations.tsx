@@ -175,6 +175,14 @@ export default function Designations() {
     setIsFormOpen(true);
   }, []);
 
+  const openDetails = (designation: Designation) => {
+    if ((designation.children_count ?? 0) > 0) {
+      setSubsParentId(designation.id);
+    } else {
+      setViewingHolders(designation);
+    }
+  };
+
   const columns = useMemo<ColumnDef<Designation>[]>(() => [
     {
       id: 'name',
@@ -613,9 +621,19 @@ export default function Designations() {
                   return (
                     <div
                       key={d.id}
-                      className={`relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-xs flex flex-col justify-between space-y-3 font-sans group hover:border-[#C9952A]/50 transition-all ${GRID_CARD_HOVER}`}
+                      className={`relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-xs flex flex-col justify-between gap-3 font-sans group hover:border-[#C9952A]/50 transition-all ${GRID_CARD_HOVER}`}
                     >
                       <div aria-hidden="true" className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#5A1220] via-[#8a2434] to-[#C9952A]" />
+
+                      {canManage && (
+                        <button
+                          type="button"
+                          aria-label={`View details for ${designationLabel(d)}`}
+                          aria-haspopup="dialog"
+                          onClick={() => openDetails(d)}
+                          className="absolute inset-0 z-10 cursor-pointer rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C9952A]/50"
+                        />
+                      )}
 
                       <div className="space-y-2 pt-0.5">
                         <div className="flex items-start justify-between gap-2.5">
@@ -674,7 +692,7 @@ export default function Designations() {
                         </div>
 
                         {canManage && (
-                          <div className="flex items-center gap-1">
+                          <div className="relative z-20 flex items-center gap-1">
                             {subCount === 0 && (
                               <TableActionButton label={`View instructors holding ${d.name}`} variant="view" onClick={() => setViewingHolders(d)}>
                                 <Eye size={14} />
@@ -715,7 +733,7 @@ export default function Designations() {
             loadingRows={4}
             totalLabel="designations"
             ariaLabel="Designations"
-            onRowClick={canManage ? (designation) => ((designation.children_count ?? 0) > 0 ? setSubsParentId(designation.id) : setViewingHolders(designation)) : undefined}
+            onRowClick={canManage ? openDetails : undefined}
             emptyState={
               <div className="mx-auto flex max-w-sm flex-col items-center py-8">
                 <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#C9952A]/10 text-[#C9952A]">

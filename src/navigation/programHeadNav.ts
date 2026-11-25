@@ -3,7 +3,8 @@ import { secretaryNav } from './secretaryNav';
 
 const toProgramHeadPath = (path: string): string => path.replace('/secretary/', '/program_head/');
 
-const SECRETARY_ONLY_PATHS = new Set(['/secretary/program-rooms', '/secretary/room-requests']);
+// Program Heads request rooms for their own program (room.request), so Room Requests stays.
+const SECRETARY_ONLY_PATHS = new Set(['/secretary/program-rooms']);
 
 const mapItems = (items: NavItem[]): NavItem[] => items
   .filter((item) => !item.path || !SECRETARY_ONLY_PATHS.has(item.path))

@@ -2,6 +2,16 @@
 
 Date: 2026-10-12 (Asia/Shanghai).
 
+Program ownership update (2026-11-25): Program Heads request for their own program; Secretary and
+Director request for programs without an active, non-archived Program Head. Mixed departments remain
+usable per program. Request forms refresh account permissions, retain the intended target, and block
+submission while permissions are unavailable. Lending decisions and VPAA notifications retain their
+existing workflow. Reassign Room Schedule follows the same program ownership through API-provided
+`can_reassign` flags and checks both submission endpoints, resolving legacy schedule ownership from
+persisted sections, curricula, and courses. Legacy null-program requests cannot be cancelled by the
+office while any program is headed. See the
+[CAS ownership review](../../../backend/docs/cas-program-ownership-fix-2026-11-25.md).
+
 Status: Implemented 2026-11-03. All phases are complete except the MariaDB approval/revocation-versus-placement race probe, which remains unverified (see Phase 2). Resolution details, commands, and results are in the [follow-up fix report](reports/room_requests_followup_review_2026-11-03.md#resolution-status-fix-pass-2026-11-03), which also added RR-08 (archive lifecycle guards, delivered with Phase 1) and RR-09 (exact-time availability, delivered with Phase 5).
 
 Source: [Room Request frontend and backend review](reports/room_requests_review.md). Finding numbers below refer to that review. Its verified baseline includes existing uncommitted work; inspect the current working tree before each implementation phase and preserve unrelated changes.

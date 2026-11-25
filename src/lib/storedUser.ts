@@ -22,6 +22,8 @@ export interface StoredUser {
   }>;
   scheduling_ready?: boolean;
   department_program_count?: number;
+  /** Programs whose records this account may change (`writableProgramIdsFor` on the backend). */
+  can_edit_program_ids?: number[];
 }
 
 const readRawStoredUser = (): string | null => {
@@ -93,3 +95,38 @@ export const getStoredUserDepartmentId = (): number | null => {
   const parsed = Number(departmentId);
   return Number.isFinite(parsed) ? parsed : null;
 };
+
+const DEPARTMENT_OFFICE_ROLES = ['secretary', 'director'];
+
+export const PROGRAM_HEAD_MANAGED_MESSAGE =
+  'This program is managed by its Program Head. You can view its records, but only the Program Head can change them.';
+export const PROGRAM_HEAD_MANAGED_COURSE_MESSAGE =
+  "This course is used by a program managed by its Program Head. You can view it, but changing it would also change that program's curriculum.";
+export const OFFICE_COURSE_ASSIGNMENT_LOCK_MESSAGE =
+  'Every program in your department is managed by its Program Head, so Course Assignment is handled by the Program Heads.';
+
+export const isDepartmentOfficeUser = (user: StoredUser | null = getStoredUser()): boolean =>
+  DEPARTMENT_OFFICE_ROLES.includes(user?.role?.toLowerCase() ?? '');
+
+/**
+ * The department office (Secretary or Director) manages a program's records only while the program
+ * has no active Program Head; records without a program are department-level and stay with it.
+ * Every other role keeps its own rules, so this is true for them. The backend enforces the same rule.
+ */
+export const officeCanManageProgram = (
+  programId: number | string | null | undefined,
+  user: StoredUser | null = getStoredUser(),
+): boolean => {
+  if (!isDepartmentOfficeUser(user) || programId == null || programId === '') return true;
+  const writable = user?.can_edit_program_ids;
+  // A stored user from before this field existed: leave the decision to the backend.
+  if (!Array.isArray(writable)) return true;
+  return writable.map(Number).includes(Number(programId));
+};
+
+/** The office's department has programs, and every one of them has a Program Head. */
+export const officeManagesNoProgram = (user: StoredUser | null = getStoredUser()): boolean =>
+  isDepartmentOfficeUser(user)
+  && Array.isArray(user?.can_edit_program_ids)
+  && user!.can_edit_program_ids!.length === 0
+  && (user?.department_program_count ?? 0) > 0;

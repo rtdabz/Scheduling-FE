@@ -20,7 +20,7 @@ import {
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
-import { getStoredUser, hasStoredCapability } from '../../lib/storedUser';
+import { getStoredUser, hasStoredCapability, officeCanManageProgram, officeManagesNoProgram, PROGRAM_HEAD_MANAGED_MESSAGE } from '../../lib/storedUser';
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from '../../lib/dataCache';
 import { useLiveRefresh } from '../../hooks/useLiveRefresh';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
@@ -118,11 +118,20 @@ export default function SecretarySections() {
   const isVpaa = user?.role?.toLowerCase() === 'vpaa';
   const isDepartmentOffice = isDepartmentOfficeRole(user?.role);
   const isProgramHead = user?.role?.toLowerCase() === 'program_head';
-  const canManageSections = hasStoredCapability('schedule.create') || ((isDepartmentOffice || isProgramHead) && (programs.length > 0 || user?.scheduling_ready !== false));
+  // The office manages only programs without a Program Head; the others' sections are view-only.
+  const canManageSections = (hasStoredCapability('schedule.create') || ((isDepartmentOffice || isProgramHead) && (programs.length > 0 || user?.scheduling_ready !== false)))
+    && !officeManagesNoProgram(user);
 
-  const selectablePrograms = useMemo(
+  // Programs shown in the list filter: every program in scope, including view-only ones.
+  const visiblePrograms = useMemo(
     () => (isProgramHead ? programs.filter((p) => Number(p.id) === Number(user?.program_id)) : programs),
     [programs, isProgramHead, user?.program_id],
+  );
+  // Programs a new or edited section may belong to.
+  const selectablePrograms = useMemo(
+    () => visiblePrograms.filter((p) => officeCanManageProgram(p.id, user)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visiblePrograms, user?.can_edit_program_ids?.join(',')],
   );
 
   const activeSemester = useMemo(() => semesters.find((t) => t.is_active) ?? semesters[0], [semesters]);
@@ -332,7 +341,16 @@ export default function SecretarySections() {
           id: 'actions',
           header: () => <div className="text-right">Actions</div>,
           enableSorting: false,
-          cell: ({ row }) => (
+          cell: ({ row }) => !officeCanManageProgram(row.original.program_id) ? (
+            <div className="flex justify-end">
+              <span
+                className="rounded-full bg-gray-100 px-2.5 py-1 text-[11px] font-semibold text-gray-600"
+                title={PROGRAM_HEAD_MANAGED_MESSAGE}
+              >
+                View only
+              </span>
+            </div>
+          ) : (
             <div className="flex justify-end gap-1.5">
               <div className="relative group/tooltip">
                 <TableActionButton
@@ -447,7 +465,7 @@ export default function SecretarySections() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {selectablePrograms.length > 1 && (
+          {visiblePrograms.length > 1 && (
             <div className="flex items-center gap-1.5">
               <Filter size={13} className="text-gray-400" />
               <select
@@ -457,7 +475,7 @@ export default function SecretarySections() {
                 className="px-3 py-2.5 border border-gray-300 rounded-xl outline-none text-xs bg-white text-gray-800 font-sans font-bold focus:ring-1 focus:ring-[#5A1220] focus:border-[#5A1220] cursor-pointer hover:border-gray-400 transition-colors"
               >
                 <option value="all">All Programs</option>
-                {selectablePrograms.map((p) => (
+                {visiblePrograms.map((p) => (
                   <option key={p.id} value={String(p.id)}>{p.code}</option>
                 ))}
               </select>

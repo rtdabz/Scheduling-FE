@@ -19,6 +19,7 @@ import { useWorkflowGuide } from '../../hooks/useWorkflowGuide';
 import { programLabel, programName } from '../../lib/programLabel';
 import { courseNameLines } from '../../lib/courseNameLines';
 import './CourseTeachingAssignments.css';
+import { PROGRAM_HEAD_MANAGED_COURSE_MESSAGE } from '../../lib/storedUser';
 import SearchInput from '../../components/ui/SearchInput';
 
 interface ApiErrorResponse { message?: string }
@@ -52,6 +53,11 @@ interface CourseRow {
   is_major?: boolean;
   instructor_assigned_classes?: number;
   section_assignments?: SectionAssignment[];
+  /**
+   * The department office's view: a program managed by its Program Head also uses this course, so its
+   * course-wide assignment is locked. Sections of the office's own programs stay manageable.
+   */
+  program_head_managed?: boolean;
   /** Summary only: this entry lists returned sections handed to the group's college, not the whole course. */
   sectionLevelOnly?: boolean;
 }
@@ -371,6 +377,7 @@ export default function CourseTeachingAssignments() {
     if (course.teaching_department_id !== null) {
       return `Already assigned to ${currentTeacherOf(course)}`;
     }
+    if (course.program_head_managed) return 'Managed by a Program Head';
     if (instructorClassesOf(course) > 0) return 'Has an instructor';
     if (!effectiveTargetDepartment) return 'Select a department or program';
     if (ownTargetRestricted && !selectedProgram
@@ -506,7 +513,7 @@ export default function CourseTeachingAssignments() {
     }
   };
 
-  const removableAssigned = courses.filter((course) => course.teaching_department_id !== null && instructorClassesOf(course) === 0);
+  const removableAssigned = courses.filter((course) => course.teaching_department_id !== null && instructorClassesOf(course) === 0 && !course.program_head_managed);
   const lockedAssigned = courses.filter((course) => course.teaching_department_id !== null && instructorClassesOf(course) > 0);
 
   const removeAllAssignments = async () => {
@@ -1062,11 +1069,11 @@ function CourseListRow({ course, status, onToggle, onRemove, removing, removeDis
       <div role="cell" className="ct-cell ct-action">
         {assigned && (
           <TableActionButton
-            label={locked ? instructorLockMessage(course) : 'Remove assignment'}
+            label={course.program_head_managed ? PROGRAM_HEAD_MANAGED_COURSE_MESSAGE : locked ? instructorLockMessage(course) : 'Remove assignment'}
             aria-label={`Remove ${course.course_code} assignment`}
             variant="remove"
             onClick={() => onRemove(course)}
-            disabled={removeDisabled || locked}
+            disabled={removeDisabled || locked || course.program_head_managed === true}
           >
             {removing ? <LoadingSpinner className="h-4 w-4" /> : <X size={15} />}
           </TableActionButton>

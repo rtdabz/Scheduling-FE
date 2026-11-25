@@ -1,5 +1,12 @@
 # Schedule History Implementation Workflow
 
+Program ownership update (2026-11-25): reuse authorizes every saved source program and actual mapped
+destination using the existing backend program rule. Secretary/Director can reuse only unheaded
+programs; mixed history containing a headed program is refused atomically. Lists/details expose a
+fresh `can_reuse` flag, and the interface invalidates it and pending confirmations after assignment
+changes. Viewing, printing, export, and existing scheduling compatibility checks are unchanged.
+See the [CAS ownership review](../../../backend/docs/cas-program-ownership-fix-2026-11-25.md).
+
 ## Goal
 
 Provide an immutable, versioned history of schedule contents so authorized users can see who changed a schedule, what changed, and what the schedule looked like at that point in time.

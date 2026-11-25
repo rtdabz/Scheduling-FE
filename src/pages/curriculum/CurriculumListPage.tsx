@@ -42,7 +42,8 @@ import { curriculumService } from '../../services/curriculum/curriculumService';
 import { printCurriculum } from '../../lib/curriculumPrintable';
 import { useToast } from '../../context/ToastContext';
 import { canAuthorCurriculum } from '../../lib/curriculumAccess';
-import { getStoredUserDepartmentId, hasStoredCapability } from '../../lib/storedUser';
+import { getStoredUserDepartmentId, hasStoredCapability, isDepartmentOfficeUser, officeManagesNoProgram, PROGRAM_HEAD_MANAGED_MESSAGE } from '../../lib/storedUser';
+import { useProgramAccess } from '../../hooks/useProgramAccess';
 import CurriculumReviewPage from './CurriculumReviewPage';
 import { isDepartmentOfficeRole } from '../../lib/roles';
 
@@ -65,6 +66,8 @@ export default function CurriculumListPage() {
 }
 
 function CurriculumManagePage() {
+  const access = useProgramAccess();
+  const importRestricted = isDepartmentOfficeUser(access.user) && (!access.ready || officeManagesNoProgram(access.user));
   const navigate = useNavigate();
   const { toast } = useToast();
   const {
@@ -342,6 +345,8 @@ function CurriculumManagePage() {
 
   // The department office (Secretary or Director) adds curricula through Import only; manual creation and search are hidden for it.
   const isDepartmentOffice = isDepartmentOfficeRole(userRole);
+  // Program Heads, like the department office, add curricula through Import only (no manual Create Curriculum).
+  const importsOnly = isDepartmentOffice || userRole === 'program_head';
 
   const statusCounts = useMemo(() => ({
     active: rawCurriculumList.filter((item) => item.status === 'active').length,
@@ -356,7 +361,7 @@ function CurriculumManagePage() {
 
   useWorkflowGuide({
     id: 'curriculum', isReady: !isLoading, mission: 'Manage Curricula',
-    variant: isFormModalOpen ? (isEditMode ? 'edit' : 'create') : viewCurriculumId !== null ? 'preview' : isArchiveOpen ? 'archive' : loadError ? 'unavailable' : isDepartmentOffice ? 'import' : 'manage',
+    variant: isFormModalOpen ? (isEditMode ? 'edit' : 'create') : viewCurriculumId !== null ? 'preview' : isArchiveOpen ? 'archive' : loadError ? 'unavailable' : importsOnly ? 'import' : 'manage',
     steps: () => {
       const formSteps = [
         { id: 'name', element: '#curriculum-name-input', title: 'Use the official curriculum name', description: 'The curriculum name is required. Review the fields without changing them if you are only learning the workflow.' },
@@ -371,7 +376,7 @@ function CurriculumManagePage() {
       if (loadError) return [{ id: 'unavailable', element: '#curriculum-list', title: 'Curricula could not be refreshed', description: 'The list may be missing or outdated. Reload this page to retry before relying on its status or editing a curriculum.' }];
       return [
         { id: 'browse', element: '#curriculum-list', title: curriculumList.length ? 'Review existing curricula' : 'No curricula match', description: curriculumList.length ? 'Review the current List or Grid results and open View to inspect courses. Status, search and other filters affect these results.' : 'Clear the current filters or search to look for existing curricula. Import or creation is available only with management access.' },
-        ...(!canManageCurriculum ? [] : isDepartmentOffice ? [{ id: 'import', element: '#curriculum-import-button', title: 'Import on the next page', description: 'Import opens a separate page for PDF, CSV, XLSX or DOCX files. Finish this guide before opening it, then review and confirm the parsed curriculum there. Opening that page does not import or save a file.' }] : [
+        ...(!canManageCurriculum ? [] : importsOnly ? [{ id: 'import', element: '#curriculum-import-button', title: 'Import on the next page', description: 'Import Curriculum opens a separate page for PDF, CSV, XLSX or DOCX files. Finish this guide before opening it, then review and confirm the parsed curriculum there. Opening that page does not import or save a file.' }] : [
           { id: 'open-form', element: '#curriculum-create-button', action: 'click' as const, isSatisfied: () => document.querySelector('#curriculum-form') !== null, taskHint: 'Open Create Curriculum to review the required fields.', title: 'Review the creation form', description: 'Opening the form does not save a curriculum.' },
           ...formSteps,
         ]),
@@ -462,14 +467,15 @@ function CurriculumManagePage() {
                 <button
                   id="curriculum-import-button"
                   onClick={() => navigate(`/${userRole}/curriculum/import`)}
-                  className="border border-[#5A1220] text-[#5A1220] hover:bg-[#5A1220]/5 px-5 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap"
-                  title="Import a curriculum from a PDF, CSV, XLSX, or DOCX file"
+                  disabled={importRestricted}
+                  className="bg-gradient-to-r from-[#5A1220] to-[#8a2434] text-white hover:from-[#410b15] hover:to-[#5A1220] hover:scale-[1.02] px-5 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 font-bold text-xs shadow-md cursor-pointer whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50"
+                  title={importRestricted ? PROGRAM_HEAD_MANAGED_MESSAGE : 'Import a curriculum from a PDF, CSV, XLSX, or DOCX file'}
                 >
                   <FileUp size={15} />
-                  <span>Import</span>
+                  <span>Import Curriculum</span>
                 </button>
               )}
-              {!isDepartmentOffice && (
+              {!importsOnly && (
                 <button
                   id="curriculum-create-button"
                   onClick={() => {

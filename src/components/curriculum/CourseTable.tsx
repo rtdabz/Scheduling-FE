@@ -150,7 +150,7 @@ export default function CourseTable({
           </div>
         ) : (
           <div className="flex items-center justify-end gap-1">
-            {onInitiateEdit && (
+            {onInitiateEdit && !course.program_head_managed && (
               <TableActionButton label="Edit course details" variant="edit" onClick={() => onInitiateEdit(course)}>
                 <Pencil size={15} />
               </TableActionButton>

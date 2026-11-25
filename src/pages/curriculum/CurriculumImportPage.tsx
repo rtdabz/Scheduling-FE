@@ -6,7 +6,9 @@ import api from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiError';
 import { invalidateCacheGroups } from '../../lib/cacheGroups';
 import { programLabel } from '../../lib/programLabel';
-import { getStoredUser } from '../../lib/storedUser';
+import { isDepartmentOfficeUser, officeCanManageProgram, officeManagesNoProgram, PROGRAM_HEAD_MANAGED_MESSAGE } from '../../lib/storedUser';
+import LockedModuleView from '../../components/ui/LockedModuleView';
+import { useProgramAccess } from '../../hooks/useProgramAccess';
 import { useToast } from '../../context/ToastContext';
 import { curriculumImportService } from '../../services/curriculum/curriculumImportService';
 import ImportCourseHoursModal from '../../components/curriculum/import/ImportCourseHoursModal';
@@ -81,7 +83,8 @@ interface PendingMapping {
 export default function CurriculumImportPage() {
   const navigate = useNavigate();
   const { toast, confirm } = useToast();
-  const user = getStoredUser();
+  const access = useProgramAccess();
+  const user = access.user;
   const curriculumBase = user?.role === 'vpaa' ? '/curriculum' : `/${user?.role ?? 'secretary'}/curriculum`;
   const abort = useRef<AbortController | null>(null);
 
@@ -95,6 +98,7 @@ export default function CurriculumImportPage() {
 
   const [draft, setDraft] = useState<ImportDraft | null>(null);
   const [programs, setPrograms] = useState<Program[]>([]);
+  const programsLoading = useRef<Promise<Program[]> | null>(null);
   const [settings, setSettings] = useState<ImportSettings | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Preview and Configure show every term; Import's rail remembers the term it last opened.
@@ -121,13 +125,18 @@ export default function CurriculumImportPage() {
 
   useEffect(() => {
     let active = true;
-    Promise.all([api.get<Program[]>('/programs'), curriculumImportService.getSettings()])
+    const setup = Promise.all([api.get<Program[]>('/programs'), curriculumImportService.getSettings()])
       .then(([programResponse, loadedSettings]) => {
-        if (!active) return;
-        setPrograms(programResponse.data.filter((program) => user?.department_id == null || program.department_id === user.department_id));
-        setSettings(loadedSettings);
-      })
-      .catch((error) => active && toast.error('Import setup failed', apiErrorMessage(error, 'Programs and import settings could not be loaded.')));
+        // Keep restricted programs so file detection never silently becomes a department-wide import.
+        const options = programResponse.data.filter((program) => user?.department_id == null || program.department_id === user.department_id);
+        if (active) {
+          setPrograms(options);
+          setSettings(loadedSettings);
+        }
+        return options;
+      });
+    programsLoading.current = setup;
+    setup.catch((error) => active && toast.error('Import setup failed', apiErrorMessage(error, 'Programs and import settings could not be loaded.')));
     return () => {
       active = false;
     };
@@ -143,14 +152,14 @@ export default function CurriculumImportPage() {
 
   const markChanged = useCallback(() => setStale(true), []);
 
-  const startDraft = useCallback((extraction: Extraction, info: { name: string; size: number; sha256: string }) => {
+  const startDraft = useCallback((extraction: Extraction, info: { name: string; size: number; sha256: string }, availablePrograms = programs) => {
     if (extraction.rows.length === 0) {
       setExtractError(['No course rows were found.', ...extraction.warnings].join(' '));
       return;
     }
     const next = buildDraft(extraction, { filename: info.name, size_bytes: info.size, sha256: info.sha256 });
     const isProgramHead = user?.role === 'program_head';
-    const matches = programs.filter((program) => next.detected.program_code && program.code.toUpperCase() === next.detected.program_code.toUpperCase());
+    const matches = availablePrograms.filter((program) => next.detected.program_code && program.code.toUpperCase() === next.detected.program_code.toUpperCase());
     next.metadata.program_id = isProgramHead ? user?.program_id ?? null : matches.length === 1 ? matches[0].id : null;
     setDraft(next);
     setValidation(null);
@@ -166,7 +175,7 @@ export default function CurriculumImportPage() {
     setStep('review');
   }, [programs, user?.program_id, user?.role]);
 
-  const handleReading = useCallback((reading: TableReading | null, info: { name: string; size: number; sha256: string }) => {
+  const handleReading = useCallback((reading: TableReading | null, info: { name: string; size: number; sha256: string }, availablePrograms?: Program[]) => {
     if (!reading) {
       setExtractError('No curriculum table was found. Use a table with Course Code, Lec, Lab, and TU columns.');
       return;
@@ -175,7 +184,7 @@ export default function CurriculumImportPage() {
       setPendingMapping({ detection: reading.detection, table: reading.table, mapping: { ...reading.detection.mapping } });
       return;
     }
-    startDraft(reading.extraction, info);
+    startDraft(reading.extraction, info, availablePrograms);
   }, [startDraft]);
 
   const handleFile = async (selectedFile: File) => {
@@ -190,6 +199,7 @@ export default function CurriculumImportPage() {
       setProgress('Reading the file');
       const data = await selectedFile.arrayBuffer();
       const format = detectFormat(selectedFile.name, data);
+      const availablePrograms = await programsLoading.current ?? programs;
       const info = { name: selectedFile.name, size: selectedFile.size, format, sha256: await sha256Hex(data) };
       setFile(info);
       setBytes(data);
@@ -198,20 +208,20 @@ export default function CurriculumImportPage() {
         setProgress('Extracting PDF text');
         const extraction = await extractPdf(data, controller.signal, (page, total) => setProgress(`Extracting page ${page} of ${total}`));
         if (controller.signal.aborted) throw new DOMException('Extraction canceled.', 'AbortError');
-        startDraft(extraction, info);
+        startDraft(extraction, info, availablePrograms);
       } else if (format === 'csv') {
         setProgress('Reading CSV rows');
-        handleReading(readTable(await readCsv(new TextDecoder('utf-8').decode(data))), info);
+        handleReading(readTable(await readCsv(new TextDecoder('utf-8').decode(data))), info, availablePrograms);
       } else if (format === 'xlsx') {
         setProgress('Reading the workbook');
         const workbook = await readXlsx(selectedFile);
         const usable = workbook.filter((sheet) => readTable(sheet) !== null);
-        if (usable.length === 1) handleReading(readTable(usable[0]), info);
+        if (usable.length === 1) handleReading(readTable(usable[0]), info, availablePrograms);
         else if (usable.length === 0) handleReading(null, info);
         else setSheets(usable);
       } else {
         setProgress('Reading document tables');
-        handleReading(readTable(await readDocx(data)), info);
+        handleReading(readTable(await readDocx(data)), info, availablePrograms);
       }
     } catch (error) {
       if (controller.signal.aborted) setExtractError('Extraction was canceled or took longer than 30 seconds. Nothing was imported.');
@@ -332,8 +342,16 @@ export default function CurriculumImportPage() {
     return step !== 'configure' || statusFilter === 'all' ? rows : rows.filter((row) => statusOf(row) === statusFilter);
   }, [draft, step, statusFilter, statusOf]);
 
+  const programRestricted = !officeCanManageProgram(draft?.metadata.program_id, user);
+  const requiresProgram = isDepartmentOfficeUser(user) && Array.isArray(user?.can_edit_program_ids)
+    && user.can_edit_program_ids.length < (user.department_program_count ?? programs.length);
+  const accessBlocker = !access.ready
+    ? access.error ? 'Program permissions could not be refreshed. Reload this page to try again.' : 'Checking program permissions…'
+    : programRestricted ? PROGRAM_HEAD_MANAGED_MESSAGE
+      : requiresProgram && draft?.metadata.program_id == null ? 'Choose a program without an active Program Head. Department-wide imports are restricted while any program has a Program Head.' : null;
+
   const runValidation = async (): Promise<ValidationResult | null> => {
-    if (!draft) return null;
+    if (!draft || accessBlocker) return null;
     if (problems.length > 0) {
       setSubmitError(`Fix ${problems.length} problem${problems.length === 1 ? '' : 's'} in the draft first. ${problems[0].message}`);
       return null;
@@ -354,7 +372,7 @@ export default function CurriculumImportPage() {
   };
 
   const commit = async () => {
-    if (!draft || !validation || stale || !validation.valid) return;
+    if (!draft || !validation || stale || !validation.valid || accessBlocker) return;
     if (requestKey.current?.fingerprint !== validation.fingerprint) {
       requestKey.current = { fingerprint: validation.fingerprint, key: newRequestKey() };
     }
@@ -406,7 +424,7 @@ export default function CurriculumImportPage() {
   const openRow = draft?.rows.find((row) => row.row_id === openRowId) ?? null;
   const hoursRow = draft?.rows.find((row) => row.row_id === hoursRowId) ?? null;
   const counts = validation?.counts;
-  const canImport = validated && !!validation?.valid && busy === null;
+  const canImport = validated && !!validation?.valid && busy === null && accessBlocker === null;
   const program = programs.find((candidate) => candidate.id === draft?.metadata.program_id) ?? null;
   const currentIndex = step === 'done' ? ORDER.length : ORDER.indexOf(step);
   const completed = new Set(ORDER.filter((_, index) => draft !== null && index < currentIndex));
@@ -524,10 +542,10 @@ export default function CurriculumImportPage() {
         : counts?.errors ? `${counts.errors} error${counts.errors === 1 ? '' : 's'} to correct` : 'Ready to review';
 
   const importBlocker = canImport || busy !== null ? null
-    : problems.length > 0 ? `Import is blocked: ${plural(problems.length, 'draft problem')} to fix.`
+    : accessBlocker ?? (problems.length > 0 ? `Import is blocked: ${plural(problems.length, 'draft problem')} to fix.`
       : !validation ? 'Import is blocked: validate the draft first.'
         : stale ? 'Import is blocked: the draft changed, validate again.'
-          : `Import is blocked: ${plural(errorCount, 'error')} to correct.`;
+          : `Import is blocked: ${plural(errorCount, 'error')} to correct.`);
 
   const issueBadges = (onDark: boolean) => (
     <>
@@ -636,7 +654,7 @@ export default function CurriculumImportPage() {
   const stepActions = (actions: ReactNode) => <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>;
 
   const validateButton = (
-    <button type="button" onClick={() => void runValidation()} disabled={busy !== null} className={secondaryButton}>
+    <button type="button" onClick={() => void runValidation()} disabled={busy !== null || accessBlocker !== null} title={accessBlocker ?? undefined} className={secondaryButton}>
       {busy === 'validate' ? <Loader2 size={15} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <ShieldCheck size={15} aria-hidden="true" />}
       {busy === 'validate' ? 'Validating…' : 'Validate'}
     </button>
@@ -650,6 +668,10 @@ export default function CurriculumImportPage() {
       {problems.length > 0 ? <span className="font-semibold text-red-700">{problems.length} problem{problems.length === 1 ? '' : 's'} to fix in the draft</span> : validationStatus}
     </span>
   );
+
+  if (access.ready && officeManagesNoProgram(user)) {
+    return <LockedModuleView moduleName="Curriculum Import" message="Every program in your department has an active Program Head. Only the Program Heads can import their curricula." />;
+  }
 
   return (
     <div className="w-full space-y-4 font-sans">
@@ -683,6 +705,10 @@ export default function CurriculumImportPage() {
           </div>
         )}
       </header>
+
+      {draft && accessBlocker && step !== 'import' && step !== 'done' && (
+        <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{accessBlocker}</p>
+      )}
 
       {step === 'upload' && (
         <section aria-labelledby="upload-heading" className="rounded-xl border border-border bg-white px-4 py-4 sm:px-6">
@@ -1107,6 +1133,8 @@ export default function CurriculumImportPage() {
           detected={draft.detected}
           programs={programs}
           programLocked={user?.role === 'program_head'}
+          canSelectProgram={(id) => officeCanManageProgram(id, user)}
+          requireProgram={requiresProgram}
           code={{ text: codeText, tag: validated ? 'Checked' : proposedCode ? 'Proposed' : null, hint: codeHint }}
           issues={metadataIssues}
           focusField={details.focus}

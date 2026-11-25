@@ -4,7 +4,7 @@ import LoginPage from './pages/LoginPage';
 import type { UserRole } from './pages/Dashboard';
 import AppLayout from './components/layout/AppLayout';
 import { fetchCurrentUser } from './lib/currentUser';
-import { getStoredUser, getStoredUserRole, MULTIPLE_PROGRAMS_LOCK_MESSAGE, NO_PROGRAM_LOCK_MESSAGE, requiresDepartmentProgram, type StoredUser } from './lib/storedUser';
+import { getStoredUser, getStoredUserRole, MULTIPLE_PROGRAMS_LOCK_MESSAGE, NO_PROGRAM_LOCK_MESSAGE, OFFICE_COURSE_ASSIGNMENT_LOCK_MESSAGE, officeManagesNoProgram, requiresDepartmentProgram, type StoredUser } from './lib/storedUser';
 import { useLiveRevision } from './hooks/useLiveRefresh';
 import LockedModuleView from './components/ui/LockedModuleView';
 import { CROSS_DEPARTMENT_LOCKED_MESSAGE, useDepartmentScheduleStatus } from './hooks/useDepartmentScheduleStatus';
@@ -56,7 +56,7 @@ registerPagePrefetch([
   [VpaaUsers, ['/users']],
   [Departments, ['/departments', '/dean/departments', '/secretary/departments', '/director/departments', '/program_head/departments']],
   [Reports, ['/reports', '/dean/reports', '/secretary/reports', '/director/reports', '/program_head/reports']],
-  [RoomRequests, ['/secretary/room-requests', '/director/room-requests']],
+  [RoomRequests, ['/secretary/room-requests', '/director/room-requests', '/program_head/room-requests']],
   [VpaaActivityLog, ['/activity-log']],
   [VpaaScheduleHistory, ['/schedule-history', '/dean/schedule-history', '/secretary/schedule-history', '/director/schedule-history', '/program_head/schedule-history']],
   [Settings, ['/settings']],
@@ -196,6 +196,10 @@ const CrossDepartmentApprovalRoute = ({
 }) => {
   const { crossDepartmentUnlocked, loading } = useDepartmentScheduleStatus(getStoredUser()?.department_id);
 
+  // Every program of the office's department has a Program Head: Course Assignment is theirs.
+  if (officeManagesNoProgram()) {
+    return <LockedModuleView moduleName={moduleName} message={OFFICE_COURSE_ASSIGNMENT_LOCK_MESSAGE} />;
+  }
   if (loading) {
     return <div className="flex min-h-[60vh] items-center justify-center" aria-label="Checking schedule approval" />;
   }
@@ -357,6 +361,7 @@ const appRouter = createBrowserRouter(createRoutesFromElements(
             <Route path="/program_head/reports" element={<CapabilityRoute capability="schedule.view" moduleName="Reports"><Reports /></CapabilityRoute>} />
             <Route path="/program_head/schedule-history" element={<CapabilityRoute requiresProgram capability="schedule.view" moduleName="Schedule History"><VpaaScheduleHistory /></CapabilityRoute>} />
             <Route path="/program_head/cross-department-assignments" element={<CapabilityRoute capability="schedule.assign_instructor" moduleName="Cross-Department"><CrossDepartmentAssignments /></CapabilityRoute>} />
+            <Route path="/program_head/room-requests" element={<CapabilityRoute capability="room.request" moduleName="Room Requests"><RoomRequests /></CapabilityRoute>} />
             <Route path="/program_head/course-assignments" element={<CapabilityRoute capability="schedule.assign_instructor_cross_department" moduleName="Course Assignment"><CrossDepartmentApprovalRoute moduleName="Course Assignment"><CourseTeachingAssignments /></CrossDepartmentApprovalRoute></CapabilityRoute>} />
             <Route path="/program_head/settings" element={<Navigate to="/program_head/schedule-management" replace />} />
 

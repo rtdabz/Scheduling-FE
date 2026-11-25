@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import type { Curriculum } from '../../types/curriculum';
 
-const role = vi.hoisted(() => ({ current: 'secretary' }));
+const role = vi.hoisted(() => ({ current: 'secretary', headed: false }));
 
 const curriculum = (id: number, name: string, status: Curriculum['status']) => ({
   id, name, code: `C-${id}`, status, effective_school_year: '2025-2026', courses_count: 0,
@@ -36,6 +36,7 @@ vi.mock('../../services/curriculum/curriculumService', () => ({
 }));
 vi.mock('../../lib/api', () => ({ default: { get: vi.fn(async () => ({ data: [] })) } }));
 vi.mock('../../hooks/useLiveRefresh', () => ({ useLiveRefresh: vi.fn() }));
+vi.mock('../../hooks/useProgramAccess', () => ({ useProgramAccess: () => ({ ready: true, error: false, user: { role: role.current, department_id: 1, department_program_count: 1, can_edit_program_ids: role.headed ? [] : [1] } }) }));
 vi.mock('../../hooks/useWorkflowGuide', () => ({ useWorkflowGuide: vi.fn() }));
 vi.mock('../../components/help/WorkflowGuideButton', () => ({ default: () => null }));
 // A stable toast, like the real context's, so the data loader is not recreated on every render.
@@ -52,6 +53,7 @@ afterEach(() => {
   cleanup();
   vi.mocked(useWorkflowGuide).mockClear();
   role.current = 'secretary';
+  role.headed = false;
 });
 
 describe('curriculum help context', () => {
@@ -59,6 +61,18 @@ describe('curriculum help context', () => {
     const guide = vi.mocked(useWorkflowGuide).mock.calls.at(-1)![0];
     return typeof guide.steps === 'function' ? guide.steps() : guide.steps;
   };
+
+  it.each(['secretary', 'director'])('disables the import entry point for an entirely headed department (%s)', async (officeRole) => {
+    role.current = officeRole;
+    role.headed = true;
+    renderPage();
+    await screen.findByText('Active One');
+    const button = screen.getByRole('button', { name: 'Import Curriculum' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toContain('Program Head');
+    fireEvent.click(button);
+    expect(screen.getByText('Active One')).toBeTruthy();
+  });
 
   it('explains import without requiring navigation or claiming an import', async () => {
     renderPage();
@@ -70,8 +84,18 @@ describe('curriculum help context', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('includes required effective years and a review-only save in an existing form', async () => {
+  it('gives Program Heads Import Curriculum only, like the department office', async () => {
     role.current = 'program_head';
+    renderPage();
+    await screen.findByText('Active One');
+    expect(screen.queryByRole('button', { name: 'Create Curriculum' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Import Curriculum' })).toBeTruthy();
+    expect(steps().some((step) => step.element === '#curriculum-import-button')).toBe(true);
+    expect(steps().some((step) => step.element === '#curriculum-create-button')).toBe(false);
+  });
+
+  it('includes required effective years and a review-only save in an existing form', async () => {
+    role.current = 'dean';
     renderPage();
     await screen.findByText('Active One');
     fireEvent.click(screen.getByRole('button', { name: 'Create Curriculum' }));

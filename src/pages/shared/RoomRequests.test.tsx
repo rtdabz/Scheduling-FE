@@ -23,6 +23,7 @@ vi.mock('../../lib/api', () => ({
 vi.mock('../../context/ToastContext', () => ({
   useToast: () => ({ toast, confirm }),
 }));
+vi.mock('../../lib/currentUser', () => ({ fetchCurrentUser: vi.fn(async () => JSON.parse(sessionStorage.getItem('user')!)) }));
 
 import RoomRequests from './RoomRequests';
 import { clearDataCache, getCachedData, isCacheFresh, setCachedData } from '../../lib/dataCache';
@@ -65,7 +66,9 @@ const renderPage = (entry = '/') => render(
 
 const openRequestForm = async () => {
   renderPage('/?room=102');
-  fireEvent.click(await screen.findByRole('button', { name: /Request Room/i }));
+  await screen.findByRole('button', { name: /Request Room/i });
+  await waitFor(() => expect((screen.getByRole('button', { name: /Request Room/i }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: /Request Room/i }));
   return screen.findByRole('dialog', { name: 'Request Room' });
 };
 
@@ -124,6 +127,10 @@ describe('RoomRequests', () => {
         });
       }
       if (url === '/semesters/active') return Promise.resolve({ data: activeSemester });
+      if (url === '/programs') return Promise.resolve({ data: [
+        { id: 7, code: 'PA', name: 'Program A', department_id: 1 },
+        { id: 8, code: 'PB', name: 'Program B', department_id: 1 },
+      ] });
       if (url.startsWith('/initial-data')) {
         return Promise.resolve({ data: { time_grid: { opening_time: '07:00', closing_time: '19:00', slot_minutes: 30 } } });
       }
@@ -137,6 +144,55 @@ describe('RoomRequests', () => {
   afterEach(() => {
     cleanup();
     stopLiveUpdates();
+  });
+
+  it.each(['secretary', 'director'])('refreshes an open %s request form and blocks a target that gains a head', async role => {
+    const user = { id: 10, role, department_id: 1, permissions: ['room.request'], department_program_count: 2, can_edit_program_ids: [7, 8] };
+    sessionStorage.setItem('user', JSON.stringify(user));
+    const dialog = await openRequestForm();
+    const program = await within(dialog).findByRole('combobox', { name: /Program/ });
+    await waitFor(() => expect(within(program).getAllByRole('option')).toHaveLength(3));
+    fireEvent.change(program, { target: { value: '7' } });
+    const picker = await openPicker();
+    fireEvent.click(await within(picker).findByRole('button', { name: 'Start Monday 9:00 AM to 10:30 AM' }));
+    fireEvent.click(confirmButton(picker));
+    fireEvent.change(within(dialog).getByLabelText(/Why do you need this room/), { target: { value: 'Program A lectures' } });
+    const send = () => screen.getByRole('button', { name: /Send Request/ }) as HTMLButtonElement;
+    await waitFor(() => expect(send().disabled).toBe(false));
+
+    sessionStorage.setItem('user', JSON.stringify({ ...user, can_edit_program_ids: [8] }));
+    act(() => publishLiveTopics(['users']));
+    await waitFor(() => expect(send().disabled).toBe(true));
+    await waitFor(() => expect((program as HTMLSelectElement).value).toBe(''));
+    expect(within(program).queryByRole('option', { name: /Program A/ })).toBeNull();
+    fireEvent.click(send());
+    expect(post).not.toHaveBeenCalled();
+
+    // Deactivation or archival restores the original selection, without choosing a different program.
+    sessionStorage.setItem('user', JSON.stringify(user));
+    act(() => publishLiveTopics(['users']));
+    await waitFor(() => expect(send().disabled).toBe(false));
+    expect((program as HTMLSelectElement).value).toBe('7');
+  });
+
+  it('blocks office submission when every program has a head', async () => {
+    sessionStorage.setItem('user', JSON.stringify({ id: 10, role: 'secretary', department_id: 1, permissions: ['room.request'], department_program_count: 2, can_edit_program_ids: [] }));
+    renderPage('/?room=102');
+    const button = await screen.findByRole('button', { name: /Request Room/i }) as HTMLButtonElement;
+    await waitFor(() => expect(button.disabled).toBe(true));
+    expect(button.title).toContain('Every program is managed by its Program Head');
+    fireEvent.click(button);
+    expect(screen.queryByRole('dialog', { name: 'Request Room' })).toBeNull();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('blocks office submission if program discovery fails', async () => {
+    const previous = get.getMockImplementation()!;
+    get.mockImplementation((url, config) => url === '/programs' ? Promise.reject(new Error('offline')) : previous(url, config));
+    const dialog = await openRequestForm();
+    expect(await within(dialog).findByText(/Program permissions could not be loaded/)).toBeDefined();
+    expect((screen.getByRole('button', { name: /Send Request/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(post).not.toHaveBeenCalled();
   });
 
   it('shows the pending-from-others badge on the Requests button', async () => {
@@ -209,8 +265,8 @@ describe('RoomRequests', () => {
   it('shows the selected room read-only with its owner and semester', async () => {
     const dialog = await openRequestForm();
 
-    expect(within(dialog).queryByRole('combobox')).toBeNull();
     const selectedRoom = within(dialog).getByText('Selected room').parentElement!;
+    expect(within(selectedRoom).queryByRole('combobox')).toBeNull();
     expect(within(selectedRoom).getByText('BUILDING 9-101')).toBeDefined();
     expect(within(selectedRoom).getByText('Building 9')).toBeDefined();
     expect(within(dialog).getByText('College of Criminal Justice')).toBeDefined();

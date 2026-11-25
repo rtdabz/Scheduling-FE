@@ -124,6 +124,8 @@ export interface CurriculumCourse {
   total_units: number;
   program_id?: number | null;
   department_id?: number | null;
+  /** A program managed by its Program Head also uses this course; the department office cannot edit its record. */
+  program_head_managed?: boolean;
   prerequisites_text?: string | null;
   /** Hours per unit and the weekly hours they give; absent on rows added before the next reload. */
   hours?: CurriculumCourseHours;

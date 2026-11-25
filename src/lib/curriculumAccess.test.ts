@@ -23,4 +23,10 @@ describe('curriculum authoring scope', () => {
     sessionStorage.setItem('user', JSON.stringify({ role: 'secretary', department_id: 1, permissions: [] }));
     expect(canAuthorCurriculum({ department_id: 1, program_id: null })).toBe(false);
   });
+  it("leaves a Program Head's program view-only to the department office", () => {
+    sessionStorage.setItem('user', JSON.stringify({ role: 'director', department_id: 1, permissions: ['curriculum.manage'], can_edit_program_ids: [2] }));
+    expect(canAuthorCurriculum({ department_id: 1, program_id: 2 })).toBe(true);
+    expect(canAuthorCurriculum({ department_id: 1, program_id: 3 })).toBe(false);
+    expect(canAuthorCurriculum({ department_id: 1, program_id: null })).toBe(true);
+  });
 });

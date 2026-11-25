@@ -4,7 +4,7 @@ import { ModalButton, ModalField } from '../ui/ModalForm';
 import { modalBody, modalControl } from '../ui/modalStyles';
 import type { Curriculum, Program } from '../../types/curriculum';
 import { programLabel } from '../../lib/programLabel';
-import { getStoredUserDepartmentId, getStoredUserRole } from '../../lib/storedUser';
+import { getStoredUserDepartmentId, getStoredUserRole, officeCanManageProgram } from '../../lib/storedUser';
 
 interface CurriculumFormModalProps {
   isOpen: boolean;
@@ -35,7 +35,8 @@ export default function CurriculumFormModal({
   const departmentId = isEditMode && curriculum?.department_id
     ? curriculum.department_id
     : getStoredUserDepartmentId();
-  const departmentPrograms = programs.filter((program) => program.department_id === departmentId);
+  // A Program Head's program is not offered to the department office.
+  const departmentPrograms = programs.filter((program) => program.department_id === departmentId && officeCanManageProgram(program.id));
   const canChooseProgram = getStoredUserRole() !== 'program_head';
 
   useEffect(() => {

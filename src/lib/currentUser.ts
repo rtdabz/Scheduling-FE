@@ -14,7 +14,11 @@ const currentToken = (): string => {
   }
 };
 
-export const fetchCurrentUser = <T = StoredUser>(options: { force?: boolean } = {}): Promise<T> => {
+export const fetchCurrentUser = <T = StoredUser>(options: { force?: boolean; afterPending?: boolean } = {}): Promise<T> => {
+  // A permission-change event needs facts fetched after that event, even when an older read is pending.
+  if (options.afterPending && inFlight) {
+    return inFlight.catch(() => undefined).then(() => fetchCurrentUser<T>({ force: true }));
+  }
   const token = currentToken();
   if (!options.force && last && last.token === token && Date.now() - last.at < FRESH_FOR_MS) {
     return Promise.resolve(last.user as T);

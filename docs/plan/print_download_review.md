@@ -22,7 +22,7 @@ Examples use illustrative department, instructor, room, and curriculum values; a
 | Curriculum print | `wicars-ui/src/lib/curriculumPrintable.ts` | `curriculum-CMO-25-2026-2027.pdf`; code and effective school year. Existing PDF auto-print instruction retained. |
 | Schedule approval preview | `wicars-ui/src/components/scheduling/ScheduleApprovalPreviewModal.tsx` | Uses the shared class schedule filename through the embedded viewer's native download arrow. |
 | Curriculum detail preview | `wicars-ui/src/components/curriculum/CurriculumDetailModal.tsx` | Uses the same curriculum filename as curriculum print through the embedded viewer's native download arrow. |
-| Room timetable | `wicars-ui/src/pages/shared/Rooms.tsx` | Suggests `room-timetable-LAB-101.pdf` through the page title during browser printing; restores the previous title after printing. |
+| Room timetable | `wicars-ui/src/pages/shared/Rooms.tsx`, Rooms table and Classroom Details | Suggests `room-timetable-LAB-101.pdf` through the page title during browser printing; restores the previous title after printing. Uses one A4 landscape page with grid rows fitted to the configured schedule window. |
 | VPAA master calendar | `wicars-ui/src/pages/vpaa/CalendarPage.tsx` | Suggests `master-calendar-2026-2027-1st.pdf` through the page title during browser printing; restores the previous title after printing. |
 | Reports CSV, all five report categories and detail exports | `wicars-ui/src/pages/shared/Reports.tsx` | Report label plus academic year and semester when available, e.g. `CIT-Room-Utilization-2026-2027-1st.csv`. |
 | VPAA activity-log CSV | `wicars-ui/src/pages/vpaa/ActivityLog.tsx` | `vpaa-activity-log-2026-10-16-14-30-05.csv`; timestamp uses the existing Philippine timezone convention. |

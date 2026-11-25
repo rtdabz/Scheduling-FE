@@ -1,8 +1,9 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SchedulePdfInput } from '../ClassSchedules/SchedulerPanel/schedulePdf';
 import { clearDataCache, isCacheFresh, setCachedData } from '../../lib/dataCache';
 import ScheduleHistory from './ScheduleHistory';
+import { LIVE_UPDATE_EVENT } from '../../lib/liveUpdates';
 
 const { get, post, preview, toast, confirm, downloadFile } = vi.hoisted(() => ({
   get: vi.fn(), post: vi.fn(), preview: vi.fn(),
@@ -10,6 +11,7 @@ const { get, post, preview, toast, confirm, downloadFile } = vi.hoisted(() => ({
   confirm: vi.fn(), downloadFile: vi.fn(),
 }));
 vi.mock('../../lib/api', () => ({ default: { get, post } }));
+vi.mock('../../lib/currentUser', () => ({ fetchCurrentUser: vi.fn(async () => JSON.parse(localStorage.getItem('user')!)) }));
 vi.mock('../../context/ToastContext', () => ({ useToast: () => ({ toast, confirm }) }));
 vi.mock('../../lib/exportFile', () => ({ downloadFile }));
 vi.mock('../ClassSchedules/SchedulerPanel/PrintSchedule', () => ({ default: () => null }));
@@ -21,7 +23,7 @@ vi.mock('../../components/scheduling/ScheduleApprovalPreviewModal', () => ({
 }));
 
 const detail = {
-  id: 9, schedule_id: null, semester_id: 1, academic_year: '2025-2026', semester: '1st',
+  id: 9, can_reuse: true, schedule_id: null, semester_id: 1, academic_year: '2025-2026', semester: '1st',
   section_id: null, course_id: null, department_id: 3, schedule_label: 'CIT Class Schedule',
   schedule_count: 1, section_count: 1, action: 'schedule_semester_archived', snapshot: {},
   actor: { name: 'VPAA Santos', username: 'vpaa', role: 'vpaa' }, created_at: '2026-06-01T08:00:00Z',
@@ -168,6 +170,57 @@ describe('Schedule History semester snapshots', () => {
 });
 
 describe('Schedule History reuse and JSON export', () => {
+  it.each(['secretary', 'director'])('uses each history entry’s server ownership for a mixed %s department', async role => {
+    localStorage.setItem('user', JSON.stringify({ id: 4, role, department_id: 3, department_program_count: 2, can_edit_program_ids: [20], permissions: ['schedule.view', 'schedule.create'] }));
+    get.mockResolvedValue({ data: { ...response, data: [
+      { ...snapshot, id: 9, schedule_label: 'Head-managed schedule', can_reuse: false },
+      { ...snapshot, id: 10, schedule_label: 'Office-managed schedule', can_reuse: true },
+    ] } });
+    post.mockResolvedValue({ data: { message: 'Created a draft.' } });
+    render(<ScheduleHistory />);
+    const blocked = within((await screen.findByText('Head-managed schedule')).closest('tr')!).getByRole('button', { name: 'Reuse schedule' }) as HTMLButtonElement;
+    const allowed = within(screen.getByText('Office-managed schedule').closest('tr')!).getByRole('button', { name: 'Reuse schedule' }) as HTMLButtonElement;
+    expect(blocked.disabled).toBe(true);
+    await waitFor(() => expect(allowed.disabled).toBe(false));
+    fireEvent.click(blocked);
+    expect(post).not.toHaveBeenCalled();
+    fireEvent.click(allowed);
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/schedule-history/10/reuse'));
+  });
+
+  it('invalidates a pending reuse confirmation after a head is assigned, then restores access on deactivation', async () => {
+    const user = { id: 4, role: 'secretary', department_id: 3, department_program_count: 2, can_edit_program_ids: [7, 8], permissions: ['schedule.create'] };
+    localStorage.setItem('user', JSON.stringify(user));
+    let finishConfirmation!: (value: boolean) => void;
+    confirm.mockReturnValueOnce(new Promise(resolve => { finishConfirmation = resolve; }));
+    render(<ScheduleHistory />);
+    await screen.findByRole('button', { name: 'Reuse schedule' });
+    const button = () => screen.getByRole('button', { name: 'Reuse schedule' }) as HTMLButtonElement;
+    await waitFor(() => expect(button().disabled).toBe(false));
+    fireEvent.click(button());
+    await waitFor(() => expect(confirm).toHaveBeenCalled());
+    localStorage.setItem('user', JSON.stringify({ ...user, can_edit_program_ids: [8] }));
+    mockHistory({ ...detail, can_reuse: false });
+    act(() => { window.dispatchEvent(new CustomEvent(LIVE_UPDATE_EVENT, { detail: { topics: ['users'] } })); });
+    await waitFor(() => expect(button().disabled).toBe(true));
+    await act(async () => { finishConfirmation(true); });
+    expect(post).not.toHaveBeenCalled();
+    localStorage.setItem('user', JSON.stringify(user));
+    mockHistory();
+    act(() => { window.dispatchEvent(new CustomEvent(LIVE_UPDATE_EVENT, { detail: { topics: ['users'] } })); });
+    await waitFor(() => expect(button().disabled).toBe(false));
+  });
+
+  it('keeps reuse disabled when the office manages no program', async () => {
+    localStorage.setItem('user', JSON.stringify({ id: 4, role: 'secretary', department_id: 3, department_program_count: 2, can_edit_program_ids: [], permissions: ['schedule.create'] }));
+    render(<ScheduleHistory />);
+    const button = await screen.findByRole('button', { name: 'Reuse schedule' }) as HTMLButtonElement;
+    await waitFor(() => expect(button.disabled).toBe(true));
+    fireEvent.click(button);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it('offers only the VPAA-approved filters', async () => {
     render(<ScheduleHistory />);
     await screen.findByRole('cell', { name: 'Semester snapshot' });

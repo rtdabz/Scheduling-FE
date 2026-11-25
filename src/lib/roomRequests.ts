@@ -50,6 +50,10 @@ export interface RoomRequest {
   room: RoomRequestRoom | null;
   academic_semester: RoomRequestSemester | null;
   requesting_department: RoomRequestDepartment | null;
+  /** The program the request was sent for; null for a department-level request. */
+  requesting_program?: { id: number; code: string; name: string } | null;
+  /** Whether this account may cancel or give back the request (its program's owner). */
+  can_cancel?: boolean;
   owner_department: RoomRequestDepartment | null;
   /** The room was reassigned after this request was sent. */
   owner_changed?: boolean;
@@ -122,6 +126,8 @@ export interface RoomOccupancySchedule {
 export interface RoomRequestInput {
   room_id: number;
   semester_id?: number;
+  /** The program the room is for. A Program Head always sends for their own program. */
+  program_id?: number | null;
   purpose: string;
   windows: RoomRequestWindow[];
 }

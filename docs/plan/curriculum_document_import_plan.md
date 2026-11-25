@@ -2,6 +2,14 @@
 
 Date: 2026-10-27
 
+Program ownership update (2026-11-25): Secretary and Director may import only into programs without
+an active, non-archived Program Head. Both validation and commit enforce the existing backend program
+authorization. File detection retains restricted targets, their options are disabled, and open drafts
+refresh permissions after account changes. If any program has a Program Head, an office import must
+choose an explicit unheaded program; null/omitted targets are rejected. Fully headed departments see
+the import lock. Existing shared-record management is unchanged. See the
+[CAS ownership review](../../../backend/docs/cas-program-ownership-fix-2026-11-25.md).
+
 Status: Implemented 2026-10-27 for Phases 0, 1, 3, and 4, with the Phase 2 scheduling integration deferred. Sections 1–15 are the original plan and its proposals. Section 16 records the verified contracts, deviations, and remaining gates; where they differ, section 16 is authoritative.
 
 ## 1. Recommendation and scope

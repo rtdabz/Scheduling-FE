@@ -59,6 +59,8 @@ interface RoomDetailModalProps {
   onClose: () => void;
   roomId: number | null;
   initialViewMode?: 'list' | 'grid';
+  onPrint?: () => void;
+  isPrinting?: boolean;
   className?: string;
   initialRoom?: Room | null;
   initialSchedules?: Schedule[];
@@ -72,7 +74,7 @@ const fetchRoomSchedules = (roomId: number) => api.get<Schedule[]>('/schedules',
   params: { view: 'published', room_id: roomId, semester_id: 'active', per_page: 1000 },
 });
 
-export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMode = 'grid', className = '', initialRoom = null, initialSchedules = EMPTY_SCHEDULES, initialSchedulesComplete = true, highlightSlots }: RoomDetailModalProps) {
+export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMode = 'grid', onPrint, isPrinting = false, className = '', initialRoom = null, initialSchedules = EMPTY_SCHEDULES, initialSchedulesComplete = true, highlightSlots }: RoomDetailModalProps) {
   const [room, setRoom] = useState<Room | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -165,7 +167,7 @@ export default function RoomDetailModal({ isOpen, onClose, roomId, initialViewMo
       className={`max-h-[95vh] ${className}`}
     >
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-6">
-        <RoomDetailContent room={room} schedules={publishedSchedules} isLoading={isLoading} initialViewMode={initialViewMode} highlightSlots={highlightSlots} />
+        <RoomDetailContent room={room} schedules={publishedSchedules} isLoading={isLoading} initialViewMode={initialViewMode} onPrint={onPrint} isPrinting={isPrinting} highlightSlots={highlightSlots} />
       </div>
     </Modal>
   );

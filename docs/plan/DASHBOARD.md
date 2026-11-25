@@ -42,6 +42,8 @@
 
 ## Workflows
 
+- [CAS program ownership fix](../../../backend/docs/cas-program-ownership-fix-2026-11-25.md) - Actual CAS configuration, import/request/reassignment/reuse authorization, mixed-program behavior, and regression results; 2026-11-25.
+
 - [Course teaching assignments by semester](../../../backend/docs/course-teaching-semesters.md) — Independent semester delegations, preserved earlier schedules, migration limits, and rollout.
 
 - [Independent Manual Plotting moves](reports/manual_plotting_independent_dragging.md) - Consecutive meeting drag/click relocation, root cause, preserved validation, and regression evidence; fixed 2026-11-14.

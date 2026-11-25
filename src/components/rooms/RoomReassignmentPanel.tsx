@@ -7,7 +7,7 @@ import SecretaryRoomTransferRequests from './SecretaryRoomTransferRequests';
 import RoomTransferRequests from './RoomTransferRequests';
 import api from '../../lib/api';
 import { getRecovery, recoveryError, recoveryGroupWorkflow, roomReassignmentActivity, ROOM_TRANSFER_STATUS_LABELS, type RecoveryData, type RecoveryPlan, type RoomReassignmentActivity, type RoomTransferRequest } from '../../lib/roomRecovery';
-import { getStoredUser, hasStoredCapability } from '../../lib/storedUser';
+import { getStoredUser, hasStoredCapability, PROGRAM_HEAD_MANAGED_MESSAGE } from '../../lib/storedUser';
 import { publishLiveTopics } from '../../lib/liveUpdates';
 import { useLiveRevision } from '../../hooks/useLiveRefresh';
 import { formatTime12h } from '../../lib/timeGrid';
@@ -36,11 +36,15 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
   const loaded = useRef<{ key: string; at: number; data: RecoveryData } | null>(null);
   const requestVersion = useRef(0);
   const modalContent = useRef<HTMLDivElement>(null);
-  const live = useLiveRevision(['rooms', 'schedules', 'approvals', 'courses', 'sections', 'departments', 'settings']);
-  const canEdit = hasStoredCapability('schedule.update');
-  // Secretary or Director: the department office submits room transfers.
+  const live = useLiveRevision(['rooms', 'schedules', 'approvals', 'courses', 'sections', 'departments', 'users', 'settings']);
+  const [dataRevision, setDataRevision] = useState(live);
+  const canEdit = hasStoredCapability('schedule.update') && dataRevision === live
+    && (!data || data.schedules.some(row => row.can_reassign !== false));
+  // Program ownership decides who reassigns: the Program Head for their program, the department
+  // office (Secretary or Director) for programs without one. The backend checks every class.
   const isDepartmentOffice = isDepartmentOfficeRole(getStoredUser()?.role);
-  const canSubmit = canEdit && isDepartmentOffice;
+  const canSubmit = canEdit && (isDepartmentOffice || getStoredUser()?.role === 'program_head');
+  const restrictedNote = isDepartmentOffice ? 'Managed by its Program Head: view only' : "Another program's class: view only";
   const caseId = Number(params.get('recovery')) || 0;
   const transferId = params.get('room_transfer');
   const requestsOpen = isDepartmentOffice && open && !!data && (params.has('transfer_requests') || Boolean(transferId && data.transfers?.some(item => item.id === transferId)));
@@ -93,8 +97,9 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
         if (controller.signal.aborted) return;
         loaded.current = { key, at: cached ? loaded.current!.at : Date.now(), data };
         setData(data);
+        setDataRevision(live);
         const ids = incident?.schedule_ids ?? data.schedules.filter(row => row.needs_attention).map(row => row.id);
-        setSelected(ids.filter(id => data.schedules.some(row => row.id === id && !row.pending_transfer_id)).slice(0, 30));
+        setSelected(ids.filter(id => data.schedules.some(row => row.id === id && !row.pending_transfer_id && row.can_reassign !== false)).slice(0, 30));
       };
       void load().catch(error => { if (!controller.signal.aborted) { setData(null); setError(recoveryError(error)); } })
         .finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -139,6 +144,7 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
     }, { replace: true });
   };
   const preview = async () => {
+    if (!canEdit || !selected.length || selected.some(id => !data?.schedules.some(row => row.id === id && row.can_reassign !== false))) return;
     const version = ++requestVersion.current;
     setBusy(true); setError(''); setPlan(null); setMessage('');
     try {
@@ -200,10 +206,10 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
                 <thead role="rowgroup"><tr role="row"><th scope="col"><span className="sr-only">Select</span></th><th scope="col">Class / section</th><th scope="col">Room / time</th><th scope="col">Status</th></tr></thead>
                 <tbody role="rowgroup">
                   {affected.map(row => <tr key={row.id} role="row" data-selected={selected.includes(row.id)}>
-                    <td role="cell" className="transfer-select-cell"><label className="transfer-checkbox-target"><input aria-label={`Select ${row.course} ${row.section}, ${meetingTime(row)}`} type="checkbox" disabled={busy || !canEdit || !!row.pending_transfer_id || (!selected.includes(row.id) && selected.length >= 30)} checked={selected.includes(row.id)} onChange={() => { invalidate(); setSelected(ids => ids.includes(row.id) ? ids.filter(id => id !== row.id) : [...ids, row.id]); }} /></label></td>
+                    <td role="cell" className="transfer-select-cell"><label className="transfer-checkbox-target"><input aria-label={`Select ${row.course} ${row.section}, ${meetingTime(row)}`} type="checkbox" disabled={busy || !canEdit || row.can_reassign === false || !!row.pending_transfer_id || (!selected.includes(row.id) && selected.length >= 30)} checked={selected.includes(row.id)} onChange={() => { invalidate(); setSelected(ids => ids.includes(row.id) ? ids.filter(id => id !== row.id) : [...ids, row.id]); }} /></label></td>
                     <td role="cell" className="transfer-class-cell"><p className="transfer-course">{row.course}</p><p>{row.section}</p><p className="transfer-meta">{roomTypeLabel(row.required_room_type ?? row.meeting_type)}</p></td>
                     <td role="cell" className="transfer-room-cell"><p className="transfer-room-name">{row.room}</p><p className="transfer-meta transfer-meeting-time">{meetingTime(row)}</p></td>
-                    <td role="cell" className="transfer-status-cell"><span className="transfer-notice">{row.pending_transfer_id ? ROOM_TRANSFER_STATUS_LABELS[row.pending_transfer_status ?? 'pending_dean'] : row.attention_reason ?? 'Room needs attention'}</span>{row.temporarily_online && <p className="transfer-meta">Meets online until a replacement room is approved</p>}{row.status === 'faculty_assignment' && <p className="transfer-meta">Day/time changes allowed when enabled</p>}{(row.revision_required ?? !['draft', 'completed', 'revision', 'faculty_assignment'].includes(row.status)) && <p className="transfer-meta">Revision required</p>}</td>
+                    <td role="cell" className="transfer-status-cell"><span className="transfer-notice">{row.pending_transfer_id ? ROOM_TRANSFER_STATUS_LABELS[row.pending_transfer_status ?? 'pending_dean'] : row.attention_reason ?? 'Room needs attention'}</span>{row.can_reassign === false && <p className="transfer-meta" title={PROGRAM_HEAD_MANAGED_MESSAGE}>{restrictedNote}</p>}{row.temporarily_online && <p className="transfer-meta">Meets online until a replacement room is approved</p>}{row.status === 'faculty_assignment' && <p className="transfer-meta">Day/time changes allowed when enabled</p>}{(row.revision_required ?? !['draft', 'completed', 'revision', 'faculty_assignment'].includes(row.status)) && <p className="transfer-meta">Revision required</p>}</td>
                   </tr>)}
                   {affected.length === 0 && <tr><td colSpan={4} className="transfer-table-empty"><CheckCircle2 size={22} aria-hidden="true" /><p>{data.schedules.length === 0 ? 'No on-site schedules in this semester.' : 'No room schedule reassignments needed.'}</p></td></tr>}
                 </tbody>
@@ -218,7 +224,7 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
               <div className="transfer-finder">
                 <label className="transfer-time-option"><input type="checkbox" disabled={busy || !canEdit} checked={allowTime} onChange={event => { invalidate(); setAllowTime(event.target.checked); }} />Allow day and time changes</label>
                 <p className="transfer-meta">Search all days, including Sunday, while keeping linked schedules and instructors conflict-free.</p>
-                {!canEdit && <p className="transfer-meta">View only. Schedule update permission is required to transfer.</p>}
+                {!canEdit && <p className="transfer-meta">View only. Only schedules belonging to programs you manage can be reassigned.</p>}
                 <button type="button" disabled={busy || !canEdit || !selected.length || !data.semester_id} onClick={preview} className={`transfer-button ${plan && plan.groups.length > 0 ? 'transfer-button-secondary' : 'transfer-button-primary'}`}>{busy && !plan ? <LoaderCircle size={17} className="transfer-spinner" aria-hidden="true" /> : <Search size={17} aria-hidden="true" />}{busy && !plan ? 'Finding rooms…' : 'Find suitable rooms'}</button>
                 {!selected.length && affected.length > 0 && <p className="transfer-meta">Select at least one schedule to find rooms.</p>}
               </div>
@@ -277,7 +283,7 @@ export default function RoomReassignmentPanel({ semesterId, onTransferred, onPen
                   : workflow === 'mixed'
                     ? `${applyCount} draft ${applyCount === 1 ? 'class is' : 'classes are'} updated immediately. ${approvalCount} submitted ${approvalCount === 1 ? 'class stays' : 'classes stay'} unchanged until Dean and VPAA approval.`
                     : 'Existing schedules stay unchanged until Dean and VPAA approval. Linked meetings stay together and availability is rechecked at final approval.'}</p>
-                {!canSubmit && <p className="transfer-meta">Only the Secretary can submit room schedule reassignments.</p>}
+                {!canSubmit && <p className="transfer-meta">Only the department Secretary, Director or the program's Program Head can submit room schedule reassignments.</p>}
                 <button type="button" disabled={busy || !groups.length || !canSubmit} onClick={() => setConfirmSubmit(true)} className="transfer-button transfer-button-primary">{busy && <LoaderCircle size={17} className="transfer-spinner" aria-hidden="true" />}{busy ? busyLabel : actionLabel}</button>
               </div>}
             </div>
