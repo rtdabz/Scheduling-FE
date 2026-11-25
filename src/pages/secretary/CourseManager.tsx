@@ -100,7 +100,7 @@ const YEAR_FILTERS = [
 export default function CourseManager() {
   const { toast } = useToast();
   const user = getStoredUser();
-  const coursesCacheKey = `page:courses:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}`;
+  const coursesCacheKey = `page:courses:v2:${user?.role ?? 'user'}:${user?.department_id ?? 'all'}:${user?.program_id ?? 'all'}`;
   
   const [courses, setCourses] = useState<Course[]>(() => {
     const cached = getCachedData<CoursesPageData>(coursesCacheKey);
@@ -150,7 +150,7 @@ export default function CourseManager() {
     fetchData();
   }, []);
 
-  useLiveRefresh(['courses', 'curriculum'], () => { void fetchData(true); });
+  useLiveRefresh(['courses', 'curriculum', 'users', 'assignments'], () => { void fetchData(true); });
 
   const fetchData = async (silent = false) => {
     if (!silent && !hasCachedData(coursesCacheKey)) {

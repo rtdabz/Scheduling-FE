@@ -236,6 +236,7 @@ export interface ScheduleItem {
   facultyName: string | null;
   facultyId: string | null;
   facultyAssignmentDone?: boolean;
+  instructorAssignmentVisible?: boolean;
   /** Teaching department that handed this class back; the class then follows its offering department's rules. */
   delegationReturnedFromDepartmentId?: number | null;
   /** Section-level teaching assignment of a returned class (null: its offering department teaches it). */
@@ -463,6 +464,7 @@ export interface ApiScheduleRecord {
   room_id: number | string | null;
   faculty_id?: number | string | null;
   faculty_assignment_done?: boolean | number;
+  instructor_assignment_visible?: boolean;
   delegation_returned_from_department_id?: number | null;
   section_teaching_department_id?: number | null;
   section_teaching_program_id?: number | null;

@@ -41,7 +41,6 @@ import type { InitialDataResponse, SchedulerCacheData } from "./initialDataMappe
 import {
   generatedScheduleSectionId,
   hasUsableSchedulerCache,
-  mapApiCourse,
   mapApiFaculty,
   mapApiScheduleToItem,
   mapApiSchedulesWithSignatories,
@@ -61,6 +60,7 @@ const scheduleSignature = (items: ScheduleItem[]): string =>
         item.id, item.dayIndex, item.startSlot, item.durationSlots,
         item.roomId, item.sectionId, item.courseId || item.subjectId,
         item.facultyId ?? "", item.status, item.mode,
+        item.instructorAssignmentVisible,
       ].join("|"),
     )
     .sort()
@@ -252,7 +252,7 @@ export const useScheduler = () => {
   const canSubmitSchedule = hasStoredCapability('schedule.submit');
   const canWithdrawSubmission = hasStoredCapability('schedule.withdraw');
   const canAssignInstructor = hasStoredCapability('schedule.assign_instructor');
-  const schedulerCacheKey = `scheduler:v19:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}:${user?.program_id ?? 'all'}`;
+  const schedulerCacheKey = `scheduler:v20:${user?.role ?? 'user'}:${user?.id ?? user?.department_id ?? 'current'}:${user?.program_id ?? 'all'}`;
   const cachedSchedulerData = getCachedData<SchedulerCacheData>(schedulerCacheKey);
   const canUseInitialCache = hasUsableSchedulerCache(cachedSchedulerData);
   const [rooms, setRooms] = useState<Room[]>(canUseInitialCache ? cachedSchedulerData.rooms : []);
@@ -599,20 +599,9 @@ export const useScheduler = () => {
     }
   }, [schedulerCacheKey]);
 
-  const refreshSubjects = useCallback(async () => {
-    try {
-      const response = await api.get<Pick<InitialDataResponse, "courses">>('/initial-data', { params: { include: 'courses' } });
-      if (!Array.isArray(response.data.courses)) return;
-      const fresh = response.data.courses.map(mapApiCourse);
-      setSubjects(fresh);
-      patchCachedData<SchedulerCacheData>(schedulerCacheKey, { subjects: fresh });
-    } catch {
-    }
-  }, [schedulerCacheKey]);
-
   useLiveRefresh(["schedules", "approvals"], () => { void refreshSchedules(); });
   useLiveRefresh(["faculty", "assignments"], () => { void refreshFaculties(); });
-  useLiveRefresh(["courses", "assignments"], () => { void refreshSubjects(); });
+  useLiveRefresh(["courses", "assignments", "users"], () => { void refreshData({ silent: true }); });
   useLiveRefresh(["sections"], () => { void refreshSections(); });
   useLiveRefresh(["users"], () => { void refreshUsers(); });
 
@@ -630,6 +619,7 @@ export const useScheduler = () => {
         // Assignment responses may omit unchanged actor evidence; explicit null still clears it.
         return {
           ...updated,
+          instructorAssignmentVisible: updated.instructorAssignmentVisible ?? schedule.instructorAssignmentVisible,
           signatories: updated.signatories === undefined ? schedule.signatories : updated.signatories,
           createdById: updated.createdById === undefined ? schedule.createdById : updated.createdById,
           creatorIdentity: updated.creatorIdentity === undefined ? schedule.creatorIdentity : updated.creatorIdentity,
@@ -1021,9 +1011,11 @@ export const useScheduler = () => {
   );
 
   const canManageScheduleFaculty = useCallback((schedule: ScheduleItem): boolean => {
-    if (!canAssignInstructor) return false;
+    if (!canAssignInstructor || schedule.instructorAssignmentVisible === false) return false;
 
     const subject = subjectForSchedule(subjects.find((item) => item.id === schedule.subjectId), schedule);
+    if (user?.role === "program_head" && subject?.teachingProgramId != null
+      && Number(subject.teachingProgramId) !== Number(user.program_id)) return false;
     if (isProgramHeadOnlyMajor(schedule, subject)) return false;
 
     const assignedDepartmentId = isMajorSubject(subject)
@@ -1038,9 +1030,12 @@ export const useScheduler = () => {
       user?.department_id &&
       Number(user.department_id) === Number(assignedDepartmentId)
     );
-  }, [canAssignInstructor, isProgramHeadOnlyMajor, subjects, user?.department_id]);
+  }, [canAssignInstructor, isProgramHeadOnlyMajor, subjects, user?.department_id, user?.program_id, user?.role]);
 
   const getFacultyRestrictionMessage = useCallback((schedule: ScheduleItem): string => {
+    if (schedule.instructorAssignmentVisible === false) {
+      return "Only the program responsible for this course can assign its instructor.";
+    }
     const subject = subjectForSchedule(subjects.find((item) => item.id === schedule.subjectId), schedule);
 
     if (isProgramHeadOnlyMajor(schedule, subject)) {

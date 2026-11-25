@@ -71,6 +71,17 @@ const loadScheduler = async () => {
 };
 
 describe('scheduler instructor mutations', () => {
+  it('keeps hidden classes in conflict inputs while refusing assignment and bulk saves', async () => {
+    payload.schedules = [meeting(1, { instructor_assignment_visible: false })];
+    const { result } = await loadScheduler();
+    expect(result.current.canManageScheduleFaculty(result.current.schedules[0])).toBe(false);
+    await act(async () => {
+      expect(await result.current.handleBulkFacultyAssign([{ scheduleIds: ['1'], facultyId: '10' }])).toBe(false);
+    });
+    expect(patch).not.toHaveBeenCalled();
+    expect(result.current.schedules).toHaveLength(1);
+  });
+
   it.each([
     { label: 'retains recorded approval evidence when unchanged signatures are omitted', returned: undefined, retains: true },
     { label: 'honors an explicit null signature without restoring old evidence', returned: null, retains: false },

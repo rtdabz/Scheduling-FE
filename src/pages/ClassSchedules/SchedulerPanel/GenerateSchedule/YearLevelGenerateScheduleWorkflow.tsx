@@ -15,6 +15,8 @@ import api from "../../../../lib/api";
 import { EDITABLE_STATUSES } from "../../../../lib/scheduleStatuses";
 import { useToast } from "../../../../context/ToastContext";
 import { useWorkflowGuide } from "../../../../hooks/useWorkflowGuide";
+import { useLiveRevision } from "../../../../hooks/useLiveRefresh";
+import { getStoredUser } from "../../../../lib/storedUser";
 import { generatorGuideSteps } from "../workflowGuideContent";
 import { announceJoyrideStart } from "../../../../onboarding/joyrideTour";
 import { mapApiCourse } from "../hooks/initialDataMapper";
@@ -426,9 +428,11 @@ function GenerateScheduleWizard({
     await onSectionsChanged?.();
   };
 
+  const courseVisibilityRevision = useLiveRevision(['courses', 'assignments', 'users']);
+  const courseActor = getStoredUser();
   const coursesCacheKey =
     yearLevelCurriculumId !== null && departmentId !== null
-      ? curriculumCoursesCacheKey(departmentId, yearLevelCurriculumId)
+      ? curriculumCoursesCacheKey(departmentId, yearLevelCurriculumId, `${courseActor?.role ?? 'user'}:${courseActor?.program_id ?? 'all'}`)
       : null;
   const [curriculumCourses, setCurriculumCourses] = useState<Course[] | null>(
     () => (coursesCacheKey ? getCachedData<Course[]>(coursesCacheKey) ?? null : null),
@@ -453,7 +457,7 @@ function GenerateScheduleWizard({
       });
 
       return response.data.map(mapApiCourse);
-    })
+    }, courseVisibilityRevision > 0)
       .then((list) => {
         if (!cancelled) setCurriculumCourses(list);
       })
@@ -464,7 +468,7 @@ function GenerateScheduleWizard({
     return () => {
       cancelled = true;
     };
-  }, [coursesCacheKey, departmentId, yearLevelCurriculumId]);
+  }, [coursesCacheKey, courseVisibilityRevision, departmentId, yearLevelCurriculumId]);
 
   const scopedCourses = useMemo(() => {
     const source = curriculumCourses ?? courses;

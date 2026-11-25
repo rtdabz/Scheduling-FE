@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { generatedScheduleSectionId, mapApiScheduleToItem, mapApiSchedulesWithSignatories, mapInitialData, type InitialDataResponse } from "./initialDataMapper";
 import type { ApiCourseRecord, ApiScheduleRecord } from "../types";
+import { coursesForSection } from "../sectionCourses";
 
 const course = (overrides: Partial<ApiCourseRecord> = {}): ApiCourseRecord => ({
   id: 10,
@@ -31,6 +32,30 @@ const payload = (courses: ApiCourseRecord[]): InitialDataResponse => ({
 
 const mapCourse = (record: ApiCourseRecord) =>
   mapInitialData(payload([record]), { isVpaa: true }).subjects[0];
+
+describe("delegated course visibility", () => {
+  it("keeps retained timetable metadata out of scheduling choices and preserves explicit instructor visibility", () => {
+    const data = payload([]);
+    data.schedule_course_references = [course()];
+    data.schedules = [{
+      id: 7, semester_id: 1, department_id: 1, course_id: 10, section_id: 1, room_id: null,
+      day: "Monday", start_time: "08:00", end_time: "11:00", status: "faculty_assignment",
+      instructor_assignment_visible: false,
+    }];
+    const mapped = mapInitialData(data, { isVpaa: false, userDepartmentId: 1 });
+    expect(mapped.subjects[0]).toMatchObject({ id: "10", delegatedOnly: true });
+    expect(mapped.schedules[0]).toMatchObject({ id: "7", instructorAssignmentVisible: false });
+    expect(coursesForSection({ id: "1", name: "BAS 1A", departmentId: 1, programId: 8, yearLevel: 1, semester: "1st", semesterId: 1, status: "active" }, mapped.subjects)).toEqual([]);
+  });
+
+  it("replaces read-only references with offered courses after the missing-head exception restores visibility", () => {
+    const data = payload([course()]);
+    data.schedule_course_references = [course({ delegated_only: true })];
+    const mapped = mapInitialData(data, { isVpaa: false, userDepartmentId: 1 });
+    expect(mapped.subjects).toHaveLength(1);
+    expect(mapped.subjects[0].delegatedOnly).toBe(false);
+  });
+});
 
 describe("mapInitialData curriculum placements", () => {
   it("keeps every curriculum's placement so each section reads its own", () => {

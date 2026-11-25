@@ -558,6 +558,15 @@ fresh validation through the existing save/batch boundary.
 
 ## Instructor selection after recommendation retirement
 
+When Course Assignment hands a course from program A to a different program B and **both**
+programs have active assigned Program Heads, exclude that course from A's course list,
+scheduling choices, and instructor-assignment list, including the source department office.
+B retains its existing instructor-assignment workflow. If either program lacks an active
+Program Head, retain the existing visibility rules. Course Assignment itself remains available
+for reviewing/removing the delegation. The backend enforces these selections; saved timetable
+rows and conflict occupancy remain intact. Retained course references are read-only and returned
+classes follow their own section assignment. User/assignment changes refresh the filtered lists.
+
 Cross-Department keeps existing assigned instructors visible when the source
 schedule returns to draft, revision, submission, or review. Visibility does not
 permit editing: instructor changes and completion actions still require the

@@ -82,6 +82,33 @@ describe("AutoAssignModal instructor conflict", () => {
   });
   afterEach(cleanup);
 
+  it("excludes a delegated-away class while keeping an independently returned class assignable", () => {
+    const hidden = { ...schedule, instructorAssignmentVisible: false };
+    const returned = {
+      ...schedule, id: 's2', sectionId: 'sec2', sectionName: 'BSIT 1B', instructorAssignmentVisible: true,
+      delegationReturnedFromDepartmentId: 6, sectionTeachingDepartmentId: 6,
+    };
+    renderModal(null, faculty, {
+      schedules: [hidden, returned], subjects: [{ ...subject, delegatedOnly: true }],
+    });
+    expect(screen.queryByRole('checkbox', { name: 'Select IT 101 BSIT 1A' })).toBeNull();
+    expect((screen.getByRole('checkbox', { name: 'Select IT 101 BSIT 1B' }) as HTMLInputElement).disabled).toBe(false);
+  });
+
+  it.each([false, true])("removes a pending entry when refreshed permissions hide or remove its class (removed: %s)", (removed) => {
+    const onAssign = vi.fn();
+    const { rerender } = renderModal(null, faculty, { onAssign });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select IT 101 BSIT 1A' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add 1 section to list' }));
+    expect(screen.getByRole('button', { name: 'Remove IT 101 BSIT 1A' })).toBeTruthy();
+    rerender(<AutoAssignModal isOpen onClose={vi.fn()} schedules={removed ? [] : [{ ...schedule, instructorAssignmentVisible: false }]}
+      subjects={[subject]} faculties={[faculty]} departmentId={6} facultyActionSlotId={null}
+      canManageScheduleFaculty={() => false} checkFacultyConflict={() => null} onAssign={onAssign} />);
+    expect(screen.queryByRole('button', { name: 'Remove IT 101 BSIT 1A' })).toBeNull();
+    expect((screen.getByRole('button', { name: /^Review/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(onAssign).not.toHaveBeenCalled();
+  });
+
   it("offers no way to assign a conflicting section", () => {
     renderModal();
     selectInstructor();

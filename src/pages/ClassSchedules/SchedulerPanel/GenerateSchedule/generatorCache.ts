@@ -4,7 +4,8 @@ export const activeCurriculaCacheKey = (departmentId: number): string =>
 export const curriculumCoursesCacheKey = (
   departmentId: number,
   curriculumId: number,
-): string => `page:courses:curriculum:${departmentId}:${curriculumId}`;
+  actorScope = 'all',
+): string => `page:courses:curriculum:v2:${actorScope}:${departmentId}:${curriculumId}`;
 
 export const schedulingSettingsCacheKey = (sectionId: string): string =>
   `scheduler:scheduling-settings:${sectionId}`;

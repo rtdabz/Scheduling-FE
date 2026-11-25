@@ -53,6 +53,8 @@ export interface InitialDataResponse {
   active_semester: ApiSemesterRecord | null;
   rooms: ApiRoomRecord[];
   courses?: ApiCourseRecord[];
+  /** Read-only metadata for retained timetable rows, excluded from course selectors. */
+  schedule_course_references?: ApiCourseRecord[];
   subjects?: ApiSubjectRecord[];
   faculties: ApiFacultyRecord[];
   sections: ApiSectionRecord[];
@@ -184,6 +186,7 @@ export const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
       ? String(item.faculty_id ?? item.faculty?.id)
       : null,
     facultyAssignmentDone: Boolean(item.faculty_assignment_done),
+    instructorAssignmentVisible: item.instructor_assignment_visible,
     delegationReturnedFromDepartmentId: item.delegation_returned_from_department_id ?? null,
     sectionTeachingDepartmentId: item.section_teaching_department_id ?? null,
     sectionTeachingProgramId: item.section_teaching_program_id ?? null,
@@ -363,7 +366,13 @@ export const mapInitialData = (
   }));
 
   const rawCourses = initialData.courses ?? initialData.subjects ?? [];
-  const mappedSubjects = rawCourses.map(mapApiCourse);
+  const offeredIds = new Set(rawCourses.map((course) => String(course.id)));
+  const mappedSubjects = [
+    ...rawCourses,
+    ...(initialData.schedule_course_references ?? [])
+      .filter((course) => !offeredIds.has(String(course.id)))
+      .map((course) => ({ ...course, delegated_only: true })),
+  ].map(mapApiCourse);
 
   const mappedFaculties = initialData.faculties.map(mapApiFaculty);
 

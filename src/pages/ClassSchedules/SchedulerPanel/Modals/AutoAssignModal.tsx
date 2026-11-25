@@ -225,7 +225,11 @@ export default function AutoAssignModal({
   const [yearLevel, setYearLevel] = useState("1");
   const [courseId, setCourseId] = useState("");
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
-  const [assignments, setAssignments] = useState<QueuedAssignment[]>([]);
+  const [storedAssignments, setAssignments] = useState<QueuedAssignment[]>([]);
+  const assignments = useMemo(() => {
+    const visible = new Set(schedules.filter((schedule) => schedule.instructorAssignmentVisible !== false).map((schedule) => schedule.id));
+    return storedAssignments.filter((assignment) => assignment.scheduleIds.every((id) => visible.has(id)));
+  }, [schedules, storedAssignments]);
   // Narrow screens only (see AutoAssignModal.css): folds the instructor list into a rail so the sections table gets the width.
   const [instructorsCollapsed, setInstructorsCollapsed] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -241,7 +245,7 @@ export default function AutoAssignModal({
   const groups = useMemo<SectionGroup[]>(() => {
     const map = new Map<string, SectionGroup>();
     schedules
-      .filter((schedule) => INSTRUCTOR_ASSIGNABLE_STATUSES.includes(schedule.status))
+      .filter((schedule) => schedule.instructorAssignmentVisible !== false && INSTRUCTOR_ASSIGNABLE_STATUSES.includes(schedule.status))
       .forEach((schedule) => {
         const key = `${schedule.courseId}:${schedule.sectionId}`;
         const existing = map.get(key);

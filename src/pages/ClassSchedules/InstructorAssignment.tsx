@@ -468,7 +468,7 @@ export interface InstructorAssignmentWorkspaceState {
 export default function InstructorAssignment({ assignmentLocked, headerActions, footerActions, onWorkspaceStateChange, workflowGuideId = "instructor-assignment", workflowGuideReady = true, onWorkflowReady, refreshToken = 0, scrollableTimetable = true }: InstructorAssignmentProps = {}) {
   const { toast } = useToast();
   const user = getStoredUser();
-  const assignmentsCacheKey = `page:instructor-assignments:v7:${user.department_id ?? "all"}:${user.program_id ?? "all"}`;
+  const assignmentsCacheKey = `page:instructor-assignments:v8:${user.role ?? "user"}:${user.department_id ?? "all"}:${user.program_id ?? "all"}`;
   const cachedAssignmentData = getCachedData<AssignmentResponse>(assignmentsCacheKey);
   const [departments, setDepartments] = useState<ApiDepartment[]>(cachedAssignmentData?.departments ?? []);
   const [subjects, setSubjects] = useState<ApiSubject[]>(cachedAssignmentData?.subjects ?? []);
@@ -512,7 +512,7 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     if (!isLoading) onWorkflowReady?.();
   }, [isLoading, onWorkflowReady]);
 
-  const liveRevision = useLiveRevision(["assignments", "schedules", "faculty"]);
+  const liveRevision = useLiveRevision(["assignments", "schedules", "faculty", "users"]);
 
   useEffect(() => {
     let active = true;
