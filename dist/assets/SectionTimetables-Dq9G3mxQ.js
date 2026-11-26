@@ -1,0 +1,1 @@
+import{t as e}from"./SectionTimetables-DLE8KrDy.js";export{e as default};

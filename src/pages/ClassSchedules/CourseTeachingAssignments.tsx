@@ -188,7 +188,6 @@ export default function CourseTeachingAssignments() {
   const [removingId, setRemovingId] = useState<number | null>(null);
   const [removingAll, setRemovingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [teachingOpen, setTeachingOpen] = useState(false);
   const [returnedOpen, setReturnedOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [sectionBusyId, setSectionBusyId] = useState<number | null>(null);
@@ -591,15 +590,11 @@ export default function CourseTeachingAssignments() {
 
   useWorkflowGuide({
     id: 'course-teaching', isReady: !loading, mission: 'Assign Course Teaching',
-    variant: summaryOpen ? 'summary' : returnedOpen ? 'returned' : !teachingOpen ? 'overview' : error ? 'unavailable' : !hasActiveCurriculum ? 'no-curriculum' : visibleCourses.length ? 'courses' : 'empty',
+    variant: summaryOpen ? 'summary' : returnedOpen ? 'returned' : error ? 'unavailable' : !hasActiveCurriculum ? 'no-curriculum' : visibleCourses.length ? 'courses' : 'empty',
     steps: () => {
       if (summaryOpen) return [{ id: 'summary', element: '.course-teaching-summary', title: 'Review saved assignments', description: 'This summary shows saved teaching assignments by college or program. It does not include unsaved checkbox selections.' }];
       if (returnedOpen) return [{ id: 'returned', element: '#returned-sections-dialog', title: 'Assign returned sections', description: 'Review each section and its origin department, then choose an eligible teaching college and program. Assign moves only that section. The remaining sections keep their existing teaching assignment.' }];
-      if (!teachingOpen) return [
-        { id: 'teaching', element: '#course-teaching-open', title: 'Manage course teaching', description: 'Open Course Teaching to choose a teaching college or program, assign courses, and review saved assignments. The badge shows the current saved assignment count.' },
-        { id: 'returned', element: '#returned-sections-open', title: 'Review returned sections', description: 'Open Returned Sections to review sections returned by another department and assign them to an eligible college or program. The badge shows how many await a decision.' },
-      ];
-      if (error) return [{ id: 'unavailable', element: '#course-teaching-dialog', title: 'Assignments could not be refreshed', description: 'Course and department information may be missing or outdated. Reload the page to retry before assigning courses.' }];
+      if (error) return [{ id: 'unavailable', element: '#course-teaching-page', title: 'Assignments could not be refreshed', description: 'Course and department information may be missing or outdated. Reload the page to retry before assigning courses.' }];
       if (!hasActiveCurriculum || availableDepartments.length === 0) return [{ id: 'prerequisites', element: '#course-teaching-courses', title: 'Course assignment setup is required', description: !hasActiveCurriculum ? 'Your department needs an active curriculum before its courses can be assigned. Publish a curriculum, then return to this page.' : 'No teaching colleges are available. Complete department setup, then reload this page.' }];
       return [
         { id: 'target', element: '#course-teaching-target', title: 'Check the teaching college', description: 'The selected college will teach the courses you choose. Changing the college clears unsaved course selections; keep the current choice while reviewing help if you have work in progress.' },
@@ -614,78 +609,62 @@ export default function CourseTeachingAssignments() {
 
   return (
     <div id="course-teaching-page" className="w-full">
-      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Course assignment actions">
-        <button
-          id="course-teaching-open"
-          type="button"
-          onClick={() => setTeachingOpen(true)}
-          aria-haspopup="dialog"
-          aria-controls="course-teaching-dialog"
-          aria-expanded={teachingOpen}
-          className={buttonClass({ variant: 'secondary', size: 'lg', className: 'ct-workflow-trigger' })}
-        >
-          <BookOpen className="h-4 w-4 text-[#4e0a10]" aria-hidden="true" />
-          Course Teaching{' '}
-          <span className="ct-count-badge">{loading ? '…' : assignmentCount} Assigned</span>
-        </button>
-        <button
-          id="returned-sections-open"
-          type="button"
-          onClick={() => setReturnedOpen(true)}
-          aria-haspopup="dialog"
-          aria-controls="returned-sections-dialog"
-          aria-expanded={returnedOpen}
-          className={buttonClass({ variant: 'secondary', size: 'lg', className: 'ct-workflow-trigger' })}
-        >
-          <Undo2 className="h-4 w-4 text-sky-700" aria-hidden="true" />
-          Returned Sections{' '}
-          <span className="ct-count-badge ct-count-badge-returned">{loading ? '…' : returnedSections.length} Returned</span>
-        </button>
-      </div>
-      <WorkflowGuideButton guideId="course-teaching" className="ct-workflow-help" />
+      <div className="mx-auto flex w-full max-w-[1900px] flex-col gap-3">
+        <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#4e0a10]/10 text-[#4e0a10]"><BookOpen className="h-5 w-5" /></span>
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-black text-slate-900">Course Teaching</h1>
+              <p className="truncate text-xs text-slate-500">
+                {ownDepartment
+                  ? `Choose which college or program teaches the courses in the ${ownDepartment.department_code} curriculum.`
+                  : 'Choose which college teaches each minor course.'}
+                {activeSemester && <> &middot; {fullSemesterLabel(activeSemester)}</>}
+              </p>
+            </div>
+          </div>
+          <div className="flex max-w-full flex-wrap items-center gap-2" role="group" aria-label="Course assignment actions">
+            <button
+              type="button"
+              onClick={() => setSummaryOpen(true)}
+              aria-haspopup="dialog"
+              title="View a summary of assigned courses"
+              className={buttonClass({ variant: 'accentSoft', size: 'md', className: 'relative' })}
+            >
+              {assignmentCount > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5" aria-hidden="true">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-60" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
+                </span>
+              )}
+              <span className="rounded-full bg-[#4e0a10] px-1.5 text-[10px] tabular-nums text-white">{assignmentCount}</span>{' '}
+              Assigned
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+            <button
+              id="returned-sections-open"
+              type="button"
+              onClick={() => setReturnedOpen(true)}
+              aria-haspopup="dialog"
+              aria-controls="returned-sections-dialog"
+              aria-expanded={returnedOpen}
+              className={buttonClass({ variant: 'secondary', size: 'md' })}
+            >
+              <Undo2 className="h-4 w-4 text-sky-700" aria-hidden="true" />
+              Returned Sections{' '}
+              <span className="ct-count-badge ct-count-badge-returned">{loading ? '…' : returnedSections.length} Returned</span>
+            </button>
+            <WorkflowGuideButton guideId="course-teaching" className="ct-workflow-help" />
+          </div>
+        </header>
 
-      {error && !teachingOpen && !returnedOpen && (
-        <div role="alert" className="mt-3 flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
-          <TriangleAlert className="h-4 w-4 shrink-0" />{error}
-        </div>
-      )}
-
-      <Modal
-        id="course-teaching-dialog"
-        isOpen={teachingOpen}
-        onClose={() => setTeachingOpen(false)}
-        title="Course Teaching"
-        description={`${ownDepartment ? `${ownDepartment.department_code} curriculum` : 'Assign teaching responsibility'}${activeSemester ? ` · ${fullSemesterLabel(activeSemester)}` : ''}`}
-        size="xl"
-        className="ct-dialog ct-teaching-dialog"
-        headerClassName="ct-dialog-header"
-        titleClassName="text-base font-semibold leading-6 text-slate-900"
-        headerActions={<span className="h-8 w-8" aria-hidden="true" />}
-        bodyClassName="ct-dialog-body p-3 sm:p-4"
-        closeLabel="Close Course Teaching"
-        closeOnOverlayClick={false}
-        busy={saving || removingAll || removingId !== null}
-      >
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs leading-5 text-slate-500">Choose a teaching college or program, then select courses to assign.</p>
-          <button
-            type="button"
-            onClick={() => setSummaryOpen(true)}
-            aria-haspopup="dialog"
-            className={buttonClass({ variant: 'secondary', size: 'sm' })}
-          >
-            View assigned courses{' '}
-            <span className="ct-count-badge">{assignmentCount}</span>
-            <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-        </div>
         {error && (
-          <div role="alert" className="mb-3 flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+          <div role="alert" className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
             <TriangleAlert className="h-4 w-4 shrink-0" />{error}
           </div>
         )}
 
-        <div className="ct-teaching-workspace grid gap-3 lg:grid-cols-[256px_minmax(0,1fr)]">
+        <div className="grid gap-3 lg:h-[calc(100dvh-13rem)] lg:min-h-[520px] lg:grid-cols-[288px_minmax(0,1fr)]">
           <aside id="course-teaching-target" className="flex max-h-72 min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white lg:max-h-none">
             <div className="flex shrink-0 items-start justify-between gap-2 border-b border-slate-100 px-4 py-3">
               <div className="min-w-0">
@@ -875,7 +854,7 @@ export default function CourseTeachingAssignments() {
             </section>
           </main>
         </div>
-      </Modal>
+      </div>
 
       <Modal
         id="returned-sections-dialog"

@@ -1,6 +1,4 @@
-/* Compact entry points and the shared Modal shell, scoped to this workspace. */
-.ct-workflow-trigger { border-color: #e2e8f0; }
-
+/* Count badges and the shared Modal shell, scoped to this workspace. */
 .ct-count-badge {
   display: inline-flex;
   flex-shrink: 0;
@@ -51,21 +49,9 @@
   box-shadow: none;
 }
 
-@media (max-width: 479px) {
-  .ct-workflow-trigger { width: 100%; justify-content: flex-start; }
-  .ct-workflow-trigger .ct-count-badge { margin-left: auto; }
-}
-
 @media (min-width: 640px) {
   .ct-dialog { max-height: min(900px, calc(100dvh - 2rem)); }
   .ct-dialog .ct-workflow-help { top: 1rem; right: 4rem; }
-}
-
-@media (min-width: 1024px) {
-  .ct-teaching-dialog { height: min(880px, calc(100dvh - 2rem)); }
-  .ct-teaching-dialog .ct-dialog-body { display: flex; flex-direction: column; overflow: hidden; }
-  .ct-teaching-dialog .ct-dialog-body > :not(.ct-teaching-workspace) { flex-shrink: 0; }
-  .ct-teaching-workspace { min-height: 0; flex: 1; }
 }
 
 /*

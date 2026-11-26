@@ -56,46 +56,48 @@ const programSelect = () => screen.getByRole('combobox', { name: 'Teaching Progr
 const courseRow = (code: string) => screen.getByText(code, { selector: 'p' }).closest<HTMLElement>('[role="row"]')!;
 const openPage = async () => {
   render(<CourseTeachingAssignments />);
-  fireEvent.click(await screen.findByRole('button', { name: /Course Teaching \d+ Assigned/ }));
   await screen.findByRole('checkbox', { name: 'Select GEC 2' });
 };
 
 describe('Course Teaching dialogs', () => {
-  it('opens the workspace on demand and preserves unsaved selections when reopened', async () => {
-    render(<CourseTeachingAssignments />);
-    const trigger = await screen.findByRole('button', { name: 'Course Teaching 1 Assigned' });
-    expect(screen.queryByRole('table')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Returned Sections 0 Returned' })).toBeTruthy();
+  it('keeps the workspace on the page and places Returned Sections beside Assigned', async () => {
+    await openPage();
+    expect(screen.getByRole('table', { name: '1st Year courses' })).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: 'Course Teaching' })).toBeNull();
+    const actions = screen.getByRole('group', { name: 'Course assignment actions' });
+    const assigned = within(actions).getByRole('button', { name: '1 Assigned' });
+    const trigger = within(actions).getByRole('button', { name: 'Returned Sections 0 Returned' });
+    expect(assigned.nextElementSibling).toBe(trigger);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select GEC 2' }));
     trigger.focus();
     fireEvent.click(trigger);
-    const dialog = screen.getByRole('dialog', { name: 'Course Teaching' });
-    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Select GEC 2' }));
+    expect(screen.getByRole('dialog', { name: 'Returned Sections' })).toBeTruthy();
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(document.activeElement).toBe(trigger);
-    fireEvent.click(trigger);
     expect((screen.getByRole('checkbox', { name: 'Select GEC 2' }) as HTMLInputElement).checked).toBe(true);
     expect(post).not.toHaveBeenCalled();
   });
 
-  it('closes only the assigned summary on Escape and restores focus within the workspace', async () => {
+  it('closes the assigned summary on Escape and restores focus to Assigned', async () => {
     await openPage();
-    const summaryTrigger = screen.getByRole('button', { name: /View assigned courses/ });
+    const summaryTrigger = screen.getByRole('button', { name: '1 Assigned' });
     summaryTrigger.focus();
     fireEvent.click(summaryTrigger);
     expect(screen.getByRole('dialog', { name: 'Assigned courses' })).toBeTruthy();
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Assigned courses' })).toBeNull());
-    expect(screen.getByRole('dialog', { name: 'Course Teaching' })).toBeTruthy();
+    expect(screen.getByRole('table', { name: '1st Year courses' })).toBeTruthy();
     expect(document.activeElement).toBe(summaryTrigger);
   });
 
-  it('shows an empty returned-section state without displaying the teaching workspace', async () => {
-    render(<CourseTeachingAssignments />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Returned Sections 0 Returned' }));
+  it('shows the returned-section empty state only inside its modal', async () => {
+    await openPage();
+    expect(screen.queryByText('No returned sections')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Returned Sections 0 Returned' }));
     expect(screen.getByRole('dialog', { name: 'Returned Sections' })).toBeTruthy();
     expect(screen.getByText('No returned sections')).toBeTruthy();
-    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(within(screen.getByRole('dialog', { name: 'Returned Sections' })).queryByRole('checkbox')).toBeNull();
   });
 
   it('assigns an eligible returned section with the existing payload and refreshes the count', async () => {

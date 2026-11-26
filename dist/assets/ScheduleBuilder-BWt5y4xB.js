@@ -1,1 +1,0 @@
-import{t as e}from"./react-vendor-CleePX2f.js";import{t}from"./SchedulerPanel-BrmD5bmz.js";var n=e();function r(){return(0,n.jsx)(`div`,{className:`min-w-0`,children:(0,n.jsx)(t,{})})}export{r as default};
