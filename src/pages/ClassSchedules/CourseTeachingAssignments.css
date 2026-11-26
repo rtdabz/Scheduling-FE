@@ -1,3 +1,73 @@
+/* Compact entry points and the shared Modal shell, scoped to this workspace. */
+.ct-workflow-trigger { border-color: #e2e8f0; }
+
+.ct-count-badge {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+  padding: 2px 6px;
+  color: #475569;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ct-count-badge-returned {
+  border-color: #e0f2fe;
+  background: #f0f9ff;
+  color: #0369a1;
+}
+
+.ct-dialog {
+  position: relative;
+  max-height: min(900px, calc(100dvh - 1rem));
+  border: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.ct-dialog :is(h2, h3) { font-family: inherit; }
+.ct-dialog .ct-dialog-header { border-bottom: 1px solid #e2e8f0; background: #fff; }
+.ct-dialog .ct-dialog-header p { color: #64748b; font-size: 12px; line-height: 18px; }
+.ct-dialog .ct-dialog-header > button {
+  border-color: transparent;
+  background: #f8fafc;
+  color: #64748b;
+  box-shadow: none;
+}
+.ct-dialog .ct-dialog-header > button:hover:not(:disabled) { background: #f1f5f9; color: #0f172a; }
+.ct-dialog .ct-dialog-body { background: #fff; overscroll-behavior: contain; scrollbar-width: thin; }
+.ct-dialog .ct-workflow-help {
+  position: absolute;
+  top: 0.75rem;
+  right: 3.75rem;
+  width: 2rem;
+  height: 2rem;
+  border-color: #e2e8f0;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+@media (max-width: 479px) {
+  .ct-workflow-trigger { width: 100%; justify-content: flex-start; }
+  .ct-workflow-trigger .ct-count-badge { margin-left: auto; }
+}
+
+@media (min-width: 640px) {
+  .ct-dialog { max-height: min(900px, calc(100dvh - 2rem)); }
+  .ct-dialog .ct-workflow-help { top: 1rem; right: 4rem; }
+}
+
+@media (min-width: 1024px) {
+  .ct-teaching-dialog { height: min(880px, calc(100dvh - 2rem)); }
+  .ct-teaching-dialog .ct-dialog-body { display: flex; flex-direction: column; overflow: hidden; }
+  .ct-teaching-dialog .ct-dialog-body > :not(.ct-teaching-workspace) { flex-shrink: 0; }
+  .ct-teaching-workspace { min-height: 0; flex: 1; }
+}
+
 /*
  * Course Teaching: course list.
  *

@@ -56,8 +56,86 @@ const programSelect = () => screen.getByRole('combobox', { name: 'Teaching Progr
 const courseRow = (code: string) => screen.getByText(code, { selector: 'p' }).closest<HTMLElement>('[role="row"]')!;
 const openPage = async () => {
   render(<CourseTeachingAssignments />);
+  fireEvent.click(await screen.findByRole('button', { name: /Course Teaching \d+ Assigned/ }));
   await screen.findByRole('checkbox', { name: 'Select GEC 2' });
 };
+
+describe('Course Teaching dialogs', () => {
+  it('opens the workspace on demand and preserves unsaved selections when reopened', async () => {
+    render(<CourseTeachingAssignments />);
+    const trigger = await screen.findByRole('button', { name: 'Course Teaching 1 Assigned' });
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Returned Sections 0 Returned' })).toBeTruthy();
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole('dialog', { name: 'Course Teaching' });
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Select GEC 2' }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+    fireEvent.click(trigger);
+    expect((screen.getByRole('checkbox', { name: 'Select GEC 2' }) as HTMLInputElement).checked).toBe(true);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('closes only the assigned summary on Escape and restores focus within the workspace', async () => {
+    await openPage();
+    const summaryTrigger = screen.getByRole('button', { name: /View assigned courses/ });
+    summaryTrigger.focus();
+    fireEvent.click(summaryTrigger);
+    expect(screen.getByRole('dialog', { name: 'Assigned courses' })).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Assigned courses' })).toBeNull());
+    expect(screen.getByRole('dialog', { name: 'Course Teaching' })).toBeTruthy();
+    expect(document.activeElement).toBe(summaryTrigger);
+  });
+
+  it('shows an empty returned-section state without displaying the teaching workspace', async () => {
+    render(<CourseTeachingAssignments />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Returned Sections 0 Returned' }));
+    expect(screen.getByRole('dialog', { name: 'Returned Sections' })).toBeTruthy();
+    expect(screen.getByText('No returned sections')).toBeTruthy();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+  });
+
+  it('assigns an eligible returned section with the existing payload and refreshes the count', async () => {
+    const returned = {
+      section_id: 301, schedule_id: 1001, section_name: 'BSIT 1-A', status: 'Returned', returned: true,
+      returned_from_department_id: 2, returned_from_department_code: 'COED',
+      section_teaching_department_id: null, instructor_name: null, reassignable: true,
+    };
+    const locked = { ...returned, section_id: 302, schedule_id: 1002, section_name: 'BSIT 1-B', reassignable: false };
+    const data = {
+      courses: [{ ...courses[0], section_assignments: [
+        returned, locked,
+        { ...returned, section_id: 303, section_name: 'BSIT 1-C', section_teaching_department_id: 1 },
+        { ...returned, section_id: 304, section_name: 'BSIT 1-D', instructor_name: 'Dr. Santos' },
+      ] }],
+      departments, programs, current_department_id: 6, has_active_curriculum: true,
+      active_semester: { id: 1, semester: '2nd', academic_year: '2025-2026' },
+    };
+    get.mockResolvedValue({ data });
+    render(<CourseTeachingAssignments />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Returned Sections 2 Returned' }));
+    const dialog = screen.getByRole('dialog', { name: 'Returned Sections' });
+    expect(within(dialog).getAllByText('Origin:', { exact: false })).toHaveLength(2);
+    expect(within(dialog).getAllByText('COED', { exact: true })).toHaveLength(2);
+    expect(within(dialog).queryByText('BSIT 1-C', { exact: false })).toBeNull();
+    expect((screen.getByRole('combobox', { name: 'College for GEC 2 BSIT 1-B' }) as HTMLSelectElement).disabled).toBe(true);
+    const college = screen.getByRole('combobox', { name: 'College for GEC 2 BSIT 1-A' });
+    fireEvent.change(college, { target: { value: '1' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Program for GEC 2 BSIT 1-A' }), { target: { value: '12' } });
+    get.mockResolvedValue({ data: { ...data, courses: [{ ...courses[0], section_assignments: [locked] }] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Assign to CD' }));
+    await waitFor(() => expect(post).toHaveBeenCalledExactlyOnceWith('/course-teaching-assignments/sections', {
+      schedule_ids: [1001], teaching_department_id: 1, teaching_program_id: 12,
+      expected_active_semester_id: 1,
+    }));
+    await screen.findByRole('button', { name: 'Returned Sections 1 Returned' });
+    expect(screen.getByRole('dialog', { name: 'Returned Sections' })).toBeTruthy();
+    expect(screen.queryByRole('combobox', { name: 'College for GEC 2 BSIT 1-A' })).toBeNull();
+  });
+});
 
 describe('Course Teaching program selection', () => {
   it('explains the actual year, course and program controls without clearing or saving selections', async () => {
