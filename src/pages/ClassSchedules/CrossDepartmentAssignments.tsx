@@ -7,6 +7,7 @@ import AutoAssignModal from './SchedulerPanel/Modals/AutoAssignModal';
 import { useScheduler } from './SchedulerPanel/hooks/useScheduler';
 import { INSTRUCTOR_ASSIGNABLE_STATUSES } from './SchedulerPanel/types';
 import { subjectForSchedule } from './SchedulerPanel/facultyEligibility';
+import { isIncomingInstructorAssignment } from './SchedulerPanel/instructorAssignmentScope';
 import WorkflowGuideButton from '../../components/help/WorkflowGuideButton';
 
 export default function CrossDepartmentAssignments() {
@@ -33,19 +34,11 @@ export default function CrossDepartmentAssignments() {
   );
   const delegatedSchedules = useMemo(
     () => scheduler.schedules.filter((schedule) => {
+      if (schedule.instructorAssignmentVisible === false) return false;
       // Per class: a returned section follows its own section-level assignment, so one handed
       // here appears and one this department returned does not.
       const subject = subjectForSchedule(scheduler.subjects.find((item) => item.id === schedule.courseId), schedule);
-      if (
-        subject?.teachingDepartmentId === null
-        || subject?.teachingDepartmentId === undefined
-        || Number(subject.teachingDepartmentId) !== Number(scheduler.userDepartmentId)
-      ) return false;
-      if (Number(schedule.departmentId) !== Number(scheduler.userDepartmentId)) return true;
-      const handedToProgram = subject.teachingProgramId ?? null;
-      return handedToProgram !== null
-        && Number(subject.programId ?? 0) !== Number(handedToProgram)
-        && (scheduler.userProgramId === null || Number(handedToProgram) === Number(scheduler.userProgramId));
+      return isIncomingInstructorAssignment(subject, schedule, scheduler.userDepartmentId, scheduler.userProgramId);
     }),
     [scheduler.schedules, scheduler.subjects, scheduler.userDepartmentId, scheduler.userProgramId],
   );

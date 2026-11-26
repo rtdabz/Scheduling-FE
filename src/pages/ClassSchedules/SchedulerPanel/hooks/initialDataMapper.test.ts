@@ -34,6 +34,16 @@ const mapCourse = (record: ApiCourseRecord) =>
   mapInitialData(payload([record]), { isVpaa: true }).subjects[0];
 
 describe("delegated course visibility", () => {
+  it('preserves the offering section program independently of course ownership', () => {
+    const record = {
+      id: 1, semester_id: 1, department_id: 1, program_id: 8, course_id: 128, section_id: 9,
+      room_id: null, day: 'Monday', start_time: '08:00', end_time: '09:30', status: 'approved',
+      section: { section_name: 'BSCD 1A', program_id: 9 },
+    } as ApiScheduleRecord;
+    expect(mapApiScheduleToItem(record).programId).toBe(9);
+    expect(mapApiScheduleToItem({ ...record, section: null }).programId).toBe(8);
+  });
+
   it("keeps retained timetable metadata out of scheduling choices and preserves explicit instructor visibility", () => {
     const data = payload([]);
     data.schedule_course_references = [course()];

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../lib/api';
 import { getCachedData, hasCachedData, loadCachedData } from '../lib/dataCache';
 import { useLiveRevision } from './useLiveRefresh';
+import { getStoredUser } from '../lib/storedUser';
 
 export type SectionScheduleStatus = 'draft' | 'completed' | 'submitted' | 'approved_by_dean' | 'conditionally_approved' | 'approved' | 'revision';
 
@@ -73,7 +74,8 @@ const YEAR_LABELS: Record<number, string> = {
 export function useDepartmentScheduleStatus(
   departmentId: number | null | undefined
 ): UseDepartmentScheduleStatusReturn {
-  const statusCacheKey = departmentId ? `department-schedule-status:${departmentId}` : '';
+  const actor = getStoredUser();
+  const statusCacheKey = departmentId ? `department-schedule-status:v2:${departmentId}:${actor?.role ?? 'user'}:${actor?.id ?? 'current'}:${actor?.program_id ?? 'all'}` : '';
   const cachedStatus = statusCacheKey ? getCachedData<DepartmentScheduleStatusData>(statusCacheKey) : undefined;
   const [sections, setSections] = useState<SectionStatusItem[]>(cachedStatus?.sections ?? []);
   const [departmentName, setDepartmentName] = useState(cachedStatus?.department_name ?? '');
@@ -85,7 +87,7 @@ export function useDepartmentScheduleStatus(
   const [fetchKey, setFetchKey] = useState(0);
 
   const refetch = useCallback(() => setFetchKey(k => k + 1), []);
-  const liveRevision = useLiveRevision(['approvals', 'schedules', 'sections']);
+  const liveRevision = useLiveRevision(['approvals', 'schedules', 'sections', 'assignments', 'users']);
 
   useEffect(() => {
     if (!departmentId) return;

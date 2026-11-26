@@ -1,0 +1,1 @@
+import{t as e}from"./react-vendor-CleePX2f.js";import t from"./SecretaryDashboardPage-B5-RN4ie.js";var n=e();function r(){return(0,n.jsx)(t,{role:`program_head`})}export{r as default};

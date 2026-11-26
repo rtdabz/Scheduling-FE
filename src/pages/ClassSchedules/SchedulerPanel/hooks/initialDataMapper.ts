@@ -163,6 +163,8 @@ export const mapApiScheduleToItem = (item: ApiScheduleRecord): ScheduleItem => {
     id: item.id?.toString() ?? fallbackId,
     semesterId: Number(item.semester_id),
     departmentId: Number(item.department_id),
+    programId: item.section?.program_id != null ? Number(item.section.program_id)
+      : item.program_id != null ? Number(item.program_id) : null,
     courseId,
     subjectId: courseId,
     courseCode,

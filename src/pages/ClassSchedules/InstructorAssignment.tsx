@@ -47,6 +47,7 @@ import DataTable from "../../components/ui/DataTable";
 import { useDataTable } from "../../components/ui/useDataTable";
 import type { ColumnDef } from "@tanstack/react-table";
 import { getCachedData, hasCachedData, loadCachedData, setCachedData } from "../../lib/dataCache";
+import { isIncomingInstructorAssignment } from "./SchedulerPanel/instructorAssignmentScope";
 import { useLiveRevision } from "../../hooks/useLiveRefresh";
 import { invalidateCacheGroups } from "../../lib/cacheGroups";
 import { publishLiveTopics } from "../../lib/liveUpdates";
@@ -163,10 +164,12 @@ interface ApiSchedule {
   id: number;
   semester_id: number;
   department_id: number;
+  program_id?: number | null;
   course_id?: number;
   subject_id?: number;
   faculty_id: number | null;
   faculty_assignment_done?: boolean | number;
+  instructor_assignment_visible?: boolean;
   delegation_returned_from_department_id?: number | null;
   section_teaching_department_id?: number | null;
   section_teaching_program_id?: number | null;
@@ -182,7 +185,7 @@ interface ApiSchedule {
   meeting_type?: "lecture" | "laboratory" | null;
   meeting_index?: number | null;
   status: string;
-  section?: { section_name?: string } | null;
+  section?: { section_name?: string; program_id?: number | null } | null;
   room?: { room_code?: string; building?: string | null } | null;
   faculty?: PersonNameParts | null;
 }
@@ -468,7 +471,7 @@ export interface InstructorAssignmentWorkspaceState {
 export default function InstructorAssignment({ assignmentLocked, headerActions, footerActions, onWorkspaceStateChange, workflowGuideId = "instructor-assignment", workflowGuideReady = true, onWorkflowReady, refreshToken = 0, scrollableTimetable = true }: InstructorAssignmentProps = {}) {
   const { toast } = useToast();
   const user = getStoredUser();
-  const assignmentsCacheKey = `page:instructor-assignments:v8:${user.role ?? "user"}:${user.department_id ?? "all"}:${user.program_id ?? "all"}`;
+  const assignmentsCacheKey = `page:instructor-assignments:v9:${user.role ?? "user"}:${user.department_id ?? "all"}:${user.program_id ?? "all"}`;
   const cachedAssignmentData = getCachedData<AssignmentResponse>(assignmentsCacheKey);
   const [departments, setDepartments] = useState<ApiDepartment[]>(cachedAssignmentData?.departments ?? []);
   const [subjects, setSubjects] = useState<ApiSubject[]>(cachedAssignmentData?.subjects ?? []);
@@ -604,6 +607,8 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     if (
       !subject ||
       !department ||
+      schedule.instructor_assignment_visible === false ||
+      (user.role === "program_head" && teachingProgramId != null && Number(teachingProgramId) !== Number(user.program_id)) ||
       Number(teachingDepartmentId ?? subject.department_id) !== Number(currentDepartmentId) ||
       // VPAA approval is the source of truth: Draft, Submitted and Dean-review rows stay out of
       // view even when they already carry a retained instructor.
@@ -611,11 +616,17 @@ export default function InstructorAssignment({ assignmentLocked, headerActions, 
     ) {
       return [];
     }
-    const isCrossDepartment = Number(schedule.department_id) !== Number(currentDepartmentId);
-    const isCrossProgram = teachingProgramId != null
-      && Number(teachingProgramId) !== Number(subject.program_id ?? 0)
-      && (user.role !== "program_head" || Number(teachingProgramId) === Number(user.program_id));
-    return isCrossDepartment || isCrossProgram ? [{ ...schedule, subject, department }] : [];
+    const incoming = isIncomingInstructorAssignment({
+      category: (subject.course_category ?? subject.subject_category) === 'major' ? 'major' : 'minor',
+      departmentId: subject.department_id,
+      programId: subject.program_id,
+      teachingDepartmentId,
+      teachingProgramId,
+    }, {
+      departmentId: schedule.department_id,
+      programId: schedule.section?.program_id ?? schedule.program_id,
+    }, currentDepartmentId, user.role === 'program_head' ? Number(user.program_id) : null);
+    return incoming ? [{ ...schedule, subject, department }] : [];
   }), [currentDepartmentId, departmentMap, schedules, subjectMap, user.program_id, user.role]);
 
   const offeringDepartments = useMemo(() => departments
@@ -877,6 +888,7 @@ const selectedSchedule = assignmentSchedules.find(
       id: String(schedule.id),
       semesterId: Number(schedule.semester_id),
       departmentId: Number(schedule.department_id),
+      programId: schedule.section?.program_id ?? schedule.program_id ?? null,
       courseId: String(subject.id),
       subjectId: String(subject.id),
       courseCode: subject.course_code ?? subject.subject_code,

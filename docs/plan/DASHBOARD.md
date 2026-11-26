@@ -42,6 +42,10 @@
 
 ## Workflows
 
+- [Sociology / BSCD assignment scope](../../../backend/docs/course-assignment-sibling-program-scope-2026-11-26.md) - Keep BSCD sections out of Sociology's local instructor assignment list and show only authorized courses in Cross-Department; 2026-11-26.
+
+- [Receiving-program instructor access](../../../backend/docs/instructor-program-assignment.md#receiving-program-instructor-access-2026-11-26) - Cross-Department visibility, assignment authorization, pending counts and missing-head office fallback; 2026-11-26.
+
 - [CAS program ownership fix](../../../backend/docs/cas-program-ownership-fix-2026-11-25.md) - Actual CAS configuration, import/request/reassignment/reuse authorization, mixed-program behavior, and regression results; 2026-11-25.
 
 - [Course teaching assignments by semester](../../../backend/docs/course-teaching-semesters.md) — Independent semester delegations, preserved earlier schedules, migration limits, and rollout.

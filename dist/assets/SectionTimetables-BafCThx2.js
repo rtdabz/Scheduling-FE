@@ -1,0 +1,1 @@
+import{t as e}from"./SectionTimetables-CB96Si4P.js";export{e as default};

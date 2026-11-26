@@ -215,6 +215,8 @@ export interface ScheduleItem {
   id: string;
   semesterId: number;
   departmentId: number;
+  /** Offering section's program; this is not the course's owner or teaching program. */
+  programId?: number | null;
   courseId: string;
   subjectId?: string;
   courseCode: string;
@@ -458,6 +460,7 @@ export interface ApiScheduleRecord {
   id: number | string;
   semester_id: number | string;
   department_id: number | string;
+  program_id?: number | string | null;
   course_id: number | string;
   subject_id?: number | string;
   section_id: number | string;
@@ -512,6 +515,7 @@ export interface ApiScheduleRecord {
   } | null;
   section?: {
     section_name?: string;
+    program_id?: number | string | null;
     program?: { code?: string | null } | null;
   } | null;
   program?: { code?: string | null } | null;

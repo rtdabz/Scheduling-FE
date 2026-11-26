@@ -33,14 +33,16 @@ const departments = [
 const courseDefaults = {
   id: 1, course_code: 'IT 101', course_name: 'Information Technology', subject_code: 'IT 101',
   subject_name: 'Information Technology', course_category: 'minor', subject_category: 'minor',
-  department_id: 7, teaching_department_id: 6, program_id: null as number | null,
+  department_id: 7, teaching_department_id: 6 as number | null, program_id: null as number | null,
   teaching_program_id: null as number | null, units: 3,
 };
 const course = (id: number, overrides: Partial<typeof courseDefaults> = {}) => ({ ...courseDefaults, id, ...overrides });
 const scheduleDefaults = {
   id: 1, semester_id: 1, department_id: 7, course_id: 1, section_id: 31, faculty_id: 10 as number | null,
+  program_id: null as number | null,
   faculty_assignment_done: false, status: 'approved', day: 'Monday', start_time: '08:00:00', end_time: '09:30:00',
-  section: { section_name: 'BLIS 1A' }, room: { room_code: 'LIB-101' },
+  instructor_assignment_visible: true,
+  section: { section_name: 'BLIS 1A' } as { section_name: string; program_id?: number | null }, room: { room_code: 'LIB-101' },
   faculty: { first_name: 'IT', last_name: 'Instructor' } as { first_name: string; last_name: string } | null,
 };
 const schedule = (id: number, overrides: Partial<typeof scheduleDefaults> = {}) => ({ ...scheduleDefaults, id, ...overrides });
@@ -51,9 +53,9 @@ let payload: {
   subjects: ReturnType<typeof course>[]; schedules: ReturnType<typeof schedule>[]; faculties: typeof faculty[];
 };
 const scheduler = {
-  schedules: [] as Array<{ id: string; departmentId: number; courseId: string; status: string; facultyAssignmentDone: boolean }>,
-  subjects: [] as Array<{ id: string; teachingDepartmentId: number; teachingProgramId: number | null; programId: number | null }>,
-  faculties: [{ id: '10', departmentId: 6 }], userDepartmentId: 6, userProgramId: null,
+  schedules: [] as Array<{ id: string; departmentId: number; programId: number | null; courseId: string; status: string; facultyAssignmentDone: boolean; instructorAssignmentVisible: boolean }>,
+  subjects: [] as Array<{ id: string; category: string; departmentId: number; teachingDepartmentId: number | null; teachingProgramId: number | null; programId: number | null }>,
+  faculties: [{ id: '10', departmentId: 6 }], userDepartmentId: 6, userProgramId: null as number | null,
   isLoading: false, facultyActionSlotId: null, canManageScheduleFaculty: () => true,
   activeSemester: { id: 4 },
   checkFacultyConflict: () => null, handleBulkFacultyAssign: vi.fn(),
@@ -62,10 +64,13 @@ const scheduler = {
 const syncScheduler = () => {
   scheduler.schedules = payload.schedules.map((row) => ({
     id: String(row.id), departmentId: row.department_id, courseId: String(row.course_id),
+    programId: row.section.program_id ?? row.program_id,
     status: row.status, facultyAssignmentDone: row.faculty_assignment_done,
+    instructorAssignmentVisible: row.instructor_assignment_visible,
   }));
   scheduler.subjects = payload.subjects.map((row) => ({
     id: String(row.id), teachingDepartmentId: row.teaching_department_id,
+    category: row.course_category, departmentId: row.department_id,
     teachingProgramId: row.teaching_program_id, programId: row.program_id,
   }));
 };
@@ -85,6 +90,7 @@ beforeEach(() => {
   scheduler.handleBulkFacultyAssign.mockResolvedValue(false);
   scheduler.handleRemoveFacultyFromClass.mockResolvedValue(false);
   scheduler.handleFacultyAssignmentDone.mockResolvedValue(false);
+  scheduler.userProgramId = null;
   syncScheduler(); useScheduler.mockReturnValue(scheduler);
 });
 afterEach(cleanup);
@@ -139,6 +145,56 @@ describe('assignment help context', () => {
 });
 
 describe('cross-department assignment visibility', () => {
+  it.each([true, false])('shows only Sociology courses in BSCD sections with explicit delegation %s', async (explicit) => {
+    localStorage.setItem('user', JSON.stringify({ role: 'program_head', department_id: 6, program_id: 8 }));
+    scheduler.userProgramId = 8;
+    payload.subjects = [
+      course(1, { course_code: 'SCC 1', department_id: 6, program_id: 8, course_category: 'major',
+        teaching_department_id: explicit ? 6 : null, teaching_program_id: explicit ? 8 : null }),
+      course(2, { course_code: 'CD 1', department_id: 6, program_id: 9, course_category: 'major', teaching_program_id: 9 }),
+    ];
+    payload.schedules = [
+      schedule(1, { department_id: 6, program_id: 8, section: { section_name: 'BAS 1A', program_id: 8 } }),
+      // The current section identity takes precedence over stale schedule ownership.
+      schedule(2, { department_id: 6, program_id: 8, section_id: 32, section: { section_name: 'BSCD 1A', program_id: 9 } }),
+      schedule(3, { department_id: 6, program_id: 9, section_id: 32, day: 'Wednesday', section: { section_name: 'BSCD 1A', program_id: 9 } }),
+      schedule(4, { department_id: 6, program_id: 9, course_id: 2, section_id: 32,
+        instructor_assignment_visible: false, section: { section_name: 'BSCD 1A', program_id: 9 } }),
+    ];
+    syncScheduler();
+    render(<CrossDepartmentAssignments />);
+    await openDepartment('CIT');
+    expect(screen.getByRole('region', { name: 'Section BSCD 1A' })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Section BAS 1A' })).toBeNull();
+    expect(screen.getAllByText('SCC 1')).toHaveLength(1);
+    expect(screen.queryByText('CD 1')).toBeNull();
+    expect(screen.getByText('1 of 1 classes assigned')).toBeTruthy();
+    expect(autoAssign.mock.calls.at(-1)?.[0].schedules.map((row: { id: string }) => row.id)).toEqual(['2', '3']);
+    fireEvent.click(screen.getByRole('button', { name: 'Grid' }));
+    expect(screen.getByRole('button', { name: 'Class 2' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Class 1' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Class 4' })).toBeNull();
+  });
+
+  it('excludes denied receiving-program rows from departments, counts and deep links', async () => {
+    payload.schedules[0].instructor_assignment_visible = false;
+    window.history.replaceState(null, '', '/secretary/cross-department-assignments?department=7');
+    const workspace = vi.fn();
+    render(<InstructorAssignment onWorkspaceStateChange={workspace} />);
+    await screen.findByText('No approved classes yet.');
+    expect(screen.queryByRole('button', { name: 'View CLIS timetable' })).toBeNull();
+    expect(screen.queryByText('IT 101')).toBeNull();
+    expect(workspace.mock.calls.at(-1)?.[0].scheduleIds).toEqual([]);
+  });
+
+  it('excludes another receiving program even when the offering department differs', async () => {
+    localStorage.setItem('user', JSON.stringify({ role: 'program_head', department_id: 6, program_id: 12 }));
+    payload.subjects[0].teaching_program_id = 11;
+    render(<InstructorAssignment />);
+    await screen.findByText('No approved classes yet.');
+    expect(screen.queryByRole('button', { name: 'View CLIS timetable' })).toBeNull();
+  });
+
   it.each(['draft', 'submitted', 'revision', 'approved_by_dean', 'conditionally_approved'])('keeps %s classes out of view even with a retained instructor', async (status) => {
     payload.schedules = [
       schedule(1, { status }), schedule(2, { status, day: 'Tuesday' }),
@@ -240,6 +296,23 @@ describe('cross-department assignment visibility', () => {
 });
 
 describe('Cross-Department bulk actions', () => {
+  it('rejects hidden timetable rows while the assignment workspace is refreshing', async () => {
+    syncScheduler();
+    // Initial data already revoked access while the independently loaded list is still old.
+    scheduler.schedules[0].instructorAssignmentVisible = false;
+    render(<CrossDepartmentAssignments />);
+    await openDepartment();
+    expect(autoAssign.mock.calls.at(-1)?.[0].schedules).toEqual([]);
+    expect((screen.getByRole('button', { name: 'Done Assigning' }) as HTMLButtonElement).disabled).toBe(true);
+    const modal = autoAssign.mock.calls.at(-1)?.[0];
+    await act(async () => {
+      expect(await modal.onAssign([{ scheduleIds: ['1'], facultyId: '10' }])).toBe(false);
+      expect(await modal.onRemoveAssignment(['1'])).toBe(false);
+    });
+    expect(scheduler.handleBulkFacultyAssign).not.toHaveBeenCalled();
+    expect(scheduler.handleRemoveFacultyFromClass).not.toHaveBeenCalled();
+  });
+
   it('offers no bulk actions while the source timetable awaits VPAA approval', async () => {
     payload.schedules[0].status = 'submitted'; syncScheduler();
     render(<CrossDepartmentAssignments />);

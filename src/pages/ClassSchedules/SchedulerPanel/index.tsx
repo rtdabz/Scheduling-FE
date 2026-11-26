@@ -30,6 +30,7 @@ import { useWorkflowDialog } from "./GenerateSchedule/useWorkflowDialog";
 import { normalizeRole, reassignsRoomSchedulesFromFacilities } from "../../../lib/roles";
 import { EDITABLE_STATUSES } from "../../../lib/scheduleStatuses";
 import { subjectForSchedule } from "./facultyEligibility";
+import { isLocalInstructorAssignment } from "./instructorAssignmentScope";
 
 interface SchedulerPanelProps {
   autoAssignOnOpen?: boolean;
@@ -137,16 +138,18 @@ export default function SchedulerPanel({ autoAssignOnOpen = false }: SchedulerPa
     [assignDepartmentId, assignSemesterId],
   );
   const ownDepartmentSchedules = useMemo(() => {
-    if (assignDepartmentId === null) return scheduler.schedules;
+    if (assignDepartmentId === null) return [];
     const subjectsById = new Map(scheduler.subjects.map((subject) => [subject.id, subject]));
+    const programsBySection = new Map(scheduler.sections.map((section) => [section.id, section.programId]));
     return scheduler.schedules.filter((schedule) => {
-      if (schedule.departmentId != null && Number(schedule.departmentId) !== Number(assignDepartmentId)) return false;
+      if (schedule.instructorAssignmentVisible === false) return false;
+      const offeringProgramId = schedule.programId
+        ?? programsBySection.get(schedule.sectionId);
       // A class the teaching department returned is this department's own again.
-      const teachingDepartmentId = subjectForSchedule(subjectsById.get(schedule.courseId), schedule)
-        ?.teachingDepartmentId ?? null;
-      return teachingDepartmentId === null || Number(teachingDepartmentId) === Number(assignDepartmentId);
+      const subject = subjectForSchedule(subjectsById.get(schedule.courseId), schedule);
+      return isLocalInstructorAssignment(subject, { ...schedule, programId: offeringProgramId }, Number(assignDepartmentId), scheduler.userProgramId);
     });
-  }, [assignDepartmentId, scheduler.schedules, scheduler.subjects]);
+  }, [assignDepartmentId, scheduler.schedules, scheduler.subjects, scheduler.sections, scheduler.userProgramId]);
 
   useEffect(() => {
     if (!isGeneratorOpen) return;

@@ -42,15 +42,15 @@ export const subjectForSchedule = <T extends Subject>(
   };
 };
 
-export const isMajorSubject = (subject?: Subject | null): boolean =>
+export const isMajorSubject = (subject?: Pick<Subject, 'category'> | null): boolean =>
   (subject?.category ?? "major") === "major";
 
 export const majorTeachingDepartmentId = (
-  subject: Subject | null | undefined,
+  subject: Pick<Subject, 'teachingDepartmentId' | 'departmentId'> | null | undefined,
   scheduleDepartmentId: number | null
 ): number | null => subject?.teachingDepartmentId ?? subject?.departmentId ?? scheduleDepartmentId;
 
-export const requiredTeachingProgramId = (subject?: Subject | null): number | null => {
+export const requiredTeachingProgramId = (subject?: Pick<Subject, 'category' | 'teachingProgramId' | 'teachingDepartmentId' | 'programId'> | null): number | null => {
   if (subject?.teachingProgramId != null) return subject.teachingProgramId;
   if (subject?.teachingDepartmentId != null) return null;
   return isMajorSubject(subject) ? subject?.programId ?? null : null;
