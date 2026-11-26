@@ -219,7 +219,7 @@
   .assign-selection-actions .assign-selection-who > :first-child { display: none; }
 }
 
-@media (max-width: 639px) {
+@media (max-width: 767px) {
   .assign-columns { gap: 12px; }
   .assign-course-filters { grid-template-columns: 110px minmax(0, 1fr); gap: 9px; padding: 10px 12px; }
   .assign-course-filters > label { display: block; }
@@ -231,10 +231,12 @@
   .assign-modal :is(.assign-sections-table, .assign-review-table), .assign-modal :is(.assign-sections-table, .assign-review-table) tbody { display: block; }
   .assign-modal .assign-sections-table tbody > tr { display: grid; grid-template-columns: 36px minmax(0, 1fr); padding: 10px 10px 10px 2px; border-top: 1px solid #eee7e0; }
   .assign-modal .assign-sections-table td { grid-column: 2; width: auto; padding: 3px 6px; text-align: left; }
-  .assign-modal .assign-sections-table td:first-child { grid-column: 1; grid-row: 1 / span 5; padding: 0; }
-  .assign-modal .assign-sections-table td:nth-child(4)::before { content: 'Units: '; color: #625a54; font-weight: 400; }
-  .assign-modal .assign-sections-table td:nth-child(6) { padding-top: 7px; }
-  .assign-modal .assign-sections-table td:nth-child(6) > div { justify-content: start; }
+  .assign-modal .assign-sections-table td:first-child { grid-column: 1; grid-row: 1 / span 6; padding: 0; }
+  .assign-modal .assign-sections-table td:nth-child(4)::before { content: 'Room: '; color: #625a54; font-weight: 400; }
+  .assign-section-rooms { display: inline-flex; max-width: 100%; vertical-align: top; }
+  .assign-modal .assign-sections-table td:nth-child(5)::before { content: 'Unit: '; color: #625a54; font-weight: 400; }
+  .assign-modal .assign-sections-table td:nth-child(7) { padding-top: 7px; }
+  .assign-modal .assign-sections-table td:nth-child(7) > div { justify-content: start; }
   .assign-section-meeting { white-space: normal; }
   .assign-selection-actions { padding: 10px 12px; }
   .assign-selection-load { max-width: none; }

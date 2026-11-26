@@ -157,7 +157,7 @@ const isPastBasicLoad = (faculty: Faculty | undefined, units: number): boolean =
 const MODE_ORDER: Record<string, number> = { "on-site": 0, field: 1, online: 2 };
 const MODE_LABELS: Record<string, string> = { "on-site": "On-site", field: "Field", online: "Online" };
 
-const scheduleEntries = (group: SectionGroup): { label: string; scheduleIds: string[] }[] => {
+const scheduleEntries = (group: SectionGroup): { label: string; roomLabel: string; scheduleIds: string[] }[] => {
   const entries = new Map<string, ScheduleItem[]>();
   group.schedules
     .slice()
@@ -170,7 +170,11 @@ const scheduleEntries = (group: SectionGroup): { label: string; scheduleIds: str
     .sort((left, right) => (MODE_ORDER[left[0].mode ?? ""] ?? 3) - (MODE_ORDER[right[0].mode ?? ""] ?? 3))
     .map((meetings) => {
       const days = meetings.length === 1 ? meetings[0].day : meetings.map((meeting) => meeting.day.slice(0, 3)).join("/");
-      return { label: `${days} ${meetings[0].startTime}-${meetings[0].endTime}`, scheduleIds: meetings.map((meeting) => meeting.id) };
+      return {
+        label: `${days} ${meetings[0].startTime}-${meetings[0].endTime}`,
+        roomLabel: [...new Set(meetings.map((meeting) => meeting.roomName?.trim() || "Room not set"))].join(" / "),
+        scheduleIds: meetings.map((meeting) => meeting.id),
+      };
     });
 };
 
@@ -970,8 +974,21 @@ function SectionTable({ groups, selectedKeys, queuedKeys, getIssue, getConflict,
       },
     },
     {
+      id: "room",
+      header: "Room",
+      size: 128,
+      enableSorting: false,
+      cell: ({ row }) => (
+        <span className="assign-section-meetings assign-section-rooms">
+          {scheduleEntries(row.original).map((entry) => (
+            <span key={entry.label} className="assign-section-meeting" title={entry.roomLabel}>{entry.roomLabel}</span>
+          ))}
+        </span>
+      ),
+    },
+    {
       accessorKey: "units",
-      header: "Units",
+      header: "Unit",
       size: 64,
       meta: { align: "center" as const },
       cell: ({ row }) => <span className="assign-section-units">{row.original.units}</span>,
