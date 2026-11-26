@@ -137,6 +137,25 @@ describe('Course Teaching dialogs', () => {
     expect(screen.getByRole('dialog', { name: 'Returned Sections' })).toBeTruthy();
     expect(screen.queryByRole('combobox', { name: 'College for GEC 2 BSIT 1-A' })).toBeNull();
   });
+
+  it.each([
+    { program: { returned_from_program_id: 21, returned_from_program_code: 'BPED', returned_from_program_name: 'Physical Education' }, label: 'COED / BPED' },
+    { program: {}, label: 'COED' },
+  ])('shows the recorded returning program with a department-only fallback ($label)', async ({ program, label }) => {
+    get.mockResolvedValue({ data: {
+      courses: [{ ...courses[0], section_assignments: [{
+        section_id: 301, schedule_id: 1001, section_name: 'BSIT 1-A', status: 'Returned', returned: true,
+        instructor_name: null, returned_from_department_id: 2, returned_from_department_code: 'COED',
+        section_teaching_department_id: null, reassignable: true, ...program,
+      }] }],
+      departments, programs, current_department_id: 6, has_active_curriculum: true,
+    } });
+    render(<CourseTeachingAssignments />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Returned Sections 1 Returned' }));
+    const dialog = screen.getByRole('dialog', { name: 'Returned Sections' });
+    expect(within(dialog).getByText(label, { exact: true }).parentElement?.textContent).toBe(`Returned by ${label}`);
+    expect(within(dialog).queryByText('COED / BSIT')).toBeNull();
+  });
 });
 
 describe('Course Teaching program selection', () => {

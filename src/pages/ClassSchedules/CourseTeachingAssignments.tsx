@@ -72,6 +72,9 @@ interface SectionAssignment {
   returned?: boolean;
   returned_from_department_id?: number | null;
   returned_from_department_code?: string | null;
+  returned_from_program_id?: number | null;
+  returned_from_program_code?: string | null;
+  returned_from_program_name?: string | null;
   section_teaching_department_id?: number | null;
   section_teaching_department_code?: string | null;
   section_teaching_department_name?: string | null;
@@ -166,6 +169,9 @@ const currentTeacherOf = (course: CourseRow) =>
   course.teaching_program_code
   ?? course.teaching_department_code
   ?? (course.department_code ? `${course.department_code} (origin department)` : 'Not yet assigned');
+
+const returnedByOf = (section: SectionAssignment) =>
+  [section.returned_from_department_code, section.returned_from_program_code].filter(Boolean).join(' / ');
 
 export default function CourseTeachingAssignments() {
   const { toast, confirm } = useToast();
@@ -1372,7 +1378,7 @@ function ReturnedSectionItem({ row, departments, programs, restrictions, busyId,
         <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-4 text-slate-500">
           <span className="ct-count-badge ct-count-badge-returned" title={section.status}>Returned</span>
           <span title={originDepartment}>Origin: <span className="font-medium text-slate-700">{course.department_code ?? originDepartment}</span></span>
-          {section.returned_from_department_code && <span>Returned by <span className="font-medium text-slate-700">{section.returned_from_department_code}</span></span>}
+          {returnedByOf(section) && <span title={section.returned_from_program_name ?? undefined}>Returned by <span className="font-medium text-slate-700">{returnedByOf(section)}</span></span>}
         </p>
       </div>
       <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
@@ -1447,7 +1453,7 @@ function AssignedCourseRow({ course }: { course: CourseRow }) {
   // offering department can hand a returned section on, so that is the course's own department.
   // Who returned it earlier comes from the transfer record and is kept as history.
   const receivedFrom = course.department_code ?? null;
-  const returnedBy = [...new Set(sections.map((section) => section.returned_from_department_code).filter(Boolean))].join(', ') || null;
+  const returnedBy = [...new Set(sections.map(returnedByOf).filter(Boolean))].join(', ') || null;
 
   return (
     <li className="grid gap-x-5 gap-y-2 px-4 py-3 md:grid-cols-[15rem_minmax(0,1fr)]">

@@ -1145,9 +1145,9 @@ const selectedSchedule = assignmentSchedules.find(
       });
       setReturnSectionsOpen(false);
       toast.success("Sections Returned", response.data.message);
-      invalidateCacheGroups("assignments");
+      invalidateCacheGroups("assignments", "courses");
       invalidateAssignmentDependents();
-      publishLiveTopics(["assignments"]);
+      publishLiveTopics(["assignments", "courses"]);
     } catch (err) {
       setError(apiErrorMessage(err, "Unable to return the sections. Please try again."));
       setReturnSectionsOpen(false);

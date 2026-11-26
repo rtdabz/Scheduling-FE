@@ -1,0 +1,1 @@
+import{_t as e,mt as t,yt as n}from"./index-Qkp7MOcu.js";function r(r){let i=t();return!i||!r||!e(`curriculum.manage`)||i.role!==`vpaa`&&i.department_id!=null&&i.department_id!==r.department_id||!n(r.program_id,i)?!1:i.role!==`program_head`||i.program_id!=null&&i.program_id===r.program_id}export{r as t};
